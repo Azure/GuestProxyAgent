@@ -1,0 +1,30 @@
+{
+    "files.associations": {
+        "guiddef.h": "c",
+        "socket.h": "c",
+        "cstdint": "cpp",
+        "type_traits": "cpp"
+    },
+    "spellright.language": [
+        "en"
+    ],
+    "spellright.documentTypes": [
+        "markdown",
+        "latex",
+        "plaintext",
+        "cpp",
+        "Log",
+        "rust"
+    ],
+    "spellright.parserByClass": {
+        "Log": {
+            "parser": "plain"
+        }
+    },
+    "rust-analyzer.linkedProjects": [
+        "./proxy_agent/Cargo.toml",
+        "./proxy_agent_shared/Cargo.toml",
+        "./proxy_agent_extension/Cargo.toml",
+        "./proxy_agent_setup/Cargo.toml",
+    ]
+}

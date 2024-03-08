@@ -1,0 +1,12 @@
+
+Package: azure-proxy-agent
+Architecture: amd64
+Version: pkgversion
+Maintainer: AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>
+Homepage: https://github.com/Azure/GuestProxyAgent
+Suggests: btrfs-progs, xfsprogs, grub2, udev, e2fsprogs, systemd
+Description: Azure Guest Proxy Agent
+  The Azure Guest Proxy Agent is a daemon that runs on the Azure guest
+  operating system and provides a proxy for the Azure Fabric Controller
+  to communicate with the guest operating system.
+  This package contains the proxy agent.

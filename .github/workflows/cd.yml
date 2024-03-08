@@ -1,0 +1,19 @@
+name: CD Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  release:
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      generate_release: true
+    permissions:
+      actions: read
+      contents: write
+      deployments: read
+      packages: write
+      pull-requests: write
+      security-events: write

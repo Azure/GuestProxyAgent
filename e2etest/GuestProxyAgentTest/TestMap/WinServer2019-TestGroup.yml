@@ -1,0 +1,12 @@
+groupName: WinServer2019
+vmImagePublisher: MicrosoftWindowsServer
+vmImageOffer: WindowsServer
+vmImageSku: 2019-Datacenter
+vmImageVersion: latest
+scenarios:
+  - name: BVTScenario
+    className: GuestProxyAgentTest.TestScenarios.BVTScenario
+  - name: BugFixesScenario
+    className: GuestProxyAgentTest.TestScenarios.BugFixesScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension

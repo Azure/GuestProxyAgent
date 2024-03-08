@@ -1,0 +1,10 @@
+groupName: Ubuntu22
+vmImagePublisher: canonical
+vmImageOffer: 0001-com-ubuntu-server-jammy
+vmImageSku: 22_04-lts-gen2
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario    

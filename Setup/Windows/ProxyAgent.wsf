@@ -1,0 +1,1110 @@
+﻿<package>
+    <?component error="true" debug="true" ?>
+    <reference object="WbemScripting.SWbemLocator" />
+    <comment>
+      Configures the Proxy Agent Service.
+    </comment>
+    <component id="ProxyAgent">
+        <registration
+            progid="WaGuest.ProxyAgent"
+            description=""
+            version="1.0.0.0"
+            clsid="{1ADC86E5-B1B6-4286-BC88-B1F6965D5E20}"/>
+      
+        <public>
+            <property name="Script" />
+            <method name="Initialize">
+                <param name="proxyAgentPackageName" />
+            </method>
+            <method name="ConfigureProxyAgent" />
+            <method name="UninstallProxyAgent" />
+            <method name="ConfigureProxyAgentOnly" />
+            <method name="UninstallProxyAgentOnly" />
+            <method name="PostInstallation" />
+        </public>
+
+        <object id="WshShell" progid="WScript.Shell" />
+        <object id="FsObject" progid="Scripting.FileSystemObject" />
+
+        <script language="VBScript" src="Utility.vbs" />
+
+        <script language="VBScript">
+
+            Const ERROR_PROXYAGENT_PACKAGENOTFOUND          = 1
+            Const ERROR_AZUREKEYNOTCONFIGURED               = 2
+            Const ERROR_VMTYPENOTCONFIGURED                 = 3
+            Const ERROR_PROXYAGENT_KEYNOTCONFIGURED         = 4
+            Const ERROR_PROXYAGENT_INCARNATIONNOTCONFIGURED = 5
+            Const ERROR_PROXYAGENT_PACKAGENAMENOTFOUND      = 6
+            Const ERROR_PROXYAGENT_OS_NOT_SUPPORTED         = 7
+            Const EBPF_FOR_WINDOWS_SOURCE_PATH              = "ebpf-for-windows"
+
+            Dim g_Trace
+            Dim oTraceEvent
+            Dim oProxyAgentPackageName
+            Dim oProxyAgentBinaryLocation
+            Dim oServiceAlreadyInstalled
+            Dim oOldProxyAgentBinLocation
+
+            Sub Initialize(proxyAgentPackageName)
+                Set g_Trace = GetScriptObject(Me.Script, "Tracing.wsf", "TraceSource")
+                g_Trace.Name = "ProxyAgent"
+
+                if proxyAgentPackageName <> "." then
+                            oProxyAgentPackageName = proxyAgentPackageName
+                            else
+                    oProxyAgentPackageName = ""
+                end if
+            End Sub
+
+            ' This function configures the Proxy Agent on the machine and returns true if the machine should be restarted after provisioning
+            ' to complete this configuration. If no restart is required, this function returns false.
+            Function ConfigureProxyAgent
+                On Error Resume Next
+
+                ConfigureProxyAgent = False
+                oProxyAgentBinaryLocation = ""
+                oServiceAlreadyInstalled = False
+                oOldProxyAgentBinLocation = ""
+
+				' Stop GuestProxyAgent service before uninstall ebpf drivers because it has dependences
+                oServiceAlreadyInstalled = CheckServiceInstalled("GuestProxyAgent")
+
+                If oServiceAlreadyInstalled = True Then
+                    oOldProxyAgentBinLocation = GetServiceInstallLocation("GuestProxyAgent")
+
+                    ' Stop any running or already configured Proxy agent services. This will happen
+                    ' when captured roles are provisioned. If service is not running or not installed then
+                    ' its a no-op
+                    call StopServiceWait("GuestProxyAgent", "GuestProxyAgent.exe")
+                    If TraceError(g_Trace, "Stopping GuestProxyAgent service failed.") <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopGuestProxyAgentService"))
+                            .setAttribute "StopServiceErrorCode", errReturnCode
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+                End If
+                
+                call UnzipProxyAgentPackage
+                If TraceError(g_Trace, "Unzipping the Proxy Agent Package to " & oProxyAgentBinaryLocation & " failed.") <> 0 Then
+                    Exit Function
+                End If
+
+                ' Uninstall/InstallEbpf
+                Dim  scriptPth, ebpfSourcePath
+                scriptPth = FsObject.GetParentFolderName(Me.Script.ScriptFullName)
+                ebpfSourcePath : ebpfSourcePath = FsObject.BuildPath(scriptPth, EBPF_FOR_WINDOWS_SOURCE_PATH)
+                call CleanInstallEbpf(ebpfSourcePath)
+                If TraceError(g_Trace, "Installing eBPF failed.") <> 0 Then
+                    Exit Function
+                End If
+
+                ' Install GuestProxyAgent service
+                call ConfigureGuestProxyAgentService
+                If TraceError(g_Trace, "Installing the GuestProxyAgent service failed.") <> 0 Then
+                    UninstallEbpf(True)
+                    Exit Function
+                End If
+                
+                call StartGuestProxyAgentService
+                If TraceError(g_Trace, "Starting the GuestProxyAgent service failed") <> 0 Then
+                    Exit Function
+                End If
+
+                ConfigureProxyAgent = True
+
+                If oServiceAlreadyInstalled = True and oOldProxyAgentBinLocation <> "" Then
+                    'Remove Old folder - best effort
+        
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("DeleteOldProxyAgentPackagesFolder"))
+                        .setAttribute "OldFolder", oOldProxyAgentBinLocation
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+        
+                    call DeleteFolder(oOldProxyAgentBinLocation)
+                    TraceError g_Trace, "Deleting old packages folder '" & oOldProxyAgentBinLocation & "' failed."
+                End If
+            End Function
+        
+            Function ConfigureProxyAgentOnly
+                On Error Resume Next
+
+                ConfigureProxyAgentOnly = False
+                oProxyAgentBinaryLocation = ""
+                oServiceAlreadyInstalled = False
+                oOldProxyAgentBinLocation = ""
+
+				' Stop GuestProxyAgent service before uninstall ebpf drivers because it has dependences
+                oServiceAlreadyInstalled = CheckServiceInstalled("GuestProxyAgent")
+
+                If oServiceAlreadyInstalled = True Then
+                    oOldProxyAgentBinLocation = GetServiceInstallLocation("GuestProxyAgent")
+
+                    ' Stop any running or already configured Proxy agent services. This will happen
+                    ' when captured roles are provisioned. If service is not running or not installed then
+                    ' its a no-op
+                    call StopServiceWait("GuestProxyAgent", "GuestProxyAgent.exe")
+                    If TraceError(g_Trace, "Stopping GuestProxyAgent service failed.") <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopGuestProxyAgentService"))
+                            .setAttribute "StopServiceErrorCode", errReturnCode
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+                End If
+                
+                call UnzipProxyAgentPackage
+                If TraceError(g_Trace, "Unzipping the Proxy Agent Package to " & oProxyAgentBinaryLocation & " failed.") <> 0 Then
+                    Exit Function
+                End If
+
+                ' Install GuestProxyAgent service
+                call ConfigureGuestProxyAgentService
+                If TraceError(g_Trace, "Installing the GuestProxyAgent service failed.") <> 0 Then
+                    UninstallEbpf(True)
+                    Exit Function
+                End If
+                
+                call StartGuestProxyAgentService
+                If TraceError(g_Trace, "Starting the GuestProxyAgent service failed") <> 0 Then
+                    Exit Function
+                End If
+
+                ConfigureProxyAgentOnly = True
+
+                If oServiceAlreadyInstalled = True and oOldProxyAgentBinLocation <> "" Then
+                    'Remove Old folder - best effort
+        
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("DeleteOldProxyAgentPackagesFolder"))
+                        .setAttribute "OldFolder", oOldProxyAgentBinLocation
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+        
+                    call DeleteFolder(oOldProxyAgentBinLocation)
+                    TraceError g_Trace, "Deleting old packages folder '" & oOldProxyAgentBinLocation & "' failed."
+                End If
+            End Function
+
+
+            Function PostInstallation
+                On Error Resume Next
+                
+                PostInstallation = True
+
+                ' Create the tracing tasks
+                if CreateEbpfTracingTasks() = False Then
+                    PostInstallation = False
+                End If
+
+            End Function
+
+
+            'This function Uninstalls the ProxyAgent - Pass "ServiceOnly" if folders are to be preserved
+            Sub UninstallProxyAgent(uninstallMode)
+                On Error Resume Next
+
+                call UninstallProxyAgentOnly(uninstallMode)
+
+                ' UninstallEbpf
+                call UninstallEbpf(True)
+
+            End Sub
+
+            Sub UninstallProxyAgentOnly(uninstallMode)
+                On Error Resume Next
+
+                call UnregisterService("GuestProxyAgent", "GuestProxyAgent.exe")
+                TraceError g_Trace, "Unregistering GuestProxyAgent service failed."
+            
+                If uninstallMode <> "ServiceOnly" Then
+
+                    call DeleteProxyAgentFolder
+                    TraceError g_Trace, "Deleting proxy agent folder failed."
+                
+                End If
+            End Sub
+
+            ' This function Enables the service if disabled and changes its start mode as requested.
+            Sub EnableService(serviceName, startMode)
+
+                Const MAX_ITER = 5
+                
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                        .setAttribute "ServiceName", serviceName
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+
+                Set colService = objWMIService.ExecQuery( _
+                    "Select * from Win32_Service Where Name = '" + serviceName + "'")
+
+                For Each svc In colService
+                    If svc.StartMode = "Disabled" Then
+                        Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                            .setAttribute "EnablingDisabledService", serviceName   
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+
+                        svc.ChangeStartMode(startMode)
+                    Else
+                        Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                            .setAttribute "AlreadyEnabledService", serviceName   
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+                Next
+
+                ' This loop waits for the service to be enabled
+                iter = 0
+                Do
+                    Set colService = objWMIService.ExecQuery( _
+                        "Select * from Win32_Service Where Name = '" + serviceName + "'")
+
+                    done = True
+                    For Each svc In colService
+                        If svc.StartMode = "Disabled" Then
+                            done = False
+
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                                .setAttribute "WaitEnableServiceName", serviceName
+                            End With
+                            g_Trace.TraceEvent oTraceEvent
+
+                            ' Wait 2 secs before checking again
+                            Me.Script.Sleep 2000
+                            Exit For
+                        Else
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                                .setAttribute "EnabledService", serviceName   
+                            End With
+                            g_Trace.TraceEvent oTraceEvent                 
+                        End If
+                    Next
+
+                    iter = iter + 1
+                    If iter > MAX_ITER Then
+                        Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("EnableService"))
+                            .setAttribute "TimedOutEnableServiceName", serviceName
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                        Exit Do
+                    End If
+                Loop Until done
+            End Sub
+
+            Sub StopProcessWait(processName)
+
+                Const MAX_ITER = 15
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopProcessWait"))
+                        .setAttribute "ProcessName", processName
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                Set objWMI = GetObject("winmgmts:\\.\root\cimv2")
+
+                iter = 0
+                Do
+                    Set colProcesses = objWMI.ExecQuery( _
+                        "Select * from Win32_Process Where Name = '" + processName + "'")
+
+                    done = True
+
+                    If colProcesses.count <> 0 Then
+
+                        done = False
+                        
+                        Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopProcessWait"))
+                            .setAttribute "WaitForStopProcess", processName
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+
+                        ' Wait 2 secs before checking aproxyAgentin
+                        Me.Script.Sleep 2000
+                    Else
+                        Set oTraceEvent = g_Trace.CreateEvent("INFO")            
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopProcessWait"))
+                            .setAttribute "StoppedProcess", processName   
+                        End With
+                        g_Trace.TraceEvent oTraceEvent                 
+                    End If
+
+                    iter = iter + 1
+                    If iter > MAX_ITER Then
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopProcessWait"))
+                                .setAttribute "TimedOutStopProcess", processName
+                            End With
+                            g_Trace.TraceEvent oTraceEvent
+
+                        ' TimedOutWaiting - Kill processes
+                        
+                        For Each colProc in colProcesses
+                            errReturnCode = colProc.Terminate()
+
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopProcessWait"))
+                                .setAttribute "KilledProcess", colProc.ExecutablePath
+                                .setAttribute "returnedCode", errReturnCode
+                            End With
+                            g_Trace.TraceEvent oTraceEvent
+                        Next
+                        
+                        ' Wait some time to let the process get killed
+                        Me.Script.Sleep 2000
+
+                        Exit Do
+                    End If
+                Loop Until done
+
+            End Sub
+
+            ' This function checks if the service is installed.
+            Function CheckServiceInstalled(serviceName)
+                On Error Resume Next
+                
+                CheckServiceInstalled = False
+                
+                Dim objWMIService, colServices, serviceQuery, eventType
+                serviceQuery = "Select * from Win32_Service where Name='" + serviceName + "'"
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+                Set colServices = objWMIService.ExecQuery(serviceQuery)
+
+                For Each objService in colServices
+                    CheckServiceInstalled = True
+                Next
+                
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("CheckServiceInstalled"))
+                    .setAttribute "ServiceInstalled", CheckServiceInstalled
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+            End Function 
+
+            ' This function Stops and wait for the service to stop. If the service is stopped or not there then its a no-op
+            Sub StopServiceWait(serviceName, processName)
+
+                Const MAX_ITER = 5
+                
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopServiceWait"))
+                        .setAttribute "ServiceName", serviceName
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+
+                Set colService = objWMIService.ExecQuery( _
+                    "Select * from Win32_Service Where Name = '" + serviceName + "'")
+
+                For Each svc In colService
+                    svc.StopService
+                Next
+
+                ' Wait for its process to exit
+                call StopProcessWait(processName)
+                TraceError g_Trace, "Stopping process: " + processName + " failed."
+
+                iter = 0
+                Do
+                    Set colService = objWMIService.ExecQuery( _
+                        "Select * from Win32_Service Where Name = '" + serviceName + "'")
+
+                    done = True
+                    For Each svc In colService
+                        If svc.State <> "Stopped" Then
+                            done = False
+
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopServiceWait"))
+                                .setAttribute "WaitStopServiceName", serviceName
+                            End With
+                            g_Trace.TraceEvent oTraceEvent
+
+                            ' Wait 2 secs before checking again
+                            Me.Script.Sleep 2000
+                            Exit For
+                        Else
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopServiceWait"))
+                                .setAttribute "StoppedService", serviceName   
+                            End With
+                            g_Trace.TraceEvent oTraceEvent                 
+                        End If
+                    Next
+
+                    iter = iter + 1
+                    If iter > MAX_ITER Then
+                            Set oTraceEvent = g_Trace.CreateEvent("INFO")   
+                            With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StopServiceWait"))
+                                .setAttribute "TimedOutStopServiceName", serviceName
+                            End With
+                            g_Trace.TraceEvent oTraceEvent
+                        Exit Do
+                    End If
+                Loop Until done
+            End Sub
+
+            ' This function unregisters a service.
+            Sub UnregisterService(serviceName, processName)
+                On Error Resume Next
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnregisterService"))
+                    .setAttribute "ServiceName", serviceName
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                Dim objWMIService, colServices, serviceQuery, eventType
+                serviceQuery = "Select * from Win32_Service where Name='" + serviceName + "'"
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+                Set colServices = objWMIService.ExecQuery(serviceQuery)
+
+                For Each objService in colServices
+                    errReturnCode = objService.StopService()
+                    If errReturnCode = 0 Or errReturnCode = 5 Or errorReturnCode = 10 Then 
+                        ' Success Or Service Cannot Accept Control Or Service Already Stopped
+                        eventType = "INFO"
+                    Else 
+                        eventType = "ERROR"
+                    End If
+
+                    Set oTraceEvent = g_Trace.CreateEvent(eventType)
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnregisterService"))
+                        .setAttribute "StopService", errReturnCode
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+
+                    ' Wait for its process to exit
+                    call StopProcessWait(processName)
+                    TraceError g_Trace, "Stopping process: " + processName + " failed."
+
+                    errReturnCode = objService.Delete()
+                    If errReturnCode = 0 Then
+                        eventType = "INFO"
+                    Else
+                        eventType = "ERROR"
+                    End If
+
+                    Set oTraceEvent = g_Trace.CreateEvent(eventType)
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnregisterService"))
+                        .setAttribute "DeleteService", errReturnCode
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+
+                    If errReturnCode <> 0 Then
+                        Exit Sub
+                    End If
+                Next
+                
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnregisterService"))
+                g_Trace.TraceEvent oTraceEvent
+
+            End Sub
+
+            ' This function deletes all the ProxyAgent specific folders on the filesystem.
+            Sub DeleteProxyAgentFolder
+                On Error Resume Next
+
+                Dim proxyAgentPath
+                proxyAgentPath = FsObject.BuildPath(WshShell.ExpandEnvironmentStrings("%SYSTEMDRIVE%"), "\WindowsAzure\ProxyAgent")
+                call DeleteFolder(proxyAgentPath)
+            End Sub
+
+            ' This function deletes the folder specified in the path parameter.
+            Sub DeleteFolder(path)
+                On Error Resume Next
+
+                FsObject.DeleteFolder path, True
+                If Err.number <> 0 And Err.number <> 76 Then
+                    ' 76 - Path not found is not an issue when deleting
+                    Set oTraceEvent = g_Trace.CreateEvent("WARNING")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("DeleteFolder"))
+                        .setAttribute "Path", proxyAgentPath
+                        .setAttribute "Error", Err.number
+                        .setAttribute "Description", Err.Description
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                Else
+                    Err.number = 0
+                End If
+            End Sub
+
+            ' This function unzips the ProxyAgent package into %SystemDrive%\WindowsAzure\ProxyAgent folder.
+            Sub UnzipProxyAgentPackage
+                On Error Resume Next
+                Dim objProxyAgentZipLocation
+                Dim extractToPath, zipPath, scriptDir
+                Dim appendDirName
+
+                Const FOF_SILENT = &H4&
+                Const FOF_NOCONFIRMATION = &H10&
+                Const FOF_NOERRORUI = &H400&
+            
+                scriptDir = FsObject.GetParentFolderName(Me.Script.ScriptFullName)
+                zipPath = FsObject.BuildPath(scriptDir, "ProxyAgent\")
+                zipPath = FsObject.BuildPath(zipPath, oProxyAgentPackageName)
+                appendDirName = ""
+
+                extractToPath = FsObject.BuildPath(WshShell.ExpandEnvironmentStrings("%SYSTEMDRIVE%"), "\WindowsAzure\")
+
+                'If the WindowsAzure folder does not exist create it.
+                If Not FsObject.FolderExists(extractToPath) Then
+                    FsObject.CreateFolder(extractToPath)
+                    If Err.number <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                            .setAttribute "WindowsAzureCreateFolderFailed", Err.number
+                            .setAttribute "Description", Err.Description
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                        Exit Sub
+                    End If
+                Else
+                    Set oTraceEvent = g_Trace.CreateEvent("WARN")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                        .setAttribute "WindowsAzureFolderExists", True
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                extractToPath = FsObject.BuildPath(extractToPath, "ProxyAgent\")
+
+                'If the ProxyAgent folder does not exist create it.
+                If Not FsObject.FolderExists(extractToPath) Then
+                    FsObject.CreateFolder(extractToPath)
+                    If Err.number <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                            .setAttribute "WindowsAzureProxyAgentCreateFolderFailed", Err.number
+                            .setAttribute "Description", Err.Description
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                        Exit Sub
+                    End If
+                Else
+                    Set oTraceEvent = g_Trace.CreateEvent("WARN")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                        .setAttribute "WindowsAzureProxyAgentFolderExists", True
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                If oServiceAlreadyInstalled = True Then
+                    ' If service already there then create a new unique folder with date stamp  
+                    Dim myTime
+                    myTime = Now
+                    appendDirName = "_" & Year(myTime) & Month(myTime) & Day(myTime) & "_" & Hour(myTime) & Minute(myTime) & Second(myTime)
+                End If
+
+                extractToPath = FsObject.BuildPath(extractToPath, "Package" & appendDirName & "\")
+
+                oProxyAgentBinaryLocation = extractToPath
+
+                'If the Packages folder does not exist create it.
+                If Not FsObject.FolderExists(extractToPath) Then
+                    FsObject.CreateFolder(extractToPath)
+                    If Err.number <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                            .setAttribute "WindowsAzurePackagesCreateFolderFailed", Err.number
+                            .setAttribute "Description", Err.Description
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                        Exit Sub
+                    End If
+                Else
+                    Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                        .setAttribute "WindowsAzurePackagesFolderExists", True
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                'Extract the contents of the zip file.
+                Set objShell = CreateObject("Shell.Application")
+                Set FilesInZip=objShell.NameSpace(zipPath).items
+                cFlags = FOF_SILENT + FOF_NOCONFIRMATION + FOF_NOERRORUI
+                objShell.NameSpace(extractToPath).CopyHere FilesInZip, cFlags
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UnzipProxyAgentPackage"))
+                    .setAttribute "ZipLocation", zipPath
+                    .setAttribute "ExtractionLocation", extractToPath
+                End With
+                g_Trace.TraceEvent oTraceEvent
+            End Sub
+
+            ' This function registers the proxy agent service.
+            Sub ConfigureGuestProxyAgentService
+                On Error Resume Next
+                Dim objWMIService, objService, servicePath, errReturnCode
+
+                Const OWN_PROCESS = 16
+                Const NOT_INTERACTIVE = False
+                Const NORMAL_ERROR_CONTROL = 1
+                Dim ebpfServices 
+                ebpfServices = Array ("EbpfCore", "NetEbpfExt")
+        
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+                Set objService = objWMIService.Get("Win32_BaseService")
+                servicePath = FsObject.BuildPath(oProxyAgentBinaryLocation, "\GuestProxyAgent.exe")
+
+                If oServiceAlreadyInstalled = False then
+                    ' Create service with serviceDependencies on ebpfServices
+                    errReturnCode = objService.Create("GuestProxyAgent", "Microsoft Azure Guest Proxy Agent", servicePath, OWN_PROCESS, NORMAL_ERROR_CONTROL, "Automatic", _
+                                                       NOT_INTERACTIVE, NULL, NULL, NULL, NULL, ebpfServices)
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("ConfigureGuestProxyAgentService"))
+                            .setAttribute "CreateService", errReturnCode
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                Else
+                    ' Change service settings with new path
+                    call SetServicePathInRegistry("GuestProxyAgent", servicePath)
+                    If TraceError(g_Trace, "Setting the new GuestProxyAgent service path in registry failed.") <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("ConfigureGuestProxyAgentService"))
+                            .setAttribute "Failed to update GuestProxyAgent path", Err.number
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+
+                        Exit Sub
+                    End If
+
+                    ' Enables service if not enabled. This is needed for the service disabled during sysprep process. 
+                    call EnableService("GuestProxyAgent", "Automatic")
+                    If TraceError(g_Trace, "Enabling GuestProxyAgent service failed.") <> 0 Then
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("ConfigureGuestProxyAgentService"))
+                            .setAttribute "EnableServiceErrorCode", errReturnCode
+                        End With
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("ConfigureGuestProxyAgentService"))
+                            .setAttribute "ChangeService", errReturnCode
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If            
+            End Sub
+
+            ' Start the installer service
+            Sub StartGuestProxyAgentService
+                On Error Resume Next
+                Dim objWMIService, colServices
+                Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+                Set colServices = objWMIService.ExecQuery _
+                           ("Select * from Win32_Service where Name='GuestProxyAgent'")
+
+                For each objService in colServices
+                    errReturnCode = objService.StartService()
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StartGuestProxyAgentService"))
+                            .setAttribute "StartService", errReturnCode
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                    If errReturnCode <> 0 Then
+                        Exit Sub
+                    End If
+                Next
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("StartGuestProxyAgentService"))
+                g_Trace.TraceEvent oTraceEvent
+            End Sub
+
+            ' Set the service registry path
+            Sub SetServicePathInRegistry (serviceName, servicePath)
+                On Error Resume Next
+                
+                Dim strKeyPath
+
+                const HKEY_LOCAL_MACHINE = &H80000002
+                const strComputer = "."
+                strKeyPath = "SYSTEM\CurrentControlSet\Services\" & serviceName
+                Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
+                objReg.CreateKey HKEY_LOCAL_MACHINE, strKeyPath
+                objReg.SetStringValue HKEY_LOCAL_MACHINE, strKeyPath, "ImagePath", servicePath
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("SetGuestProxyAgentServicePathInRegistry"))
+                    .setAttribute "ServiceName", serviceName
+                    .setAttribute "ServiceImagePath", servicePath
+                End With
+                g_Trace.TraceEvent oTraceEvent
+            End Sub
+
+            ' Get service install location the incarnation in registry for ProxyAgent to use at runtime
+            Function GetServiceInstallLocation(serviceName)
+                On Error Resume Next
+                
+                Dim strKeyPath, servicePath
+
+                const HKEY_LOCAL_MACHINE = &H80000002
+                const strComputer = "."
+                strKeyPath = "SYSTEM\CurrentControlSet\Services\" & serviceName
+                Set objReg = GetObject("winmgmts:{impersonationLevel=impersonate}!\\" & strComputer & "\root\default:StdRegProv")
+                objReg.GetStringValue HKEY_LOCAL_MACHINE, strKeyPath, "ImagePath", servicePath
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("GetServiceInstallLocation"))
+                    .setAttribute "ServiceName", serviceName
+                    .setAttribute "ServiceImagePath", servicePath
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                GetServiceInstallLocation = FsObject.GetParentFolderName(servicePath)
+
+            End Function
+
+            '-------------------------------------------------------------------
+            '------------- EBPF Install/Uninstall Functions --------------------
+            '-------------------------------------------------------------------
+            ' String constants
+            Const EBPF_EBPFCORE_DRIVER_NAME             = "eBPFCore"
+            Const EBPF_EXTENSION_DRIVER_NAME            = "NetEbpfExt"
+            Const EBPF_TRACING_STARTUP_TASK_NAME        = "eBpfTracingStartupTask"
+            Const EBPF_TRACING_STARTUP_TASK_FILENAME    = "ebpf_tracing_startup_task.xml"
+            Const EBPF_TRACING_PERIODIC_TASK_NAME       = "eBpfTracingPeriodicTask"
+            Const EBPF_TRACING_PERIODIC_TASK_FILENAME   = "ebpf_tracing_periodic_task.xml"
+            Const EBPF_TRACING_TASK_CMD                 = "ebpf_tracing.cmd"
+
+            ' Global variables
+            Dim WmiService : Set WmiService = GetObject("winmgmts:\\.\root\cimv2")
+            Dim g_tracingPath: g_tracingPath = FsObject.BuildPath(WshShell.ExpandEnvironmentStrings("%SystemRoot%"), "\Logs\eBPF")
+            Dim g_installPath: g_installPath = FsObject.BuildPath(WshShell.ExpandEnvironmentStrings("%ProgramFiles%"), "\ebpf-for-windows")
+
+
+            ' Adds a new path to the System path, unless the path is already present in the system path.
+            Function AddSystemPath(pathToAdd)
+                On Error Resume Next
+
+                AddSystemPath = True
+
+                Dim sysENV : Set sysENV = WshShell.Environment("System")
+                systemPath = sysENV("PATH")
+                If InStr(systemPath, pathToAdd) = 0 Then
+                    sysENV("PATH") = systemPath + ";" + pathToAdd
+                End If
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("AddSystemPath"))
+                    .setAttribute "pathToAdd", pathToAdd
+                End With
+                g_Trace.TraceEvent oTraceEvent
+            End Function
+
+            ' Removes the given path from the System path, unless the path isn't present.
+            Function RemoveSystemPath(pathToRemove)
+                On Error Resume Next
+
+                RemoveSystemPath =  True
+
+                Dim sysENV : Set sysENV = WshShell.Environment("System")
+                systemPath = sysENV("PATH")
+                If InStr(systemPath, pathToRemove) <> 0 Then
+                    systemPath = Replace(systemPath, pathToRemove, "")
+                    systemPath = Replace(systemPath, ";;", ";")
+                    sysENV("PATH") = systemPath
+                End If
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")		
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("RemoveSystemPath"))
+                    .setAttribute "pathToRemove", pathToRemove
+                End With
+                g_Trace.TraceEvent oTraceEvent
+            End Function
+
+            ' This function moves the files from the source folder to the destination folder
+            Function CopyFilesToPath(sourcePath, destPath)
+                On Error Resume Next
+
+                CopyFilesToPath = True	
+
+                ' Create the destination folder if it doesn't exist
+                If Not FsObject.FolderExists(destPath) Then		
+                    call FsObject.CreateFolder(destPath)
+                    If TraceError(g_Trace, "Failed to create folder " + destPath) <> 0 Then
+                        CopyFilesToPath = False
+                    End If
+                End If
+
+                If CopyFilesToPath = True Then
+                    ' Copy the files to the destination folder
+                    FsObject.CopyFolder sourcePath, destPath, True
+                    If TraceError(g_Trace, "Failed to copy files from " + sourcePath + " to " + destPath) <> 0 Then
+                        CopyFilesToPath = False
+                    End If
+                End If
+            End Function
+
+            ' Creates a scheduled task using the given task file returns the exitcode of schtasks
+            Function CreateScheduledTask(taskName, taskFile)
+                On Error Resume Next
+
+                Dim oResults, oTraceEvent, taskCommand
+
+                taskCommand = "%SystemRoot%\System32\schtasks.exe /create /tn " & taskName & " /xml """ & taskFile & """"
+                Set oResults = ExecuteAndTraceWithResults(taskCommand, g_Trace)
+
+                If oResults.ExitCode = 0 Then
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("CreateScheduledTask"))
+                        .setAttribute "task", CStr(taskName)
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                CreateScheduledTask = oResults.ExitCode
+            End Function
+
+            ' Delete a scheduled task returns the exitcode of schtasks
+            Function DeleteScheduledTask(taskName)
+                On Error Resume Next
+
+                Dim oResults, oTraceEvent, taskCommand
+
+                taskCommand = "%SystemRoot%\System32\schtasks.exe /delete /tn " & taskName & " /f"
+                Set oResults = ExecuteAndTraceWithResults(taskCommand, g_Trace)
+
+                If oResults.ExitCode = 0 Then
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("DeleteScheduledTask"))
+                        .setAttribute "task", CStr(taskName)
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                DeleteScheduledTask = oResults.ExitCode
+            End Function
+
+            ' This function creates tasks to start eBPF tracing at boot, and execute periodic rundowns
+            Function CreateEbpfTracingTasks()
+                On Error Resume Next
+
+                CreateEbpfTracingTasks = true
+                Dim taskFilePath
+
+                ' Delete the tasks if they already exist
+                call DeleteEbpfTracingTasks()
+
+                ' Create the scheduled tasks
+                taskFilePath = FsObject.BuildPath(g_installPath, EBPF_TRACING_STARTUP_TASK_FILENAME)
+                if CreateScheduledTask(EBPF_TRACING_STARTUP_TASK_NAME, taskFilePath) <> 0 Then
+                    CreateEbpfTracingTasks = False
+                    Exit Function
+                End If
+                
+                taskFilePath = FsObject.BuildPath(g_installPath, EBPF_TRACING_PERIODIC_TASK_FILENAME)
+                if CreateScheduledTask(EBPF_TRACING_PERIODIC_TASK_NAME, taskFilePath) <> 0 Then
+                    call DeleteEbpfTracingTasks()
+                    CreateEbpfTracingTasks = False
+                End If
+            End Function
+
+            ' This function deletes the tasks to start eBPF tracing at boot, and execute periodic rundowns, and deletes the g_tracingPath
+            Function DeleteEbpfTracingTasks()
+                On Error Resume Next
+                Const THIS_FUNCTION_NAME = "DeleteEbpfTracingTasks"
+
+                DeleteEbpfTracingTasks = True
+
+                ' Execute the script to stop eBPF tracing
+                Dim scriptPath : scriptPath = FsObject.BuildPath(g_installPath, EBPF_TRACING_TASK_CMD)
+                If FsObject.FileExists(scriptPath) Then
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement(THIS_FUNCTION_NAME))
+                        .setAttribute "StopEbpfTracing", scriptPath
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                    
+                    If ExecuteAndTraceWithResults("""" + scriptPath + """ stop /trace_path """ + g_tracingPath + """", g_trace).ExitCode <> 0 Then
+                        DeleteEbpfTracingTasks = False
+                    End If
+                Else
+                    Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement(THIS_FUNCTION_NAME))
+                        .setAttribute "EbpfTaskScriptNotFound", scriptPath
+                    End With
+                    g_Trace.TraceEvent oTraceEvent
+                End If
+
+                ' Delete the startup task. if it already exists
+                if DeleteScheduledTask(EBPF_TRACING_STARTUP_TASK_NAME) <> 0 Then
+                    DeleteEbpfTracingTasks = False
+                End If
+
+                ' Delete the periodic task. if it already exists
+                if DeleteScheduledTask(EBPF_TRACING_PERIODIC_TASK_NAME) <> 0 Then
+                    DeleteEbpfTracingTasks = False
+                End If
+            End Function
+
+            ' This function checks if the given driver is already installed.
+            Function CheckDriverInstalled(driverName)
+                On Error Resume Next
+
+                CheckDriverInstalled = False
+
+                Dim colServices, serviceQuery
+                serviceQuery = "Select * from Win32_BaseService where Name='" + driverName + "'"
+                Set colServices = WmiService.ExecQuery(serviceQuery)
+                For Each objService in colServices
+                    CheckDriverInstalled = True
+                    Exit For
+                Next
+            End Function
+
+            ' This function installs the given kernel driver.
+            Function InstallEbpfDriver(driverName)
+                On Error Resume Next
+
+                InstallEbpfDriver = True
+                Dim driverFullPath: driverFullPath = FsObject.BuildPath(g_installPath, "\drivers\" + driverName + ".sys")
+                
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("InstallEbpfDriver"))
+                    .setAttribute "driverFullPath", driverFullPath
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                Dim oResults: Set oResults = ExecuteAndTraceWithResults("sc.exe create " + driverName + " type=kernel start=auto binpath=""" + driverFullPath + """", g_trace)
+                if oResults.ExitCode <> 0 Then
+                    InstallEbpfDriver = False
+                End If
+            End Function
+
+            ' This function stops then uninstalls the given kernel driver.
+            Function UninstallEbpfDriver(driverName)
+                On Error Resume Next
+
+                Const THIS_FUNCTION_NAME = "UninstallEbpfDriver"
+                Dim colServices, serviceQuery, errReturnCode
+
+                UninstallEbpfDriver = True
+                Dim driverFullPath: driverFullPath = FsObject.BuildPath(g_installPath, "\drivers\" + driverName + ".sys")
+
+                serviceQuery = "Select * from Win32_BaseService where Name='" + driverName + "'"
+                Set colServices = WmiService.ExecQuery(serviceQuery)
+                For Each objService in colServices
+
+                    Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                    With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement(THIS_FUNCTION_NAME))
+                        .setAttribute "driverFullPath", driverFullPath
+                    End With		
+                    g_Trace.TraceEvent oTraceEvent
+
+                    errReturnCode = objService.StopService()
+                    If errReturnCode <> 0 Then
+                        UninstallEbpfDriver = False
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement(THIS_FUNCTION_NAME))
+                            .setAttribute "StopDriver", "False"
+                            .setAttribute "driverFullPath", driverFullPath
+                        End With		
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+
+                    errReturnCode = objService.Delete()
+                    If errReturnCode <> 0 Then
+                        UninstallEbpfDriver = False
+                        Set oTraceEvent = g_Trace.CreateEvent("ERROR")
+                        With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement(THIS_FUNCTION_NAME))
+                            .setAttribute "deleteDriver", "False"
+                            .setAttribute "driverFullPath", driverFullPath
+                        End With		
+                        g_Trace.TraceEvent oTraceEvent
+                    End If
+                Next
+            End Function
+
+            ' This function uninstalls eBPF for Windows on the machine and returns true successful, false otherwise
+            Function UninstallEbpf(shouldDeleteEbpfTracingTasks)
+                On Error Resume Next
+                
+                UninstallEbpf = True
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("UninstallEbpf"))
+                    .setAttribute "g_installPath", g_installPath
+                    .setAttribute "installationPathPresent", FsObject.FolderExists(g_installPath)
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                If UninstallEbpfDriver(EBPF_EBPFCORE_DRIVER_NAME) = False Then
+                    UninstallEbpf = False
+                End If
+
+                If UninstallEbpfDriver(EBPF_EXTENSION_DRIVER_NAME) = False Then
+                    UninstallEbpf = False
+                End If
+
+                If shouldDeleteEbpfTracingTasks = True Then
+                    If DeleteEbpfTracingTasks() = False Then
+                        UninstallEbpf = False
+                    End If
+                End If
+
+                if RemoveSystemPath(g_installPath) = False Then
+                    UninstallEbpf = False
+                End If
+
+                call DeleteFolder(g_installPath)
+            End Function
+
+            ' This function installs eBPF for Windows on the machine and returns true successful, false otherwise
+            Function CleanInstallEbpf(sourcePath)
+                On Error Resume Next
+
+                CleanInstallEbpf = True
+
+                Set oTraceEvent = g_Trace.CreateEvent("INFO")
+                With oTraceEvent.appendChild(oTraceEvent.ownerDocument.createElement("CleanInstallEbpf"))
+                    .setAttribute "sourcePath", sourcePath
+                    .setAttribute "g_installPath", g_installPath
+                    .setAttribute "installationPathPresent", FsObject.FolderExists(g_installPath)
+                End With
+                g_Trace.TraceEvent oTraceEvent
+
+                CleanInstallEbpf = UninstallEbpf(False)
+
+                ' Move the files to the install path
+                if Not CopyFilesToPath(sourcePath, g_installPath) Then
+                    CleanInstallEbpf = False
+                    Exit Function
+                End If
+
+                ' Install the drivers and add the install path to the system path
+                If InstallEbpfDriver(EBPF_EBPFCORE_DRIVER_NAME) = False Then
+                    CleanInstallEbpf = False
+                    Exit Function
+                End If
+
+                If InstallEbpfDriver(EBPF_EXTENSION_DRIVER_NAME) = False Then
+                    CleanInstallEbpf = False
+                    call UninstallEbpfDriver(EBPF_EBPFCORE_DRIVER_NAME)
+                    Exit Function
+                End If
+                
+                if AddSystemPath(g_installPath) = False Then
+                    CleanInstallEbpf = False
+                End If
+            End Function
+        </script>
+    </component>
+</package>

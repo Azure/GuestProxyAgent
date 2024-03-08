@@ -1,0 +1,6 @@
+systemctl stop GuestProxyAgent.service
+systemctl disable GuestProxyAgent.service
+systemctl daemon-reload
+
+rm -r /usr/sbin/azure-proxy-agent
+rm -r /usr/lib/azure-proxy-agent/package

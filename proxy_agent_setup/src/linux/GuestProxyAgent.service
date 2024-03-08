@@ -1,0 +1,15 @@
+[Unit]
+Description=Microsoft Azure GuestProxyAgent
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/azure-proxy-agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=network.target
