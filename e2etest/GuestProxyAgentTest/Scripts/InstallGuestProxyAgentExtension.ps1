@@ -79,33 +79,16 @@ if ($process -ne $null) {
     Write-Output "The process $processName is not running."
 }
 
-Write-Output "Delete registry key at PIR version"
-Remove-Item -Path $reigstrykeyPath -Recurse
-
-NET Stop $serviceName
-Write-Output "stop service: $serviceName"
-Write-Output "Stop-Process ProxyAgentExt, make 3 try attempts to kill guest proxy agent extension process" 
-$i=0
-while($i -lt 3){
-    $process = Get-Process -Name $processName -ErrorAction SilentlyContinue
-    if ($process -ne $null) {
-        Write-Output "The process $processName exists."
-        Stop-Process -Name $processName
-        Write-Output "The process $processName is killed."
-        break
-    } else {
-        Write-Output "The process $processName does not exist."
-    }
-    start-sleep -Seconds 5
-    $i++
-}
-
-Write-Output "Delete extension folder  of PIR version" 
-Remove-Item -Path $extensionFolder -Recurse -Force
-
-start-sleep -Seconds 5 
-New-Item -ItemType Directory -Force -Path $extensionFolder
-Write-Output "create extension folder at path: $extensionFolder"
-
+Write-Output "Delete extension zip file $PIRExtensionFolderZIPLocation" 
+Remove-Item -Path $PIRExtensionFolderZIPLocation -Force
 wget $decodedUrlString -OutFile $PIRExtensionFolderZIPLocation
 Write-Output "downloaded the proxyagent extension file to path: " $PIRExtensionFolderZIPLocation
+
+TASKKILL /F /IM ProxyAgentExt.exe
+Write-Output "TASKKILL /F /IM ProxyAgentExt.exe"
+
+Write-Output "Delete registry key at $reigstrykeyPath"
+Remove-Item -Path $reigstrykeyPath -Recurse
+
+Write-Output "Delete status file $statusFilePath" 
+Remove-Item -Path $statusFilePath -Force 
