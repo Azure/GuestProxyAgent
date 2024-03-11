@@ -140,12 +140,15 @@ fn poll_secure_channel_status(
                 let message: String = format!("Failed to get key status: {:?}", e);
                 logger::write_warning(message.to_string());
 
-                if e.kind() == ErrorKind::Interrupted
-                    && get_secure_channel_state() == UNKNOWN_STATE
-                    && helpers::get_elapsed_time_in_millisec()
-                        > FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
-                {
+                let set_status_message;
+                if e.kind() == ErrorKind::Interrupted {
                     // Interrupted error can be retried, set the failure message after the timeout
+                    set_status_message = helpers::get_elapsed_time_in_millisec()
+                        > FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS;
+                } else {
+                    set_status_message = true;
+                }
+                if set_status_message {
                     unsafe {
                         *STATUS_MESSAGE = message.to_string();
                     }
