@@ -24,6 +24,7 @@ impl Response {
     pub const CONTINUE: &'static str = "100 Continue";
     pub const BAD_REQUEST: &'static str = "400 Bad Request";
     pub const OK: &'static str = "200 OK";
+    pub const NOT_FOUND: &'static str = "404 Not Found";
 
     pub fn new(status: String, body: String) -> Self {
         Response {

@@ -7,7 +7,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::io::{Error, ErrorKind};
 use url::Url;
 
-
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
@@ -257,8 +256,15 @@ pub fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
 
     let response = http::get_response_in_string(&mut http_request)?;
     if response.status != Response::OK {
+        let kind: ErrorKind = if response.status == Response::NOT_FOUND {
+            // Interrupted operations can typically be retried
+            ErrorKind::Interrupted
+        } else {
+            ErrorKind::Other
+        };
+
         return Err(Error::new(
-            ErrorKind::Other,
+            kind,
             format!("{} - {}", response.status, response.get_body_as_string()?),
         ));
     }
@@ -393,7 +399,10 @@ mod tests {
             status.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_none(), "secureChannelEnabled must be None in version 1.0");
+        assert!(
+            status.secureChannelEnabled.is_none(),
+            "secureChannelEnabled must be None in version 1.0"
+        );
 
         let status_response = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
@@ -420,9 +429,19 @@ mod tests {
             status.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_some(), "secureChannelEnabled must have value in version 2.0");
-        assert!(status.secureChannelState.is_none(), "secureChannelState must be None in version 2.0");
-        assert_eq!("WireServer Enforce -  IMDS Audit", status.get_secure_channel_state(), "secureChannelState mismatch in version 2.0");
+        assert!(
+            status.secureChannelEnabled.is_some(),
+            "secureChannelEnabled must have value in version 2.0"
+        );
+        assert!(
+            status.secureChannelState.is_none(),
+            "secureChannelState must be None in version 2.0"
+        );
+        assert_eq!(
+            "WireServer Enforce -  IMDS Audit",
+            status.get_secure_channel_state(),
+            "secureChannelState mismatch in version 2.0"
+        );
     }
 
     #[test]
