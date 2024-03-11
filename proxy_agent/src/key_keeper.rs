@@ -9,6 +9,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{path::PathBuf, thread, time::Duration};
@@ -137,10 +138,21 @@ fn poll_secure_channel_status(
             Ok(s) => status = s,
             Err(e) => {
                 let message: String = format!("Failed to get key status: {:?}", e);
-                unsafe {
-                    *STATUS_MESSAGE = message.to_string();
+                logger::write_warning(message.to_string());
+
+                let set_status_message;
+                if e.kind() == ErrorKind::Interrupted {
+                    // Interrupted error can be retried, set the failure message after the timeout
+                    set_status_message = helpers::get_elapsed_time_in_millisec()
+                        > FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS;
+                } else {
+                    set_status_message = true;
                 }
-                logger::write_warning(message);
+                if set_status_message {
+                    unsafe {
+                        *STATUS_MESSAGE = message.to_string();
+                    }
+                }
                 continue;
             }
         };
