@@ -119,7 +119,6 @@ pub fn start(local_port: u16) -> bool {
             logger::AGENT_LOGGER_KEY,
         );
     }
-    logger::write(message.to_string());
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
