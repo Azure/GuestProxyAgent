@@ -1,7 +1,8 @@
 pub mod event_logger;
+pub mod span;
 
-use serde_derive::{Deserialize, Serialize};
 use crate::misc_helpers;
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -32,10 +33,15 @@ impl Event {
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     #[test]
     fn test_telemetry_new() {
-        let event = super::Event::new("Critical".to_string(), "test message".to_string(), "test task name".to_string(), "test operation id".to_string());
+        let event = super::Event::new(
+            "Critical".to_string(),
+            "test message".to_string(),
+            "test task name".to_string(),
+            "test operation id".to_string(),
+        );
         assert_eq!(event.EventLevel, "Critical".to_string());
         assert_eq!(event.Message, "test message".to_string());
         assert_eq!(event.TaskName, "test task name".to_string());

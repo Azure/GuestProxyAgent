@@ -181,12 +181,8 @@ fn poll_secure_channel_status(
                             Ok(key) => {
                                 // update in memory
                                 *CURRENT_KEY = key;
-                                let message = helpers::get_task_elapsed_message(
+                                let message = helpers::write_startup_event(
                                     "Found key details from local and ready to use.",
-                                );
-                                event_logger::write_event(
-                                    event_logger::INFO_LEVEL,
-                                    message.to_string(),
                                     "poll_secure_channel_status",
                                     "key_keeper",
                                     logger::AGENT_LOGGER_KEY,
@@ -256,12 +252,8 @@ fn poll_secure_channel_status(
                             Ok(()) => {
                                 // update in memory
                                 *CURRENT_KEY = key;
-                                let message = helpers::get_task_elapsed_message(
+                                helpers::write_startup_event(
                                     "Successfully attest the key and ready to use.",
-                                );
-                                event_logger::write_event(
-                                    event_logger::INFO_LEVEL,
-                                    message.to_string(),
                                     "poll_secure_channel_status",
                                     "key_keeper",
                                     logger::AGENT_LOGGER_KEY,
@@ -290,12 +282,8 @@ fn poll_secure_channel_status(
 
                 // customer has not enforce the secure channel state
                 if state == DISABLE_STATE {
-                    let message = helpers::get_task_elapsed_message(
+                    let message = helpers::write_startup_event(
                         "Customer has not enforce the secure channel state.",
-                    );
-                    event_logger::write_event(
-                        event_logger::INFO_LEVEL,
-                        message.to_string(),
                         "poll_secure_channel_status",
                         "key_keeper",
                         logger::AGENT_LOGGER_KEY,

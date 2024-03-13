@@ -105,11 +105,20 @@ pub fn start(local_port: u16) -> bool {
 
     let message;
     if iptable_redirect {
-        message = helpers::get_task_elapsed_message("Started Redirector with iptables redirection");
+        message = helpers::write_startup_event(
+            "Started Redirector with iptables redirection",
+            "start",
+            "redirector/linux",
+            logger::AGENT_LOGGER_KEY,
+        );
     } else {
-        message = helpers::get_task_elapsed_message("Started Redirector with cgroup redirection");
+        message = helpers::write_startup_event(
+            "Started Redirector with cgroup redirection",
+            "start",
+            "redirector/linux",
+            logger::AGENT_LOGGER_KEY,
+        );
     }
-    logger::write(message.to_string());
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
