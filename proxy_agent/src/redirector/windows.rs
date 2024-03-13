@@ -18,7 +18,8 @@ use std::ptr;
 use windows_sys::Win32::Networking::WinSock;
 
 static mut IS_STARTED: bool = false;
-static mut STATUS_MESSAGE: Lazy<String> = Lazy::new(|| String::from("Redirector has not started yet."));
+static mut STATUS_MESSAGE: Lazy<String> =
+    Lazy::new(|| String::from("Redirector has not started yet."));
 
 pub fn start(local_port: u16) -> bool {
     match bpf_prog::init() {
@@ -117,7 +118,12 @@ pub fn start(local_port: u16) -> bool {
         IS_STARTED = true;
     }
 
-    let message = helpers::get_task_elapsed_message("Started Redirector with eBPF maps");
+    let message = helpers::write_startup_event(
+        "Started Redirector with eBPF maps",
+        "start",
+        "redirector",
+        logger::AGENT_LOGGER_KEY,
+    );
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }

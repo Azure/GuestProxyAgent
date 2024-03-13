@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
+use proxy_agent_shared::telemetry::span::SimpleSpan;
 use std::io::{Error, ErrorKind};
-use std::time::Instant;
 
 #[cfg(not(windows))]
 use sysinfo::{System, SystemExt};
@@ -80,18 +80,14 @@ pub fn xml_escape(s: String) -> String {
         .replace(">", "&gt;")
 }
 
-static START: Lazy<Instant> = Lazy::new(|| Instant::now());
+static START: Lazy<SimpleSpan> = Lazy::new(|| SimpleSpan::new());
 
 pub fn get_elapsed_time_in_millisec() -> u128 {
-    START.elapsed().as_millis()
+    START.get_elapsed_time_in_millisec()
 }
 
-pub fn get_task_elapsed_message(task: &str) -> String {
-    format!(
-        "{{\"elapsed\":{}, \"task\":\"{}\"}}",
-        get_elapsed_time_in_millisec(),
-        task
-    )
+pub fn write_startup_event(task: &str, method_name: &str, module_name: &str, logger_key: &str) ->String{
+    START.write_event(task, method_name, module_name, logger_key)
 }
 
 #[cfg(test)]

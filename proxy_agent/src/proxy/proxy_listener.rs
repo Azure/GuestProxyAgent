@@ -61,18 +61,15 @@ fn start(port: u16, pool_size: u16) {
         }
     }
 
-    let message =
-        helpers::get_task_elapsed_message("Started proxy listener, ready to accept request");
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
-    event_logger::write_event(
-        event_logger::INFO_LEVEL,
-        message,
+    let message = helpers::write_startup_event(
+        "Started proxy listener, ready to accept request",
         "start",
         "proxy_listener",
         logger::AGENT_LOGGER_KEY,
     );
+    unsafe {
+        *STATUS_MESSAGE = message.to_string();
+    }
     provision::listener_started();
 
     let pool = ProxyPool::new(pool_size as usize);
