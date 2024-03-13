@@ -49,8 +49,7 @@ impl SimpleSpan {
 
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
-    use serde::Serialize;
+    use serde_derive::{Deserialize, Serialize};
     use std::thread::sleep;
     use std::time::Duration;
 
