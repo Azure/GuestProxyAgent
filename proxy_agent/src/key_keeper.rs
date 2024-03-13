@@ -21,6 +21,7 @@ pub const MUST_SIG_WIRESERVER_IMDS: &str = "wireserverandimds";
 const UNKNOWN_STATE: &str = "Unknown";
 static FREQUENT_PULL_INTERVAL: Duration = Duration::from_secs(1); // 1 second
 const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
+const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 static mut CURRENT_SECURE_CHANNEL_STATE: Lazy<String> = Lazy::new(|| String::from(UNKNOWN_STATE)); // state starts from Unknown
@@ -98,6 +99,7 @@ fn poll_secure_channel_status(
 
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
+    let mut provision_timeup: bool = false;
     let shutdown = SHUT_DOWN.clone();
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -125,10 +127,17 @@ fn poll_secure_channel_status(
         }
         first_iteration = false;
 
+        if !provision_timeup
+            && helpers::get_elapsed_time_in_millisec() > PROVISION_TIMEUP_IN_MILLISECONDS
+        {
+            provision::provision_timeup(None);
+            provision_timeup = true;
+        }
+
         if !started_event_threads
             && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
         {
-            provision::start_event_threads(false, None);
+            provision::start_event_threads();
             started_event_threads = true;
         }
 
