@@ -126,7 +126,7 @@ fn monitor_thread() {
                 // Time taken to update proxy agent service
                 telemetry::span::SimpleSpan::write_event(
                     &proxy_agent_update_command,
-                        "Update Proxy Agent command compelted",
+                    "Update Proxy Agent command completed",
                     "monitor_thread",
                     "service_main",
                     logger_key,
