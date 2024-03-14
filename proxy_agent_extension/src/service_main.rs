@@ -79,6 +79,7 @@ fn monitor_thread() {
     let mut status_state_obj = common::StatusState::new();
     let logger_key: &String = &logger::get_logger_key();
     let mut restored_in_error = false;
+    let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
     loop {
         let current_seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         if cache_seq_no != current_seq_no {
@@ -112,6 +113,8 @@ fn monitor_thread() {
                 let mut install_command = Command::new(&setup_tool);
                 // Set the current directory to the directory of the current executable for the setup tool to work properly
                 install_command.current_dir(misc_helpers::get_current_exe_dir());
+                let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
+                proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new()); 
                 install_command.arg("install");
                 let output = install_command.output();
                 report_proxy_agent_service_status(
@@ -121,7 +124,13 @@ fn monitor_thread() {
                     &mut status,
                     &mut status_state_obj,
                 );
-
+                // Time taken to update proxy agent service
+                proxy_agent_update_command.write_event(
+                    "Update Proxy Agent command completed",
+                    "monitor_thread",
+                    "service_main",
+                    logger_key,
+                );
             }
         }
         // Read proxy agent aggregate status file and get ProxyAgentAggregateStatus object
@@ -132,6 +141,21 @@ fn monitor_thread() {
             &mut restored_in_error,
         );
 
+        // Time taken to report success for proxy agent service after update
+        if status.status == constants::SUCCESS_STATUS.to_string() {
+            match proxy_agent_update_reported.as_ref() {
+                Some(proxy_agent_update_reported) => {
+                    proxy_agent_update_reported.write_event(
+                        "Proxy Agent Service is updated and reporting successful status",
+                        "monitor_thread",
+                        "service_main",
+                        logger_key
+                    );
+                }
+                None => {}
+            }
+            proxy_agent_update_reported = None;           
+        } 
         #[cfg(windows)] 
         {
             report_ebpf_status(&mut status);
