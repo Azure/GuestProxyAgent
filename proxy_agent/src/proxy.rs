@@ -75,7 +75,7 @@ fn get_process_info(process_id: u32) -> (String, String) {
 
     let pid = Pid::from_u32(process_id);
     unsafe {
-        let cloned_sys = Arc::clone(&CURRENT_SYSTEM);
+        let cloned_sys = Arc::clone(&*CURRENT_SYSTEM);
         let mut sys = cloned_sys.lock().unwrap();
         sys.refresh_processes();
         if let Some(p) = sys.process(pid) {

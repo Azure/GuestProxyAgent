@@ -29,7 +29,7 @@ pub fn listener_started() {
 
 fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
     unsafe {
-        let cloned_state = Arc::clone(&STATE);
+        let cloned_state: Arc<Mutex<u8>> = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
         match cloned_state {
             Ok(mut cloned_state) => {
@@ -53,7 +53,7 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
 
 pub fn provision_timeup(provision_dir: Option<PathBuf>) {
     unsafe {
-        let cloned_state = Arc::clone(&STATE);
+        let cloned_state = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
         match cloned_state {
             Ok(cloned_state) => {
@@ -72,7 +72,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
 
 pub fn start_event_threads() {
     unsafe {
-        let cloned = Arc::clone(&LOGGER_THREADS_INITIALIZED);
+        let cloned = Arc::clone(&*LOGGER_THREADS_INITIALIZED);
         let cloned = cloned.lock();
         match cloned {
             Ok(mut cloned) => {
