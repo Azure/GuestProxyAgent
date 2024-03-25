@@ -1,4 +1,4 @@
-groupName: Ubuntu22
+groupName: Ubuntu24
 vmImagePublisher: canonical
 vmImageOffer: 0001-com-ubuntu-minimal-noble-daily
 vmImageSku: minimal-24_04-daily-lts-gen2
