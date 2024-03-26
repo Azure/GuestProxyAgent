@@ -10,6 +10,7 @@ os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     echo "start installing unzip via apt-get"
+    sudo apt update
     sudo apt-get install unzip
 else
     echo "start installing unzip via yum"
