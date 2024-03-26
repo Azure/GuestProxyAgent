@@ -11,6 +11,7 @@ os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     echo "start installing zip via apt-get"
+    sudo apt update
     sudo apt-get install zip
 else
     echo "start installing zip via yum"
