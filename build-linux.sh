@@ -58,8 +58,8 @@ fi
 # build ebpf program after the proxy_agent_shared is built to let $out_dir created. 
 # build ebpf program for x64_x86 platform
 ebpf_path=$root_path/linux-ebpf
-echo invoking clang -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
-clang -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+echo invoking clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 error_code=$?
 if [ $error_code -ne 0 ]
 then 

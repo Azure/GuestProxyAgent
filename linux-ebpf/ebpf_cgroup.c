@@ -5,56 +5,38 @@
 
 #include "socket.h"
 
-/* a helper structure used by eBPF C program
- * to describe map attributes to elf_bpf loader
- */
-/* error: redefinition of 'bpf_map_def'
-    note: previous definition of 'bpf_map_def' is in <bpf/bpf_helpers.h>
-    if you build failed could not find bpf_map_def,
-    please comment out this struct.
-struct bpf_map_def
+struct
 {
-    unsigned int type;
-    unsigned int key_size;
-    unsigned int value_size;
-    unsigned int max_entries;
-    unsigned int map_flags;
-    unsigned int inner_map_idx;
-    unsigned int numa_node;
-};
-*/
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, sock_addr_skip_process_entry);
+    __type(value, sock_addr_skip_process_entry);
+    __uint(max_entries, 10);
+} skip_process_map SEC(".maps");
 
-SEC("maps")
-struct bpf_map_def skip_process_map = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(sock_addr_skip_process_entry),
-    .value_size = sizeof(sock_addr_skip_process_entry),
-    .max_entries = 10,
-};
+struct
+{
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, destination_entry);
+    __type(value, destination_entry);
+    __uint(max_entries, 10);
+} policy_map SEC(".maps");
 
-SEC("maps")
-struct bpf_map_def policy_map = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(destination_entry),
-    .value_size = sizeof(destination_entry),
-    .max_entries = 10,
-};
+struct
+{
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __type(key, sock_addr_aduit_key);     // source port and protocol
+    __type(value, sock_addr_audit_entry); // audit entry
+    __uint(max_entries, 200);             // some older kernel version cannot support over 200 entries.
+} audit_map SEC(".maps");
 
-SEC("maps")
-struct bpf_map_def audit_map = {
-    .type = BPF_MAP_TYPE_LRU_HASH,           // d
-    .key_size = sizeof(sock_addr_aduit_key), // source port and protocol
-    .value_size = sizeof(sock_addr_audit_entry),
-    .max_entries = 200,                     // some older kernel version cannot support over 200 entries.
-};
+struct
+{
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __type(key, __u64);                   // socket cookie or pid-tgid
+    __type(value, sock_addr_local_entry); // audit local entry
+    __uint(max_entries, 200);             // some older kernel version cannot support over 200 entries.
+} local_map SEC(".maps");
 
-SEC("maps")
-struct bpf_map_def local_map = {
-    .type = BPF_MAP_TYPE_LRU_HASH,               //
-    .key_size = sizeof(__u64),                   // socket cookie or pid-tgid
-    .value_size = sizeof(sock_addr_local_entry), // audit local entry
-    .max_entries = 200,                     // some older kernel version cannot support over 200 entries.
-};
 
 /*
     check the current pid in the skip_process map.
