@@ -261,11 +261,6 @@ fn handle_connection(connection: &mut Connection) {
         constants::DATE_HEADER.to_string(),
         misc_helpers::get_date_time_rfc1123_string(),
     );
-    // TODO: host has bug,
-    // will need remove Metadata header for the proxied requests.
-    request
-        .headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True".to_string());
 
     if request.need_skip_sig() {
         // skip the signature and send the request headers to host now
