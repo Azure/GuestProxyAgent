@@ -4,3 +4,5 @@ ln -sf /usr/lib/azure-proxy-agent/package/GuestProxyAgent /usr/sbin/azure-proxy-
 systemctl daemon-reload
 systemctl start GuestProxyAgent.service
 systemctl enable GuestProxyAgent.service
+
+#DEBHELPER#
