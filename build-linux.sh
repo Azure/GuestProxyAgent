@@ -32,6 +32,7 @@ fi
 # rustup component add rust-std-x86_64-unknown-linux-musl
 rustup component add rust-std-x86_64-unknown-linux-musl
 rustup update stable
+cargo install cargo-deb
 
 # build proxy_agent_shared
 cargo_toml=$root_path/proxy_agent_shared/Cargo.toml
@@ -212,19 +213,23 @@ echo "Generating deb package -------------- "
 rm -rf debbuild
 mkdir debbuild
 pushd debbuild
-    mkdir -p DEBIAN lib/systemd/system usr/lib/azure-proxy-agent/Package_${pkgversion}
+    mkdir -p DEBIAN src
     cp -rf $rootdir/debian/* ./DEBIAN/
-    cp -f $out_package_proxyagent_dir/GuestProxyAgent ./usr/lib/azure-proxy-agent/Package_${pkgversion}/
-    cp -f $out_package_proxyagent_dir/GuestProxyAgent.json ./usr/lib/azure-proxy-agent/Package_${pkgversion}/
-    cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./usr/lib/azure-proxy-agent/Package_${pkgversion}/
-    cp -f $out_package_dir/GuestProxyAgent.service ./lib/systemd/system/
+    cp -rf $rootdir/proxy_agent/Cargo.toml ./Cargo.toml
+    cp -rf $rootdir/proxy_agent/src/* ./src/    # cargo deb --no-build command still requires ./src/main.rs
+    cp -f $out_package_proxyagent_dir/GuestProxyAgent ./
+    cp -f $out_package_proxyagent_dir/GuestProxyAgent.json ./
+    cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./
+    cp -f $out_package_dir/GuestProxyAgent.service ./DEBIAN/
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  # replace pkgversion with actual version
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  # replace pkgversion with actual version
-    dpkg-deb --build --root-owner-group ./ $out_package_dir/azure-proxy-agent-${pkgversion}-0.x86_64.deb
+    sed -i "s/pkgversion/${pkgversion}/g" Cargo.toml  # replace pkgversion with actual version
+    echo cargo deb -v --manifest-path $rootdir/debbuild/Cargo.toml --no-build -o $out_package_dir --target $build_target
+    cargo deb -v --manifest-path $rootdir/debbuild/Cargo.toml --no-build -o $out_package_dir --target $build_target
     error_code=$?
     if [ $error_code -ne 0 ]
     then 
-        echo "dpkg-deb failed with exit-code: $error_code"
+        echo "cargo deb: failed with exit-code: $error_code"
         exit $error_code
     fi
 popd
