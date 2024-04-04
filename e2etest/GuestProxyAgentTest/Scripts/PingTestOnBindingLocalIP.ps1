@@ -2,6 +2,7 @@ try {
     $localIP = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias Ethernet)[0].IPAddress.ToString()
     $url = "http://169.254.169.254/metadata/instance?api-version=2020-06-01"
     $webRequest = [System.Net.HttpWebRequest]::Create($url)
+    $webRequest.Headers.Add("Metadata", "True")
     $webRequest.ServicePoint.BindIPEndPointDelegate = {
         return New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($localIP), 0)
     }
