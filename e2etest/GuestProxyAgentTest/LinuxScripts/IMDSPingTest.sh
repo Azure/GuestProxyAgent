@@ -11,6 +11,14 @@ for i in {1..10}; do
         exit -1
     fi
     sleep 1
+    authorizationHeader=$(curl -s -I -H "Metadata:True" $url | grep -Fi "x-ms-azure-host-authorization")
+    if [ "$authorizationHeader" = "" ]; then
+        echo "Response authorization header not exist"
+        exit -1
+    else
+        echo "Response authorization header exists"
+    fi
+    sleep 1
 done
 
 exit 0
