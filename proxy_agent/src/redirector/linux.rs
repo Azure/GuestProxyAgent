@@ -10,7 +10,6 @@ use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
     destination_entry, sock_addr_aduit_key, sock_addr_audit_entry, sock_addr_skip_process_entry,
 };
-use interfaces::InterfaceFlags;
 use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
@@ -183,37 +182,53 @@ fn update_skip_process_map(bpf: &mut Bpf) -> bool {
 }
 
 fn get_local_ip() -> Option<String> {
-    match interfaces::Interface::get_all() {
-        Ok(interfaces) => {
-            for nic in interfaces {
-                if nic.is_running()
-                    && nic.is_up()
-                    && !nic.is_loopback()
-                    && nic.flags.contains(InterfaceFlags::IFF_BROADCAST)
-                {
-                    // need to filter out the bridge interface
-                    let bridge_path = PathBuf::from("/sys/class/net/")
-                        .join(nic.name.to_string())
-                        .join("bridge");
-                    if bridge_path.exists() {
-                        continue;
-                    }
-
-                    for ip in nic.addresses.iter() {
-                        if ip.kind == interfaces::Kind::Ipv4 {
-                            match ip.addr {
-                                Some(addr) => {
-                                    return Some(addr.ip().to_string());
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    let network_interfaces = match nix::ifaddrs::getifaddrs() {
+        Ok(interfaces) => interfaces,
         Err(err) => {
             set_error_status(format!("Failed to get local ip with error: {}", err));
+            return None;
+        }
+    };
+
+    for nic in network_interfaces {
+        if nic
+            .flags
+            .contains(nix::net::if_::InterfaceFlags::IFF_LOOPBACK)
+        {
+            continue;
+        }
+        if nic.flags.contains(nix::net::if_::InterfaceFlags::IFF_UP) == false {
+            continue;
+        }
+        if nic
+            .flags
+            .contains(nix::net::if_::InterfaceFlags::IFF_RUNNING)
+            == false
+        {
+            continue;
+        }
+        if nic
+            .flags
+            .contains(nix::net::if_::InterfaceFlags::IFF_BROADCAST)
+            == false
+        {
+            continue;
+        }
+        // need to filter out the bridge interface
+        let bridge_path = PathBuf::from("/sys/class/net/")
+            .join(nic.interface_name.to_string())
+            .join("bridge");
+        if bridge_path.exists() {
+            continue;
+        }
+
+        match nic.address {
+            Some(addr) => {
+                if let Some(socketAddr) = addr.as_sockaddr_in() {
+                    return Some(socketAddr.ip().to_string());
+                }
+            }
+            _ => {}
         }
     }
 
