@@ -252,30 +252,36 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
         }
         let mut count = 0;
         loop {
+            if process {
+                logger::write("ProxyAgentExt process running".to_string());
+                break;
+            }
             if count > constants::SERVICE_START_RETRY_COUNT {
                 common::report_status_enable_command(
                     status_folder.to_path_buf(),
                     config_seq_no,
                     Some(constants::ERROR_STATUS.to_string()),
                 );
+                logger::write(format!(
+                    "service start retry count: {}",
+                    constants::SERVICE_START_RETRY_COUNT
+                ));
                 process::exit(constants::EXIT_CODE_SERVICE_START_ERR);
             } else {
                 // start the process GuestProxyAgentVMExtension if process not started
-                if !process_running {
-                    let exe_path = misc_helpers::get_current_exe_dir();
-                    let service_exe_path = exe_path.join(constants::EXTENSION_PROCESS_NAME);
-                    match Command::new(service_exe_path).spawn() {
-                        Ok(child) => {
-                            let pid = child.id();
-                            logger::write(format!(
-                                "ProxyAgentExt started with pid: {}, do not start new one.",
-                                pid
-                            ));
-                            break;
-                        }
-                        Err(e) => {
-                            logger::write(format!("error in starting ProxyAgentExt: {:?}", e));
-                        }
+                let exe_path = misc_helpers::get_current_exe_dir();
+                let service_exe_path = exe_path.join(constants::EXTENSION_PROCESS_NAME);
+                match Command::new(service_exe_path).spawn() {
+                    Ok(child) => {
+                        let pid = child.id();
+                        logger::write(format!(
+                            "ProxyAgentExt started with pid: {}, do not start new one.",
+                            pid
+                        ));
+                        break;
+                    }
+                    Err(e) => {
+                        logger::write(format!("error in starting ProxyAgentExt: {:?}", e));
                     }
                 }
             }
@@ -296,7 +302,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
 }
 
 #[cfg(not(windows))]
-fn get_linux_extension_process() -> Option<Pid> {
+fn get_linux_extension_long_running_process() -> Option<Pid> {
     // check if the process GuestProxyAgentVMExtension running AND without parameters
     let mut system = System::new();
     system.refresh_processes();
