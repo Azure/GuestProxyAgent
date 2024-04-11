@@ -523,6 +523,18 @@ mod tests {
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push(config::get_ebpf_program_name());
         let bpf = super::open_ebpf_file(bpf_file_path);
+        match bpf {
+            Ok(_) => {}
+            Err(err) => {
+                println!("open_ebpf_file error: {}", err);
+                if std::fs::metadata("/.dockerenv").is_ok() {
+                    println!("This docker image does not have BPF capacity, skip this test.");
+                    return;
+                } else {
+                    assert!(false, "open_ebpf_file should not return Err");
+                }
+            }
+        }
         assert!(bpf.is_ok(), "open_ebpf_file should return Ok");
         let mut bpf = bpf.unwrap();
 
