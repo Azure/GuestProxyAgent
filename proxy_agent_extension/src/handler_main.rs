@@ -252,7 +252,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
         }
         let mut count = 0;
         loop {
-            if process {
+            if process_running {
                 logger::write("ProxyAgentExt process running".to_string());
                 break;
             }
@@ -262,10 +262,6 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
                     config_seq_no,
                     Some(constants::ERROR_STATUS.to_string()),
                 );
-                logger::write(format!(
-                    "service start retry count: {}",
-                    constants::SERVICE_START_RETRY_COUNT
-                ));
                 process::exit(constants::EXIT_CODE_SERVICE_START_ERR);
             } else {
                 // start the process GuestProxyAgentVMExtension if process not started
