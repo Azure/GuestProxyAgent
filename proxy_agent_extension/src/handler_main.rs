@@ -321,7 +321,7 @@ fn disable_handler() {
     }
     #[cfg(not(windows))]
     {
-        match get_linux_extension_process() {
+        match get_linux_extension_long_running_process() {
             Some(pid) => {
                 let output =
                     misc_helpers::execute_command("kill", vec!["-9", &pid.to_string()], -1);
