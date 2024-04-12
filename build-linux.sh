@@ -155,7 +155,7 @@ dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configu
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
-    echo "cargo dotnet build failed with exit-code: $error_code"
+    echo "dotnet build failed with exit-code: $error_code"
     exit $error_code
 fi
 
