@@ -208,6 +208,7 @@ for %%F in (%extension_src_path%\*.cmd) do (
 xcopy /Y %out_dir%\ProxyAgentExt.exe %out_package_proxyagent_extension_dir%\
 
 echo ======= copy e2e test project to Package folder
+echo xcopy /Y /S /C /Q %out_dir%\e2etest\ %out_package_dir%\e2etest\
 xcopy /Y /S /C /Q %out_dir%\e2etest\ %out_package_dir%\e2etest\
 
 echo ======= run binskim command
