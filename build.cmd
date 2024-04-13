@@ -3,6 +3,7 @@ SET root_path=%~dp0
 SET out_path=%root_path%out
 set Configuration=%1
 set CleanBuild=%2
+set ContinueAtConvertBpfToNative=%3
 if "%Configuration%"=="" (SET Configuration=debug)
 echo Configuration=%Configuration%
 echo out_path=%out_path%
@@ -63,7 +64,10 @@ echo call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -Ou
 call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir %out_dir% -FileName redirect.bpf.o -IncludeDir %eBPF_for_Windows_inc_path%
 if  %ERRORLEVEL% NEQ 0 (
     echo call Convert-BpfToNative.ps1 failed with exit-code: %errorlevel%
-    exit /b %errorlevel%
+    if "%ContinueAtConvertBpfToNative%"=="" (
+        exit /b %errorlevel%
+    )
+    echo Skip the error and continue to build other projects
 )
 REM copy redirect.bpf.sys
 xcopy /Y %out_dir%\redirect.bpf.sys %out_package_proxyagent_dir%\
