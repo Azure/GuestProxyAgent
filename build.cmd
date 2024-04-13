@@ -178,13 +178,14 @@ if  %ERRORLEVEL% NEQ 0 (
 )
 
 echo ======= build e2e test project
-echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_dir%\e2etest
-call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_dir%\e2etest
+SET out_e2etest_dir=%out_dir%\e2etest
+echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
 if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe build failed with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
-dir /S /B %out_dir%\e2etest\
+dir /S /B %out_e2etest_dir%\
 
 echo ======= copy setup tool to Package folder
 xcopy /Y %out_dir%\proxy_agent_setup.exe %out_package_dir%\
@@ -208,8 +209,9 @@ for %%F in (%extension_src_path%\*.cmd) do (
 xcopy /Y %out_dir%\ProxyAgentExt.exe %out_package_proxyagent_extension_dir%\
 
 echo ======= copy e2e test project to Package folder
-echo xcopy /Y /S /C /Q %out_dir%\e2etest\ %out_package_dir%\e2etest\
-xcopy /Y /S /C /Q %out_dir%\e2etest\ %out_package_dir%\e2etest\
+SET out_package_e2etest_dir=%out_package_dir%\e2etest
+echo xcopy /Y /S /C /Q %out_e2etest_dir%\ %out_package_e2etest_dir%\
+xcopy /Y /S /C /Q %out_e2etest_dir%\ %out_package_e2etest_dir%\
 
 echo ======= run binskim command
 call %bin_skim_path%\BinSkim.exe analyze %out_package_proxyagent_dir%\GuestProxyAgent.exe --output %out_package_proxyagent_dir%\GuestProxyAgent.exe.binskim.json --rich-return-code=true --force
