@@ -212,7 +212,7 @@ echo ======= copy e2e test project to Package folder
 SET out_package_e2etest_dir=%out_package_dir%\e2etest
 if not exist "%out_package_e2etest_dir%" (md "%out_package_e2etest_dir%")
 echo xcopy /Y /S /C /Q %out_e2etest_dir%\ %out_package_e2etest_dir%\
-xcopy /Y /S /C /Q %out_e2etest_dir%\ %out_package_e2etest_dir%\
+xcopy /Y /S /C /Q %out_e2etest_dir% %out_package_e2etest_dir%\
 
 echo ======= run binskim command
 call %bin_skim_path%\BinSkim.exe analyze %out_package_proxyagent_dir%\GuestProxyAgent.exe --output %out_package_proxyagent_dir%\GuestProxyAgent.exe.binskim.json --rich-return-code=true --force
