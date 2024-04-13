@@ -184,6 +184,7 @@ if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe build failed with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
+dir /S /B %out_dir%\e2etest\
 
 echo ======= copy setup tool to Package folder
 xcopy /Y %out_dir%\proxy_agent_setup.exe %out_package_dir%\
@@ -198,7 +199,7 @@ xcopy /Y %out_dir%\EbpfApi.pdb %out_package_proxyagent_dir%\
 
 SET out_package_proxyagent_extension_dir="%out_package_dir%"\ProxyAgent_Extension
 if not exist "%out_package_proxyagent_extension_dir%" (md "%out_package_proxyagent_extension_dir%")
-echo ======= copy cmd files
+echo ======= copy ProxyAgent Extension files
 xcopy /Y %extension_src_path%\HandlerManifest.json %out_package_proxyagent_extension_dir%\
 for %%F in (%extension_src_path%\*.cmd) do (
     echo Found file: %%F
