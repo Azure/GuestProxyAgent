@@ -39,7 +39,7 @@ if not exist "%out_path%" (md "%out_path%")
 if not exist "%out_dir%" (md "%out_dir%")
 
 echo ======= Prepare out-package folder structure
-SET out_package_dir="%out_dir%"\package
+SET out_package_dir=%out_dir%\package
 if not exist "%out_package_dir%" (md "%out_package_dir%")
 SET out_package_proxyagent_dir="%out_package_dir%"\ProxyAgent
 if not exist "%out_package_proxyagent_dir%" (md "%out_package_proxyagent_dir%")
@@ -197,7 +197,7 @@ xcopy /Y %out_dir%\GuestProxyAgent.json %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\EbpfApi.dll %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\EbpfApi.pdb %out_package_proxyagent_dir%\
 
-SET out_package_proxyagent_extension_dir="%out_package_dir%"\ProxyAgent_Extension
+SET out_package_proxyagent_extension_dir=%out_package_dir%\ProxyAgent_Extension
 if not exist "%out_package_proxyagent_extension_dir%" (md "%out_package_proxyagent_extension_dir%")
 echo ======= copy ProxyAgent Extension files
 xcopy /Y %extension_src_path%\HandlerManifest.json %out_package_proxyagent_extension_dir%\
