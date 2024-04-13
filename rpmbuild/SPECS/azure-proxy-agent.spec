@@ -2,7 +2,7 @@
 
 Name:           azure-proxy-agent
 Version:        %{pkgversion}
-Release:        0%{?dist}
+Release:        0
 Summary:        Azure Proxy Agent
 
 License:        MIT
@@ -38,4 +38,4 @@ chcon -t bin_t /usr/lib/azure-proxy-agent/package/GuestProxyAgent
 /usr/lib/azure-proxy-agent/Package_%{version}/ebpf_cgroup.o
 
 %changelog
-- Initial release 
+* Initial release 

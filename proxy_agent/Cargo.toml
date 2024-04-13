@@ -33,7 +33,12 @@ sysinfo = "0.27.7"            # read process information for Linux
 aya = "0.12.0"                # linux ebpf program loader
 users = "0.11.0"              # get user name
 libc = "0.2.147"              # linux call
-interfaces = "0.0.9"          # get local nic and ipv4 address
+
+[target.'cfg(not(windows))'.dependencies.nix]
+version = "0.28.0"
+features = [
+  "net"
+]
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.5.0"     # windows NT service
@@ -58,4 +63,22 @@ features = [
   "Win32_System_Threading",
   "Win32_System_ProcessStatus",
   "Win32_System_Kernel",
+]
+
+[package.metadata.deb]
+name = "azure-proxy-agent"
+revision = "0"
+maintainer = "AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>"
+copyright = "2024, AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>"
+license-file = ["../LICENSE", "4"]
+extended-description = """\
+The Azure Guest Proxy Agent is a daemon that runs on the Azure guest \
+operating system and provides a proxy for the Azure Fabric Controller \
+to communicate with the guest operating system."""
+maintainer-scripts = "DEBIAN"
+systemd-units = { enable = true }
+assets = [
+    ["GuestProxyAgent", "usr/lib/azure-proxy-agent/Package_pkgversion/GuestProxyAgent", "755"],  # Binary
+    ["GuestProxyAgent.json", "usr/lib/azure-proxy-agent/Package_pkgversion/GuestProxyAgent.json", "644"],
+    ["ebpf_cgroup.o", "usr/lib/azure-proxy-agent/Package_pkgversion/ebpf_cgroup.o", "644"],
 ]

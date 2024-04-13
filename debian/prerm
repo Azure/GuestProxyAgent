@@ -4,3 +4,5 @@ systemctl daemon-reload
 
 rm -r /usr/sbin/azure-proxy-agent
 rm -r /usr/lib/azure-proxy-agent/package
+
+#DEBHELPER#

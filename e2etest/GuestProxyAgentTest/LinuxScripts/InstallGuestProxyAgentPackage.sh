@@ -31,8 +31,8 @@ pkgversion=$($currentDir/ProxyAgent/ProxyAgent/GuestProxyAgent --version)
 echo "start install & start guest-proxy-agent package"
 if [[ $os == *"Ubuntu"* ]]; then
     sudo apt-get -f install
-    sudo dpkg -i $currentDir/ProxyAgent/packages/azure-proxy-agent-${pkgversion}-0.x86_64.deb
+    sudo dpkg -i $currentDir/ProxyAgent/packages/*.deb
 else
-    sudo rpm -i $currentDir/ProxyAgent/packages/azure-proxy-agent-${pkgversion}-0.x86_64.rpm
+    sudo rpm -i $currentDir/ProxyAgent/packages/*.rpm
 fi
 
