@@ -10,7 +10,7 @@ pub struct ProxySummary {
     pub port: u16,
     pub userId: u64,
     pub userName: String,
-    pub processNmae: String,
+    pub processName: String,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub responseStatus: String,
@@ -25,7 +25,7 @@ impl ProxySummary {
             self.clientIp.to_string(),
             self.ip.to_string(),
             self.port,
-            self.processNmae.to_string(),
+            self.processName.to_string(),
             self.processCmdLine.to_string(),
             self.responseStatus.to_string()
         )
