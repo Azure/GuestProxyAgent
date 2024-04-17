@@ -1,8 +1,32 @@
 use super::event_logger;
+use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
 
 pub struct SimpleSpan {
     start: Instant,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ElapsedMessage {
+    elapsed: u128,
+    message: String,
+}
+
+impl ElapsedMessage {
+    fn new(elapsed: u128, message: String) -> Self {
+        ElapsedMessage { elapsed, message }
+    }
+
+    fn to_json_string(&self) -> String {
+        format!(
+            "{{\"elapsed\":{}, \"message\":\"{}\"}}",
+            self.elapsed, self.message
+        )
+    }
+
+    fn to_string(&self) -> String {
+        format!("{} - {}", self.message, self.elapsed)
+    }
 }
 
 impl SimpleSpan {
@@ -20,12 +44,10 @@ impl SimpleSpan {
         self.start.elapsed().as_millis()
     }
 
-    pub fn get_elapsed_message(&self, message: &str) -> String {
-        format!(
-            "{{\"elapsed\":{}, \"task\":\"{}\"}}",
-            self.get_elapsed_time_in_millisec(),
-            message
-        )
+    pub fn get_elapsed_json_message(&self, message: &str) -> String {
+        let elapsed_massage =
+            ElapsedMessage::new(self.get_elapsed_time_in_millisec(), message.to_string());
+        elapsed_massage.to_json_string()
     }
 
     pub fn write_event(
@@ -35,29 +57,23 @@ impl SimpleSpan {
         module_name: &str,
         logger_key: &str,
     ) -> String {
-        let message = self.get_elapsed_message(&message);
+        let elapsed_massage =
+            ElapsedMessage::new(self.get_elapsed_time_in_millisec(), message.to_string());
         event_logger::write_event(
             event_logger::INFO_LEVEL,
-            message.to_string(),
+            elapsed_massage.to_json_string(),
             method_name,
             module_name,
             logger_key,
         );
-        message
+        elapsed_massage.to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_derive::{Deserialize, Serialize};
     use std::thread::sleep;
     use std::time::Duration;
-
-    #[derive(Serialize, Deserialize)]
-    struct ElapsedMessage {
-        elapsed: u128,
-        task: String,
-    }
 
     #[test]
     fn span_test() {
@@ -67,9 +83,9 @@ mod tests {
         assert!(elapsed > 0);
         let duration = Duration::from_millis(100);
         sleep(duration);
-        let message: String = span.get_elapsed_message("test");
-        let elapsed_message: ElapsedMessage = serde_json::from_str(&message).unwrap();
-        assert_eq!(elapsed_message.task, "test");
+        let message: String = span.get_elapsed_json_message("test");
+        let elapsed_message: super::ElapsedMessage = serde_json::from_str(&message).unwrap();
+        assert_eq!(elapsed_message.message, "test");
         assert!(elapsed_message.elapsed > duration.as_millis());
 
         span.start_new();

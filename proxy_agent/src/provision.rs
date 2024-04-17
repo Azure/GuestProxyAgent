@@ -114,15 +114,15 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
     let mut status = String::new(); //provision success, write 0 byte to file
     if !provision_success {
         status.push_str(&format!(
-            "keyLatchStatus:{}\r\n",
+            "keyLatchStatus - {}\r\n",
             key_keeper::get_status().message
         ));
         status.push_str(&format!(
-            "ebpfProgramStatus:{}\r\n",
+            "ebpfProgramStatus - {}\r\n",
             redirector::get_status().message
         ));
         status.push_str(&format!(
-            "proxyListenerStatus:{}\r\n",
+            "proxyListenerStatus - {}\r\n",
             proxy_listener::get_status().message
         ));
     }
