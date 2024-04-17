@@ -195,10 +195,13 @@ mod tests {
         unsafe {
             let mut data = MaybeUninit::<*mut LUID>::uninit();
             let mut count: u32 = 1;
-            let _status = Identity::LsaEnumerateLogonSessions(&mut count, data.as_mut_ptr());
+            let status = Identity::LsaEnumerateLogonSessions(&mut count, data.as_mut_ptr());
+            println!("Identity::LsaEnumerateLogonSessions return value: {}", status);
             // get the first LUID
             let uid = *data.assume_init();
+            println!("LUID: {:?} - {:?}", uid.HighPart, uid.LowPart);
             let logon_id: u64 = (uid.HighPart as u64) << 32 | uid.LowPart as u64;
+            println!("LogonId: {}", logon_id);
             let user_name = super::get_user_name(logon_id);
             println!("UserName: {}", user_name);
             assert_ne!(String::new(), user_name, "user_name cannot be empty.");
