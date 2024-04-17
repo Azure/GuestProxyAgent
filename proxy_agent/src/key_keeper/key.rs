@@ -259,7 +259,7 @@ pub fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
     if response.status != Response::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("{} - {}", response.status, response.get_body_as_string()?),
+            format!("Host response {}", response.status),
         ));
     }
 

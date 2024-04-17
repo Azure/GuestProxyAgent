@@ -145,7 +145,14 @@ fn poll_secure_channel_status(
         match key::get_status(base_url.clone()) {
             Ok(s) => status = s,
             Err(e) => {
-                let message: String = format!("Failed to get key status: {:?}", e);
+                let err_string = format!("{:?}", e);
+                let message: String = format!(
+                    "Failed to get key status - {}",
+                    match e.into_inner() {
+                        Some(err) => err.to_string(),
+                        None => err_string,
+                    }
+                );
                 unsafe {
                     *STATUS_MESSAGE = message.to_string();
                 }
