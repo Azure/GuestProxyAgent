@@ -147,7 +147,7 @@ fn poll_secure_channel_status(
             Err(e) => {
                 let err_string = format!("{:?}", e);
                 let message: String = format!(
-                    "Failed to get key status - {:?}",
+                    "Failed to get key status - {}",
                     match e.into_inner() {
                         Some(err) => err.to_string(),
                         None => err_string,
