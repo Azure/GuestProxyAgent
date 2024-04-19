@@ -14,7 +14,8 @@
     "resourceLimits": {   
         "processes": [{ 
             "name": "GuestProxyAgent", 
-            "cpuQuotaPercentage": 0.3
+            "cpuQuotaPercentage": 0.3, 
+            "memoryQuotaInMB": 251394048
         }] 
     }
 }]
