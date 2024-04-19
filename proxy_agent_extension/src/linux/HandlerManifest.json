@@ -10,5 +10,11 @@
         "reportHeartbeat": "true",
         "resetStateCommand": "./reset.sh", 
         "supportMultipleExtensions": "false"
+    }, 
+    "resourceLimits": {   
+        "processes": [{ 
+            "name": "GuestProxyAgent", 
+            "cpuQuotaPercentage": 0.3
+        }] 
     }
 }]
