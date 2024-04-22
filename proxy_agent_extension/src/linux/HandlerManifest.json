@@ -13,8 +13,7 @@
     }, 
     "resourceLimits": {   
         "processes": [{ 
-            "name": "GuestProxyAgent", 
-            "cpuQuotaPercentage": 0.3
+            "name": "GuestProxyAgent"
         }] 
     }
 }]
