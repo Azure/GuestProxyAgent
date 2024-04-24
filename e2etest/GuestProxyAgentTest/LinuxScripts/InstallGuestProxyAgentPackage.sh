@@ -9,12 +9,30 @@ echo "detecting os and installing unzip" #TODO: needs to be revisited if we supp
 os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
-    echo "start installing unzip via apt-get"
-    sudo apt update
-    sudo apt-get install unzip
+    for  i in {1..3}; do
+        echo "start installing unzip via apt-get $i"
+        sudo apt update
+        sudo apt-get install unzip
+        sleep 10
+        install=$(apt list --installed unzip)
+        echo "install=$install"
+        if [[ $install == *"unzip"* ]]; then
+            echo "unzip installed successfully"
+            break
+        fi
+    done
 else
-    echo "start installing unzip via yum"
-    sudo yum -y install unzip
+    for  i in {1..3}; do
+        echo "start installing unzip via yum $i"
+        sudo yum -y install unzip
+        sleep 10
+        install=$(yum list --installed unzip)
+        echo "install=$install"
+        if [[ $install == *"unzip"* ]]; then
+            echo "unzip installed successfully"
+            break
+        fi
+    done
 fi
 
 zipFilePath=$currentDir/guest-proxy-agent.zip
