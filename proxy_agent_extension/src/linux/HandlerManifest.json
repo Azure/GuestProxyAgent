@@ -12,7 +12,7 @@
         "supportMultipleExtensions": "false"
     }, 
     "resourceLimits": {   
-        "processes": [{ 
+        "services": [{  
             "name": "GuestProxyAgent"
         }] 
     }
