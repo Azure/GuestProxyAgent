@@ -152,8 +152,7 @@ impl Process {
                 Ok(_) => {
                     process_full_path =
                         windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
-                    process_full_path =
-                        windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+                    cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
                 }
                 Err(e) => {
                     process_full_path = UNDEFINED.to_string();
