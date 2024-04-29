@@ -10,12 +10,30 @@ echo "detecting os and installing zip" #TODO: needs to be revisited if we suppor
 os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
-    echo "start installing zip via apt-get"
-    sudo apt update
-    sudo apt-get install zip
+    for  i in {1..3}; do
+        echo "start installing zip via apt-get $i"
+        sudo apt update
+        sudo apt-get install zip
+        sleep 10
+        install=$(apt list --installed zip)
+        echo "install=$install"
+        if [[ $install == *"zip"* ]]; then
+            echo "zip installed successfully"
+            break
+        fi
+    done
 else
-    echo "start installing zip via yum"
-    sudo yum -y install zip
+    for  i in {1..3}; do
+        echo "start installing zip via yum $i"
+        sudo yum -y install zip
+        sleep 10
+        install=$(yum list --installed zip)
+        echo "install=$install"
+        if [[ $install == *"zip"* ]]; then
+            echo "zip installed successfully"
+            break
+        fi
+    done
 fi
 
 echo "call zip -r $zipFilePath /var/log/azure-proxy-agent"
