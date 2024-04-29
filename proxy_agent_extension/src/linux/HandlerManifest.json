@@ -10,5 +10,10 @@
         "reportHeartbeat": "true",
         "resetStateCommand": "./reset.sh", 
         "supportMultipleExtensions": "false"
+    }, 
+    "resourceLimits": {   
+        "services": [{  
+            "name": "GuestProxyAgent"
+        }] 
     }
 }]
