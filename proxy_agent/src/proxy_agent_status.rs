@@ -32,7 +32,7 @@ pub fn start_async(interval: Duration) {
 fn start(mut interval: Duration) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
-        interval = Duration::from_secs(60 * 5);
+        interval = Duration::from_secs(60 * 1); // update status every 1 minute
     }
 
     _ = logger::write("proxy_agent_status thread started.".to_string());
@@ -98,6 +98,7 @@ pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSum
         userName: summary.userName.to_string(),
         ip: summary.ip.to_string(),
         port: summary.port,
+        processFullPath: summary.processFullPath.to_string(),
         processCmdLine: summary.processCmdLine.to_string(),
         responseStatus: summary.responseStatus.to_string(),
         count: 1,
