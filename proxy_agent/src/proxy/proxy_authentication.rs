@@ -184,6 +184,7 @@ mod tests {
             userName: "test".to_string(),
             processId: std::process::id(),
             processName: "test".to_string(),
+            processFullPath: "test".to_string(),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -250,6 +251,7 @@ mod tests {
             userName: "test".to_string(),
             processId: std::process::id(),
             processName: "test".to_string(),
+            processFullPath: "test".to_string(),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -274,10 +276,7 @@ mod tests {
 
         #[cfg(not(windows))]
         {
-            let linuxProcessNames = [
-                "vm-application-manager",
-                "immediate-run-command-handler"
-            ];
+            let linuxProcessNames = ["vm-application-manager", "immediate-run-command-handler"];
             for process in linuxProcessNames.iter() {
                 claims.processName = process.to_string();
                 assert!(
@@ -286,9 +285,8 @@ mod tests {
                 );
             }
 
-            let linuxProcessCmdLines = [
-                "python3 -u bin/WALinuxAgent-2.9.1.1-py3.8.egg -run-exthandlers",
-            ];
+            let linuxProcessCmdLines =
+                ["python3 -u bin/WALinuxAgent-2.9.1.1-py3.8.egg -run-exthandlers"];
             for processCmdLine in linuxProcessCmdLines.iter() {
                 claims.processCmdLine = processCmdLine.to_string();
                 assert!(

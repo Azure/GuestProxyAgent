@@ -10,7 +10,7 @@ mod windows;
 use crate::redirector::AuditEntry;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr, path::PathBuf};
 
 #[cfg(not(windows))]
 use std::sync::{Arc, Mutex};
@@ -24,6 +24,7 @@ pub struct Claims {
     pub userName: String,
     pub processId: u32,
     pub processName: String,
+    pub processFullPath: String,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub clientIp: String,
@@ -31,6 +32,7 @@ pub struct Claims {
 
 struct Process {
     pub command_line: String,
+    pub name: String,
     pub exe_full_name: String,
     pub pid: u32,
 }
@@ -97,6 +99,7 @@ impl Claims {
             userName: EMPTY.to_string(),
             processId: 0,
             processName: EMPTY.to_string(),
+            processFullPath: EMPTY.to_string(),
             processCmdLine: EMPTY.to_string(),
             runAsElevated: false,
             clientIp: EMPTY.to_string(),
@@ -109,7 +112,8 @@ impl Claims {
             userId: entry.logon_id,
             userName: get_user_name(entry.logon_id),
             processId: p.pid,
-            processName: p.exe_full_name.to_string(),
+            processName: p.name.to_string(),
+            processFullPath: p.exe_full_name.to_string(),
             processCmdLine: p.command_line.to_string(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
@@ -122,6 +126,7 @@ impl Claims {
             userName: self.userName.to_string(),
             processId: self.processId,
             processName: self.processName.to_string(),
+            processFullPath: self.processFullPath.to_string(),
             processCmdLine: self.processCmdLine.to_string(),
             runAsElevated: self.runAsElevated,
             clientIp: self.clientIp.to_string(),
@@ -131,7 +136,7 @@ impl Claims {
 
 impl Process {
     pub fn from_pid(pid: u32) -> Self {
-        let (name, cmd);
+        let (process_full_path, cmd);
         #[cfg(windows)]
         {
             let handler;
@@ -145,11 +150,12 @@ impl Process {
             let base_info = windows::query_basic_process_info(handler);
             match base_info {
                 Ok(_) => {
-                    name = windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
+                    process_full_path =
+                        windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
                     cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
                 }
                 Err(e) => {
-                    name = UNDEFINED.to_string();
+                    process_full_path = UNDEFINED.to_string();
                     cmd = UNDEFINED.to_string();
                     println!("Failed to query basic process info: {}", e);
                 }
@@ -158,13 +164,19 @@ impl Process {
         #[cfg(not(windows))]
         {
             let process_info = get_process_info(pid);
-            name = process_info.0;
+            process_full_path = process_info.0;
             cmd = process_info.1;
         }
 
+        let exe_path = PathBuf::from(process_full_path.to_string());
         Process {
             command_line: cmd,
-            exe_full_name: name,
+            name: exe_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            exe_full_name: process_full_path,
             pid,
         }
     }
@@ -223,6 +235,15 @@ mod tests {
             String::new(),
             claims.processName,
             "processName cannot be empty."
+        );
+        assert_ne!(
+            String::new(),
+            claims.processFullPath,
+            "processFullPath cannot be empty."
+        );
+        assert_ne!(
+            claims.processName, claims.processFullPath,
+            "processName and processFullPath should not be the same."
         );
         assert_ne!(
             String::new(),
