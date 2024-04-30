@@ -1,5 +1,5 @@
 mod proxy_authentication;
-mod proxy_connection;
+pub mod proxy_connection;
 pub mod proxy_listener;
 mod proxy_pool;
 pub mod proxy_summary;

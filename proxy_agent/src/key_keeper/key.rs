@@ -1,12 +1,17 @@
-use crate::common::{
-    constants,
-    http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
+use crate::{
+    common::{
+        constants,
+        http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
+    },
+    proxy::{proxy_connection::Connection, Claims},
 };
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
-use std::io::{Error, ErrorKind};
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind},
+};
 use url::Url;
-
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -45,7 +50,9 @@ pub struct KeyStatus {
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct AuthorizationRules {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub imds: Option<AuthorizationItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wireserver: Option<AuthorizationItem>,
 }
 
@@ -56,6 +63,195 @@ pub struct AuthorizationItem {
     pub defaultAccess: String,
     // disabled, audit, enforce
     pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privileges: Option<Vec<Privilege>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<Role>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identities: Option<Vec<Identity>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roleAssignments: Option<Vec<RoleAssignment>>,
+}
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Privilege {
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queryParameters: Option<HashMap<String, String>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Role {
+    pub name: String,
+    pub privileges: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Identity {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub userName: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groupName: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exePath: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processName: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct RoleAssignment {
+    pub role: String,
+    pub identities: Vec<String>,
+}
+
+impl Privilege {
+    pub fn clone(&self) -> Self {
+        Privilege {
+            name: self.name.to_string(),
+            path: self.path.to_string(),
+            queryParameters: self.queryParameters.clone(),
+        }
+    }
+
+    pub fn is_match(&self, connection_id: u128, request_url: url::Url) -> bool {
+        Connection::write_information(
+            connection_id,
+            format!("Start to match privilege '{}'", self.name.to_string()),
+        );
+        if request_url.path().to_lowercase().starts_with(&self.path) {
+            Connection::write_information(
+                connection_id,
+                format!("Matched privilege path '{}'", self.path.to_string()),
+            );
+
+            match &self.queryParameters {
+                Some(query_parameters) => {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Start to match query_parameters from privilege '{}'",
+                            self.name.to_string()
+                        ),
+                    );
+
+                    for (key, value) in query_parameters {
+                        match request_url.query_pairs().find(|(k, _)| k == key) {
+                            Some((_, v)) => {
+                                if v.to_lowercase() == value.to_lowercase() {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!(
+                                            "Matched query_parameters '{}:{}' from privilege '{}'",
+                                            key,
+                                            v,
+                                            self.name.to_string()
+                                        ),
+                                    );
+                                } else {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name.to_string()),
+                                    );
+                                    return false;
+                                }
+                            }
+                            None => {
+                                Connection::write_information(
+                                    connection_id,
+                                    format!(
+                                        "Not matched query_parameters key '{}' from privilege '{}'",
+                                        key,
+                                        self.name.to_string()
+                                    ),
+                                );
+                                return false;
+                            }
+                        }
+                    }
+                }
+                None => {}
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
+impl Identity {
+    pub fn clone(&self) -> Self {
+        Identity {
+            name: self.name.to_string(),
+            userName: self.userName.clone(),
+            groupName: self.groupName.clone(),
+            exePath: self.exePath.clone(),
+            processName: self.processName.clone(),
+        }
+    }
+
+    pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
+        Connection::write_information(
+            connection_id,
+            format!("Start to match identity '{}'", self.name.to_string()),
+        );
+        match self.userName {
+            Some(ref user_name) => {
+                if user_name.to_lowercase() == claims.userName.to_lowercase() {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Matched user name '{}' from identity '{}'",
+                            user_name,
+                            self.name.to_string()
+                        ),
+                    );
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched user name '{}' from identity '{}'",
+                            user_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+        match self.processName {
+            Some(ref process_name) => {
+                if process_name.to_lowercase() == claims.processName.to_lowercase() {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Matched process name '{}' from identity '{}'",
+                            process_name,
+                            self.name.to_string()
+                        ),
+                    );
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched process name '{}' from identity '{}'",
+                            process_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+        //TODO: need add exePath, groupName match
+
+        return true;
+    }
 }
 
 impl KeyStatus {
@@ -351,6 +547,9 @@ mod tests {
     use super::Key;
     use super::KeyStatus;
     use crate::common::constants;
+    use crate::key_keeper::key::Identity;
+    use crate::key_keeper::key::Privilege;
+    use crate::proxy::proxy_connection::Connection;
 
     #[test]
     fn key_status_test() {
@@ -393,7 +592,10 @@ mod tests {
             status.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_none(), "secureChannelEnabled must be None in version 1.0");
+        assert!(
+            status.secureChannelEnabled.is_none(),
+            "secureChannelEnabled must be None in version 1.0"
+        );
 
         let status_response = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
@@ -420,9 +622,19 @@ mod tests {
             status.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_some(), "secureChannelEnabled must have value in version 2.0");
-        assert!(status.secureChannelState.is_none(), "secureChannelState must be None in version 2.0");
-        assert_eq!("WireServer Enforce -  IMDS Audit", status.get_secure_channel_state(), "secureChannelState mismatch in version 2.0");
+        assert!(
+            status.secureChannelEnabled.is_some(),
+            "secureChannelEnabled must have value in version 2.0"
+        );
+        assert!(
+            status.secureChannelState.is_none(),
+            "secureChannelState must be None in version 2.0"
+        );
+        assert_eq!(
+            "WireServer Enforce -  IMDS Audit",
+            status.get_secure_channel_state(),
+            "secureChannelState mismatch in version 2.0"
+        );
     }
 
     #[test]
@@ -457,5 +669,67 @@ mod tests {
             key.key,
             "key mismatch"
         );
+    }
+
+    #[test]
+    fn test_privelege_is_match() {
+        // initialize connection_logger 
+        Connection::init_logger(std::path::PathBuf::new());
+
+        let privilege = r#"{
+            "name": "test",
+            "path": "/test",
+            "queryParameters": {
+                "key1": "value1",
+                "key2": "value2"
+            }
+        }"#;
+        let privilege: Privilege = serde_json::from_str(privilege).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(privilege.is_match(1, url.clone()), "privilege should be matched");
+
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value3").unwrap();
+        assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
+
+        // let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
+        // assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
+
+        // let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2&key3=value3").unwrap();
+        // assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
+    }
+
+    #[test]
+    fn test_identity_is_match() {
+        Connection::init_logger(std::path::PathBuf::new());
+
+        let identity = r#"{
+            "name": "test",
+            "userName": "test",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test"
+        }"#;
+        let identity: Identity = serde_json::from_str(identity).unwrap();
+        let claims = super::Claims {
+            userName: "test".to_string(),
+            processName: "test".to_string(),
+            processCmdLine: "test".to_string(),
+            userId: 0,
+            processId: 0,
+            clientIp: "00.000.000".to_string(),
+            runAsElevated: true,
+        };
+        assert!(identity.is_match(1, claims.clone()), "identity should be matched");
+
+        let identity1 = r#"{
+            "name": "test",
+            "userName": "test1",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test"
+        }"#;
+        let identity1: Identity = serde_json::from_str(identity1).unwrap();
+        assert!(!identity1.is_match(1, claims.clone()), "identity should not be matched");
+
     }
 }
