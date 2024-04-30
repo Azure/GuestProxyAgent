@@ -46,11 +46,26 @@ ls -l $currentDir
 
 pkgversion=$($currentDir/ProxyAgent/ProxyAgent/GuestProxyAgent --version)
 
-echo "start install & start guest-proxy-agent package"
-if [[ $os == *"Ubuntu"* ]]; then
-    sudo apt-get -f install
-    sudo dpkg -i $currentDir/ProxyAgent/packages/*.deb
-else
-    sudo rpm -i $currentDir/ProxyAgent/packages/*.rpm
-fi
-
+for i in {1..3}; do
+    echo "start install & start guest-proxy-agent package $i"
+    if [[ $os == *"Ubuntu"* ]]; then
+        sudo apt-get -f install
+        sudo dpkg -i $currentDir/ProxyAgent/packages/*.deb
+        sleep 10
+        install=$(apt list --installed guest-proxy-agent)
+        echo "install=$install"
+        if [[ $install == *"guest-proxy-agent"* ]]; then
+            echo "guest-proxy-agent installed successfully"
+            break
+        fi
+    else
+        sudo rpm -i $currentDir/ProxyAgent/packages/*.rpm
+        sleep 10
+        install=$(yum list --installed guest-proxy-agent)
+        echo "install=$install"
+        if [[ $install == *"guest-proxy-agent"* ]]; then
+            echo "guest-proxy-agent installed successfully"
+            break
+        fi
+    fi
+done
