@@ -771,6 +771,7 @@ mod tests {
             userName: "test".to_string(),
             ip: "test".to_string(),
             port: 1,
+            processFullPath: "test".to_string(),
             processCmdLine: "test".to_string(),
             responseStatus: "test".to_string(),
             count: 1,
