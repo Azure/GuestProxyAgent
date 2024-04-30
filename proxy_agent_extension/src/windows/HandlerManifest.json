@@ -14,9 +14,9 @@
     "resourceLimits": {   
         "processes": [{  
             "name": "ProxyAgentExt"
-        }, 
-        { 
-            "name": "GuestProxyAgent" 
+        }], 
+        "services": [{ 
+            "name": "GuestProxyAgent"
         }] 
     }
 }]
