@@ -691,11 +691,8 @@ mod tests {
         let url = url::Url::parse("http://localhost/test?key1=value1&key2=value3").unwrap();
         assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
 
-        // let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
-        // assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
-
-        // let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2&key3=value3").unwrap();
-        // assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
+        let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
+        assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
     }
 
     #[test]
@@ -718,6 +715,7 @@ mod tests {
             processId: 0,
             clientIp: "00.000.000".to_string(),
             runAsElevated: true,
+            processFullPath: "test".to_string(),
         };
         assert!(identity.is_match(1, claims.clone()), "identity should be matched");
 
