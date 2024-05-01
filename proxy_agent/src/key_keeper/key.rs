@@ -109,6 +109,12 @@ pub struct RoleAssignment {
     pub identities: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct ID {
+    pub sigId: String,
+}
+
 impl Privilege {
     pub fn clone(&self) -> Self {
         Privilege {
@@ -693,20 +699,33 @@ mod tests {
 
         let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
         assert!(!privilege.is_match(1, url.clone()), "privilege should not be matched");
+
+        let privilege1 = r#"{
+            "name": "test",
+            "path": "/test",
+            "queryParameters": null
+        }"#;
+        let privilege1: Privilege = serde_json::from_str(privilege1).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(privilege1.is_match(1, url.clone()), "privilege should be matched");
+
+        let privilege2 = r#"{
+            "name": "test",
+            "path": "/test",
+            "queryParameters": {
+                "key1": "",
+                "key2": ""
+            }
+        }"#;
+        let privilege2: Privilege = serde_json::from_str(privilege2).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(!privilege2.is_match(1, url.clone()), "privilege should not be matched");
     }
 
     #[test]
     fn test_identity_is_match() {
         Connection::init_logger(std::path::PathBuf::new());
 
-        let identity = r#"{
-            "name": "test",
-            "userName": "test",
-            "groupName": "test",
-            "exePath": "test",
-            "processName": "test"
-        }"#;
-        let identity: Identity = serde_json::from_str(identity).unwrap();
         let claims = super::Claims {
             userName: "test".to_string(),
             processName: "test".to_string(),
@@ -717,6 +736,15 @@ mod tests {
             runAsElevated: true,
             processFullPath: "test".to_string(),
         };
+
+        let identity = r#"{
+            "name": "test",
+            "userName": "test",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test"
+        }"#;
+        let identity: Identity = serde_json::from_str(identity).unwrap();
         assert!(identity.is_match(1, claims.clone()), "identity should be matched");
 
         let identity1 = r#"{
@@ -728,6 +756,16 @@ mod tests {
         }"#;
         let identity1: Identity = serde_json::from_str(identity1).unwrap();
         assert!(!identity1.is_match(1, claims.clone()), "identity should not be matched");
+
+        let identity2 = r#"{
+            "name": "test",
+            "userName": "test1",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test1"
+        }"#;
+        let identity2: Identity = serde_json::from_str(identity2).unwrap();
+        assert!(!identity2.is_match(1, claims.clone()), "identity should not be matched");
 
     }
 }
