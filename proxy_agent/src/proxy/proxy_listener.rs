@@ -517,6 +517,7 @@ fn log_connection_summary(connection: &Connection, request: &Request, response_s
     let summary = ProxySummary {
         userId: claims.userId,
         userName: claims.userName.to_string(),
+        userGroups: claims.userGroups.clone(),
         clientIp: claims.clientIp.to_string(),
         processFullPath: claims.processFullPath.to_string(),        
         processCmdLine: claims.processCmdLine.to_string(),
@@ -772,6 +773,7 @@ mod tests {
         let claims = Claims {
             userId: 999,
             userName: "test user".to_string(),
+            userGroups: vec!["group1".to_string(), "group2".to_string()],
             processId: 1234,
             processName: "proxy_connection_stream".to_string(),
             processFullPath: "proxy_connection_stream_full".to_string(),

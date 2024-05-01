@@ -39,6 +39,7 @@ pub struct ProxyAgentStatus {
 #[allow(non_snake_case)]
 pub struct ProxyConnectionSummary {
     pub userName: String,
+    pub userGroups: Vec<String>,
     pub ip: String,
     pub port: u16,
     pub processFullPath: String,
@@ -51,6 +52,7 @@ impl Clone for ProxyConnectionSummary {
     fn clone(&self) -> Self {
         ProxyConnectionSummary {
             userName: self.userName.clone(),
+            userGroups: self.userGroups.clone(),
             ip: self.ip.clone(),
             port: self.port,
             processFullPath: self.processFullPath.clone(),

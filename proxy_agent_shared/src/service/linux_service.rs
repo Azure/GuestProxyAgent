@@ -24,8 +24,19 @@ pub fn start_service(service_name: &str) {
 }
 
 pub fn install_or_update_service(service_name: &str) {
+    unmask_service(service_name);
     reload_systemd_daemon();
     enable_service(service_name);
+}
+
+fn unmask_service(service_name: &str){
+    let output = misc_helpers::execute_command("systemctl", vec!["unmask", service_name], -1);
+    let message = format!(
+        "unmask_service: {}  result: '{}'-'{}'-'{}'.",
+        service_name, output.0, output.1, output.2
+    );
+    logger_manager::write_info(message);
+
 }
 
 pub fn uninstall_service(service_name: &str) {
