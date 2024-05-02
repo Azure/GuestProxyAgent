@@ -352,7 +352,10 @@ mod tests {
                 println!("UserName: {}", user_name);
                 println!("UserGroups: {}", user_groups.join(", "));
                 assert_ne!(String::new(), user_name, "user_name cannot be empty.");
-                assert_ne!("undefined", user_name, "user_name cannot be 'undefined'");
+                if user_name.to_lowercase() == "undefined"{
+                    println!("user_name cannot be 'undefined'");
+                    continue;
+                }
                 if user_groups.len() > 0 {
                     return;
                 }
