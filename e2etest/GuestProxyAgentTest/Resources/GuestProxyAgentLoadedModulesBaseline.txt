@@ -21,3 +21,14 @@ dbghelp.dll
 vcruntime140_1.dll
 vcruntime140.dll
 msvcp140.dll
+CRYPTSP.dll
+DNSAPI.dll
+IPHLPAPI.DLL
+logoncli.dll
+netapi32.dll
+netutils.dll
+NSI.dll
+rsaenh.dll
+SAMCLI.DLL
+SAMLIB.dll
+WLDAP32.dll

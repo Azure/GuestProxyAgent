@@ -10,6 +10,7 @@ pub struct ProxySummary {
     pub port: u16,
     pub userId: u64,
     pub userName: String,
+    pub userGroups: Vec<String>,
     pub processFullPath: String,
     pub processCmdLine: String,
     pub runAsElevated: bool,

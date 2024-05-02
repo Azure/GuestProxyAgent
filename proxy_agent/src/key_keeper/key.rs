@@ -275,7 +275,38 @@ impl Identity {
             }
             None => {}
         }
-        //TODO: groupName match
+        match self.groupName {
+            Some(ref group_name) => {
+                let mut matched = false;
+                for claims_user_group_name in &claims.userGroups {
+                    if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
+                        Connection::write_information(
+                            connection_id,
+                            format!(
+                                "Matched user group name '{}' from identity '{}'",
+                                group_name,
+                                self.name.to_string()
+                            ),
+                        );
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched user group name '{}' from identity '{}'",
+                            group_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+
         return true;
     }
 }
@@ -1122,8 +1153,10 @@ mod tests {
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         Connection::init_logger(temp_test_path.to_path_buf());
+
         let claims = super::Claims {
             userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
             processName: "test".to_string(),
             processCmdLine: "test".to_string(),
             userId: 0,
@@ -1159,6 +1192,7 @@ mod tests {
             "identity should not be matched"
         );
 
+        // test userName
         let identity2 = r#"{
             "name": "test",
             "userName": "test1"
@@ -1179,6 +1213,7 @@ mod tests {
             "identity should be matched"
         );
 
+        // test processName
         let identity3 = r#"{
             "name": "test",
             "processName": "test1"
@@ -1188,7 +1223,6 @@ mod tests {
             !identity3.is_match(1, claims.clone()),
             "identity should not be matched"
         );
-
         let identity3 = r#"{
             "name": "test",
             "processName": "test"
@@ -1199,6 +1233,7 @@ mod tests {
             "identity should be matched"
         );
 
+        // test exePath
         let identity4 = r#"{
             "name": "test",
             "exePath": "test1"
@@ -1208,7 +1243,6 @@ mod tests {
             !identity4.is_match(1, claims.clone()),
             "identity should not be matched"
         );
-
         let identity4 = r#"{
             "name": "test",
             "exePath": "test"
@@ -1216,6 +1250,26 @@ mod tests {
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
             identity4.is_match(1, claims.clone()),
+            "identity should be matched"
+        );
+
+        // test groupName
+        let identity5 = r#"{
+            "name": "test",
+            "groupName": "test1"
+        }"#;
+        let identity5: Identity = serde_json::from_str(identity5).unwrap();
+        assert!(
+            !identity5.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+        let identity5 = r#"{
+            "name": "test",
+            "groupName": "test"
+        }"#;
+        let identity5: Identity = serde_json::from_str(identity5).unwrap();
+        assert!(
+            identity5.is_match(1, claims.clone()),
             "identity should be matched"
         );
 
