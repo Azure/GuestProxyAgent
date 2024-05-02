@@ -192,17 +192,18 @@ impl User {
 
     pub fn from_logon_id(logon_id: u64) -> Self {
         let user_name;
-        let user_groups: Vec<String>;
+        let mut user_groups: Vec<String> = Vec::new();
 
         #[cfg(windows)]
         {
             let user = windows::get_user(logon_id);
             user_name = user.0;
-            user_groups = user.1.clone();
+            for g in user.1 {
+                user_groups.push(g.to_string());
+            }
         }
         #[cfg(not(windows))]
         {
-            user_groups = Vec::new();
             match users::get_user_by_uid(logon_id as u32) {
                 Some(u) => {
                     user_name = u.name().to_string_lossy().to_string();
@@ -257,7 +258,11 @@ mod tests {
             println!("UserName: {}", user.user_name);
             println!("UserGroups: {}", user.user_groups.join(", "));
             assert_ne!(String::new(), user.user_name, "user_name cannot be empty.");
-            assert_eq!(user_group_count, user.user_groups.len(), "user_groups lenth mismatch.");
+            assert_eq!(
+                user_group_count,
+                user.user_groups.len(),
+                "user_groups lenth mismatch."
+            );
 
             // test the USERS.len will not change
             let len = USERS.len();
