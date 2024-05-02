@@ -1,0 +1,71 @@
+129387439586104 2024-05-02T02:37:08.149 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched user name 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched process name 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched process full path 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Not matched user name 'test1' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Not matched user name 'test1' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched user name 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Not matched process name 'test1' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched process name 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Not matched process full path 'test1' from identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Start to match identity 'test'
+129387439586104 2024-05-02T02:37:08.150 [INFO]    Connection:1 - Matched process full path 'test' from identity 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched privilege path '/test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match query_parameters from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched query_parameters 'key1:value1' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched query_parameters 'key2:value2' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched privilege path '/test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match query_parameters from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched query_parameters 'key1:value1' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Not matched query_parameters value 'key2' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched privilege path '/test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Start to match query_parameters from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Matched query_parameters 'key1:value1' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.151 [INFO]    Connection:1 - Not matched query_parameters key 'key2' from privilege 'test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Start to match privilege 'test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Matched privilege path '/test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Start to match privilege 'test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Matched privilege path '/test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Start to match query_parameters from privilege 'test'
+129387439586104 2024-05-02T02:37:08.152 [INFO]    Connection:1 - Not matched query_parameters value 'key1' from privilege 'test'
+129387431148344 2024-05-02T02:37:08.560 [INFO]    Connection:1 - Received connection.
+129387431148344 2024-05-02T02:37:08.560 [WARN]    Connection:1 - Got request: GET http://127.0.0.1:8091 - headers count: 0 - Content-Length: 
+129387431148344 2024-05-02T02:37:08.560 [VERB]    Connection:1 - Got request from client - 127.0.0.1:37432
+129387431148344 2024-05-02T02:37:08.560 [WARN]    Failed to get lookup_audit: BPF object is not initialized
+129387431148344 2024-05-02T02:37:08.560 [INFO]    Connection:1 - Try to get audit entry from socket stream
+129387431148344 2024-05-02T02:37:08.560 [INFO]    {"method":"GET","url":"http://127.0.0.1:8091","clientIp":"empty","ip":"","port":0,"userId":0,"userName":"empty","processFullPath":"empty","processCmdLine":"empty","runAsElevated":false,"responseStatus":"421 Misdirected Request","elapsedTime":0}
+129387431148344 2024-05-02T02:37:08.662 [VERB]    Connection:0 - Computed the signature with input: GET
+
+x-ms-azure-host-claims:{"userId":999,"userName":"test user","processId":1234,"processName":"proxy_connection_stream","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"clientIp":"127.0.0.1"}
+/file
+
+129387431148344 2024-05-02T02:37:08.662 [VERB]    Connection:0 - Added authorization header Azure-HMAC-SHA256 c13ef6e5-6e41-4279-8c57-8d0df56f0ce8 f15d4b3915842e1360c6571529fb264bc2cb8c93b952b64becd0ae82fa354b46
+129387431148344 2024-05-02T02:37:08.688 [VERB]    Connection:0 - Forwarded host response: status: '200 OK' - headers count: 2 - Content-Length: 12107280, streamed body length: 12107280
+129387431148344 2024-05-02T02:37:08.688 [INFO]    {"method":"GET","url":"/file","clientIp":"127.0.0.1","ip":"127.0.0.1","port":8084,"userId":999,"userName":"test user","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"responseStatus":"200 OK","elapsedTime":26}
+129387431148344 2024-05-02T02:37:08.801 [WARN]    Connection:1 - Failed convert the input_to_sign to string, error invalid utf-8 sequence of 1 bytes from index 30
+129387431148344 2024-05-02T02:37:08.802 [VERB]    Connection:1 - Added authorization header Azure-HMAC-SHA256 c13ef6e5-6e41-4279-8c57-8d0df56f0ce8 823e959c641c040b30ca5549b8397bdac75547373cf29de8e909bd364054ce50
+129387431148344 2024-05-02T02:37:18.916 [VERB]    Connection:1 - Forwarded host response: status: '400 Bad Request' - headers count: 1 - Content-Length: , streamed body length: 0
+129387431148344 2024-05-02T02:37:18.916 [INFO]    {"method":"POST","url":"/file","clientIp":"127.0.0.1","ip":"127.0.0.1","port":8084,"userId":999,"userName":"test user","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"responseStatus":"400 Bad Request","elapsedTime":10214}
+129387431148344 2024-05-02T02:37:19.011 [WARN]    Connection:2 - Failed convert the input_to_sign to string, error invalid utf-8 sequence of 1 bytes from index 30
+129387431148344 2024-05-02T02:37:19.012 [VERB]    Connection:2 - Added authorization header Azure-HMAC-SHA256 c13ef6e5-6e41-4279-8c57-8d0df56f0ce8 32fb90ba9f5bb70d9251424db012b4a8a62f34335365f97dabd2e70ed84e548f
+129387431148344 2024-05-02T02:37:19.012 [VERB]    Connection:2 - Forwarded host response: status: '100 Continue' - headers count: 0 - Content-Length: , streamed body length: 0
+129387431148344 2024-05-02T02:37:19.012 [VERB]    Connection:2 - Current response expect sending original request body now.
+129387431148344 2024-05-02T02:37:19.037 [VERB]    Connection:2 - Forwarded host response: status: '200 OK' - headers count: 1 - Content-Length: , streamed body length: 0
+129387431148344 2024-05-02T02:37:19.037 [INFO]    {"method":"POST","url":"/file","clientIp":"127.0.0.1","ip":"127.0.0.1","port":8084,"userId":999,"userName":"test user","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"responseStatus":"200 OK","elapsedTime":120}
+129387431148344 2024-05-02T02:37:19.068 [INFO]    Connection:3 - Current request POST /vmagentlog - headers count: 2 - Content-Length: 12107280 could send to host without signature.
+129387431148344 2024-05-02T02:37:29.160 [VERB]    Connection:3 - Received host response: status: '400 Bad Request' - headers count: 1 - Content-Length: 
+129387431148344 2024-05-02T02:37:29.161 [INFO]    {"method":"POST","url":"/vmagentlog","clientIp":"127.0.0.1","ip":"127.0.0.1","port":8084,"userId":999,"userName":"test user","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"responseStatus":"400 Bad Request","elapsedTime":10116}
+129387431148344 2024-05-02T02:37:29.161 [INFO]    Connection:4 - Current request POST /vmagentlog - headers count: 3 - Content-Length: 12107280 could send to host without signature.
+129387431148344 2024-05-02T02:37:29.162 [VERB]    Connection:4 - Received host response: status: '100 Continue' - headers count: 0 - Content-Length: 
+129387431148344 2024-05-02T02:37:29.162 [VERB]    Connection:4 - Current response expect streaming original body now.
+129387431148344 2024-05-02T02:37:29.183 [VERB]    Connection:4 - Received host response: status: '200 OK' - headers count: 1 - Content-Length: 
+129387431148344 2024-05-02T02:37:29.184 [INFO]    {"method":"POST","url":"/vmagentlog","clientIp":"127.0.0.1","ip":"127.0.0.1","port":8084,"userId":999,"userName":"test user","processFullPath":"proxy_connection_stream_full","processCmdLine":"proxy_connection_stream_cmd","runAsElevated":true,"responseStatus":"200 OK","elapsedTime":22}

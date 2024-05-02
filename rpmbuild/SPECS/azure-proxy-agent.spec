@@ -26,6 +26,7 @@ ln -sf /usr/lib/azure-proxy-agent/Package_%{version} /usr/lib/azure-proxy-agent/
 ln -sf /usr/lib/azure-proxy-agent/package/GuestProxyAgent /usr/sbin/azure-proxy-agent
 chcon -t bin_t /usr/lib/azure-proxy-agent/package/GuestProxyAgent
 %systemd_post GuestProxyAgent.service
+   systemctl unmask GuestProxyAgent.service
    systemctl daemon-reload
    systemctl start GuestProxyAgent.service
    systemctl enable GuestProxyAgent.service
