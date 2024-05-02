@@ -130,7 +130,7 @@ pub fn stop(port: u16) {
 
 fn handle_connection(connection: &mut Connection) {
     let mut stream = &connection.stream;
-    connection.write_information("Received connection.".to_string());
+    Connection::write_information(connection.id, "Received connection.".to_string());
 
     // set read timeout to handle the case
     // when the actual body content is less than
@@ -142,11 +142,11 @@ fn handle_connection(connection: &mut Connection) {
     match http::receive_request_data(&mut stream) {
         Ok(data) => request = data,
         Err(e) => {
-            connection.write_warning(format!("Failed to received data from client: {}", e));
+            Connection::write_warning(connection.id, format!("Failed to received data from client: {}", e));
             return;
         }
     };
-    connection.write_information(format!("Got request: {}", request.description()));
+    Connection::write_warning(connection.id, format!("Got request: {}", request.description()));
 
     // lookup the eBPF audit_map
     let client_source_ip: IpAddr;
@@ -155,14 +155,14 @@ fn handle_connection(connection: &mut Connection) {
         Ok(addr) => {
             client_source_port = addr.port();
             client_source_ip = addr.ip();
-            connection.write(format!(
+            Connection::write(connection.id, format!(
                 "Got request from client - {}:{}",
                 client_source_ip.to_string(),
                 client_source_port
             ));
         }
         Err(e) => {
-            connection.write_warning(format!("Failed to get client_source_port: {}", e));
+            Connection::write_warning(connection.id, format!("Failed to get client_source_port: {}", e));
             return;
         }
     };
@@ -179,7 +179,7 @@ fn handle_connection(connection: &mut Connection) {
                 Connection::CONNECTION_LOGGER_KEY,
             );
 
-            connection.write_information("Try to get audit entry from socket stream".to_string());
+            Connection::write_information(connection.id, "Try to get audit entry from socket stream".to_string());
             match redirector::get_audit_from_stream(&stream) {
                 Ok(data) => entry = data,
                 Err(e) => {
@@ -205,28 +205,28 @@ fn handle_connection(connection: &mut Connection) {
     match serde_json::to_string(&claims) {
         Ok(json) => claim_details = json,
         Err(e) => {
-            connection.write_warning(format!("Failed to get claim json string: {}", e));
+            Connection::write_warning(connection.id, format!("Failed to get claim json string: {}", e));
             send_response(&stream, Response::MISDIRECTED);
             log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
             return;
         }
     }
-    connection.write(claim_details.to_string());
+    Connection::write(connection.id, claim_details.to_string());
     connection.cliams = Some(claims.clone());
 
     // Get the dst ip and port to remote server
     let (ip, port);
     ip = redirector::ip_to_string(entry.destination_ipv4);
     port = http::ntohs(entry.destination_port);
-    connection.write(format!("Use lookup value:{ip}:{port}."));
+    Connection::write(connection.id, format!("Use lookup value:{ip}:{port}."));
     connection.ip = ip.to_string();
     connection.port = port;
 
     // authenticate the connection
     let auth = proxy_authentication::get_authenticate(ip.to_string(), port, claims.clone());
-    connection.write(format!("Got auth: {}", auth.to_string()));
-    if !auth.authenticate() {
-        connection.write_warning(format!(
+    Connection::write(connection.id, format!("Got auth: {}", auth.to_string()));
+    if !auth.authenticate(connection.id, request.url.to_string()) {
+        Connection::write_warning(connection.id, format!(
             "Denied unauthorize request: {}",
             claim_details.to_string()
         ));
@@ -240,7 +240,7 @@ fn handle_connection(connection: &mut Connection) {
     match http::connect_to_server(ip.to_string(), port, stream) {
         Ok(data) => server_stream = data,
         Err(e) => {
-            connection.write_warning(format!("Failed to start new request to host: {}", e));
+            Connection::write_warning(connection.id, format!("Failed to start new request to host: {}", e));
             send_response(&stream, Response::MISDIRECTED);
             log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
             return;
@@ -288,10 +288,10 @@ fn handle_connection_with_signature(
             Ok(sig) => {
                 match String::from_utf8(input_to_sign) {
                     Ok(data) => {
-                        connection.write(format!("Computed the signature with input: {}", data))
+                        Connection::write(connection.id, format!("Computed the signature with input: {}", data))
                     }
                     Err(e) => {
-                        connection.write_warning(format!(
+                        Connection::write_warning(connection.id, format!(
                             "Failed convert the input_to_sign to string, error {}",
                             e
                         ));
@@ -308,17 +308,17 @@ fn handle_connection_with_signature(
                     constants::AUTHORIZATION_HEADER.to_string(),
                     authorization_value.to_string(),
                 );
-                connection.write(format!(
+                Connection::write(connection.id, format!(
                     "Added authorization header {}",
                     authorization_value.to_string()
                 ))
             }
             Err(e) => {
-                connection.write_error(format!("compute_signature failed with error: {}", e));
+                Connection::write_error(connection.id, format!("compute_signature failed with error: {}", e));
             }
         }
     } else {
-        connection.write("current key is empty, skip compute signature for testing.".to_string());
+        Connection::write(connection.id, "current key is empty, skip compute signature for testing.".to_string());
     }
 
     // send to remote server
@@ -337,20 +337,20 @@ fn handle_connection_with_signature(
     ) {
         Ok(data) => {
             response_without_body = data.0;
-            connection.write(format!(
+             Connection::write(connection.id, format!(
                 "Forwarded host response: {}, streamed body length: {}",
                 response_without_body.description(),
                 data.1
             ));
         }
         Err(e) => {
-            connection.write_warning(format!("Failed to forward response from host: {}", e));
+            Connection::write_warning(connection.id, format!("Failed to forward response from host: {}", e));
             return;
         }
     };
 
     if response_without_body.is_continue_response() {
-        connection.write("Current response expect sending original request body now.".to_string());
+        Connection::write(connection.id, "Current response expect sending original request body now.".to_string());
         _ = server_stream.write_all(&request.get_body());
         _ = server_stream.flush();
 
@@ -361,14 +361,14 @@ fn handle_connection_with_signature(
         ) {
             Ok(data) => {
                 response_without_body = data.0;
-                connection.write(format!(
+                 Connection::write(connection.id, format!(
                     "Forwarded host response: {}, streamed body length: {}",
                     response_without_body.description(),
                     data.1
                 ));
             }
             Err(e) => {
-                connection.write_warning(format!("Failed to forward response from host: {}", e));
+                 Connection::write_warning(connection.id, format!("Failed to forward response from host: {}", e));
                 return;
             }
         };
@@ -393,7 +393,7 @@ fn handle_expect_continue_request(
     match request.headers.get_content_length() {
         Ok(len) => content_length = len,
         Err(e) => {
-            connection.write_warning(format!(" {}", e));
+             Connection::write_warning(connection.id, format!(" {}", e));
             send_response(client_stream, Response::BAD_REQUEST);
             log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
             return;
@@ -405,7 +405,7 @@ fn handle_expect_continue_request(
     match http::receive_body(&client_stream, content_length) {
         Ok(d) => data = d,
         Err(e) => {
-            connection.write_warning(format!("Failed to received body from client: {}", e));
+             Connection::write_warning(connection.id, format!("Failed to received body from client: {}", e));
             send_response(client_stream, Response::BAD_REQUEST);
             log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
             return;
@@ -419,7 +419,7 @@ fn handle_connection_without_signature(
     mut request: Request,
     server_stream: &mut TcpStream,
 ) {
-    connection.write_information(format!(
+     Connection::write_information(connection.id, format!(
         "Current request {} could send to host without signature.",
         request.description()
     ));
@@ -432,13 +432,13 @@ fn handle_connection_without_signature(
     match http::receive_response_data(server_stream) {
         Ok(data) => response = data,
         Err(e) => {
-            connection.write_warning(format!("Failed to receive data from host: {}", e));
+             Connection::write_warning(connection.id, format!("Failed to receive data from host: {}", e));
             send_response(&client_stream, Response::BAD_GATEWAY);
             log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
             return;
         }
     };
-    connection.write(format!(
+     Connection::write(connection.id, format!(
         "Received host response: {}",
         response.description()
     ));
@@ -448,7 +448,7 @@ fn handle_connection_without_signature(
         match request.headers.get_content_length() {
             Ok(len) => content_length = len,
             Err(e) => {
-                connection.write_warning(format!(" {}", e));
+                 Connection::write_warning(connection.id, format!(" {}", e));
                 send_response(&client_stream, Response::BAD_REQUEST);
                 log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
                 return;
@@ -458,11 +458,11 @@ fn handle_connection_without_signature(
         // send 'continue' response to the original client
         send_response(&client_stream, Response::CONTINUE);
 
-        connection.write("Current response expect streaming original body now.".to_string());
+        Connection::write(connection.id, "Current response expect streaming original body now.".to_string());
         match http::stream_body(&mut client_stream, server_stream, content_length) {
             Ok(l) => {
                 if l < content_length {
-                    connection.write_warning(format!(
+                     Connection::write_warning(connection.id, format!(
                         "Streamed data {} from request body is less than Content-Length {}",
                         l, content_length
                     ));
@@ -472,7 +472,7 @@ fn handle_connection_without_signature(
                 }
             }
             Err(e) => {
-                connection.write_warning(format!("Failed streaming the request body, error {}", e));
+                 Connection::write_warning(connection.id, format!("Failed streaming the request body, error {}", e));
                 send_response(&client_stream, Response::BAD_GATEWAY);
                 log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
                 return;
@@ -482,13 +482,13 @@ fn handle_connection_without_signature(
         match http::receive_response_data(server_stream) {
             Ok(data) => response = data,
             Err(e) => {
-                connection.write_warning(format!("Failed to receive data from host: {}", e));
+                 Connection::write_warning(connection.id, format!("Failed to receive data from host: {}", e));
                 send_response(&client_stream, Response::BAD_GATEWAY);
                 log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
                 return;
             }
         };
-        connection.write(format!(
+         Connection::write(connection.id, format!(
             "Received host response: {}",
             response.description()
         ));

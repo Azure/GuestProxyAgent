@@ -31,31 +31,31 @@ impl Connection {
         logger_manager::get_logger(Connection::CONNECTION_LOGGER_KEY)
     }
 
-    pub fn write(&self, message: String) {
+    pub fn write(connection_id:u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
-            .write(format!("Connection:{} - {}", self.id, message));
+            .write(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_information(&self, message: String) {
+    pub fn write_information(connection_id:u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
-            .write_information(format!("Connection:{} - {}", self.id, message));
+            .write_information(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_warning(&self, message: String) {
+    pub fn write_warning(connection_id:u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
-            .write_warning(format!("Connection:{} - {}", self.id, message));
+            .write_warning(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_error(&self, message: String) {
+    pub fn write_error(connection_id:u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
-            .write_error(format!("Connection:{} - {}", self.id, message));
+            .write_error(format!("Connection:{} - {}", connection_id, message));
     }
 }
