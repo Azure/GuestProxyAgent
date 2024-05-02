@@ -1,12 +1,17 @@
-use crate::common::{
-    constants,
-    http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
+use crate::{
+    common::{
+        constants,
+        http::{self, headers, http_request::HttpRequest, request::Request, response::Response}
+    },
+    proxy::{proxy_connection::Connection, Claims},
 };
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
-use std::io::{Error, ErrorKind};
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind},
+};
 use url::Url;
-
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -39,14 +44,16 @@ pub struct KeyStatus {
     pub version: String,
     // Authorization rules for guest to evaluate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorizationRules: Option<AuthorizationRules>,
+    pub authorizationRules: Option<AuthorizationRules>
 }
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct AuthorizationRules {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub imds: Option<AuthorizationItem>,
-    pub wireserver: Option<AuthorizationItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wireserver: Option<AuthorizationItem>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,6 +63,221 @@ pub struct AuthorizationItem {
     pub defaultAccess: String,
     // disabled, audit, enforce
     pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub privileges: Option<Vec<Privilege>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<Role>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identities: Option<Vec<Identity>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roleAssignments: Option<Vec<RoleAssignment>>,
+    // reference: SIG artifact resource id / inline: hashOfRules
+    pub id: String
+}
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Privilege {
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queryParameters: Option<HashMap<String, String>>
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Role {
+    pub name: String,
+    pub privileges: Vec<String>
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct Identity {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub userName: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groupName: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exePath: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processName: Option<String>
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct RoleAssignment {
+    pub role: String,
+    pub identities: Vec<String>
+}
+
+impl Privilege {
+    pub fn clone(&self) -> Self {
+        Privilege {
+            name: self.name.to_string(),
+            path: self.path.to_string(),
+            queryParameters: self.queryParameters.clone()
+        }
+    }
+
+    pub fn is_match(&self, connection_id: u128, request_url: url::Url) -> bool {
+        Connection::write_information(
+            connection_id,
+            format!("Start to match privilege '{}'", self.name.to_string()),
+        );
+        if request_url.path().to_lowercase().starts_with(&self.path) {
+            Connection::write_information(
+                connection_id,
+                format!("Matched privilege path '{}'", self.path.to_string()),
+            );
+
+            match &self.queryParameters {
+                Some(query_parameters) => {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Start to match query_parameters from privilege '{}'",
+                            self.name.to_string()
+                        ),
+                    );
+
+                    for (key, value) in query_parameters {
+                        match request_url.query_pairs().find(|(k, _)| k == key) {
+                            Some((_, v)) => {
+                                if v.to_lowercase() == value.to_lowercase() {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!(
+                                            "Matched query_parameters '{}:{}' from privilege '{}'",
+                                            key,
+                                            v,
+                                            self.name.to_string()
+                                        ),
+                                    );
+                                } else {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name.to_string()),
+                                    );
+                                    return false;
+                                }
+                            }
+                            None => {
+                                Connection::write_information(
+                                    connection_id,
+                                    format!(
+                                        "Not matched query_parameters key '{}' from privilege '{}'",
+                                        key,
+                                        self.name.to_string()
+                                    ),
+                                );
+                                return false;
+                            }
+                        }
+                    }
+                }
+                None => {}
+            }
+            return true;
+        }
+        return false;
+    }
+}
+
+impl Identity {
+    pub fn clone(&self) -> Self {
+        Identity {
+            name: self.name.to_string(),
+            userName: self.userName.clone(),
+            groupName: self.groupName.clone(),
+            exePath: self.exePath.clone(),
+            processName: self.processName.clone()
+        }
+    }
+
+    pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
+        Connection::write_information(
+            connection_id,
+            format!("Start to match identity '{}'", self.name.to_string()),
+        );
+        match self.userName {
+            Some(ref user_name) => {
+                if user_name.to_lowercase() == claims.userName.to_lowercase() {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Matched user name '{}' from identity '{}'",
+                            user_name,
+                            self.name.to_string()
+                        ),
+                    );
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched user name '{}' from identity '{}'",
+                            user_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+        match self.processName {
+            Some(ref process_name) => {
+                if process_name.to_lowercase() == claims.processName.to_lowercase() {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Matched process name '{}' from identity '{}'",
+                            process_name,
+                            self.name.to_string()
+                        ),
+                    );
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched process name '{}' from identity '{}'",
+                            process_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+        match self.exePath {
+            Some(ref exe_path) => {
+                if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Matched process full path '{}' from identity '{}'",
+                            exe_path,
+                            self.name.to_string()
+                        ),
+                    );
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched process full path '{}' from identity '{}'",
+                            exe_path,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+        //TODO: groupName match
+        return true;
+    }
 }
 
 impl KeyStatus {
@@ -351,6 +573,9 @@ mod tests {
     use super::Key;
     use super::KeyStatus;
     use crate::common::constants;
+    use crate::key_keeper::key::Identity;
+    use crate::key_keeper::key::Privilege;
+    use crate::proxy::proxy_connection::Connection;
 
     #[test]
     fn key_status_test() {
@@ -359,8 +584,123 @@ mod tests {
             "keyDeliveryMethod": "http",
             "keyGuid": null,
             "requiredClaimsHeaderPairs": null,
-            "secureChannelState": "Wireserver",
-            "version": "1.0"
+            "secureChannelEnabled": true,
+            "version": "2.0", 
+            "authorizationRules": {
+                "imds": {
+                    "defaultAccess": "allow", 
+                    "mode": "enforce", 
+                    "id": "sigid", 
+                    "privileges": [
+                        {
+                            "name": "test", 
+                            "path": "/test"
+                        }, 
+                        {
+                            "name": "test1", 
+                            "path": "/test1"
+                        }
+                    ], 
+                    "roles": [
+                        {
+                            "name": "test", 
+                            "privileges": [
+                                "test", 
+                                "test1"
+                            ]
+                        }
+                    ],
+                    "identities": [
+                        {
+                            "name": "test", 
+                            "userName": "test", 
+                            "groupName": "test", 
+                            "exePath": "test", 
+                            "processName": "test"
+                        }
+                    ],
+                    "roleAssignments": [
+                        {
+                            "role": "test", 
+                            "identities": [
+                                "test", 
+                                "test1"
+                            ]
+                        }
+                    ]              
+                }, 
+                "wireserver": {    
+                    "defaultAccess": "deny", 
+                    "mode": "enforce", 
+                    "id": "sigid", 
+                    "privileges": [
+                        {
+                            "name": "test", 
+                            "path": "/test", 
+                            "queryParameters": {
+                                "key1": "value1", 
+                                "key2": "value2"
+                            }
+                        }, 
+                        {
+                            "name": "test1", 
+                            "path": "/test1", 
+                            "queryParameters": {
+                                "key1": "value1", 
+                                "key2": "value2"
+                            }
+                        }
+                    ], 
+                    "roles": [
+                        {
+                            "name": "test", 
+                            "privileges": [
+                                "test", 
+                                "test1"
+                            ]
+                        }, 
+                        {
+                            "name": "test1", 
+                            "privileges": [
+                                "test", 
+                                "test1"
+                            ]
+                        }
+                    ],
+                    "identities": [
+                        {
+                            "name": "test", 
+                            "userName": "test", 
+                            "groupName": "test", 
+                            "exePath": "test", 
+                            "processName": "test"
+                        }, 
+                        {
+                            "name": "test1", 
+                            "userName": "test1", 
+                            "groupName": "test1", 
+                            "exePath": "test1", 
+                            "processName": "test1"
+                        }
+                    ],
+                    "roleAssignments": [
+                        {
+                            "role": "test", 
+                            "identities": [
+                                "test", 
+                                "test1"
+                            ]
+                        }, 
+                        {
+                            "role": "test1", 
+                            "identities": [
+                                "test", 
+                                "test1"
+                            ]
+                        }
+                    ]
+                }
+            }
         }"#;
 
         let status: KeyStatus = serde_json::from_str(status_response).unwrap();
@@ -373,56 +713,92 @@ mod tests {
             "http", status.keyDeliveryMethod,
             "keyDeliveryMethod mismatch"
         );
-        assert_eq!(None, status.keyGuid, "keyGuid must be None");
-        assert_eq!(
-            None, status.requiredClaimsHeaderPairs,
-            "requiredClaimsHeaderPairs must be None"
-        );
-        assert_eq!(
-            Some("Wireserver".to_string()),
-            status.secureChannelState,
-            "secureChannelState mismatch"
-        );
-        assert!(
-            status.keyIncarnationId.is_none(),
-            "keyIncarnationId must be None"
-        );
-        assert_eq!("1.0".to_string(), status.version, "version 1.0 mismatch");
-
+        assert_eq!("2.0".to_string(), status.version, "version 2.0 mismatch");
         assert!(
             status.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_none(), "secureChannelEnabled must be None in version 1.0");
+        assert!(
+            status.secureChannelEnabled.is_some(),
+            "secureChannelEnabled must have value in version 2.0"
+        );
+        assert!(
+            status.secureChannelState.is_none(),
+            "secureChannelState must be None in version 2.0"
+        );
 
-        let status_response = r#"{
+        // deserizliaze authorizationRules
+        let rules = status.authorizationRules.unwrap();
+        // validate authorizationRules 
+        assert_eq!("deny", rules.wireserver.as_ref().unwrap().defaultAccess, "defaultAccess mismatch");
+        assert_eq!("enforce", rules.wireserver.as_ref().unwrap().mode, "mode mismatch");
+        assert_eq!("sigid", rules.wireserver.as_ref().unwrap().id, "id mismatch");
+        assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
+        assert_eq!("allow", rules.imds.as_ref().unwrap().defaultAccess, "defaultAccess mismatch");
+        assert_eq!("enforce", rules.imds.as_ref().unwrap().mode, "mode mismatch");
+        assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
+        assert_eq!("sigid", rules.wireserver.as_ref().unwrap().id, "id mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].name, "privilege name mismatch");
+        assert_eq!("/test", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].path, "privilege path mismatch");
+        assert_eq!("value1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].queryParameters.as_ref().unwrap()["key1"], "privilege queryParameters mismatch");
+        assert_eq!("value2", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].queryParameters.as_ref().unwrap()["key2"], "privilege queryParameters mismatch");
+        assert_eq!("test1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].name, "privilege name mismatch");
+        assert_eq!("/test1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].path, "privilege path mismatch");
+        assert_eq!("value1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].queryParameters.as_ref().unwrap()["key1"], "privilege queryParameters mismatch");
+        assert_eq!("value2", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].queryParameters.as_ref().unwrap()["key2"], "privilege queryParameters mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].name, "role name mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[0], "role privilege mismatch");
+        assert_eq!("test1", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[1], "role privilege mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].name, "identity name mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].userName.as_ref().unwrap(), "identity userName mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].groupName.as_ref().unwrap(), "identity groupName mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].exePath.as_ref().unwrap(), "identity exePath mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].processName.as_ref().unwrap(), "identity processName mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].role, "roleAssignment role mismatch");
+        assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].identities[0], "roleAssignment identities mismatch");
+
+        let status_response_v1 = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
             "keyDeliveryMethod": "http",
             "keyGuid": null,
             "requiredClaimsHeaderPairs": null,
-            "secureChannelEnabled": true,
-            "version": "2.0",
-            "authorizationRules": {
-                "imds": {
-                    "defaultAccess": "deny",
-                    "mode": "audit"
-                },
-                "wireserver": {
-                    "defaultAccess": "deny",
-                    "mode": "enforce"
-                }
-            }
+            "secureChannelState": "Wireserver",
+            "version": "1.0"
         }"#;
-        let status: KeyStatus = serde_json::from_str(status_response).unwrap();
-        assert_eq!("2.0".to_string(), status.version, "version 2.0 mismatch");
 
+        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
+        assert_eq!(
+            constants::AUTHORIZATION_SCHEME,
+            status_v1.authorizationScheme,
+            "authorizationScheme mismatch"
+        );
+        assert_eq!(
+            "http", status_v1.keyDeliveryMethod,
+            "keyDeliveryMethod mismatch"
+        );
+        assert_eq!(None, status_v1.keyGuid, "keyGuid must be None");
+        assert_eq!(
+            None, status_v1.requiredClaimsHeaderPairs,
+            "requiredClaimsHeaderPairs must be None"
+        );
+        assert_eq!(
+            Some("Wireserver".to_string()),
+            status_v1.secureChannelState,
+            "secureChannelState mismatch"
+        );
         assert!(
-            status.validate().unwrap(),
+            status_v1.keyIncarnationId.is_none(),
+            "keyIncarnationId must be None"
+        );
+        assert_eq!("1.0".to_string(), status_v1.version, "version 1.0 mismatch");
+        assert!(
+            status_v1.validate().unwrap(),
             "Key status validation must be true"
         );
-        assert!(status.secureChannelEnabled.is_some(), "secureChannelEnabled must have value in version 2.0");
-        assert!(status.secureChannelState.is_none(), "secureChannelState must be None in version 2.0");
-        assert_eq!("WireServer Enforce -  IMDS Audit", status.get_secure_channel_state(), "secureChannelState mismatch in version 2.0");
+        assert!(
+            status_v1.secureChannelEnabled.is_none(),
+            "secureChannelEnabled must be None in version 1.0"
+        );
     }
 
     #[test]
@@ -456,6 +832,167 @@ mod tests {
             "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59".to_string(),
             key.key,
             "key mismatch"
+        );
+    }
+
+    #[test]
+    fn test_privelege_is_match() {
+        // initialize connection_logger
+        Connection::init_logger(std::path::PathBuf::new());
+
+        let privilege = r#"{
+            "name": "test",
+            "path": "/test",
+            "queryParameters": {
+                "key1": "value1",
+                "key2": "value2"
+            }
+        }"#;
+        let privilege: Privilege = serde_json::from_str(privilege).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(
+            privilege.is_match(1, url.clone()),
+            "privilege should be matched"
+        );
+
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value3").unwrap();
+        assert!(
+            !privilege.is_match(1, url.clone()),
+            "privilege should not be matched"
+        );
+
+        let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
+        assert!(
+            !privilege.is_match(1, url.clone()),
+            "privilege should not be matched"
+        );
+
+        let privilege1 = r#"{
+            "name": "test",
+            "path": "/test"        
+        }"#;
+        let privilege1: Privilege = serde_json::from_str(privilege1).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(
+            privilege1.is_match(1, url.clone()),
+            "privilege should be matched"
+        );
+
+        let privilege2 = r#"{
+            "name": "test",
+            "path": "/test",
+            "queryParameters": {
+                "key1": "",
+                "key2": ""
+            }
+        }"#;
+        let privilege2: Privilege = serde_json::from_str(privilege2).unwrap();
+        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        assert!(
+            !privilege2.is_match(1, url.clone()),
+            "privilege should not be matched"
+        );
+    }
+
+    #[test]
+    fn test_identity_is_match() {
+        Connection::init_logger(std::path::PathBuf::new());
+
+        let claims = super::Claims {
+            userName: "test".to_string(),
+            processName: "test".to_string(),
+            processCmdLine: "test".to_string(),
+            userId: 0,
+            processId: 0,
+            clientIp: "00.000.000".to_string(),
+            runAsElevated: true,
+            processFullPath: "test".to_string(),
+        };
+
+        let identity = r#"{
+            "name": "test",
+            "userName": "test",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test"
+        }"#;
+        let identity: Identity = serde_json::from_str(identity).unwrap();
+        assert!(
+            identity.is_match(1, claims.clone()),
+            "identity should be matched"
+        );
+
+        let identity1 = r#"{
+            "name": "test",
+            "userName": "test1",
+            "groupName": "test",
+            "exePath": "test",
+            "processName": "test"
+        }"#;
+        let identity1: Identity = serde_json::from_str(identity1).unwrap();
+        assert!(
+            !identity1.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+
+        let identity2 = r#"{
+            "name": "test",
+            "userName": "test1"
+        }"#;
+        let identity2: Identity = serde_json::from_str(identity2).unwrap();
+        assert!(
+            !identity2.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+
+        let identity2 = r#"{
+            "name": "test",
+            "userName": "test"
+        }"#;
+        let identity2: Identity = serde_json::from_str(identity2).unwrap();
+        assert!(
+            identity2.is_match(1, claims.clone()),
+            "identity should be matched"
+        );
+
+        let identity3 = r#"{
+            "name": "test",
+            "processName": "test1"
+        }"#;
+        let identity3: Identity = serde_json::from_str(identity3).unwrap();
+        assert!(
+            !identity3.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+
+        let identity3 = r#"{
+            "name": "test",
+            "processName": "test"
+        }"#;
+        let identity3: Identity = serde_json::from_str(identity3).unwrap();
+        assert!(
+            identity3.is_match(1, claims.clone()),
+            "identity should be matched"
+        );
+
+        let identity4 = r#"{
+            "name": "test",
+            "exePath": "test1"
+        }"#;
+        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+        assert!(
+            !identity4.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+
+        let identity4 = r#"{
+            "name": "test",
+            "exePath": "test"
+        }"#;
+        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+        assert!(
+            identity4.is_match(1, claims.clone()),
+            "identity should be matched"
         );
     }
 }

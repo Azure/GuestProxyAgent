@@ -63,7 +63,7 @@ mod default {
 
 pub trait Authenticate {
     // authenticate the connection
-    fn authenticate(&self) -> bool;
+    fn authenticate(&self, connection_id: u128, request_url: String) -> bool;
     fn to_string(&self) -> String;
 }
 
@@ -71,7 +71,7 @@ struct WireServer {
     claims: Claims,
 }
 impl Authenticate for WireServer {
-    fn authenticate(&self) -> bool {
+    fn authenticate(&self, _connection_id: u128, _request_url: String) -> bool {
         if !self.claims.runAsElevated {
             return false;
         }
@@ -99,7 +99,7 @@ struct IMDS {
     claims: Claims,
 }
 impl Authenticate for IMDS {
-    fn authenticate(&self) -> bool {
+    fn authenticate(&self, _connection_id: u128, _request_url: String) -> bool {
         if config::get_imds_support() == 2 {
             // TODO: to apply the config rules
         }
@@ -117,7 +117,7 @@ struct GAPlugin {
 }
 
 impl Authenticate for GAPlugin {
-    fn authenticate(&self) -> bool {
+    fn authenticate(&self, _connection_id: u128, _request_url: String) -> bool {
         if !self.claims.runAsElevated {
             return false;
         }
@@ -139,7 +139,7 @@ impl Authenticate for GAPlugin {
 
 struct ProxyAgent {}
 impl Authenticate for ProxyAgent {
-    fn authenticate(&self) -> bool {
+    fn authenticate(&self, _connection_id: u128, _request_url: String) -> bool {
         // Forbid the request send to this listener directly
         false
     }
@@ -151,7 +151,7 @@ impl Authenticate for ProxyAgent {
 
 struct Default {}
 impl Authenticate for Default {
-    fn authenticate(&self) -> bool {
+    fn authenticate(&self, _connection_id: u128, _request_url: String) -> bool {
         true
     }
 
@@ -200,7 +200,7 @@ mod tests {
             "WireServer { runAsElevated: true, processName: test }"
         );
         assert!(
-            auth.authenticate(),
+            auth.authenticate(1, "test".to_string()),
             "WireServer authentication must be true"
         );
 
@@ -214,7 +214,7 @@ mod tests {
             "GAPlugin { runAsElevated: true, processName: test }"
         );
         assert!(
-            auth.authenticate(),
+            auth.authenticate(1, "test".to_string()),
             "GAPlugin authentication must be true since it has not enabled for builtin processes in the config yet"
         );
 
@@ -224,7 +224,7 @@ mod tests {
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "IMDS");
-        assert!(auth.authenticate(), "IMDS authentication must be true");
+        assert!(auth.authenticate(1, "test".to_string()), "IMDS authentication must be true");
 
         let auth = super::get_authenticate(
             crate::common::constants::PROXY_AGENT_IP.to_string(),
@@ -233,7 +233,7 @@ mod tests {
         );
         assert_eq!(auth.to_string(), "ProxyAgent");
         assert!(
-            !auth.authenticate(),
+            !auth.authenticate(1, "test".to_string()),
             "ProxyAgent authentication must be false"
         );
 
