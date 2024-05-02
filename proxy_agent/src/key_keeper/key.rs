@@ -584,8 +584,8 @@ mod tests {
             "keyDeliveryMethod": "http",
             "keyGuid": null,
             "requiredClaimsHeaderPairs": null,
-            "secureChannelState": "WireserverAndImds",
-            "version": "1.0", 
+            "secureChannelEnabled": true,
+            "version": "2.0", 
             "authorizationRules": {
                 "imds": {
                     "defaultAccess": "allow", 
@@ -713,29 +713,18 @@ mod tests {
             "http", status.keyDeliveryMethod,
             "keyDeliveryMethod mismatch"
         );
-        assert_eq!(None, status.keyGuid, "keyGuid must be None");
-        assert_eq!(
-            None, status.requiredClaimsHeaderPairs,
-            "requiredClaimsHeaderPairs must be None"
-        );
-        assert_eq!(
-            Some("WireserverAndImds".to_string()),
-            status.secureChannelState,
-            "secureChannelState mismatch"
-        );
-        assert!(
-            status.keyIncarnationId.is_none(),
-            "keyIncarnationId must be None"
-        );
-        assert_eq!("1.0".to_string(), status.version, "version 1.0 mismatch");
-
+        assert_eq!("2.0".to_string(), status.version, "version 2.0 mismatch");
         assert!(
             status.validate().unwrap(),
             "Key status validation must be true"
         );
         assert!(
-            status.secureChannelEnabled.is_none(),
-            "secureChannelEnabled must be None in version 1.0"
+            status.secureChannelEnabled.is_some(),
+            "secureChannelEnabled must have value in version 2.0"
+        );
+        assert!(
+            status.secureChannelState.is_none(),
+            "secureChannelState must be None in version 2.0"
         );
 
         // deserizliaze authorizationRules
@@ -767,6 +756,49 @@ mod tests {
         assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].processName.as_ref().unwrap(), "identity processName mismatch");
         assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].role, "roleAssignment role mismatch");
         assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].identities[0], "roleAssignment identities mismatch");
+
+        let status_response_v1 = r#"{
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": null,
+            "secureChannelState": "Wireserver",
+            "version": "1.0"
+        }"#;
+
+        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
+        assert_eq!(
+            constants::AUTHORIZATION_SCHEME,
+            status_v1.authorizationScheme,
+            "authorizationScheme mismatch"
+        );
+        assert_eq!(
+            "http", status_v1.keyDeliveryMethod,
+            "keyDeliveryMethod mismatch"
+        );
+        assert_eq!(None, status_v1.keyGuid, "keyGuid must be None");
+        assert_eq!(
+            None, status_v1.requiredClaimsHeaderPairs,
+            "requiredClaimsHeaderPairs must be None"
+        );
+        assert_eq!(
+            Some("Wireserver".to_string()),
+            status_v1.secureChannelState,
+            "secureChannelState mismatch"
+        );
+        assert!(
+            status_v1.keyIncarnationId.is_none(),
+            "keyIncarnationId must be None"
+        );
+        assert_eq!("1.0".to_string(), status_v1.version, "version 1.0 mismatch");
+        assert!(
+            status_v1.validate().unwrap(),
+            "Key status validation must be true"
+        );
+        assert!(
+            status_v1.secureChannelEnabled.is_none(),
+            "secureChannelEnabled must be None in version 1.0"
+        );
     }
 
     #[test]
