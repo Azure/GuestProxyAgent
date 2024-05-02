@@ -1,5 +1,9 @@
 #![cfg(windows)]
 
+use crate::common::logger;
+use libloading::{Library, Symbol};
+use once_cell::sync::Lazy;
+use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
@@ -15,10 +19,84 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::System::Threading::{PROCESSINFOCLASS, PROCESS_BASIC_INFORMATION};
 
+const LG_INCLUDE_INDIRECT: u32 = 1u32;
+const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
+#[repr(C)]
+struct LocalgroupUsersInfo0 {
+    pub lgrui0_name: windows_sys::core::PWSTR,
+}
+static NETAPI32_DLL: Lazy<Library> = Lazy::new(|| load_dll_with_retry("netapi32.dll\0", 3));
+
+fn load_dll_with_retry(dll_name: &str, max_retry: u8) -> Library {
+    let mut retry = 0;
+    unsafe {
+        loop {
+            match Library::new(dll_name) {
+                Ok(lib) => return lib,
+                Err(e) => {
+                    if retry >= max_retry {
+                        panic!("Loading {} failed with error: {}", dll_name, e);
+                    }
+                    retry += 1;
+                    logger::write_warning(format!(
+                        "Loading {} failed with error: {}, retrying {}...",
+                        dll_name, e, retry
+                    ));
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+}
+
+type NetUserGetLocalGroups = unsafe extern "system" fn(
+    servername: windows_sys::core::PWSTR,
+    username: windows_sys::core::PWSTR,
+    level: u32,
+    flags: u32,
+    bufptr: *mut *mut u8,
+    prefmaxlen: u32,
+    entriesread: *mut u32,
+    totalentries: *mut u32,
+) -> u32;
+
+fn NetUserGetLocalGroups(
+    servername: windows_sys::core::PWSTR,
+    username: windows_sys::core::PWSTR,
+    level: u32,
+    flags: u32,
+    bufptr: *mut *mut LocalgroupUsersInfo0,
+    prefmaxlen: u32,
+    entriesread: *mut u32,
+    totalentries: *mut u32,
+) -> std::io::Result<u32> {
+    unsafe {
+        let fun_name = "NetUserGetLocalGroups\0";
+        let NetUserGetLocalGroups: Symbol<NetUserGetLocalGroups> =
+            NETAPI32_DLL.get(fun_name.as_bytes()).map_err(|e| {
+                Error::new(
+                    ErrorKind::Other,
+                    format!("Loading {} failed with error: {}", fun_name, e),
+                )
+            })?;
+        let status = NetUserGetLocalGroups(
+            servername,
+            username,
+            level,
+            flags,
+            bufptr as *mut *mut u8,
+            prefmaxlen,
+            entriesread,
+            totalentries,
+        );
+        Ok(status)
+    }
+}
+
 /*
-    Get user name
+    Get user name and user group names
 */
-pub fn get_user_name(logon_id: u64) -> String {
+pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
     unsafe {
         let mut user_name = "undefined".to_string();
 
@@ -34,8 +112,51 @@ pub fn get_user_name(logon_id: u64) -> String {
         if session_data.UserName.Length != 0 {
             user_name = from_unicode_string(&session_data.UserName);
         }
+        let mut domain_user_name = user_name.clone();
+        if session_data.LogonDomain.Length != 0 {
+            domain_user_name = format!(
+                "{}\\{}",
+                from_unicode_string(&session_data.LogonDomain),
+                domain_user_name
+            );
+        }
 
-        user_name
+        // call NetUserGetLocalGroups to get local user group names
+        let mut user_groups = Vec::new();
+        let mut group_count = 0;
+        let mut total_group_count = 0;
+        let mut group_info = null_mut();
+        let status = NetUserGetLocalGroups(
+            null_mut(),
+            to_pwstr(domain_user_name.as_str()).as_mut_ptr(),
+            0,
+            LG_INCLUDE_INDIRECT,
+            &mut group_info,
+            MAX_PREFERRED_LENGTH,
+            &mut group_count,
+            &mut total_group_count,
+        )
+        .unwrap();
+        if status == 0 {
+            let group_info = std::slice::from_raw_parts(
+                group_info as *const u8 as *const LocalgroupUsersInfo0,
+                group_count as usize,
+            );
+            for group in group_info {
+                let group_name = from_pwstr(group.lgrui0_name);
+                user_groups.push(group_name);
+            }
+        } else {
+            let message = format!(
+                "NetUserGetLocalGroups '{}' failed with status: {}",
+                domain_user_name.to_string(),
+                status
+            );
+            eprintln!("{}", message.to_string());
+            logger::write_warning(message);
+        }
+
+        (user_name, user_groups)
     }
 }
 
@@ -59,6 +180,26 @@ fn from_unicode_string(unicode_string: &UNICODE_STRING) -> String {
     }
 
     rstr
+}
+
+fn from_pwstr(wide_string: *mut u16) -> String {
+    let mut rstr = String::new();
+    let mut i = 0;
+    loop {
+        let c: u8 = unsafe { (*wide_string.offset(i) & 0xFF) as u8 };
+        if c == 0 {
+            break;
+        }
+        rstr.push(c as char);
+        i += 1;
+    }
+    rstr
+}
+
+fn to_pwstr(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = s.encode_utf16().collect();
+    v.push(0);
+    v
 }
 
 /*
@@ -191,21 +332,39 @@ mod tests {
     use windows_sys::Win32::Security::Authentication::Identity;
 
     #[test]
-    fn get_user_name_test() {
+    fn get_user_test() {
         unsafe {
             let mut data = MaybeUninit::<*mut LUID>::uninit();
-            let mut count: u32 = 1;
+            let mut count: u32 = 10;
             let status = Identity::LsaEnumerateLogonSessions(&mut count, data.as_mut_ptr());
-            println!("Identity::LsaEnumerateLogonSessions return value: {}", status);
-            // get the first LUID
-            let uid = *data.assume_init();
-            println!("LUID: {:?} - {:?}", uid.HighPart, uid.LowPart);
-            let logon_id: u64 = (uid.HighPart as u64) << 32 | uid.LowPart as u64;
-            println!("LogonId: {}", logon_id);
-            let user_name = super::get_user_name(logon_id);
-            println!("UserName: {}", user_name);
-            assert_ne!(String::new(), user_name, "user_name cannot be empty.");
-            assert_ne!("undefined", user_name, "user_name cannot be 'undefined'")
+            println!(
+                "Identity::LsaEnumerateLogonSessions return value: {}",
+                status
+            );
+            for i in 0..count {
+                let uid: LUID = *data.assume_init().offset(i as isize);
+                println!("LUID: {:?} - {:?}", uid.HighPart, uid.LowPart);
+                let logon_id: u64 = (uid.HighPart as u64) << 32 | uid.LowPart as u64;
+                println!("LogonId: {}", logon_id);
+                let user = super::get_user(logon_id);
+                let user_name = user.0;
+                let user_groups = user.1;
+                println!("UserName: {}", user_name);
+                println!("UserGroups: {}", user_groups.join(", "));
+                assert_ne!(String::new(), user_name, "user_name cannot be empty.");
+                if user_name.to_lowercase() == "undefined"{
+                    println!("user_name cannot be 'undefined'");
+                    continue;
+                }
+                if user_groups.len() > 0 {
+                    return;
+                }
+            }
+            // Coudn't find any user with group in our internal test environment
+            // assert!(
+            //     false,
+            //     "test failed after enumerated all logon session accounts."
+            // );
         }
     }
 

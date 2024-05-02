@@ -182,6 +182,7 @@ mod tests {
         let claims = crate::proxy::Claims {
             userId: 0,
             userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
             processId: std::process::id(),
             processName: "test".to_string(),
             processFullPath: "test".to_string(),
@@ -249,6 +250,7 @@ mod tests {
         let mut claims = crate::proxy::Claims {
             userId: 0,
             userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
             processId: std::process::id(),
             processName: "test".to_string(),
             processFullPath: "test".to_string(),

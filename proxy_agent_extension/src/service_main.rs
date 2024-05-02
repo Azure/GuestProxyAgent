@@ -769,6 +769,7 @@ mod tests {
 
         let proxy_connection_summary_obj = ProxyConnectionSummary {
             userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
             ip: "test".to_string(),
             port: 1,
             processFullPath: "test".to_string(),

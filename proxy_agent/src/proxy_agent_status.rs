@@ -96,6 +96,7 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
 pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSummary {
     ProxyConnectionSummary {
         userName: summary.userName.to_string(),
+        userGroups: summary.userGroups.clone(),
         ip: summary.ip.to_string(),
         port: summary.port,
         processFullPath: summary.processFullPath.to_string(),

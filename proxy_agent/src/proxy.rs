@@ -22,6 +22,7 @@ use sysinfo::{Pid, PidExt, ProcessExt, System, SystemExt};
 pub struct Claims {
     pub userId: u64,
     pub userName: String,
+    pub userGroups: Vec<String>,
     pub processId: u32,
     pub processName: String,
     pub processFullPath: String,
@@ -37,36 +38,30 @@ struct Process {
     pub pid: u32,
 }
 
+struct User {
+    pub logon_id: u64,
+    pub user_name: String,
+    pub user_groups: Vec<String>,
+}
+
 #[cfg(not(windows))]
 static mut CURRENT_SYSTEM: Lazy<Arc<Mutex<System>>> =
     Lazy::new(|| Arc::new(Mutex::new(System::new())));
 
-static mut USERS: Lazy<HashMap<u64, String>> = Lazy::new(|| HashMap::new());
+static mut USERS: Lazy<HashMap<u64, User>> = Lazy::new(|| HashMap::new());
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
 
-fn get_user_name(logon_id: u64) -> String {
+fn get_user(logon_id: u64) -> User {
     unsafe {
         // cache the logon_id -> user_name
         if USERS.contains_key(&logon_id) {
-            return USERS[&logon_id].to_string();
+            return USERS[&logon_id].clone();
         }
 
-        let user_name;
-        #[cfg(windows)]
-        {
-            user_name = windows::get_user_name(logon_id);
-        }
-        #[cfg(not(windows))]
-        {
-            match users::get_user_by_uid(logon_id as u32) {
-                Some(u) => user_name = u.name().to_string_lossy().to_string(),
-                None => user_name = UNDEFINED.to_string(),
-            }
-        }
-
-        USERS.insert(logon_id, user_name.to_string());
-        user_name
+        let user = User::from_logon_id(logon_id);
+        USERS.insert(logon_id, user.clone());
+        user
     }
 }
 
@@ -97,6 +92,7 @@ impl Claims {
         Claims {
             userId: 0,
             userName: EMPTY.to_string(),
+            userGroups: Vec::new(),
             processId: 0,
             processName: EMPTY.to_string(),
             processFullPath: EMPTY.to_string(),
@@ -108,9 +104,11 @@ impl Claims {
 
     pub fn from_audit_entry(entry: &AuditEntry, client_ip: IpAddr) -> Self {
         let p = Process::from_pid(entry.process_id);
+        let u = get_user(entry.logon_id);
         Claims {
             userId: entry.logon_id,
-            userName: get_user_name(entry.logon_id),
+            userName: u.user_name.to_string(),
+            userGroups: u.user_groups.clone(),
             processId: p.pid,
             processName: p.name.to_string(),
             processFullPath: p.exe_full_name.to_string(),
@@ -124,6 +122,7 @@ impl Claims {
         Claims {
             userId: self.userId,
             userName: self.userName.to_string(),
+            userGroups: self.userGroups.clone(),
             processId: self.processId,
             processName: self.processName.to_string(),
             processFullPath: self.processFullPath.to_string(),
@@ -182,6 +181,55 @@ impl Process {
     }
 }
 
+impl User {
+    pub fn clone(&self) -> Self {
+        User {
+            logon_id: self.logon_id,
+            user_name: self.user_name.to_string(),
+            user_groups: self.user_groups.clone(),
+        }
+    }
+
+    pub fn from_logon_id(logon_id: u64) -> Self {
+        let user_name;
+        let mut user_groups: Vec<String> = Vec::new();
+
+        #[cfg(windows)]
+        {
+            let user = windows::get_user(logon_id);
+            user_name = user.0;
+            for g in user.1 {
+                user_groups.push(g.to_string());
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            match users::get_user_by_uid(logon_id as u32) {
+                Some(u) => {
+                    user_name = u.name().to_string_lossy().to_string();
+                    let g: Option<Vec<users::Group>> =
+                        users::get_user_groups(&user_name, u.primary_group_id());
+                    match g {
+                        Some(groups) => {
+                            for group in groups {
+                                user_groups.push(group.name().to_string_lossy().to_string());
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                None => user_name = UNDEFINED.to_string(),
+            }
+        }
+
+        User {
+            logon_id,
+            user_name: user_name.to_string(),
+            user_groups: user_groups.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::IpAddr;
@@ -203,16 +251,28 @@ mod tests {
                 logon_id = 0u64;
             }
 
-            let user_name = super::get_user_name(logon_id);
-            println!("UserName: {}", user_name);
-            assert_ne!(String::new(), user_name, "user_name cannot be empty.");
+            let user = super::get_user(logon_id);
+            println!("UserName: {}", user.user_name);
+            println!("UserGroups: {}", user.user_groups.join(", "));
+            assert_ne!(String::new(), user.user_name, "user_name cannot be empty.");
+            #[cfg(windows)]
+            {
+                assert_eq!(0, user.user_groups.len(), "SYSTEM has no group.");
+            }
+            #[cfg(not(windows))]
+            {
+                assert!(
+                    user.user_groups.len() > 0,
+                    "user_groups should not be empty."
+                );
+            }
 
             // test the USERS.len will not change
             let len = USERS.len();
-            _ = super::get_user_name(logon_id);
-            _ = super::get_user_name(logon_id);
-            _ = super::get_user_name(logon_id);
-            _ = super::get_user_name(logon_id);
+            _ = super::get_user(logon_id);
+            _ = super::get_user(logon_id);
+            _ = super::get_user(logon_id);
+            _ = super::get_user(logon_id);
             assert_eq!(len, USERS.len(), "USERS.len() should not change")
         }
     }
