@@ -216,14 +216,14 @@ pushd debbuild
     mkdir -p DEBIAN src
     cp -rf $rootdir/debian/* ./DEBIAN/
     cp -rf $rootdir/proxy_agent/Cargo.toml ./Cargo.toml
-    cp -rf $rootdir/proxy_agent/src/* ./src/    echo ======= cargo deb --no-build command still requires ./src/main.rs
+    cp -rf $rootdir/proxy_agent/src/* ./src/    # cargo deb --no-build command still requires ./src/main.rs
     cp -f $out_package_proxyagent_dir/GuestProxyAgent ./
     cp -f $out_package_proxyagent_dir/GuestProxyAgent.json ./
     cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./
     cp -f $out_package_dir/GuestProxyAgent.service ./DEBIAN/
-    sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  echo ======= replace pkgversion with actual version
-    sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  echo ======= replace pkgversion with actual version
-    sed -i "s/pkgversion/${pkgversion}/g" Cargo.toml  echo ======= replace pkgversion with actual version
+    sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  # replace pkgversion with actual version
+    sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  # replace pkgversion with actual version
+    sed -i "s/pkgversion/${pkgversion}/g" Cargo.toml  # replace pkgversion with actual version
     echo cargo deb -v --manifest-path $rootdir/debbuild/Cargo.toml --no-build -o $out_package_dir --target $build_target
     cargo deb -v --manifest-path $rootdir/debbuild/Cargo.toml --no-build -o $out_package_dir --target $build_target
     error_code=$?
