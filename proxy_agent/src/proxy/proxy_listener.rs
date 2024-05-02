@@ -575,7 +575,6 @@ pub fn get_status() -> ProxyAgentDetailStatus {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::config;
     use crate::common::constants;
     use crate::common::http;
     use crate::common::http::headers;
@@ -658,7 +657,7 @@ mod tests {
             10 * 1024 * 1024,
             20,
         );
-        Connection::init_logger(config::get_logs_dir());
+        Connection::init_logger(temp_test_path.clone());
         let shut_down: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 
         let cloned_shut_down = shut_down.clone();
