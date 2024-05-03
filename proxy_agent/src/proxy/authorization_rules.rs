@@ -101,10 +101,7 @@ impl AuthorizationRules {
         if self.mode.to_lowercase() == "disabled" {
             return true;
         }
-        // Move after authorization is done, or move audit mode check to the caller 
-        if self.mode.to_lowercase() == "audit" {
-            return true;
-        }
+
         let url = request_url.to_lowercase();
         let url = match url::Url::parse(&url) {
             Ok(u) => u,
@@ -141,7 +138,124 @@ impl AuthorizationRules {
             }
         }
 
+        if self.mode.to_lowercase() == "audit" {
+            return true;
+        }
         // no privilege matched, fall back to default access
         self.defaultAllowed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege, Role, RoleAssignment};
+    use proxy_agent_shared::misc_helpers;
+
+    #[test]
+    fn authorizationRules_test() {
+        let mut authorization_item = AuthorizationItem::new();
+        authorization_item.defaultAccess = "deny".to_string();
+        authorization_item.mode = "enforce".to_string();
+        authorization_item.privileges = Some(vec![
+            Privilege {
+                name: "read".to_string(),
+                path: "/".to_string(),
+            },
+            Privilege {
+                name: "write".to_string(),
+                path: "/".to_string(),
+            },
+        ]);
+        authorization_item.roles = Some(vec![
+            Role {
+                name: "admin".to_string(),
+                privileges: vec!["read".to_string(), "write".to_string()],
+            },
+            Role {
+                name: "user".to_string(),
+                privileges: vec!["read".to_string()],
+            },
+        ]);
+        authorization_item.identities = Some(vec![
+            Identity {
+                name: "admin".to_string(),
+                roles: vec!["admin".to_string()],
+            },
+            Identity {
+                name: "user".to_string(),
+                roles: vec!["user".to_string()],
+            },
+        ]);
+        authorization_item.roleAssignments = Some(vec![
+            RoleAssignment {
+                role: "admin".to_string(),
+                identities: vec!["admin".to_string()],
+            },
+            RoleAssignment {
+                role: "user".to_string(),
+                identities: vec!["user".to_string()],
+            },
+        ]);
+
+        let rules = AuthorizationRules::from_authorization_item(authorization_item);
+        let rules_clone = rules.clone();
+        assert_eq!(rules.defaultAllowed, false);
+        assert_eq!(rules.mode, "enforce");
+        assert_eq!(rules.rules.is_some(), true);
+
+        let claims = Claims {
+            processName: "test".to_string(),
+            processCmdLine: "test".to_string(),
+            runAsElevated: true,
+        };
+        assert_eq!(
+            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
+            false
+        );
+
+        let mut claims = Claims {
+            processName: "test".to_string(),
+            processCmdLine: "test".to_string(),
+            runAsElevated: true,
+        };
+        claims.userName = "admin".to_string();
+        assert_eq!(
+            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
+            true
+        );
+
+        let mut claims = Claims {
+            processName: "test".to_string(),
+            processCmdLine: "test".to_string(),
+            runAsElevated: true,
+        };
+        claims.userName = "user".to_string();
+        assert_eq!(
+            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
+            false
+        );
+
+        authorization_item.defaultAccess = "deny".to_string();
+        authorization_item.mode = "audit".to_string();
+        let rules = AuthorizationRules::from_authorization_item(authorization_item);
+        assert_eq!(rules.defaultAllowed, false);
+        assert_eq!(rules.mode, "audit");
+        assert_eq!(rules.rules.is_some(), true);
+        assert_eq!(
+            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
+            true
+        );
+
+        authorization_item.defaultAccess = "allow".to_string();
+        authorization_item.mode = "disabled".to_string();
+        let rules = AuthorizationRules::from_authorization_item(authorization_item);
+        assert_eq!(rules.defaultAllowed, true);
+        assert_eq!(rules.mode, "disabled");
+        assert_eq!(rules.rules.is_some(), false);
+        assert_eq!(
+            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
+            true
+        );
     }
 }
