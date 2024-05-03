@@ -1,7 +1,7 @@
 use crate::{
     common::{
         constants,
-        http::{self, headers, http_request::HttpRequest, request::Request, response::Response}
+        http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
     },
     proxy::{proxy_connection::Connection, Claims},
 };
@@ -44,7 +44,7 @@ pub struct KeyStatus {
     pub version: String,
     // Authorization rules for guest to evaluate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorizationRules: Option<AuthorizationRules>
+    pub authorizationRules: Option<AuthorizationRules>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,7 +53,7 @@ pub struct AuthorizationRules {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub imds: Option<AuthorizationItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wireserver: Option<AuthorizationItem>
+    pub wireserver: Option<AuthorizationItem>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,7 +72,7 @@ pub struct AuthorizationItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roleAssignments: Option<Vec<RoleAssignment>>,
     // reference: SIG artifact resource id / inline: hashOfRules
-    pub id: String
+    pub id: String,
 }
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -80,14 +80,14 @@ pub struct Privilege {
     pub name: String,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub queryParameters: Option<HashMap<String, String>>
+    pub queryParameters: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Role {
     pub name: String,
-    pub privileges: Vec<String>
+    pub privileges: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -101,14 +101,14 @@ pub struct Identity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exePath: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub processName: Option<String>
+    pub processName: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct RoleAssignment {
     pub role: String,
-    pub identities: Vec<String>
+    pub identities: Vec<String>,
 }
 
 impl Privilege {
@@ -116,7 +116,7 @@ impl Privilege {
         Privilege {
             name: self.name.to_string(),
             path: self.path.to_string(),
-            queryParameters: self.queryParameters.clone()
+            queryParameters: self.queryParameters.clone(),
         }
     }
 
@@ -191,7 +191,7 @@ impl Identity {
             userName: self.userName.clone(),
             groupName: self.groupName.clone(),
             exePath: self.exePath.clone(),
-            processName: self.processName.clone()
+            processName: self.processName.clone(),
         }
     }
 
@@ -275,7 +275,38 @@ impl Identity {
             }
             None => {}
         }
-        //TODO: groupName match
+        match self.groupName {
+            Some(ref group_name) => {
+                let mut matched = false;
+                for claims_user_group_name in &claims.userGroups {
+                    if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
+                        Connection::write_information(
+                            connection_id,
+                            format!(
+                                "Matched user group name '{}' from identity '{}'",
+                                group_name,
+                                self.name.to_string()
+                            ),
+                        );
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
+                    Connection::write_information(
+                        connection_id,
+                        format!(
+                            "Not matched user group name '{}' from identity '{}'",
+                            group_name,
+                            self.name.to_string()
+                        ),
+                    );
+                    return false;
+                }
+            }
+            None => {}
+        }
+
         return true;
     }
 }
@@ -729,33 +760,250 @@ mod tests {
 
         // deserizliaze authorizationRules
         let rules = status.authorizationRules.unwrap();
-        // validate authorizationRules 
-        assert_eq!("deny", rules.wireserver.as_ref().unwrap().defaultAccess, "defaultAccess mismatch");
-        assert_eq!("enforce", rules.wireserver.as_ref().unwrap().mode, "mode mismatch");
-        assert_eq!("sigid", rules.wireserver.as_ref().unwrap().id, "id mismatch");
+        // validate authorizationRules
+        assert_eq!(
+            "deny",
+            rules.wireserver.as_ref().unwrap().defaultAccess,
+            "defaultAccess mismatch"
+        );
+        assert_eq!(
+            "enforce",
+            rules.wireserver.as_ref().unwrap().mode,
+            "mode mismatch"
+        );
+        assert_eq!(
+            "sigid",
+            rules.wireserver.as_ref().unwrap().id,
+            "id mismatch"
+        );
         assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
-        assert_eq!("allow", rules.imds.as_ref().unwrap().defaultAccess, "defaultAccess mismatch");
-        assert_eq!("enforce", rules.imds.as_ref().unwrap().mode, "mode mismatch");
+        assert_eq!(
+            "allow",
+            rules.imds.as_ref().unwrap().defaultAccess,
+            "defaultAccess mismatch"
+        );
+        assert_eq!(
+            "enforce",
+            rules.imds.as_ref().unwrap().mode,
+            "mode mismatch"
+        );
         assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
-        assert_eq!("sigid", rules.wireserver.as_ref().unwrap().id, "id mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].name, "privilege name mismatch");
-        assert_eq!("/test", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].path, "privilege path mismatch");
-        assert_eq!("value1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].queryParameters.as_ref().unwrap()["key1"], "privilege queryParameters mismatch");
-        assert_eq!("value2", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[0].queryParameters.as_ref().unwrap()["key2"], "privilege queryParameters mismatch");
-        assert_eq!("test1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].name, "privilege name mismatch");
-        assert_eq!("/test1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].path, "privilege path mismatch");
-        assert_eq!("value1", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].queryParameters.as_ref().unwrap()["key1"], "privilege queryParameters mismatch");
-        assert_eq!("value2", rules.wireserver.as_ref().unwrap().privileges.as_ref().unwrap()[1].queryParameters.as_ref().unwrap()["key2"], "privilege queryParameters mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].name, "role name mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[0], "role privilege mismatch");
-        assert_eq!("test1", rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[1], "role privilege mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].name, "identity name mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].userName.as_ref().unwrap(), "identity userName mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].groupName.as_ref().unwrap(), "identity groupName mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].exePath.as_ref().unwrap(), "identity exePath mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().identities.as_ref().unwrap()[0].processName.as_ref().unwrap(), "identity processName mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].role, "roleAssignment role mismatch");
-        assert_eq!("test", rules.wireserver.as_ref().unwrap().roleAssignments.as_ref().unwrap()[0].identities[0], "roleAssignment identities mismatch");
+        assert_eq!(
+            "sigid",
+            rules.wireserver.as_ref().unwrap().id,
+            "id mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[0]
+                .name,
+            "privilege name mismatch"
+        );
+        assert_eq!(
+            "/test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[0]
+                .path,
+            "privilege path mismatch"
+        );
+        assert_eq!(
+            "value1",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[0]
+                .queryParameters
+                .as_ref()
+                .unwrap()["key1"],
+            "privilege queryParameters mismatch"
+        );
+        assert_eq!(
+            "value2",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[0]
+                .queryParameters
+                .as_ref()
+                .unwrap()["key2"],
+            "privilege queryParameters mismatch"
+        );
+        assert_eq!(
+            "test1",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[1]
+                .name,
+            "privilege name mismatch"
+        );
+        assert_eq!(
+            "/test1",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[1]
+                .path,
+            "privilege path mismatch"
+        );
+        assert_eq!(
+            "value1",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[1]
+                .queryParameters
+                .as_ref()
+                .unwrap()["key1"],
+            "privilege queryParameters mismatch"
+        );
+        assert_eq!(
+            "value2",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .privileges
+                .as_ref()
+                .unwrap()[1]
+                .queryParameters
+                .as_ref()
+                .unwrap()["key2"],
+            "privilege queryParameters mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].name,
+            "role name mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[0],
+            "role privilege mismatch"
+        );
+        assert_eq!(
+            "test1",
+            rules.wireserver.as_ref().unwrap().roles.as_ref().unwrap()[0].privileges[1],
+            "role privilege mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .identities
+                .as_ref()
+                .unwrap()[0]
+                .name,
+            "identity name mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .identities
+                .as_ref()
+                .unwrap()[0]
+                .userName
+                .as_ref()
+                .unwrap(),
+            "identity userName mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .identities
+                .as_ref()
+                .unwrap()[0]
+                .groupName
+                .as_ref()
+                .unwrap(),
+            "identity groupName mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .identities
+                .as_ref()
+                .unwrap()[0]
+                .exePath
+                .as_ref()
+                .unwrap(),
+            "identity exePath mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .identities
+                .as_ref()
+                .unwrap()[0]
+                .processName
+                .as_ref()
+                .unwrap(),
+            "identity processName mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .roleAssignments
+                .as_ref()
+                .unwrap()[0]
+                .role,
+            "roleAssignment role mismatch"
+        );
+        assert_eq!(
+            "test",
+            rules
+                .wireserver
+                .as_ref()
+                .unwrap()
+                .roleAssignments
+                .as_ref()
+                .unwrap()[0]
+                .identities[0],
+            "roleAssignment identities mismatch"
+        );
 
         let status_response_v1 = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
@@ -837,8 +1085,10 @@ mod tests {
 
     #[test]
     fn test_privelege_is_match() {
-        // initialize connection_logger
-        Connection::init_logger(std::path::PathBuf::new());
+        let logger_key = "test_privelege_is_match";
+        let mut temp_test_path = std::env::temp_dir();
+        temp_test_path.push(logger_key);
+        Connection::init_logger(temp_test_path.to_path_buf());
 
         let privilege = r#"{
             "name": "test",
@@ -892,14 +1142,21 @@ mod tests {
             !privilege2.is_match(1, url.clone()),
             "privilege should not be matched"
         );
+
+        // clean up and ignore the clean up errors
+        _ = std::fs::remove_dir_all(temp_test_path);
     }
 
     #[test]
     fn test_identity_is_match() {
-        Connection::init_logger(std::path::PathBuf::new());
+        let logger_key = "test_identity_is_match";
+        let mut temp_test_path = std::env::temp_dir();
+        temp_test_path.push(logger_key);
+        Connection::init_logger(temp_test_path.to_path_buf());
 
         let claims = super::Claims {
             userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
             processName: "test".to_string(),
             processCmdLine: "test".to_string(),
             userId: 0,
@@ -935,6 +1192,7 @@ mod tests {
             "identity should not be matched"
         );
 
+        // test userName
         let identity2 = r#"{
             "name": "test",
             "userName": "test1"
@@ -955,6 +1213,7 @@ mod tests {
             "identity should be matched"
         );
 
+        // test processName
         let identity3 = r#"{
             "name": "test",
             "processName": "test1"
@@ -964,7 +1223,6 @@ mod tests {
             !identity3.is_match(1, claims.clone()),
             "identity should not be matched"
         );
-
         let identity3 = r#"{
             "name": "test",
             "processName": "test"
@@ -975,6 +1233,7 @@ mod tests {
             "identity should be matched"
         );
 
+        // test exePath
         let identity4 = r#"{
             "name": "test",
             "exePath": "test1"
@@ -984,7 +1243,6 @@ mod tests {
             !identity4.is_match(1, claims.clone()),
             "identity should not be matched"
         );
-
         let identity4 = r#"{
             "name": "test",
             "exePath": "test"
@@ -994,5 +1252,28 @@ mod tests {
             identity4.is_match(1, claims.clone()),
             "identity should be matched"
         );
+
+        // test groupName
+        let identity5 = r#"{
+            "name": "test",
+            "groupName": "test1"
+        }"#;
+        let identity5: Identity = serde_json::from_str(identity5).unwrap();
+        assert!(
+            !identity5.is_match(1, claims.clone()),
+            "identity should not be matched"
+        );
+        let identity5 = r#"{
+            "name": "test",
+            "groupName": "test"
+        }"#;
+        let identity5: Identity = serde_json::from_str(identity5).unwrap();
+        assert!(
+            identity5.is_match(1, claims.clone()),
+            "identity should be matched"
+        );
+
+        // clean up and ignore the clean up errors
+        _ = std::fs::remove_dir_all(temp_test_path);
     }
 }
