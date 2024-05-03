@@ -2,6 +2,7 @@ name: CD Release
 
 on:
   push:
+    branches: ["main"]
     tags:
       - '*'
 
