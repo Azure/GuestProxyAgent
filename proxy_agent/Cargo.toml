@@ -17,7 +17,6 @@ serde-xml-rs = "0.6.0"        # xml Deserializer
 url = "2.3.1"                 # parse url string
 hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
-libloading = "0.8.0"          # for dynamic load libraries
 regex = "1.9.5"               # match process name in cmdline
 
 [dependencies.uuid]
@@ -44,6 +43,7 @@ features = [
 windows-service = "0.5.0"     # windows NT service
 windows-acl = "0.3.0"         # ACL the latch key folder
 winapi = "0.3.9"              # used by windows-acl PSID
+libloading = "0.8.0"          # for dynamic load libraries
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"             # Rust Windows resource helper to add file version
