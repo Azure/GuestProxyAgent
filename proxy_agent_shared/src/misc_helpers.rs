@@ -79,6 +79,20 @@ where
     Ok(obj)
 }
 
+pub fn json_clone<T>(obj: &T) -> std::io::Result<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let json = serde_json::to_string(obj)?;
+    match serde_json::from_str(&json) {
+        Ok(obj) => Ok(obj),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )),
+    }
+}
+
 pub fn get_current_exe_dir() -> PathBuf {
     let mut path = std::env::current_exe().unwrap();
     path.pop();

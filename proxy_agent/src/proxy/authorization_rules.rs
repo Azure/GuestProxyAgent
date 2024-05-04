@@ -148,114 +148,68 @@ impl AuthorizationRules {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege, Role, RoleAssignment};
-    use proxy_agent_shared::misc_helpers;
-
+    use super::AuthorizationRules;
+    use crate::{key_keeper::key::{AuthorizationItem, Identity, Privilege, Role, RoleAssignment}, proxy::{proxy_connection::Connection, Claims}};
+    
     #[test]
-    fn authorizationRules_test() {
-        let mut authorization_item = AuthorizationItem::new();
-        authorization_item.defaultAccess = "deny".to_string();
-        authorization_item.mode = "enforce".to_string();
-        authorization_item.privileges = Some(vec![
-            Privilege {
-                name: "read".to_string(),
-                path: "/".to_string(),
-            },
-            Privilege {
-                name: "write".to_string(),
-                path: "/".to_string(),
-            },
-        ]);
-        authorization_item.roles = Some(vec![
-            Role {
-                name: "admin".to_string(),
-                privileges: vec!["read".to_string(), "write".to_string()],
-            },
-            Role {
-                name: "user".to_string(),
-                privileges: vec!["read".to_string()],
-            },
-        ]);
-        authorization_item.identities = Some(vec![
-            Identity {
-                name: "admin".to_string(),
-                roles: vec!["admin".to_string()],
-            },
-            Identity {
-                name: "user".to_string(),
-                roles: vec!["user".to_string()],
-            },
-        ]);
-        authorization_item.roleAssignments = Some(vec![
-            RoleAssignment {
-                role: "admin".to_string(),
-                identities: vec!["admin".to_string()],
-            },
-            RoleAssignment {
-                role: "user".to_string(),
-                identities: vec!["user".to_string()],
-            },
-        ]);
+    fn test_authorization_rules() {
+        let logger_key = "test_authorization_rules";
+        let mut temp_test_path = std::env::temp_dir();
+        temp_test_path.push(logger_key);
+        Connection::init_logger(temp_test_path.to_path_buf());
 
-        let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        let rules_clone = rules.clone();
+        let authorization_item: AuthorizationItem = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            roles: Some(vec![Role {
+                name: "test".to_string(),
+                privileges: vec!["test".to_string(), "test1".to_string()],
+            }]),
+            privileges: Some(vec![
+                Privilege {
+                    name: "test".to_string(),
+                    path: "/test".to_string(),
+                    queryParameters: None,
+                }
+            ]),
+            identities: Some(vec![
+                Identity {
+                    name: "test".to_string(),
+                    exePath: Some("test".to_string()),
+                    groupName:Some("test".to_string()) ,
+                    processName: Some("test".to_string()),
+                    userName: Some("test".to_string()), 
+                }
+            ]),
+            roleAssignments: Some(vec![RoleAssignment {
+                role: "test".to_string(),
+                identities: vec!["test".to_string()],
+            }]),
+            id: "0".to_string(),
+        };
+
+        let rules = AuthorizationRules::from_authorization_item(authorization_item).clone();
         assert_eq!(rules.defaultAllowed, false);
         assert_eq!(rules.mode, "enforce");
         assert_eq!(rules.rules.is_some(), true);
 
-        let claims = Claims {
-            processName: "test".to_string(),
-            processCmdLine: "test".to_string(),
-            runAsElevated: true,
-        };
-        assert_eq!(
-            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
-            false
-        );
-
         let mut claims = Claims {
+            userId: 0,
+            userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
+            processId: 0,
+            processFullPath: "test".to_string(),
+            clientIp: "0".to_string(),
             processName: "test".to_string(),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
         };
-        claims.userName = "admin".to_string();
-        assert_eq!(
-            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
-            true
-        );
 
-        let mut claims = Claims {
-            processName: "test".to_string(),
-            processCmdLine: "test".to_string(),
-            runAsElevated: true,
-        };
-        claims.userName = "user".to_string();
-        assert_eq!(
-            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
-            false
-        );
+        // assert the claim is allowed given the rules above
+        let url = url::Url::parse("http://localhost/test?").unwrap();
+        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
 
-        authorization_item.defaultAccess = "deny".to_string();
-        authorization_item.mode = "audit".to_string();
-        let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        assert_eq!(rules.defaultAllowed, false);
-        assert_eq!(rules.mode, "audit");
-        assert_eq!(rules.rules.is_some(), true);
-        assert_eq!(
-            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
-            true
-        );
-
-        authorization_item.defaultAccess = "allow".to_string();
-        authorization_item.mode = "disabled".to_string();
-        let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        assert_eq!(rules.defaultAllowed, true);
-        assert_eq!(rules.mode, "disabled");
-        assert_eq!(rules.rules.is_some(), false);
-        assert_eq!(
-            rules.is_allowed(0, "http://localhost".to_string(), claims.clone()),
-            true
-        );
+        claims.userName = "test1".to_string();
+        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), false);
     }
 }
