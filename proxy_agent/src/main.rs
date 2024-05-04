@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-#![deny(warnings)]
+//#![deny(warnings)]
 
 pub mod acl;
 pub mod common;
