@@ -74,6 +74,21 @@ pub struct AuthorizationItem {
     // reference: SIG artifact resource id / inline: hashOfRules
     pub id: String,
 }
+
+impl AuthorizationItem {
+    pub fn new() -> Self {
+        AuthorizationItem {
+            defaultAccess: String::new(),
+            mode: String::new(),
+            privileges: None,
+            roles: None,
+            identities: None,
+            roleAssignments: None,
+            id: String::new(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Privilege {
