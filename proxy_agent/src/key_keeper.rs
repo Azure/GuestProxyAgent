@@ -29,6 +29,8 @@ static mut CURRENT_KEY: Lazy<Key> = Lazy::new(|| Key::empty());
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Key latch thread has not started yet."));
+static mut WIRESERVER_RULE_ID: Lazy<String> = Lazy::new(|| String::from(""));
+static mut IMDS_RULE_ID: Lazy<String> = Lazy::new(|| String::from(""));
 
 pub fn get_secure_channel_state() -> String {
     unsafe { CURRENT_SECURE_CHANNEL_STATE.to_string() }
@@ -176,6 +178,21 @@ fn poll_secure_channel_status(
         let state = status.get_secure_channel_state();
 
         unsafe {
+            let wireserver_rule_id  = status.get_wireserver_rule_id();
+            let imds_rule_id = status.get_imds_rule_id();
+
+            if wireserver_rule_id != *WIRESERVER_RULE_ID {
+                logger::write_warning(format!("Wireserver rule id changed from {} to {}.", *WIRESERVER_RULE_ID, wireserver_rule_id));
+                *WIRESERVER_RULE_ID = wireserver_rule_id.to_string();
+                //TODO update the authorization rule details for wireserver
+            }
+
+            if imds_rule_id != *IMDS_RULE_ID {
+                logger::write_warning(format!("IMDS rule id changed from {} to {}.", *IMDS_RULE_ID, imds_rule_id));
+                *IMDS_RULE_ID = imds_rule_id.to_string();
+                //TODO update the authorization rule details for imds
+            }
+
             // check if need fetch the key
             if state != DISABLE_STATE && guid != CURRENT_KEY.guid {
                 // search the key locally first
