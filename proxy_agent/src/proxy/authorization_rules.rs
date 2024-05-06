@@ -22,6 +22,7 @@ pub struct AuthorizationRules {
     pub rules: Option<Vec<Rule>>,
 }
 
+#[allow(dead_code)]
 impl AuthorizationRules {
     pub fn new() -> AuthorizationRules {
         AuthorizationRules {
@@ -30,6 +31,7 @@ impl AuthorizationRules {
             rules: None,
         }
     }
+
     pub fn from_authorization_item(authorization_item: AuthorizationItem) -> AuthorizationRules {
         let rules = match authorization_item.roleAssignments {
             Some(role_assignments) => {

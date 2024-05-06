@@ -326,4 +326,30 @@ mod tests {
         let file_name = super::get_file_name(path);
         assert_eq!("InvalidPath", file_name, "file_name mismatch");
     }
+
+    #[test]
+    fn json_clone_test() {
+        let test = TestStruct {
+            thread_id: super::get_thread_identity(),
+            date_time_string_with_miliseconds: super::get_date_time_string_with_miliseconds(),
+            date_time_string: super::get_date_time_string(),
+            date_time_rfc1123_string: super::get_date_time_rfc1123_string(),
+            date_time_unix_nano: super::get_date_time_unix_nano(),
+            long_os_version: super::get_long_os_version(),
+            current_exe_dir: super::get_current_exe_dir().to_str().unwrap().to_string(),
+        };
+
+        let cloned = super::json_clone(&test).unwrap();
+
+        assert_eq!(test.thread_id, cloned.thread_id);
+        assert_eq!(
+            test.date_time_string_with_miliseconds,
+            cloned.date_time_string_with_miliseconds
+        );
+        assert_eq!(test.date_time_string, cloned.date_time_string);
+        assert_eq!(test.date_time_rfc1123_string, cloned.date_time_rfc1123_string);
+        assert_eq!(test.date_time_unix_nano, cloned.date_time_unix_nano);
+        assert_eq!(test.long_os_version, cloned.long_os_version);
+        assert_eq!(test.current_exe_dir, cloned.current_exe_dir);
+    }
 }
