@@ -29,6 +29,8 @@ static mut CURRENT_KEY: Lazy<Key> = Lazy::new(|| Key::empty());
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Key latch thread has not started yet."));
+static mut WIRESERVER_RULE_ID: Lazy<String> = Lazy::new(|| String::from(""));
+static mut IMDS_RULE_ID: Lazy<String> = Lazy::new(|| String::from(""));
 
 pub fn get_secure_channel_state() -> String {
     unsafe { CURRENT_SECURE_CHANNEL_STATE.to_string() }
@@ -171,134 +173,164 @@ fn poll_secure_channel_status(
             status.to_string()
         ));
 
+        let wireserver_rule_id = status.get_wireserver_rule_id();
+        let imds_rule_id = status.get_imds_rule_id();
+        unsafe {
+            if wireserver_rule_id != *WIRESERVER_RULE_ID {
+                logger::write_warning(format!(
+                    "Wireserver rule id changed from {} to {}.",
+                    *WIRESERVER_RULE_ID, wireserver_rule_id
+                ));
+                *WIRESERVER_RULE_ID = wireserver_rule_id.to_string();
+                //TODO update the authorization rule details for wireserver
+            }
+        }
+        unsafe {
+            if imds_rule_id != *IMDS_RULE_ID {
+                logger::write_warning(format!(
+                    "IMDS rule id changed from {} to {}.",
+                    *IMDS_RULE_ID, imds_rule_id
+                ));
+                *IMDS_RULE_ID = imds_rule_id.to_string();
+                //TODO update the authorization rule details for imds
+            }
+        }
+
         let mut key_file = key_dir.to_path_buf().join(guid.to_string());
         key_file.set_extension("key");
         let state = status.get_secure_channel_state();
 
-        unsafe {
-            // check if need fetch the key
-            if state != DISABLE_STATE && guid != CURRENT_KEY.guid {
-                // search the key locally first
-                let mut key_found = false;
-                if guid != "" {
-                    // the key already latched before
-                    if key_file.exists() {
-                        // read the key details locally and update
-                        match misc_helpers::json_read_from_file(key_file.to_path_buf()) {
-                            Ok(key) => {
-                                // update in memory
+        // check if need fetch the key
+        if state != DISABLE_STATE && guid != get_current_key_guid() {
+            // search the key locally first
+            let mut key_found = false;
+            if guid != "" {
+                // the key already latched before
+                if key_file.exists() {
+                    // read the key details locally and update
+                    match misc_helpers::json_read_from_file(key_file.to_path_buf()) {
+                        Ok(key) => {
+                            // update in memory
+                            unsafe {
                                 *CURRENT_KEY = key;
-                                let message = helpers::write_startup_event(
-                                    "Found key details from local and ready to use.",
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
+                            }
+                            let message = helpers::write_startup_event(
+                                "Found key details from local and ready to use.",
+                                "poll_secure_channel_status",
+                                "key_keeper",
+                                logger::AGENT_LOGGER_KEY,
+                            );
+                            unsafe {
                                 *STATUS_MESSAGE = message.to_string();
-                                key_found = true;
-
-                                provision::key_latched();
                             }
-                            Err(e) => {
-                                let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
-                                e);
-                                event_logger::write_event(
-                                    event_logger::WARN_LEVEL,
-                                    message.to_string(),
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
-                            }
-                        };
-                    } else {
-                        let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
-                        event_logger::write_event(
-                            event_logger::WARN_LEVEL,
-                            message.to_string(),
-                            "poll_secure_channel_status",
-                            "key_keeper",
-                            logger::AGENT_LOGGER_KEY,
-                        );
-                    }
-                }
+                            key_found = true;
 
-                // if key has not latched before,
-                // or not found
-                // or could not read locally,
-                // try fetch from server
-                if !key_found {
-                    let key;
-                    match key::acquire_key(base_url.clone()) {
-                        Ok(k) => key = k,
+                            provision::key_latched();
+                        }
                         Err(e) => {
-                            logger::write_warning(format!(
-                                "Failed to acquire key details: {:?}",
-                                e
-                            ));
-                            continue;
+                            let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
+                                e);
+                            event_logger::write_event(
+                                event_logger::WARN_LEVEL,
+                                message.to_string(),
+                                "poll_secure_channel_status",
+                                "key_keeper",
+                                logger::AGENT_LOGGER_KEY,
+                            );
                         }
                     };
-
-                    // key has not latched before,
-                    // set the key_file full path from key details
-                    if guid == "" {
-                        guid = key.guid.to_string();
-                        key_file = key_dir.to_path_buf().join(guid.to_string());
-                        key_file.set_extension("key");
-                    }
-                    _ = misc_helpers::json_write_to_file(&key, key_file);
-                    logger::write_information(format!(
-                        "Successfully acquired the key '{}' details from server and saved locally.",
-                        guid.to_string()
-                    ));
-
-                    // double check the key details saved correctly to local disk
-                    if check_local_key(key_dir.to_path_buf(), &key) {
-                        match key::attest_key(base_url.clone(), &key) {
-                            Ok(()) => {
-                                // update in memory
-                                *CURRENT_KEY = key;
-                                helpers::write_startup_event(
-                                    "Successfully attest the key and ready to use.",
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
-                                *STATUS_MESSAGE = message.to_string();
-
-                                provision::key_latched();
-                            }
-                            Err(e) => {
-                                logger::write_warning(format!("Failed to attest the key: {:?}", e));
-                                continue;
-                            }
-                        }
-                    } else {
-                        logger::write_warning(format!(
-                            "Saved key '{}' details lost locally.",
-                            guid.to_string()
-                        ));
-                    }
-                }
-            }
-
-            // update the current secure channel state if different
-            if state != *CURRENT_SECURE_CHANNEL_STATE {
-                *CURRENT_SECURE_CHANNEL_STATE = state.to_string();
-
-                // customer has not enforce the secure channel state
-                if state == DISABLE_STATE {
-                    let message = helpers::write_startup_event(
-                        "Customer has not enforce the secure channel state.",
+                } else {
+                    let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
+                    event_logger::write_event(
+                        event_logger::WARN_LEVEL,
+                        message.to_string(),
                         "poll_secure_channel_status",
                         "key_keeper",
                         logger::AGENT_LOGGER_KEY,
                     );
-                    // Update the status message and let the provision to continue
-                    *STATUS_MESSAGE = message.to_string();
-                    provision::key_latched();
                 }
+            }
+
+            // if key has not latched before,
+            // or not found
+            // or could not read locally,
+            // try fetch from server
+            if !key_found {
+                let key;
+                match key::acquire_key(base_url.clone()) {
+                    Ok(k) => key = k,
+                    Err(e) => {
+                        logger::write_warning(format!("Failed to acquire key details: {:?}", e));
+                        continue;
+                    }
+                };
+
+                // key has not latched before,
+                // set the key_file full path from key details
+                if guid == "" {
+                    guid = key.guid.to_string();
+                    key_file = key_dir.to_path_buf().join(guid.to_string());
+                    key_file.set_extension("key");
+                }
+                _ = misc_helpers::json_write_to_file(&key, key_file);
+                logger::write_information(format!(
+                    "Successfully acquired the key '{}' details from server and saved locally.",
+                    guid.to_string()
+                ));
+
+                // double check the key details saved correctly to local disk
+                if check_local_key(key_dir.to_path_buf(), &key) {
+                    match key::attest_key(base_url.clone(), &key) {
+                        Ok(()) => {
+                            // update in memory
+                            unsafe {
+                                *CURRENT_KEY = key;
+                            }
+                            helpers::write_startup_event(
+                                "Successfully attest the key and ready to use.",
+                                "poll_secure_channel_status",
+                                "key_keeper",
+                                logger::AGENT_LOGGER_KEY,
+                            );
+                            unsafe {
+                                *STATUS_MESSAGE = message.to_string();
+                            }
+
+                            provision::key_latched();
+                        }
+                        Err(e) => {
+                            logger::write_warning(format!("Failed to attest the key: {:?}", e));
+                            continue;
+                        }
+                    }
+                } else {
+                    logger::write_warning(format!(
+                        "Saved key '{}' details lost locally.",
+                        guid.to_string()
+                    ));
+                }
+            }
+        }
+
+        // update the current secure channel state if different
+        if state != get_secure_channel_state() {
+            unsafe {
+                *CURRENT_SECURE_CHANNEL_STATE = state.to_string();
+            }
+
+            // customer has not enforce the secure channel state
+            if state == DISABLE_STATE {
+                let message = helpers::write_startup_event(
+                    "Customer has not enforce the secure channel state.",
+                    "poll_secure_channel_status",
+                    "key_keeper",
+                    logger::AGENT_LOGGER_KEY,
+                );
+                // Update the status message and let the provision to continue
+                unsafe {
+                    *STATUS_MESSAGE = message.to_string();
+                }
+                provision::key_latched();
             }
         }
     }
