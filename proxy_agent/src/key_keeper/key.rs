@@ -449,6 +449,30 @@ impl KeyStatus {
         }
     }
 
+    pub fn get_wireserver_rule_id(&self) -> String {
+        match &self.authorizationRules {
+            Some(rules) => {
+                match &rules.wireserver {
+                    Some(item) => return item.id.to_string(),
+                    None => return String::new(),
+                }
+            }
+            None => return String::new(),
+        }
+    }
+
+    pub fn get_imds_rule_id(&self) -> String {
+        match &self.authorizationRules {
+            Some(rules) => {
+                match &rules.imds {
+                    Some(item) => return item.id.to_string(),
+                    None => return String::new(),
+                }
+            }
+            None => return String::new(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         return format!(
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
@@ -624,7 +648,56 @@ mod tests {
     use crate::proxy::proxy_connection::Connection;
 
     #[test]
-    fn key_status_test() {
+    fn key_status_v1_test() {
+        let status_response_v1 = r#"{
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": null,
+            "secureChannelState": "Wireserver",
+            "version": "1.0"
+        }"#;
+
+        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
+        assert_eq!(
+            constants::AUTHORIZATION_SCHEME,
+            status_v1.authorizationScheme,
+            "authorizationScheme mismatch"
+        );
+        assert_eq!(
+            "http", status_v1.keyDeliveryMethod,
+            "keyDeliveryMethod mismatch"
+        );
+        assert_eq!(None, status_v1.keyGuid, "keyGuid must be None");
+        assert_eq!(
+            None, status_v1.requiredClaimsHeaderPairs,
+            "requiredClaimsHeaderPairs must be None"
+        );
+        assert_eq!(
+            Some("Wireserver".to_string()),
+            status_v1.secureChannelState,
+            "secureChannelState mismatch"
+        );
+        assert!(
+            status_v1.keyIncarnationId.is_none(),
+            "keyIncarnationId must be None"
+        );
+        assert_eq!("1.0".to_string(), status_v1.version, "version 1.0 mismatch");
+        assert!(
+            status_v1.validate().unwrap(),
+            "Key status validation must be true"
+        );
+        assert!(
+            status_v1.secureChannelEnabled.is_none(),
+            "secureChannelEnabled must be None in version 1.0"
+        );
+        assert_eq!("", status_v1.get_imds_rule_id(), "IMDS rule id must be empty");
+        assert_eq!("", status_v1.get_wireserver_rule_id(), "WireServer rule id must be empty");
+
+    }
+
+    #[test]
+    fn key_status_v2_test() {
         let status_response = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
             "keyDeliveryMethod": "http",
@@ -774,7 +847,7 @@ mod tests {
         );
 
         // deserizliaze authorizationRules
-        let rules = status.authorizationRules.unwrap();
+        let rules = status.authorizationRules.as_ref().unwrap();
         // validate authorizationRules
         assert_eq!(
             "deny",
@@ -786,12 +859,7 @@ mod tests {
             rules.wireserver.as_ref().unwrap().mode,
             "mode mismatch"
         );
-        assert_eq!(
-            "sigid",
-            rules.wireserver.as_ref().unwrap().id,
-            "id mismatch"
-        );
-        assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
+        assert_eq!("sigid", status.get_wireserver_rule_id(), "WireServer rule id mismatch");
         assert_eq!(
             "allow",
             rules.imds.as_ref().unwrap().defaultAccess,
@@ -802,12 +870,7 @@ mod tests {
             rules.imds.as_ref().unwrap().mode,
             "mode mismatch"
         );
-        assert_eq!("sigid", rules.imds.as_ref().unwrap().id, "id mismatch");
-        assert_eq!(
-            "sigid",
-            rules.wireserver.as_ref().unwrap().id,
-            "id mismatch"
-        );
+        assert_eq!("sigid", status.get_imds_rule_id(), "IMDS rule id mismatch");
         assert_eq!(
             "test",
             rules
@@ -1018,49 +1081,6 @@ mod tests {
                 .unwrap()[0]
                 .identities[0],
             "roleAssignment identities mismatch"
-        );
-
-        let status_response_v1 = r#"{
-            "authorizationScheme": "Azure-HMAC-SHA256",
-            "keyDeliveryMethod": "http",
-            "keyGuid": null,
-            "requiredClaimsHeaderPairs": null,
-            "secureChannelState": "Wireserver",
-            "version": "1.0"
-        }"#;
-
-        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
-        assert_eq!(
-            constants::AUTHORIZATION_SCHEME,
-            status_v1.authorizationScheme,
-            "authorizationScheme mismatch"
-        );
-        assert_eq!(
-            "http", status_v1.keyDeliveryMethod,
-            "keyDeliveryMethod mismatch"
-        );
-        assert_eq!(None, status_v1.keyGuid, "keyGuid must be None");
-        assert_eq!(
-            None, status_v1.requiredClaimsHeaderPairs,
-            "requiredClaimsHeaderPairs must be None"
-        );
-        assert_eq!(
-            Some("Wireserver".to_string()),
-            status_v1.secureChannelState,
-            "secureChannelState mismatch"
-        );
-        assert!(
-            status_v1.keyIncarnationId.is_none(),
-            "keyIncarnationId must be None"
-        );
-        assert_eq!("1.0".to_string(), status_v1.version, "version 1.0 mismatch");
-        assert!(
-            status_v1.validate().unwrap(),
-            "Key status validation must be true"
-        );
-        assert!(
-            status_v1.secureChannelEnabled.is_none(),
-            "secureChannelEnabled must be None in version 1.0"
         );
     }
 
