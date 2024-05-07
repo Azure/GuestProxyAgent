@@ -173,26 +173,33 @@ fn poll_secure_channel_status(
             status.to_string()
         ));
 
-        let mut key_file = key_dir.to_path_buf().join(guid.to_string());
-        key_file.set_extension("key");
-        let state = status.get_secure_channel_state();
-
+        let wireserver_rule_id = status.get_wireserver_rule_id();
+        let imds_rule_id = status.get_imds_rule_id();
         unsafe {
-            let wireserver_rule_id  = status.get_wireserver_rule_id();
-            let imds_rule_id = status.get_imds_rule_id();
-
             if wireserver_rule_id != *WIRESERVER_RULE_ID {
-                logger::write_warning(format!("Wireserver rule id changed from {} to {}.", *WIRESERVER_RULE_ID, wireserver_rule_id));
+                logger::write_warning(format!(
+                    "Wireserver rule id changed from {} to {}.",
+                    *WIRESERVER_RULE_ID, wireserver_rule_id
+                ));
                 *WIRESERVER_RULE_ID = wireserver_rule_id.to_string();
                 //TODO update the authorization rule details for wireserver
             }
-
+        }
+        unsafe {
             if imds_rule_id != *IMDS_RULE_ID {
-                logger::write_warning(format!("IMDS rule id changed from {} to {}.", *IMDS_RULE_ID, imds_rule_id));
+                logger::write_warning(format!(
+                    "IMDS rule id changed from {} to {}.",
+                    *IMDS_RULE_ID, imds_rule_id
+                ));
                 *IMDS_RULE_ID = imds_rule_id.to_string();
                 //TODO update the authorization rule details for imds
             }
+        }
 
+        let mut key_file = key_dir.to_path_buf().join(guid.to_string());
+        key_file.set_extension("key");
+        let state = status.get_secure_channel_state();
+        unsafe {
             // check if need fetch the key
             if state != DISABLE_STATE && guid != CURRENT_KEY.guid {
                 // search the key locally first
