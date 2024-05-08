@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
 
 currentDir=$(pwd)

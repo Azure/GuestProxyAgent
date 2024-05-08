@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use std::io::{Error, ErrorKind};
 
 pub struct Version {

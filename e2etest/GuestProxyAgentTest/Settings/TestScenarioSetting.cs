@@ -1,4 +1,6 @@
-﻿namespace GuestProxyAgentTest.Settings
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+namespace GuestProxyAgentTest.Settings
 {
     /// <summary>
     /// Setting for a test case, including test group name, case name, vmImage Type, etc

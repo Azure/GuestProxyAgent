@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::http::headers::Headers;
 use std::io::{Error, ErrorKind};
 

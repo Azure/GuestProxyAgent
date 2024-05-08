@@ -1,5 +1,7 @@
-// create validation test to check the guest proxy agent service status and log file 
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 
+// create validation test to check the guest proxy agent service status and log file 
 using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.TestScenarios;
 using GuestProxyAgentTest.Utilities;

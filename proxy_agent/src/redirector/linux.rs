@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 mod ebpf_obj;
 mod iptable_redirect;
 

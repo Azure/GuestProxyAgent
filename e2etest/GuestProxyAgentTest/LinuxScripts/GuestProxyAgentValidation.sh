@@ -1,6 +1,8 @@
 #!/bin/bash
 
-# customOutputJsonSAS=$customOutputJsonSAS
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
 
 echo "Start Guest Proxy Agent Validation"

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
 use crate::key_keeper;
 use once_cell::sync::Lazy;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use super::bpf_api::*;
 use super::bpf_obj::*;
 use crate::common::constants;

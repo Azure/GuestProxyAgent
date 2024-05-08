@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 pub const PLUGIN_NAME: &str = "ProxyAgentVMExtension";
 pub const PLUGIN_CONNECTION_NAME: &str = "ProxyAgentConnectionSummary";
 pub const PLUGIN_STATUS_NAME: &str = "ProxyAgentStatus";

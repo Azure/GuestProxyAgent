@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::http::{
     self, headers, http_request::HttpRequest, request::Request, response::Response,
 };

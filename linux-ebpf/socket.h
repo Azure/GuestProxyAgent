@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #define BPF_SOCK_ADDR_VERDICT_PROCEED 1
 #define IPPROTO_TCP 6
 #define AF_INET 2 
