@@ -374,7 +374,9 @@ pub fn get_status() -> ProxyAgentDetailStatus {
     let mut states = HashMap::new();
     states.insert("secureChannelState".to_string(), get_secure_channel_state());
     states.insert("keyGuid".to_string(), get_current_key_guid());
-    match get_current_key_incarnation() {
+    states.insert("wireServerRuleId".to_string(), unsafe { WIRESERVER_RULE_ID.to_string() });
+    states.insert("imdsRuleId".to_string(), unsafe { IMDS_RULE_ID.to_string() });
+   match get_current_key_incarnation() {
         Some(incarnation) => {
             states.insert("keyIncarnationId".to_string(), incarnation.to_string());
         }
