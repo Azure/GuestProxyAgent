@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use proxy_agent_shared::logger_manager;
 
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";

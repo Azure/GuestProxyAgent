@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::{fs, fs::File, path::PathBuf, process::Command};

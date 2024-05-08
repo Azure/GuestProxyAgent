@@ -1,4 +1,6 @@
-﻿using Azure.Core;
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+using Azure.Core;
 using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.Utilities;
 using System.Reflection;

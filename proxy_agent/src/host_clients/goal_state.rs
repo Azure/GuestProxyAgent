@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]

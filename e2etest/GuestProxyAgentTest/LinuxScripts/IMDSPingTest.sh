@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 # make 10 requests if any failed, will failed the test for tcp port scalability config
 for i in {1..10}; do
     url="http://169.254.169.254/metadata/instance?api-version=2020-06-01"

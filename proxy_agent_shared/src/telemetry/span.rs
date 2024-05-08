@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use super::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;

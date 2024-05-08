@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::logger_manager;
 use crate::misc_helpers;
 use crate::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};

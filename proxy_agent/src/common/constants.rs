@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 pub const WIRE_SERVER_IP: &str = "168.63.129.16";
 pub const WIRE_SERVER_PORT: u16 = 80u16;
 pub const GA_PLUGIN_IP: &str = "168.63.129.16";

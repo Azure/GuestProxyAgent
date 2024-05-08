@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use super::proxy_authentication;
 use super::proxy_pool::ProxyPool;
 use crate::common::config;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use proxy_agent_shared::misc_helpers;
 use std::path::PathBuf;
 

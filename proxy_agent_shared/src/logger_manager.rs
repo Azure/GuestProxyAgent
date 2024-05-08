@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::rolling_logger::RollingLogger;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;

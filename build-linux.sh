@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
+
 echo ======= Get the directory of the script
 root_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 out_path=$root_path"/out"

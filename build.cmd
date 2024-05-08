@@ -1,3 +1,6 @@
+REM Copyright (c) Microsoft Corporation
+REM SPDX-License-Identifier: MIT
+
 @echo off
 SET root_path=%~dp0
 SET out_path=%root_path%out

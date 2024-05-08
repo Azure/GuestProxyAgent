@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use super::event_reader;
 use crate::common::helpers;
 use once_cell::sync::Lazy;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
 use core::ffi::c_void;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};

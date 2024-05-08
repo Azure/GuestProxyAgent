@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 pub mod headers;
 pub mod http_request;
 pub mod request;

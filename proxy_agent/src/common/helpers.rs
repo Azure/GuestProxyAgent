@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;

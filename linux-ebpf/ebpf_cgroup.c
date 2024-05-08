@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #include <linux/bpf.h>
 #include <asm/ptrace.h>
 #include <bpf/bpf_helpers.h>

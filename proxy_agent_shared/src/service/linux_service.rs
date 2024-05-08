@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::linux;
 use crate::logger_manager;
 use crate::misc_helpers;

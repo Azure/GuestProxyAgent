@@ -1,4 +1,5 @@
-﻿
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 namespace GuestProxyAgentTest.Models
 {
     public class TestMap

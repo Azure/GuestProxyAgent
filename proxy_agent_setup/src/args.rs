@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 pub struct Args {
     pub action: String,         // install, uninstall, or help
     pub uninstall_mode: String, // optional parameter for uninstall: service or package
