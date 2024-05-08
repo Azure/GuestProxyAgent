@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #![allow(non_snake_case)]
 #![deny(warnings)]
 

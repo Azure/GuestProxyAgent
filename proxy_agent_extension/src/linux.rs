@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #[cfg(not(windows))]
 use std::time::Duration;
 #[cfg(not(windows))]

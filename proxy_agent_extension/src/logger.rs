@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use once_cell::sync::Lazy;
 use proxy_agent_shared::logger_manager;
 use std::path::PathBuf;

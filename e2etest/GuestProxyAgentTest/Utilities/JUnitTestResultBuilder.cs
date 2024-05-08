@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+using System.Net;
 using System.Xml;
 
 namespace GuestProxyAgentTest.Utilities

@@ -1,4 +1,6 @@
-﻿namespace GuestProxyAgentTest.Models
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+namespace GuestProxyAgentTest.Models
 {
     /// <summary>
     /// Test case run status details

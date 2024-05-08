@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 pub mod goal_state;
 pub mod imds_client;
 pub mod instance_info;

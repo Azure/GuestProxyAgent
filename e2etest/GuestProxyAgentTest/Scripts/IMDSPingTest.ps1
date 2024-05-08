@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 $i=0
 # make 10 requests if any failed, will failed the test for tcp port scalability config
 while($i -lt 10){

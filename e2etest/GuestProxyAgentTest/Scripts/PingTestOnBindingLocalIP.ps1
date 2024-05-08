@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 try {
     $localIP = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias Ethernet)[0].IPAddress.ToString()
     $url = "http://169.254.169.254/metadata/instance?api-version=2020-06-01"

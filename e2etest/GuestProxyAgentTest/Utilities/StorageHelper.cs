@@ -1,4 +1,6 @@
-﻿using Azure.Core;
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Specialized;

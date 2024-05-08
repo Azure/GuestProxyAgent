@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::{constants, logger};
 use proxy_agent_shared::misc_helpers;
 

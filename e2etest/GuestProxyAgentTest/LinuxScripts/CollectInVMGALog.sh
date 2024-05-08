@@ -1,5 +1,7 @@
 #!/bin/bash
-#logZipSas=$logZipSas
+
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
 
 currentDir=$(pwd)
 echo "currentDir=$currentDir"

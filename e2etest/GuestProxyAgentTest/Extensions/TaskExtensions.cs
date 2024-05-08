@@ -1,4 +1,6 @@
-﻿
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+
 namespace GuestProxyAgentTest.Extensions
 {
     public static class TaskExtensions

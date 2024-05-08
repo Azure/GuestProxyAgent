@@ -1,4 +1,6 @@
-﻿using GuestProxyAgentTest.Extensions;
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.TestScenarios;
 using GuestProxyAgentTest.Utilities;
 using Newtonsoft.Json;

@@ -1,4 +1,5 @@
-﻿
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.Settings;
 using System.Reflection;
 using YamlDotNet.Serialization.NamingConventions;

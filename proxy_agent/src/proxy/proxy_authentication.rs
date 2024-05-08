@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::{common::config, common::constants, proxy::Claims};
 
 #[cfg(windows)]

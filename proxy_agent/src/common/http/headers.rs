@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::{constants, logger};
 use itertools::Itertools;
 use std::collections::HashMap;

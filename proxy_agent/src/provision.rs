@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::common::{config, helpers, logger};
 use crate::proxy::proxy_listener;
 use crate::telemetry::event_reader;
