@@ -6,7 +6,7 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::{config, logger};
+use crate::common::{config, constants, logger};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
@@ -224,7 +224,7 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
 
 pub fn get_ebpf_file_path() -> PathBuf {
     // get ebpf file full path from environment variable
-    let mut bpf_file_path = match env::var(super::constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH) {
+    let mut bpf_file_path = match env::var(constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH) {
         Ok(file_path) => PathBuf::from(file_path),
         Err(_) => PathBuf::new(),
     };
