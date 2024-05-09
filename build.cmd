@@ -95,15 +95,15 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configura
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configuration%\
 
 echo ======= run rust proxy_agent_shared tests
-echo call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent_shared with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
 
 echo ======= copy config file for windows platform
-echo ======= Adding a wildcard (*) to the end of the destination will suppress this prompt and default to copying as a file:
+REM Adding a wildcard (*) to the end of the destination will suppress this prompt and default to copying as a file:
 xcopy /Y %root_path%proxy_agent\config\GuestProxyAgent.windows.json %out_dir%\GuestProxyAgent.json*
 
 echo ======= build proxy_agent
@@ -127,8 +127,8 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 
 echo ======= run rust proxy_agent tests
-echo call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -153,8 +153,8 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Config
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Configuration%\
 
 echo ======= run rust proxy_agent_extension tests
-echo call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent_extension with exit-code: %errorlevel%
     exit /b %errorlevel%
