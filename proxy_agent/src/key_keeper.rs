@@ -5,6 +5,7 @@ pub mod key;
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
+use crate::proxy::proxy_authentication;
 use crate::{acl, redirector};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -184,7 +185,7 @@ fn poll_secure_channel_status(
                     *WIRESERVER_RULE_ID, wireserver_rule_id
                 ));
                 *WIRESERVER_RULE_ID = wireserver_rule_id.to_string();
-                //TODO update the authorization rule details for wireserver
+                proxy_authentication::set_wireserver_rules(status.get_wireserver_rules());
             }
         }
         unsafe {
@@ -194,7 +195,7 @@ fn poll_secure_channel_status(
                     *IMDS_RULE_ID, imds_rule_id
                 ));
                 *IMDS_RULE_ID = imds_rule_id.to_string();
-                //TODO update the authorization rule details for imds
+                proxy_authentication::set_imds_rules(status.get_imds_rules());
             }
         }
 
@@ -376,9 +377,13 @@ pub fn get_status() -> ProxyAgentDetailStatus {
     let mut states = HashMap::new();
     states.insert("secureChannelState".to_string(), get_secure_channel_state());
     states.insert("keyGuid".to_string(), get_current_key_guid());
-    states.insert("wireServerRuleId".to_string(), unsafe { WIRESERVER_RULE_ID.to_string() });
-    states.insert("imdsRuleId".to_string(), unsafe { IMDS_RULE_ID.to_string() });
-   match get_current_key_incarnation() {
+    states.insert("wireServerRuleId".to_string(), unsafe {
+        WIRESERVER_RULE_ID.to_string()
+    });
+    states.insert("imdsRuleId".to_string(), unsafe {
+        IMDS_RULE_ID.to_string()
+    });
+    match get_current_key_incarnation() {
         Some(incarnation) => {
             states.insert("keyIncarnationId".to_string(), incarnation.to_string());
         }

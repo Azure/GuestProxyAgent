@@ -93,7 +93,7 @@ impl AuthorizationRules {
 
         AuthorizationRules {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
-            mode: authorization_item.mode.to_string(),
+            mode: authorization_item.mode.to_lowercase(),
             rules: rules,
         }
     }
@@ -122,34 +122,35 @@ impl AuthorizationRules {
             }
         };
 
-        if self.mode.to_lowercase() == "enforce" {
-            if let Some(rules) = &self.rules {
-                let mut role_privilege_matched = false;
-                for rule in rules {
-                    // is privilege match
-                    for privilege in &rule.privileges {
-                        if privilege.is_match(connection_id, url.clone()) {
-                            role_privilege_matched = true;
-                            for identity in &rule.identities {
-                                if identity.is_match(connection_id, claims.clone()) {
-                                    return true;
-                                }
+        if let Some(rules) = &self.rules {
+            let mut role_privilege_matched = false;
+            for rule in rules {
+                // is privilege match
+                for privilege in &rule.privileges {
+                    if privilege.is_match(connection_id, url.clone()) {
+                        role_privilege_matched = true;
+                        for identity in &rule.identities {
+                            if identity.is_match(connection_id, claims.clone()) {
+                                return true;
                             }
                         }
                     }
                 }
+            }
 
-                if role_privilege_matched {
-                    // all the privilege matched, but no identity matched, block the request
-                    return false;
-                }
+            if role_privilege_matched {
+                Connection::write_information(
+                    connection_id,
+                    "Privilege matched once, but no identity matches.".to_string(),
+                );
+                return false;
             }
         }
 
-        if self.mode.to_lowercase() == "audit" {
-            return true;
-        }
-        // no privilege matched, fall back to default access
+        Connection::write_information(
+            connection_id,
+            "No privilege matched, fall back to default access.".to_string(),
+        );
         self.defaultAllowed
     }
 }
@@ -254,11 +255,6 @@ mod tests {
         assert_eq!(rules.defaultAllowed, false);
         assert_eq!(rules.mode, "audit");
         assert_eq!(rules.rules.is_some(), true);
-
-        let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
-        claims.userName = "test1".to_string();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
 
         // Test Disabled Mode
         let access_control_rules = AccessControlRules {
