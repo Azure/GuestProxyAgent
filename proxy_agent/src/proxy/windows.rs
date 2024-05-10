@@ -5,6 +5,7 @@
 use crate::common::logger;
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
@@ -95,13 +96,24 @@ fn NetUserGetLocalGroups(
     }
 }
 
+static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(|| load_users());
+fn load_users() -> HashMap<u64, &'static str> {
+    let mut users = HashMap::new();
+    users.insert(0x3e4, "NETWORK SERVICE");
+    users.insert(0x3e5, "LOCAL SERVICE");
+    users.insert(0x3e6, "SYSTEM");
+    users.insert(0x3e7, "SYSTEM");
+    users.insert(0x3e8, "IIS_IUSRS");
+    users.insert(0x3e9, "IUSR");
+    users
+}
+
 /*
     Get user name and user group names
 */
 pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
     unsafe {
         let mut user_name = "undefined".to_string();
-
         let luid = LUID {
             LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
             HighPart: (logon_id >> 32) as i32,
@@ -156,6 +168,11 @@ pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
             );
             eprintln!("{}", message.to_string());
             logger::write_warning(message);
+        }
+
+        // update user name if it's a built-in user
+        if BUILTIN_USERS.contains_key(&logon_id) {
+            user_name = BUILTIN_USERS[&logon_id].to_string();
         }
 
         (user_name, user_groups)
@@ -354,7 +371,7 @@ mod tests {
                 println!("UserName: {}", user_name);
                 println!("UserGroups: {}", user_groups.join(", "));
                 assert_ne!(String::new(), user_name, "user_name cannot be empty.");
-                if user_name.to_lowercase() == "undefined"{
+                if user_name.to_lowercase() == "undefined" {
                     println!("user_name cannot be 'undefined'");
                     continue;
                 }

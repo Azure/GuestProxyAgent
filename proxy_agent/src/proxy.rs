@@ -245,19 +245,22 @@ mod tests {
     fn user_test() {
         unsafe {
             let logon_id;
+            let expectd_user_name;
             #[cfg(windows)]
             {
                 logon_id = 999u64;
+                expectd_user_name = "SYSTEM";
             }
             #[cfg(not(windows))]
             {
                 logon_id = 0u64;
+                expectd_user_name = "root";
             }
 
             let user = super::get_user(logon_id);
             println!("UserName: {}", user.user_name);
             println!("UserGroups: {}", user.user_groups.join(", "));
-            assert_ne!(String::new(), user.user_name, "user_name cannot be empty.");
+            assert_eq!(expectd_user_name, user.user_name, "user name mismatch.");
             #[cfg(windows)]
             {
                 assert_eq!(0, user.user_groups.len(), "SYSTEM has no group.");
