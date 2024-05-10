@@ -12,7 +12,6 @@ use crate::provision;
 use crate::redirector::AuditEntry;
 use core::ffi::c_void;
 use once_cell::unsync::Lazy;
-use proxy_agent_shared::misc_helpers;
 use std::mem;
 use std::net::TcpStream;
 use std::os::windows::io::AsRawSocket;
@@ -32,12 +31,7 @@ pub fn start(local_port: u16) -> bool {
         }
     }
 
-    // when running as NT service, the working directory is not the current exe dir.,
-    // so, we must give the 'redirect.bpf.o' full file path.
-    let mut bpf_file_path = misc_helpers::get_current_exe_dir();
-    bpf_file_path.push(config::get_ebpf_program_name());
-
-    let result = bpf_prog::load_bpf_object(bpf_file_path);
+    let result = bpf_prog::load_bpf_object(super::get_ebpf_file_path());
     if result != 0 {
         set_error_status(format!("Failed to load bpf object with result: {result}"));
         return false;

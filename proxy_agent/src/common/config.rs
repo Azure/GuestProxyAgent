@@ -4,7 +4,7 @@ use crate::common::constants;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
-use std::{path::PathBuf, time::Duration};
+use std::{env, path::PathBuf, time::Duration};
 
 const CONFIG_FILE_NAME: &str = "GuestProxyAgent.json";
 static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(|| Config::default());
@@ -86,8 +86,17 @@ impl Config {
     }
 
     pub fn default() -> Self {
-        let mut config_file_full_path = misc_helpers::get_current_exe_dir();
-        config_file_full_path.push(CONFIG_FILE_NAME);
+        // get config file full path from environment variable
+        let mut config_file_full_path =
+            match env::var(super::constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH) {
+                Ok(file_path) => PathBuf::from(file_path),
+                Err(_) => PathBuf::new(),
+            };
+        if !config_file_full_path.exists() {
+            // default to current exe folder
+            config_file_full_path = misc_helpers::get_current_exe_dir();
+            config_file_full_path.push(CONFIG_FILE_NAME);
+        }
         Config::from_json_file(config_file_full_path)
     }
 
@@ -156,6 +165,7 @@ impl Config {
 mod tests {
     use crate::common::config::Config;
     use crate::common::constants;
+    use proxy_agent_shared::misc_helpers;
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
@@ -164,31 +174,14 @@ mod tests {
     #[test]
     fn config_struct_test() {
         let mut temp_test_path: PathBuf = env::temp_dir();
-        temp_test_path.push("test_config.json");
-
-        if temp_test_path.exists() {
-            _ = fs::remove_file(&temp_test_path);
+        temp_test_path.push("config_struct_test");
+        _ = fs::remove_dir_all(&temp_test_path);
+        match misc_helpers::try_create_folder(temp_test_path.to_path_buf()) {
+            Ok(_) => {}
+            Err(err) => panic!("Failed to create folder: {}", err),
         }
-
-        let data = r#"{
-            "logFolder": "C:\\logFolderName",
-            "eventFolder": "C:\\eventFolderName",
-            "latchKeyFolder": "C:\\latchKeyFolderName",
-            "monitorIntervalInSeconds": 60,
-            "pollKeyStatusIntervalInSeconds": 15,
-            "wireServerSupport": 2,
-            "hostGAPluginSupport": 1,
-            "imdsSupport": 1,
-            "ebpfProgramName": "ebpfProgramName"
-        }"#;
-
-        let mut file = match File::create(&temp_test_path) {
-            Ok(file) => file,
-            Err(err) => panic!("Failed to create file: {}", err),
-        };
-        file.write_all(data.as_bytes()).unwrap();
-
-        let config = Config::from_json_file(temp_test_path);
+        let config_file_path = temp_test_path.join("test_config.json");
+        let config = create_config_file(config_file_path);
 
         assert_eq!(
             r#"C:\logFolderName"#.to_string(),
@@ -269,5 +262,78 @@ mod tests {
                 "get_fallback_with_iptable_redirect mismatch"
             );
         }
+
+        // clean up
+        _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn default_config_test() {
+        let mut temp_test_path: PathBuf = env::temp_dir();
+        temp_test_path.push("default_config_test");
+        _ = fs::remove_dir_all(&temp_test_path);
+        match misc_helpers::try_create_folder(temp_test_path.to_path_buf()) {
+            Ok(_) => {}
+            Err(err) => panic!("Failed to create folder: {}", err),
+        }
+        let config_file_path = temp_test_path.join("test_config.json");
+        let test_config = create_config_file(config_file_path.to_path_buf());
+
+        // no env variable set, use the default config copied over to current exe folder
+        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH);
+        let config = Config::default();
+        assert_ne!(
+            test_config.get_log_folder(),
+            config.get_log_folder(),
+            "default config should not be the same as the test config when no env variable set"
+        );
+
+        // set env variable to the invalid test config file
+        let invalid_config_file_path = temp_test_path.join("invalid_test_config.json");
+        env::set_var(
+            constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH,
+            misc_helpers::path_to_string(invalid_config_file_path),
+        );
+        let config = Config::default();
+        assert_ne!(
+            test_config.get_log_folder(),
+            config.get_log_folder(),
+            "default config should not be the same as the test config when env variable set to invalid file"
+        );
+
+        // set env variable to the valid test config file
+        env::set_var(
+            constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH,
+            misc_helpers::path_to_string(config_file_path.to_path_buf()),
+        );
+        let config = Config::default();
+        assert_eq!(
+            test_config.get_log_folder(),
+            config.get_log_folder(),
+            "default config should be the same as the test config when env variable set to valid file"
+        );
+
+        // clean up
+        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH);
+        _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    fn create_config_file(file_path: PathBuf) -> Config {
+        let data = r#"{
+            "logFolder": "C:\\logFolderName",
+            "eventFolder": "C:\\eventFolderName",
+            "latchKeyFolder": "C:\\latchKeyFolderName",
+            "monitorIntervalInSeconds": 60,
+            "pollKeyStatusIntervalInSeconds": 15,
+            "wireServerSupport": 2,
+            "hostGAPluginSupport": 1,
+            "imdsSupport": 1,
+            "ebpfProgramName": "ebpfProgramName"
+        }"#;
+        File::create(&file_path)
+            .unwrap()
+            .write_all(data.as_bytes())
+            .unwrap();
+        Config::from_json_file(file_path)
     }
 }

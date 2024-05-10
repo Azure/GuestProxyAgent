@@ -6,11 +6,13 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::logger;
+use crate::common::{config, constants, logger};
+use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
-use std::thread;
+use std::path::PathBuf;
+use std::{env, thread};
 
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
@@ -220,8 +222,29 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
     ip
 }
 
+pub fn get_ebpf_file_path() -> PathBuf {
+    // get ebpf file full path from environment variable
+    let mut bpf_file_path = match env::var(constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH) {
+        Ok(file_path) => PathBuf::from(file_path),
+        Err(_) => PathBuf::new(),
+    };
+    if !bpf_file_path.exists() {
+        // default to current exe folder
+        bpf_file_path = misc_helpers::get_current_exe_dir();
+        bpf_file_path.push(config::get_ebpf_program_name());
+    }
+    bpf_file_path
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::common::constants;
+    use proxy_agent_shared::misc_helpers;
+    use std::env;
+    use std::fs;
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
     fn ip_to_string_test() {
@@ -239,5 +262,59 @@ mod tests {
         assert_eq!(0, new_ip, "ip must be 0 since the 1270.0.0.1 is invalid.");
         let new_ip = super::string_to_ip("1270.0.1");
         assert_eq!(0, new_ip, "ip must be 0 since the 1270.0.1 is invalid.");
+    }
+
+    #[test]
+    fn get_ebpf_file_path_test() {
+        let mut temp_test_path: PathBuf = env::temp_dir();
+        temp_test_path.push("get_ebpf_file_path_test");
+        _ = fs::remove_dir_all(&temp_test_path);
+        match misc_helpers::try_create_folder(temp_test_path.to_path_buf()) {
+            Ok(_) => {}
+            Err(err) => panic!("Failed to create folder: {}", err),
+        }
+        let test_file_path = temp_test_path.join("test_ebpf.o");
+        File::create(&test_file_path)
+            .unwrap()
+            .write_all("test data".as_bytes())
+            .unwrap();
+
+        // no env variable set
+        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH);
+        let ebpf_file_path = super::get_ebpf_file_path();
+        assert_ne!(
+            test_file_path.to_path_buf(),
+            ebpf_file_path,
+            "ebpf file path should not be the same as the test file path when no env variable set"
+        );
+
+        // set env variable to the invalid test ebpf file
+        let invalid_ebfp_file_path = temp_test_path.join("invalid_test_ebpf.o");
+        env::set_var(
+            constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH,
+            misc_helpers::path_to_string(invalid_ebfp_file_path),
+        );
+        let ebpf_file_path = super::get_ebpf_file_path();
+        assert_ne!(
+            test_file_path.to_path_buf(),
+            ebpf_file_path,
+            "ebpf file path should not be the same as the test file path when env variable set to an invalid file path"
+        );
+
+        // set env variable to the valid test ebpf file
+        env::set_var(
+            constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH,
+            misc_helpers::path_to_string(test_file_path.to_path_buf()),
+        );
+        let ebpf_file_path = super::get_ebpf_file_path();
+        assert_eq!(
+            test_file_path.to_path_buf(),
+            ebpf_file_path,
+            "ebpf file path should be the same as the test file path when env variable set to a valid file path"
+        );
+
+        // clean up
+        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_EBPF_FULL_PATH);
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 }
