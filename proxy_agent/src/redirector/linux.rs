@@ -506,6 +506,7 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-with-root")]
 mod tests {
     use crate::common::config;
     use crate::common::logger;
