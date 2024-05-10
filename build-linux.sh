@@ -51,8 +51,8 @@ then
 fi
 
 echo ======= run rust proxy_agent_shared tests
-echo invoking cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+echo invoking cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -96,8 +96,8 @@ echo cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
 cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
 
 echo ======= run rust proxy_agent tests
-echo invoking cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+echo invoking cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -125,8 +125,8 @@ echo cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
 cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
 
 echo ======= run rust proxy_agent_extension tests
-echo invoking cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-cargo test $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+echo invoking cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
