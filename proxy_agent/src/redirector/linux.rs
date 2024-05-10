@@ -24,10 +24,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
 static mut BPF_OBJECT: Option<Bpf> = None;
 
 pub fn start(local_port: u16) -> bool {
-    let mut bpf_file_path = misc_helpers::get_current_exe_dir();
-    bpf_file_path.push(config::get_ebpf_program_name());
-
-    let mut bpf = match open_ebpf_file(bpf_file_path) {
+    let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(value) => return value,
     };

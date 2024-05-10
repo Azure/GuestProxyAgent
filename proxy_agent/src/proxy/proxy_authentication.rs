@@ -351,7 +351,7 @@ mod tests {
             rules: None,
         };
         let audit_allow_rules = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
+            defaultAccess: "allow".to_string(),
             mode: "audit".to_string(),
             id: "id".to_string(),
             rules: None,
@@ -433,7 +433,7 @@ mod tests {
             rules: None,
         };
         let audit_allow_rules = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
+            defaultAccess: "allow".to_string(),
             mode: "audit".to_string(),
             id: "id".to_string(),
             rules: None,
