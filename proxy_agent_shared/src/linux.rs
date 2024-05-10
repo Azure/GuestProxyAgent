@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::misc_helpers;
 use once_cell::sync::Lazy;
 use os_info::Info;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
@@ -33,61 +35,65 @@ impl AuthorizationRules {
     }
 
     pub fn from_authorization_item(authorization_item: AuthorizationItem) -> AuthorizationRules {
-        let rules = match authorization_item.roleAssignments {
-            Some(role_assignments) => {
-                let mut rules = Vec::new();
-                for role_assignment in role_assignments {
-                    let role_name = role_assignment.role.to_string();
+        let rules = match authorization_item.rules {
+            Some(access_control_rules) => match access_control_rules.roleAssignments {
+                Some(role_assignments) => {
+                    let mut rules = Vec::new();
+                    for role_assignment in role_assignments {
+                        let role_name = role_assignment.role.to_string();
 
-                    let mut privileges = Vec::new();
-                    match &authorization_item.privileges {
-                        Some(input_privileges) => match &authorization_item.roles {
-                            Some(roles) => {
-                                for role in roles {
-                                    if role.name == role_name {
-                                        for privilege_name in &role.privileges {
-                                            for privilege in input_privileges {
-                                                if privilege.name == privilege_name.to_string() {
-                                                    privileges.push(privilege.clone());
+                        let mut privileges = Vec::new();
+                        match &access_control_rules.privileges {
+                            Some(input_privileges) => match &access_control_rules.roles {
+                                Some(roles) => {
+                                    for role in roles {
+                                        if role.name == role_name {
+                                            for privilege_name in &role.privileges {
+                                                for privilege in input_privileges {
+                                                    if privilege.name == privilege_name.to_string()
+                                                    {
+                                                        privileges.push(privilege.clone());
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
+                                None => {}
+                            },
                             None => {}
-                        },
-                        None => {}
-                    }
+                        }
 
-                    let mut identities = Vec::new();
-                    match &authorization_item.identities {
-                        Some(input_identities) => {
-                            for identity_name in role_assignment.identities {
-                                for identity in input_identities {
-                                    if identity.name == identity_name {
-                                        identities.push(identity.clone());
+                        let mut identities = Vec::new();
+                        match &access_control_rules.identities {
+                            Some(input_identities) => {
+                                for identity_name in role_assignment.identities {
+                                    for identity in input_identities {
+                                        if identity.name == identity_name {
+                                            identities.push(identity.clone());
+                                        }
                                     }
                                 }
                             }
+                            None => {}
                         }
-                        None => {}
-                    }
 
-                    rules.push(Rule {
-                        roleName: role_name,
-                        privileges: privileges,
-                        identities: identities,
-                    });
+                        rules.push(Rule {
+                            roleName: role_name,
+                            privileges: privileges,
+                            identities: identities,
+                        });
+                    }
+                    Some(rules)
                 }
-                Some(rules)
-            }
+                None => None,
+            },
             None => None,
         };
 
         AuthorizationRules {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
-            mode: authorization_item.mode.to_string(),
+            mode: authorization_item.mode.to_lowercase(),
             rules: rules,
         }
     }
@@ -116,44 +122,47 @@ impl AuthorizationRules {
             }
         };
 
-        if self.mode.to_lowercase() == "enforce" {
-            if let Some(rules) = &self.rules {
-                let mut role_privilege_matched = false;
-                for rule in rules {
-                    // is privilege match
-                    for privilege in &rule.privileges {
-                        if privilege.is_match(connection_id, url.clone()) {
-                            role_privilege_matched = true;
-                            for identity in &rule.identities {
-                                if identity.is_match(connection_id, claims.clone()) {
-                                    return true;
-                                }
+        if let Some(rules) = &self.rules {
+            let mut role_privilege_matched = false;
+            for rule in rules {
+                // is privilege match
+                for privilege in &rule.privileges {
+                    if privilege.is_match(connection_id, url.clone()) {
+                        role_privilege_matched = true;
+                        for identity in &rule.identities {
+                            if identity.is_match(connection_id, claims.clone()) {
+                                return true;
                             }
                         }
                     }
                 }
+            }
 
-                if role_privilege_matched {
-                    // all the privilege matched, but no identity matched, block the request
-                    return false;
-                }
+            if role_privilege_matched {
+                Connection::write_information(
+                    connection_id,
+                    "Privilege matched once, but no identity matches.".to_string(),
+                );
+                return false;
             }
         }
 
-        if self.mode.to_lowercase() == "audit" {
-            return true;
-        }
-        // no privilege matched, fall back to default access
+        Connection::write_information(
+            connection_id,
+            "No privilege matched, fall back to default access.".to_string(),
+        );
         self.defaultAllowed
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege, Role, RoleAssignment};
-    use crate::proxy::{proxy_connection::Connection, Claims};
+    use crate::key_keeper::key::{
+        AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
+    };
     use crate::proxy::authorization_rules::AuthorizationRules;
-    
+    use crate::proxy::{proxy_connection::Connection, Claims};
+
     #[test]
     fn test_authorization_rules() {
         let logger_key = "test_authorization_rules";
@@ -161,34 +170,33 @@ mod tests {
         temp_test_path.push(logger_key);
         Connection::init_logger(temp_test_path.to_path_buf());
 
-        // Test Enforce Mode 
-        let authorization_item: AuthorizationItem = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
-            mode: "enforce".to_string(),
+        // Test Enforce Mode
+        let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {
                 name: "test".to_string(),
                 privileges: vec!["test".to_string(), "test1".to_string()],
             }]),
-            privileges: Some(vec![
-                Privilege {
-                    name: "test".to_string(),
-                    path: "/test".to_string(),
-                    queryParameters: None,
-                }
-            ]),
-            identities: Some(vec![
-                Identity {
-                    name: "test".to_string(),
-                    exePath: Some("test".to_string()),
-                    groupName:Some("test".to_string()) ,
-                    processName: Some("test".to_string()),
-                    userName: Some("test".to_string()), 
-                }
-            ]),
+            privileges: Some(vec![Privilege {
+                name: "test".to_string(),
+                path: "/test".to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "test".to_string(),
+                exePath: Some("test".to_string()),
+                groupName: Some("test".to_string()),
+                processName: Some("test".to_string()),
+                userName: Some("test".to_string()),
+            }]),
             roleAssignments: Some(vec![RoleAssignment {
                 role: "test".to_string(),
                 identities: vec!["test".to_string()],
             }]),
+        };
+        let authorization_item: AuthorizationItem = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            rules: Some(access_control_rules),
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
@@ -215,33 +223,32 @@ mod tests {
         assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), false);
 
         // Test Audit Mode
-        let authorization_item: AuthorizationItem = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
-            mode: "audit".to_string(),
+        let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {
                 name: "test".to_string(),
                 privileges: vec!["test".to_string(), "test1".to_string()],
             }]),
-            privileges: Some(vec![
-                Privilege {
-                    name: "test".to_string(),
-                    path: "/test".to_string(),
-                    queryParameters: None,
-                }
-            ]),
-            identities: Some(vec![
-                Identity {
-                    name: "test".to_string(),
-                    exePath: Some("test".to_string()),
-                    groupName:Some("test".to_string()) ,
-                    processName: Some("test".to_string()),
-                    userName: Some("test".to_string()), 
-                }
-            ]),
+            privileges: Some(vec![Privilege {
+                name: "test".to_string(),
+                path: "/test".to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "test".to_string(),
+                exePath: Some("test".to_string()),
+                groupName: Some("test".to_string()),
+                processName: Some("test".to_string()),
+                userName: Some("test".to_string()),
+            }]),
             roleAssignments: Some(vec![RoleAssignment {
                 role: "test".to_string(),
                 identities: vec!["test".to_string()],
             }]),
+        };
+        let authorization_item: AuthorizationItem = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "audit".to_string(),
+            rules: Some(access_control_rules),
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
@@ -249,39 +256,33 @@ mod tests {
         assert_eq!(rules.mode, "audit");
         assert_eq!(rules.rules.is_some(), true);
 
-        let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
-        claims.userName = "test1".to_string();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
-
         // Test Disabled Mode
-        let authorization_item: AuthorizationItem = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
-            mode: "disabled".to_string(),
+        let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {
                 name: "test".to_string(),
                 privileges: vec!["test".to_string(), "test1".to_string()],
             }]),
-            privileges: Some(vec![
-                Privilege {
-                    name: "test".to_string(),
-                    path: "/test".to_string(),
-                    queryParameters: None,
-                }
-            ]),
-            identities: Some(vec![
-                Identity {
-                    name: "test".to_string(),
-                    exePath: Some("test".to_string()),
-                    groupName:Some("test".to_string()) ,
-                    processName: Some("test".to_string()),
-                    userName: Some("test".to_string()), 
-                }
-            ]),
+            privileges: Some(vec![Privilege {
+                name: "test".to_string(),
+                path: "/test".to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "test".to_string(),
+                exePath: Some("test".to_string()),
+                groupName: Some("test".to_string()),
+                processName: Some("test".to_string()),
+                userName: Some("test".to_string()),
+            }]),
             roleAssignments: Some(vec![RoleAssignment {
                 role: "test".to_string(),
                 identities: vec!["test".to_string()],
             }]),
+        };
+        let authorization_item: AuthorizationItem = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "disabled".to_string(),
+            rules: Some(access_control_rules),
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
@@ -293,40 +294,39 @@ mod tests {
         assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
 
         // Test enforce mode, identity not match
-        let authorization_item: AuthorizationItem = AuthorizationItem {
-            defaultAccess: "deny".to_string(),
-            mode: "enforce".to_string(),
+        let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {
                 name: "test".to_string(),
                 privileges: vec!["test".to_string(), "test1".to_string()],
             }]),
-            privileges: Some(vec![
-                Privilege {
-                    name: "test".to_string(),
-                    path: "/test".to_string(),
-                    queryParameters: None,
-                }
-            ]),
-            identities: Some(vec![
-                Identity {
-                    name: "test1".to_string(),
-                    exePath: Some("test".to_string()),
-                    groupName:Some("test".to_string()) ,
-                    processName: Some("test".to_string()),
-                    userName: Some("test".to_string()), 
-                }
-            ]),
+            privileges: Some(vec![Privilege {
+                name: "test".to_string(),
+                path: "/test".to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "test1".to_string(),
+                exePath: Some("test".to_string()),
+                groupName: Some("test".to_string()),
+                processName: Some("test".to_string()),
+                userName: Some("test".to_string()),
+            }]),
             roleAssignments: Some(vec![RoleAssignment {
                 role: "test".to_string(),
                 identities: vec!["test1".to_string()],
             }]),
+        };
+        let authorization_item: AuthorizationItem = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            rules: Some(access_control_rules),
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         assert_eq!(rules.defaultAllowed, false);
         assert_eq!(rules.mode, "enforce");
         assert_eq!(rules.rules.is_some(), true);
-        
+
         let url = url::Url::parse("http://localhost/test?").unwrap();
         assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), false);
     }

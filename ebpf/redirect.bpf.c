@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+
 // clang -target bpf -Werror -O2 -c redirect.bpf.c -o redirect.bpf.o
 
 #include "bpf_helpers.h"

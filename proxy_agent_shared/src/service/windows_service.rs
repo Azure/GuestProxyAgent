@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::logger_manager;
 use std::ffi::OsString;
 use std::io;

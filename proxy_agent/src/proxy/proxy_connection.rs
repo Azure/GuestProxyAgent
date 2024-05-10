@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::proxy::Claims;
 use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
 use std::net::TcpStream;

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 param (
     [Parameter(Mandatory=$true, Position=0)]
     [string]$customOutputJsonSAS,

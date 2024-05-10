@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 use crate::misc_helpers;
 use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};

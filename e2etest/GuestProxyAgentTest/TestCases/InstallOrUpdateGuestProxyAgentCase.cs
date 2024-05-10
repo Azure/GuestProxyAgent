@@ -1,4 +1,6 @@
-﻿using GuestProxyAgentTest.TestCases;
+﻿// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Settings;
 using GuestProxyAgentTest.TestScenarios;
 using GuestProxyAgentTest.Utilities;

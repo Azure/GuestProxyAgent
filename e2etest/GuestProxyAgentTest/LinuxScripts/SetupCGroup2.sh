@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation
+# SPDX-License-Identifier: MIT
+
 echo "checking cgroup2 ... "
 mount_cgroup2=$(mount | grep cgroup2)
 echo "mount_cgroup2=$mount_cgroup2"

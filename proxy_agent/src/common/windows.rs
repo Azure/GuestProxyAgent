@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
 use std::mem::MaybeUninit;
