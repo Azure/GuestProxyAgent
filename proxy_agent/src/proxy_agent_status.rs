@@ -22,6 +22,8 @@ use std::time::{Duration, Instant};
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn start_async(interval: Duration) {
     _ = thread::Builder::new()
@@ -61,8 +63,14 @@ fn start(mut interval: Duration) {
 
         //Clear the connection map and reset start_time after 24 hours
         if elapsed_time >= map_clear_duration {
+            logger::write_information(
+                "Clearing the connection summary map and failed authenticate summary map."
+                    .to_string(),
+            );
             unsafe {
                 let mut summary_map_guard = SUMMARY_MAP.lock().unwrap();
+                summary_map_guard.clear();
+                let mut summary_map_guard = FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap();
                 summary_map_guard.clear();
                 start_time = Instant::now();
             }
@@ -115,13 +123,19 @@ pub fn guest_proxy_agent_aggregate_status_new() -> GuestProxyAgentAggregateStatu
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
         proxyAgentStatus: proxy_agent_status_new(),
-        proxyConnectionSummary: get_all_connection_summary(),
+        proxyConnectionSummary: get_all_connection_summary(false),
+        failedAuthenticateSummary: get_all_connection_summary(true),
     }
 }
 
-pub fn add_connection_summary(summary: ProxySummary) {
+pub fn add_connection_summary(summary: ProxySummary, is_failed_authenticate: bool) {
+    let mut summary_map = if is_failed_authenticate {
+        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
+    } else {
+        unsafe { SUMMARY_MAP.lock().unwrap() }
+    };
+
     let summary_key = summary.to_key_string();
-    let mut summary_map = unsafe { SUMMARY_MAP.lock().unwrap() };
     if !summary_map.contains_key(&summary_key) {
         summary_map.insert(summary_key, proxy_connection_summary_new(summary));
     } else {
@@ -131,9 +145,13 @@ pub fn add_connection_summary(summary: ProxySummary) {
     }
 }
 
-fn get_all_connection_summary() -> Vec<ProxyConnectionSummary> {
+fn get_all_connection_summary(is_failed_authenticate: bool) -> Vec<ProxyConnectionSummary> {
+    let summary_map_lock = if is_failed_authenticate {
+        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
+    } else {
+        unsafe { SUMMARY_MAP.lock().unwrap() }
+    };
     let mut copy_summary: Vec<ProxyConnectionSummary> = Vec::new();
-    let summary_map_lock = unsafe { SUMMARY_MAP.lock().unwrap() };
     for (_, connection_summary) in summary_map_lock.iter() {
         copy_summary.push(connection_summary.clone());
     }
@@ -156,15 +174,13 @@ pub fn write_aggregate_status_to_file(
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
-
-    use proxy_agent_shared::{
-        misc_helpers, proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus,
-    };
-
     use crate::proxy_agent_status::{
         guest_proxy_agent_aggregate_status_new, write_aggregate_status_to_file,
     };
+    use proxy_agent_shared::{
+        misc_helpers, proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus,
+    };
+    use std::{env, fs};
 
     #[test]
     fn write_aggregate_status_test() {
