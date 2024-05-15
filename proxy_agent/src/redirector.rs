@@ -236,6 +236,28 @@ pub fn get_ebpf_file_path() -> PathBuf {
     bpf_file_path
 }
 
+pub fn update_imds_redirect_policy(redirect: bool) {
+    #[cfg(windows)]
+    {
+        windows::update_imds_redirect_policy(redirect);
+    }
+    #[cfg(not(windows))]
+    {
+        linux::update_imds_redirect_policy(redirect);
+    }
+}
+
+pub fn update_wire_server_redirect_policy(redirect: bool) {
+    #[cfg(windows)]
+    {
+        windows::update_wire_server_redirect_policy(redirect);
+    }
+    #[cfg(not(windows))]
+    {
+        linux::update_wire_server_redirect_policy(redirect);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::common::constants;

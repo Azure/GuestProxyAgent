@@ -317,14 +317,18 @@ fn poll_secure_channel_status(
 
         // update the current secure channel state if different
         if state != get_secure_channel_state() {
-            unsafe {
+            // update the redirector poicy map
+            redirector::update_wire_server_redirect_policy(
+                status.get_wire_server_mode() != DISABLE_STATE,
+            );
+            redirector::update_imds_redirect_policy(status.get_imds_mode() != DISABLE_STATE);
+            unsafe{
                 *CURRENT_SECURE_CHANNEL_STATE = state.to_string();
             }
-
             // customer has not enforce the secure channel state
             if state == DISABLE_STATE {
                 let message = helpers::write_startup_event(
-                    "Customer has not enforce the secure channel state.",
+                    "Customer has not enforce the sescure channel state.",
                     "poll_secure_channel_status",
                     "key_keeper",
                     logger::AGENT_LOGGER_KEY,

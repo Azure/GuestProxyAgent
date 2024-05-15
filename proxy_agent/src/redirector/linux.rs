@@ -505,6 +505,99 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
     }
 }
 
+pub fn update_wire_server_redirect_policy(redirect: bool) {
+    update_redirect_policy_internal(
+        constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+        constants::WIRE_SERVER_PORT,
+        redirect,
+    );
+}
+
+pub fn update_imds_redirect_policy(redirect: bool) {
+    update_redirect_policy_internal(
+        constants::IMDS_IP_NETWORK_BYTE_ORDER,
+        constants::IMDS_PORT,
+        redirect,
+    );
+}
+
+fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: bool) {
+    unsafe {
+        match BPF_OBJECT {
+            Some(ref bpf) => match bpf.map_mut("policy_map") {
+                Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
+                    Ok(mut policy_map) => {
+                        let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
+                        if !redirect {
+                            match policy_map.remove(&key.to_array()) {
+                                Ok(_) => {
+                                    event_logger::write_event(
+                                        event_logger::INFO_LEVEL,
+                                        format!(
+                                            "policy_map removed for destination: {}:{}",
+                                            dest_ipv4, dest_port
+                                        ),
+                                        "update_redirect_policy_internal",
+                                        "redirector/linux",
+                                        logger::AGENT_LOGGER_KEY,
+                                    );
+                                }
+                                Err(err) => {
+                                    logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", dest_ipv4, dest_port, err));
+                                }
+                            };
+                        } else {
+                            let local_ip = match get_local_ip() {
+                                Some(ip) => ip,
+                                None => constants::PROXY_AGENT_IP.to_string(),
+                            };
+                            event_logger::write_event(
+                                event_logger::WARN_LEVEL,
+                                format!(
+                                    "update_redirect_policy_internal with local ip address: {}",
+                                    local_ip.to_string()
+                                ),
+                                "update_redirect_policy_internal",
+                                "redirector/linux",
+                                logger::AGENT_LOGGER_KEY,
+                            );
+                            let local_ip: u32 = super::string_to_ip(&local_ip);
+                            let value = destination_entry::from_ipv4(local_ip, LOCAL_PORT);
+                            match policy_map.insert(key.to_array(), value.to_array(), 0) {
+                                Ok(_) => event_logger::write_event(
+                                    event_logger::INFO_LEVEL,
+                                    format!(
+                                        "policy_map updated for destination: {}:{}",
+                                        dest_ipv4, dest_port
+                                    ),
+                                    "update_redirect_policy_internal",
+                                    "redirector/linux",
+                                    logger::AGENT_LOGGER_KEY,
+                                ),
+                                Err(err) => {
+                                    logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", dest_ipv4, dest_port, err));
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        logger::write(format!(
+                            "Failed to load HashMap 'policy_map' with error: {}",
+                            err
+                        ));
+                    }
+                },
+                None => {
+                    logger::write(format!("Failed to get map 'policy_map'."));
+                }
+            },
+            None => {
+                logger::write(format!("BPF object is not initialized."));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::common::config;

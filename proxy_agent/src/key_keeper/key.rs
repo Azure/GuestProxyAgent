@@ -553,6 +553,50 @@ impl KeyStatus {
         }
     }
 
+    pub fn get_wire_server_mode(&self) -> String {
+        if self.version == "2.0" {
+            match &self.authorizationRules {
+                Some(rules) => match &rules.wireserver {
+                    Some(item) => item.mode.to_lowercase(),
+                    None => "disabled".to_string(),
+                },
+                None => "disabled".to_string(),
+            }
+        } else {
+            let state = match &self.secureChannelState {
+                Some(s) => s.to_lowercase(),
+                None => "disabled".to_string(),
+            };
+            if state == "wireserver" || state == "wireserverandimds" {
+                return ENFORCE_MODE.to_string();
+            } else {
+                return AUDIT_MODE.to_string();
+            }
+        }
+    }
+
+    pub fn get_imds_mode(&self) -> String {
+        if self.version == "2.0" {
+            match &self.authorizationRules {
+                Some(rules) => match &rules.imds {
+                    Some(item) => item.mode.to_lowercase(),
+                    None => "disabled".to_string(),
+                },
+                None => "disabled".to_string(),
+            }
+        } else {
+            let state = match &self.secureChannelState {
+                Some(s) => s.to_lowercase(),
+                None => "disabled".to_string(),
+            };
+            if state == "wireserverandimds" {
+                return ENFORCE_MODE.to_string();
+            } else {
+                return AUDIT_MODE.to_string();
+            }
+        }
+    }
+    
     pub fn to_string(&self) -> String {
         return format!(
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",

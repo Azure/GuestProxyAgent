@@ -19,6 +19,8 @@ const EBPF_FIND_PROGRAM_ERROR: i32 = 2025;
 const EBPF_ATTACH_PROGRAM_ERROR: i32 = 2026;
 const EBPF_FIND_MAP_ERROR: i32 = 2027;
 const EBPF_UPDATE_MAP_ERROR: i32 = 2028;
+const EBPF_DELETE_MAP_ERROR: i32 = 2029;
+
 
 pub static mut BPF_OBJECT: Option<*mut bpf_object> = None;
 
@@ -160,7 +162,7 @@ Return Value:
 
     0 on success. On failure appropriate RESULT is returned.
  */
-pub fn update_bpf_map(local_port: u16, dest_ipv4: u32, dest_port: u16) -> i32 {
+pub fn update_policy_elem_bpf_map(local_port: u16, dest_ipv4: u32, dest_port: u16) -> i32 {
     unsafe {
         match BPF_OBJECT {
             Some(obj) => {
@@ -367,6 +369,59 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                     Err(e) => {
                         logger::write_error(format!("{}", e));
                         return EBPF_UPDATE_MAP_ERROR;
+                    }
+                }
+            }
+            None => {
+                return EBPF_OBJECT_NULL;
+            }
+        }
+    }
+}
+
+/**
+Routine Description:
+    This routine delete element from policy_map.
+Arguments:
+    dest_ipv4  - destination ipv4 address.
+    dest_port  - destination port.
+Return Value:
+    0 on success. On failure appropriate RESULT is returned.
+ */
+pub fn remove_policy_elem_bpf_map(dest_ipv4: u32, dest_port: u16) -> i32 {
+    unsafe {
+        match BPF_OBJECT {
+            Some(obj) => {
+                let proxy_map = match bpf_object__find_map_by_name(obj, "policy_map") {
+                    Ok(m) => m,
+                    Err(e) => {
+                        logger::write_error(format!("{}", e));
+                        return EBPF_FIND_MAP_ERROR;
+                    }
+                };
+                if proxy_map.is_null() {
+                    logger::write_error(
+                        "bpf_object__find_map_by_name 'policy_map' return null".to_string(),
+                    );
+                    return EBPF_FIND_MAP_ERROR;
+                }
+                let map_fd = match bpf_map__fd(proxy_map) {
+                    Ok(fd) => fd,
+                    Err(e) => {
+                        logger::write_error(format!("{}", e));
+                        return EBPF_FIND_MAP_ERROR;
+                    }
+                };
+
+                let key = destination_entry_t::from_ipv4(dest_ipv4, dest_port);
+                match bpf_map_delete_elem(
+                    map_fd,
+                    &key as *const destination_entry_t as *const c_void,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        logger::write_error(format!("{}", e));
+                        return EBPF_DELETE_MAP_ERROR;
                     }
                 }
             }

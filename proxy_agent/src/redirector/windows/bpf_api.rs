@@ -84,6 +84,8 @@ type BpfMapUpdateElem = unsafe extern "C" fn(
 ) -> c_int;
 type BpfMapLookupElem =
     unsafe extern "C" fn(map_fd: c_int, key: *const c_void, value: *mut c_void) -> c_int;
+    
+type BpfMapDeleteElem = unsafe extern "C" fn(map_fd: c_int, key: *const c_void) -> c_int;
 
 fn get_cstring(s: &str) -> std::io::Result<CString> {
     CString::new(s).map_err(|e| Error::new(ErrorKind::InvalidInput, e))
@@ -199,5 +201,14 @@ pub fn bpf_map_lookup_elem(
         let map_lookup_elem: Symbol<BpfMapLookupElem> =
             get_ebpf_api_fun(&ebpf_api, "bpf_map_lookup_elem\0")?;
         Ok(map_lookup_elem(map_fd, key, value))
+    }
+}
+
+pub fn bpf_map_delete_elem(map_fd: c_int, key: *const c_void) -> std::io::Result<c_int> {
+    unsafe {
+        let ebpf_api = get_ebpf_api()?;
+        let map_delete_elem: Symbol<BpfMapDeleteElem> =
+            get_ebpf_api_fun(&ebpf_api, "bpf_map_delete_elem\0")?;
+        Ok(map_delete_elem(map_fd, key))
     }
 }
