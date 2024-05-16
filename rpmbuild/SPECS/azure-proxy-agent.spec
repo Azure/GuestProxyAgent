@@ -16,27 +16,28 @@ Microsoft Azure Guest Proxy Agent.
 %setup -n %{name}_%{version}
 
 %install
-mkdir -p %{buildroot}/lib/systemd/system/
-mkdir -p %{buildroot}/usr/lib/azure-proxy-agent/Package_%{version}/
-cp -f ./package/GuestProxyAgent.service %{buildroot}/lib/systemd/system/
-cp -f ./package/ProxyAgent/* %{buildroot}/usr/lib/azure-proxy-agent/Package_%{version}/
+mkdir -p %{buildroot}/usr/sbin/
+mkdir -p %{buildroot}/etc/azure/
+mkdir -p %{buildroot}/usr/lib/systemd/system/
+mkdir -p %{buildroot}/usr/lib/azure-proxy-agent/
+cp -f ./package/ProxyAgent/proxy-agent.json %{buildroot}/etc/azure/
+cp -f ./package/azure-proxy-agent.service %{buildroot}/usr/lib/systemd/system/
+cp -f ./package/ProxyAgent/ebpf_cgroup.o %{buildroot}/usr/lib/azure-proxy-agent/
+cp -f ./package/ProxyAgent/azure-proxy-agent %{buildroot}/usr/sbin/
 
 %post
-ln -sf /usr/lib/azure-proxy-agent/Package_%{version} /usr/lib/azure-proxy-agent/package
-ln -sf /usr/lib/azure-proxy-agent/package/GuestProxyAgent /usr/sbin/azure-proxy-agent
-chcon -t bin_t /usr/lib/azure-proxy-agent/package/GuestProxyAgent
-%systemd_post GuestProxyAgent.service
-   systemctl unmask GuestProxyAgent.service
+%systemd_post azure-proxy-agent.service
+   systemctl unmask azure-proxy-agent.service
    systemctl daemon-reload
-   systemctl start GuestProxyAgent.service
-   systemctl enable GuestProxyAgent.service
+   systemctl start azure-proxy-agent.service
+   systemctl enable azure-proxy-agent.service
 
 %files
 %defattr(-,root,root,-)
-/lib/systemd/system/GuestProxyAgent.service
-/usr/lib/azure-proxy-agent/Package_%{version}/GuestProxyAgent
-/usr/lib/azure-proxy-agent/Package_%{version}/GuestProxyAgent.json
-/usr/lib/azure-proxy-agent/Package_%{version}/ebpf_cgroup.o
+/usr/lib/systemd/system/azure-proxy-agent.service
+/usr/sbin/azure-proxy-agent
+/etc/azure/proxy-agent.json
+/usr/lib/azure-proxy-agent/ebpf_cgroup.o
 
 %changelog
 * Initial release 

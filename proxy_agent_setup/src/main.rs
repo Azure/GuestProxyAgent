@@ -20,8 +20,12 @@ use std::{
     path::{self, PathBuf},
 };
 
+#[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";
 const SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";
+
+#[cfg(not(windows))]
+const SERVICE_NAME: &str = "azure-proxy-agent";
 
 fn main() {
     logger::init_logger();
@@ -36,7 +40,7 @@ fn main() {
         args::Args::INSTALL => {
             stop_service();
             let proxy_agent_target_folder = copy_proxy_agent();
-            setup_service(proxy_agent_target_folder);
+            setup_service(proxy_agent_target_folder, misc_helpers::get_current_exe_dir());
         }
         args::Args::UNINSTALL => {
             let proxy_agent_running_folder = uninstall_service();
@@ -54,7 +58,7 @@ fn main() {
             }
             stop_service();
             let proxy_agent_target_folder = restore_proxy_agent();
-            setup_service(proxy_agent_target_folder);
+            setup_service(proxy_agent_target_folder, backup::proxy_agent_backup_folder());
 
             if args.uninstall_mode == args::Args::DELETE_PACKAGE {
                 delete_backup_folder();
@@ -70,19 +74,53 @@ fn main() {
 fn copy_proxy_agent() -> PathBuf {
     let src_folder = setup::proxy_agent_folder_in_setup();
     let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_in_setup());
-    copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
+    #[cfg(windows)]
+    {
+        copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
+    }
+    #[cfg(not(windows))]
+    {
+        copy_file(
+            src_folder.join("azure-proxy-agent"),
+            dst_folder.join("azure-proxy-agent"),
+        );
+        copy_file(
+            src_folder.join("proxy-agent.json"),
+            PathBuf::from(crate::linux::CONFIG_PATH),
+        );
+        copy_file(
+            src_folder.join("ebpf_cgroup.o"),
+            PathBuf::from(crate::linux::EBPF_PATH),
+        );
+    }
     dst_folder
 }
 
 fn backup_proxy_agent() {
-    copy_proxy_agent_files(
-        running::proxy_agent_running_folder(SERVICE_NAME),
-        backup::proxy_agent_backup_package_folder(),
-    );
+    #[cfg(windows)]
+    {
+        copy_proxy_agent_files(
+            running::proxy_agent_running_folder(SERVICE_NAME),
+            backup::proxy_agent_backup_package_folder(),
+        );
+    }
 
     // copy service config file for linux
     #[cfg(not(windows))]
     {
+        let backup_folder = backup::proxy_agent_backup_package_folder();
+        copy_file(
+            PathBuf::from(crate::linux::CONFIG_PATH),
+            backup_folder.join("proxy-agent.json"),
+        );
+        copy_file(
+            PathBuf::from(crate::linux::EBPF_PATH),
+            backup_folder.join("ebpf_cgroup.o"),
+        );
+        copy_file(
+            running::proxy_agent_running_folder("").join("azure-proxy-agent"),
+            backup_folder.join("azure-proxy-agent"),
+        );
         linux::backup_service_config_file(backup::proxy_agent_backup_folder());
     }
 }
@@ -92,10 +130,29 @@ fn restore_proxy_agent() -> path::PathBuf {
     let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_path(
         src_folder.to_path_buf(),
     ));
-    copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
+    #[cfg(windows)]
+    {
+        copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
+    }
+    #[cfg(not(windows))]
+    {
+        copy_file(
+            src_folder.join("azure-proxy-agent"),
+            dst_folder.join("azure-proxy-agent"),
+        );
+        copy_file(
+            src_folder.join("proxy-agent.json"),
+            PathBuf::from(crate::linux::CONFIG_PATH),
+        );
+        copy_file(
+            src_folder.join("ebpf_cgroup.o"),
+            PathBuf::from(crate::linux::EBPF_PATH),
+        );
+    }
     dst_folder
 }
 
+#[cfg(windows)]
 fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     match misc_helpers::try_create_folder(dst_folder.to_path_buf()) {
         Ok(_) => {}
@@ -133,6 +190,29 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     }
 }
 
+fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
+    match dst_file.parent() {
+        Some(p) => match misc_helpers::try_create_folder(p.to_path_buf()) {
+            Ok(_) => {}
+            Err(e) => {
+                logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
+            }
+        },
+        None => {}
+    }
+    match fs::copy(src_file.to_path_buf(), dst_file.to_path_buf()) {
+        Ok(_) => {
+            logger::write(format!("Copied file {:?} to {:?}", src_file, dst_file));
+        }
+        Err(e) => {
+            logger::write(format!(
+                "Failed to copy file {:?} to {:?}, error: {:?}",
+                src_file, dst_file, e
+            ));
+        }
+    }
+}
+
 fn stop_service() {
     match service::stop_service(SERVICE_NAME) {
         Ok(_) => {
@@ -147,7 +227,7 @@ fn stop_service() {
     }
 }
 
-fn setup_service(proxy_agent_target_folder: PathBuf) {
+fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path: PathBuf) {
     #[cfg(windows)]
     {
         // delete the existing proxy agent service folder
@@ -165,7 +245,12 @@ fn setup_service(proxy_agent_target_folder: PathBuf) {
                 misc_helpers::path_to_string(ebpf_setup_script_file.to_path_buf());
             let output = misc_helpers::execute_command(
                 "powershell.exe",
-                vec!["-ExecutionPolicy", "Bypass", "-File", &setup_script_file_str],
+                vec![
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    &setup_script_file_str,
+                ],
                 1,
             );
             logger::write(format!(
@@ -176,11 +261,7 @@ fn setup_service(proxy_agent_target_folder: PathBuf) {
     }
     #[cfg(not(windows))]
     {
-        match linux::setup_service(
-            SERVICE_NAME,
-            proxy_agent_target_folder.to_path_buf(),
-            misc_helpers::get_current_exe_dir(),
-        ) {
+        match linux::setup_service(SERVICE_NAME, _service_config_folder_path) {
             Ok(_) => {
                 logger::write(format!("Setup service {} successfully", SERVICE_NAME));
             }
@@ -248,40 +329,22 @@ fn uninstall_service() -> PathBuf {
     proxy_agent_running_folder
 }
 
-fn delete_package(_proxy_agent_running_folder: PathBuf) {
-    let proxy_agent_package_folder;
+fn delete_package(proxy_agent_running_folder: PathBuf) {
     #[cfg(windows)]
     {
-        proxy_agent_package_folder = _proxy_agent_running_folder;
+        delete_folder(proxy_agent_running_folder);
     }
     #[cfg(not(windows))]
     {
-        match linux::read_link(proxy_agent_shared::linux::SERVICE_PACKAGE_LINK_NAME) {
-            Some(path) => match fs::remove_dir_all(&path) {
-                Ok(_) => {
-                    logger::write(format!("Deleted linked folder {:?}", path));
-                }
-                Err(e) => {
-                    logger::write(format!(
-                        "Failed to delete linked folder {:?}, error: {:?}",
-                        path, e
-                    ));
-                }
-            },
-            None => {}
-        }
-
-        delete_file(PathBuf::from(linux::SERVICE_EXEC_LINK_NAME));
-
-        proxy_agent_package_folder = PathBuf::from(proxy_agent_shared::linux::SERVICE_PACKAGE_LINK_NAME);
+        delete_file(proxy_agent_running_folder.join("azure-proxy-agent"));
+        delete_file(PathBuf::from(crate::linux::CONFIG_PATH));
+        delete_file(PathBuf::from(crate::linux::EBPF_PATH));
     }
-
-    delete_folder(proxy_agent_package_folder);
 }
 
 #[cfg(not(windows))]
 fn delete_file(file_to_be_delete: PathBuf) {
-    if file_to_be_delete.exists(){
+    if file_to_be_delete.exists() {
         if file_to_be_delete.is_dir() {
             delete_folder(file_to_be_delete);
             return;

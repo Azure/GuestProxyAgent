@@ -73,13 +73,13 @@ fn start(mut interval: Duration) {
 }
 
 pub fn proxy_agent_status_new() -> ProxyAgentStatus {
-    let keyLatchStatus = key_keeper::get_status();
-    let ebpfProgramStatus = redirector::get_status();
-    let proxyListenerStatus = proxy_listener::get_status();
+    let key_latch_status = key_keeper::get_status();
+    let ebpf_status = redirector::get_status();
+    let proxy_status = proxy_listener::get_status();
     let mut status = OveralState::SUCCESS.to_string();
-    if keyLatchStatus.status != ModuleState::RUNNING
-        || ebpfProgramStatus.status != ModuleState::RUNNING
-        || proxyListenerStatus.status != ModuleState::RUNNING
+    if key_latch_status.status != ModuleState::RUNNING
+        || ebpf_status.status != ModuleState::RUNNING
+        || proxy_status.status != ModuleState::RUNNING
     {
         status = OveralState::ERROR.to_string();
     }
@@ -87,9 +87,9 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status: status,
         monitorStatus: monitor::get_status(),
-        keyLatchStatus: keyLatchStatus,
-        ebpfProgramStatus: ebpfProgramStatus,
-        proxyListenerStatus: proxyListenerStatus,
+        keyLatchStatus: key_latch_status,
+        ebpfProgramStatus: ebpf_status,
+        proxyListenerStatus: proxy_status,
         telemetryLoggerStatus: event_logger::get_status(),
         proxyConnectionsCount: proxy_listener::get_proxy_connection_count(),
     }
@@ -190,18 +190,18 @@ mod tests {
         assert!(file_content.is_ok(), "Failed to read file content");
 
         //Check if field were written
-        let Gpa_aggregate_status = file_content.unwrap();
+        let gpa_aggregate_status = file_content.unwrap();
         assert!(
-            !Gpa_aggregate_status.timestamp.is_empty(),
+            !gpa_aggregate_status.timestamp.is_empty(),
             "Failed to get Timestamp field"
         );
         assert!(
-            !Gpa_aggregate_status.proxyAgentStatus.version.is_empty(),
+            !gpa_aggregate_status.proxyAgentStatus.version.is_empty(),
             "Failed to get proxy_agent_status field"
         );
         assert!(
-            Gpa_aggregate_status.proxyConnectionSummary.is_empty()
-                || Gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
+            gpa_aggregate_status.proxyConnectionSummary.is_empty()
+                || gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
             "proxyConnectionSummary does not exist"
         );
     }

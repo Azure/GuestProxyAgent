@@ -228,10 +228,18 @@ pub fn get_ebpf_file_path() -> PathBuf {
         Ok(file_path) => PathBuf::from(file_path),
         Err(_) => PathBuf::new(),
     };
+    let ebpf_file_name = config::get_ebpf_program_name();
+    #[cfg(not(windows))]
+    {
+        if !bpf_file_path.exists() {
+            // linux ebpf file default to /usr/lib/azure-proxy-agent folder
+            bpf_file_path = PathBuf::from(format!("/usr/lib/azure-proxy-agent/{ebpf_file_name}"));
+        }
+    }
     if !bpf_file_path.exists() {
         // default to current exe folder
         bpf_file_path = misc_helpers::get_current_exe_dir();
-        bpf_file_path.push(config::get_ebpf_program_name());
+        bpf_file_path.push(ebpf_file_name);
     }
     bpf_file_path
 }

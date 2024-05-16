@@ -6,7 +6,7 @@ use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::{env, path::PathBuf, time::Duration};
 
-const CONFIG_FILE_NAME: &str = "GuestProxyAgent.json";
+const CONFIG_FILE_NAME: &str = "proxy-agent.json";
 static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(|| Config::default());
 
 #[cfg(not(windows))]
@@ -92,6 +92,14 @@ impl Config {
                 Ok(file_path) => PathBuf::from(file_path),
                 Err(_) => PathBuf::new(),
             };
+        #[cfg(not(windows))]
+        {
+            if !config_file_full_path.exists() {
+                // linux config file default to /etc/azure folder
+                config_file_full_path = PathBuf::from(format!("/etc/azure/{CONFIG_FILE_NAME}"));
+            }
+        }
+
         if !config_file_full_path.exists() {
             // default to current exe folder
             config_file_full_path = misc_helpers::get_current_exe_dir();

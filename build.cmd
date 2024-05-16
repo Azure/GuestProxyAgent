@@ -195,8 +195,8 @@ xcopy /Y %out_dir%\proxy_agent_setup.exe %out_package_dir%\
 xcopy /Y %out_dir%\proxy_agent_setup.pdb %out_package_dir%\
 
 echo ======= copy to ProxyAgent folder
-xcopy /Y %out_dir%\GuestProxyAgent.exe %out_package_proxyagent_dir%\
-xcopy /Y %out_dir%\GuestProxyAgent.pdb %out_package_proxyagent_dir%\
+xcopy /Y %out_dir%\auzre-proxy-agent.exe %out_package_proxyagent_dir%\GuestProxyAgent.exe
+xcopy /Y %out_dir%\auzre-proxy-agent.pdb %out_package_proxyagent_dir%\GuestProxyAgent.pdb
 xcopy /Y %out_dir%\GuestProxyAgent.json %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\EbpfApi.dll %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\EbpfApi.pdb %out_package_proxyagent_dir%\

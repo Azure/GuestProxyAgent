@@ -190,8 +190,7 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
     #[cfg(not(windows))]
     {
         // linux service harded to this soft link
-        return PathBuf::from(proxy_agent_shared::linux::SERVICE_PACKAGE_LINK_NAME)
-            .join("GuestProxyAgent");
+        return PathBuf::from("/usr/sbin/azure-proxy-agent");
     }
 }
 
@@ -208,7 +207,7 @@ pub fn get_proxy_agent_exe_path() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        exe_path.join("ProxyAgent/ProxyAgent/GuestProxyAgent")
+        exe_path.join("ProxyAgent/ProxyAgent/azure-proxy-agent")
     }    
 }
 

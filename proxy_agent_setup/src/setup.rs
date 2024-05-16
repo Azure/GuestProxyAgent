@@ -19,7 +19,7 @@ pub fn proxy_agent_exe_path(proxy_agent_package_dir: PathBuf) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        proxy_agent_package_dir.join("GuestProxyAgent")
+        proxy_agent_package_dir.join("azure-proxy-agent")
     }
 }
 
