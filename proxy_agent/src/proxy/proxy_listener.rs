@@ -543,7 +543,7 @@ fn log_connection_summary(connection: &Connection, request: &Request, response_s
         }
         Err(_) => {}
     };
-    proxy_agent_status::add_connection_summary(summary);
+    proxy_agent_status::add_connection_summary(summary, false);
 }
 
 fn send_response(mut client_stream: &TcpStream, status: &str) {
