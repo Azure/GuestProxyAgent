@@ -662,7 +662,7 @@
         
                 Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
                 Set objService = objWMIService.Get("Win32_BaseService")
-                servicePath = FsObject.BuildPath(oProxyAgentBinaryLocation, "\azure-proxy-agent.exe")
+                servicePath = FsObject.BuildPath(oProxyAgentBinaryLocation, "\GuestProxyAgent.exe")
 
                 If oServiceAlreadyInstalled = False then
                     ' Create service with serviceDependencies on ebpfServices
