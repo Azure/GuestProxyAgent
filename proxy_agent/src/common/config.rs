@@ -6,7 +6,11 @@ use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::{env, path::PathBuf, time::Duration};
 
+#[cfg(not(windows))]
 const CONFIG_FILE_NAME: &str = "proxy-agent.json";
+#[cfg(windows)]
+const CONFIG_FILE_NAME: &str = "GuestProxyAgent.json";
+
 static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(|| Config::default());
 
 #[cfg(not(windows))]

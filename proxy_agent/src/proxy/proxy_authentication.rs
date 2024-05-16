@@ -532,13 +532,13 @@ mod tests {
 
         #[cfg(windows)]
         {
-            let windowsProcessNames = [
+            let windows_process_names = [
                 "vm-application-manager",
                 "windowsazureguestagent.exe",
                 "waappagent.exe",
                 "immediateruncommandservice.exe",
             ];
-            for process in windowsProcessNames.iter() {
+            for process in windows_process_names.iter() {
                 claims.processName = process.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
