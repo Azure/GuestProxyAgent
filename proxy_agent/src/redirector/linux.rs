@@ -21,6 +21,7 @@ use std::path::PathBuf;
 static mut IS_STARTED: bool = false;
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
+static mut LOCAL_PORT: u16 = 0;
 static mut BPF_OBJECT: Option<Bpf> = None;
 
 pub fn start(local_port: u16) -> bool {
@@ -98,6 +99,7 @@ pub fn start(local_port: u16) -> bool {
 
     unsafe {
         BPF_OBJECT = Some(bpf);
+        LOCAL_PORT = local_port;
         IS_STARTED = true;
     }
 
@@ -524,7 +526,7 @@ pub fn update_imds_redirect_policy(redirect: bool) {
 fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: bool) {
     unsafe {
         match BPF_OBJECT {
-            Some(ref bpf) => match bpf.map_mut("policy_map") {
+            Some(ref mut bpf) => match bpf.map_mut("policy_map") {
                 Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                     Ok(mut policy_map) => {
                         let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
