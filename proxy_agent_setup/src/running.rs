@@ -26,7 +26,7 @@ pub fn proxy_agent_running_folder(_ervice_name: &str) -> PathBuf {
 pub fn proxy_agent_parent_folder() -> PathBuf {
     #[cfg(windows)]
     {
-        PathBuf::from("C:\\WindowsAzure\\ProxyAgent");
+        PathBuf::from("C:\\WindowsAzure\\ProxyAgent")
     }
     #[cfg(not(windows))]
     {

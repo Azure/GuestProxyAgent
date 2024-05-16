@@ -9,7 +9,7 @@ echo "Start Guest Proxy Agent Validation"
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentvalidation.json
 
-serviceName="GuestProxyAgent"
+serviceName="azure-proxy-agent"
 guestProxyAgentServiceExist=$(systemctl list-unit-files | grep $serviceName | wc -l)
 guestProxyAgentServiceStatus="unknown"
 if [ $guestProxyAgentServiceExist -eq 0 ]; then
@@ -24,8 +24,8 @@ guestProxyProcessStarted=$(systemctl is-active $serviceName)
 if [ "$guestProxyProcessStarted" == "active" ]; then
     guestProxyProcessStarted='true'
 else
-    guestProxyProcessStarted=$(ps -C GuestProxyAgent)
-    if [[ $guestProxyProcessStarted == *"GuestProxyAgent"* ]]; then
+    guestProxyProcessStarted=$(ps -C azure-proxy-agent)
+    if [[ $guestProxyProcessStarted == *"azure-proxy-agent"* ]]; then
         guestProxyProcessStarted='true'
     else
         guestProxyProcessStarted='false'

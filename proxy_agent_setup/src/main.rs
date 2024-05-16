@@ -190,6 +190,7 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     }
 }
 
+#[cfg(not(windows))]
 fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
     match dst_file.parent() {
         Some(p) => match misc_helpers::try_create_folder(p.to_path_buf()) {
