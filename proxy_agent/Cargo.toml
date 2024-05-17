@@ -1,5 +1,5 @@
 [package]
-name = "GuestProxyAgent"
+name = "azure-proxy-agent"
 version = "9.9.9"       # always 3-number version
 edition = "2021"
 build = "build.rs"
@@ -81,7 +81,7 @@ to communicate with the guest operating system."""
 maintainer-scripts = "DEBIAN"
 systemd-units = { enable = true }
 assets = [
-    ["GuestProxyAgent", "usr/lib/azure-proxy-agent/Package_pkgversion/GuestProxyAgent", "755"],  # Binary
-    ["GuestProxyAgent.json", "usr/lib/azure-proxy-agent/Package_pkgversion/GuestProxyAgent.json", "644"],
-    ["ebpf_cgroup.o", "usr/lib/azure-proxy-agent/Package_pkgversion/ebpf_cgroup.o", "644"],
+    ["azure-proxy-agent", "usr/sbin/azure-proxy-agent", "755"],  # Binary
+    ["proxy-agent.json", "etc/azure/proxy-agent.json", "644"],
+    ["ebpf_cgroup.o", "usr/lib/azure-proxy-agent/ebpf_cgroup.o", "644"],
 ]

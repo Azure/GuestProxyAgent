@@ -532,13 +532,13 @@ mod tests {
 
         #[cfg(windows)]
         {
-            let windowsProcessNames = [
+            let windows_process_names = [
                 "vm-application-manager",
                 "windowsazureguestagent.exe",
                 "waappagent.exe",
                 "immediateruncommandservice.exe",
             ];
-            for process in windowsProcessNames.iter() {
+            for process in windows_process_names.iter() {
                 claims.processName = process.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
@@ -549,8 +549,8 @@ mod tests {
 
         #[cfg(not(windows))]
         {
-            let linuxProcessNames = ["vm-application-manager", "immediate-run-command-handler"];
-            for process in linuxProcessNames.iter() {
+            let linux_process_names = ["vm-application-manager", "immediate-run-command-handler"];
+            for process in linux_process_names.iter() {
                 claims.processName = process.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
@@ -558,13 +558,13 @@ mod tests {
                 );
             }
 
-            let linuxProcessCmdLines =
+            let linux_process_cmds =
                 ["python3 -u bin/WALinuxAgent-2.9.1.1-py3.8.egg -run-exthandlers"];
-            for processCmdLine in linuxProcessCmdLines.iter() {
-                claims.processCmdLine = processCmdLine.to_string();
+            for process_cmd in linux_process_cmds.iter() {
+                claims.processCmdLine = process_cmd.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
-                    "{processCmdLine} should be built-in process"
+                    "{process_cmd} should be built-in process"
                 );
             }
         }

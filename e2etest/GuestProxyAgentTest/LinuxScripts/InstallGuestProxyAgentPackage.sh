@@ -47,7 +47,7 @@ echo "start unzipping guest-proxy-agent.zip"
 unzip -o $zipFilePath -d $currentDir
 ls -l $currentDir
 
-pkgversion=$($currentDir/ProxyAgent/ProxyAgent/GuestProxyAgent --version)
+pkgversion=$($currentDir/ProxyAgent/ProxyAgent/azure-proxy-agent --version)
 
 for i in {1..3}; do
     echo "start install & start guest-proxy-agent package $i"
