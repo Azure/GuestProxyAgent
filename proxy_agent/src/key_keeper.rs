@@ -328,7 +328,7 @@ fn poll_secure_channel_status(
             // customer has not enforce the secure channel state
             if state == DISABLE_STATE {
                 let message = helpers::write_startup_event(
-                    "Customer has not enforce the sescure channel state.",
+                    "Customer has not enforce the secure channel state.",
                     "poll_secure_channel_status",
                     "key_keeper",
                     logger::AGENT_LOGGER_KEY,
