@@ -71,4 +71,5 @@ pub struct GuestProxyAgentAggregateStatus {
     pub timestamp: String,
     pub proxyAgentStatus: ProxyAgentStatus,
     pub proxyConnectionSummary: Vec<ProxyConnectionSummary>,
+    pub failedAuthenticateSummary: Vec<ProxyConnectionSummary>,
 }

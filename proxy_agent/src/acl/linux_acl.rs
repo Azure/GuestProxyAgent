@@ -34,6 +34,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "test-with-root")]
 #[cfg(test)]
 mod tests {
     use crate::common::logger;

@@ -784,6 +784,7 @@ mod tests {
             timestamp: misc_helpers::get_date_time_string(),
             proxyAgentStatus: proxy_agent_status_obj,
             proxyConnectionSummary: vec![proxy_connection_summary_obj],
+            failedAuthenticateSummary: vec![],
         };
 
         let mut status = StatusObj {
