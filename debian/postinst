@@ -1,9 +1,7 @@
-ln -sf /usr/lib/azure-proxy-agent/Package_pkgversion /usr/lib/azure-proxy-agent/package
-ln -sf /usr/lib/azure-proxy-agent/package/GuestProxyAgent /usr/sbin/azure-proxy-agent
 
-systemctl unmark GuestProxyAgent.service
+systemctl unmark azure-proxy-agent.service
 systemctl daemon-reload
-systemctl start GuestProxyAgent.service
-systemctl enable GuestProxyAgent.service
+systemctl start azure-proxy-agent.service
+systemctl enable azure-proxy-agent.service
 
 #DEBHELPER#

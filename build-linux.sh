@@ -87,7 +87,7 @@ then
 fi
 
 echo ======= copy config file for Linux platform
-cp -f -T $root_path/proxy_agent/config/GuestProxyAgent.linux.json $out_dir/GuestProxyAgent.json
+cp -f -T $root_path/proxy_agent/config/GuestProxyAgent.linux.json $out_dir/proxy-agent.json
 
 echo ======= copy files for run/debug proxy_agent Unit test
 echo cp -f $out_dir/* $out_dir/deps/
@@ -170,7 +170,7 @@ if [ ! -d $out_package_dir ]; then
 fi
 echo ======= copy to package folder
 cp -f $out_dir/proxy_agent_setup $out_package_dir/
-cp -f $out_dir/GuestProxyAgent.service $out_package_dir/
+cp -f $out_dir/azure-proxy-agent.service $out_package_dir/
 
 out_package_proxyagent_dir=$out_package_dir/ProxyAgent
 if [ ! -d $out_package_proxyagent_dir ]; then
@@ -178,23 +178,23 @@ if [ ! -d $out_package_proxyagent_dir ]; then
 fi
 
 echo ======= copy to proxyagent folder
-cp -f $out_dir/GuestProxyAgent $out_package_proxyagent_dir/
-cp -f $out_dir/GuestProxyAgent.json $out_package_proxyagent_dir/
+cp -f $out_dir/azure-proxy-agent $out_package_proxyagent_dir/
+cp -f $out_dir/proxy-agent.json $out_package_proxyagent_dir/
 cp -f $out_dir/ebpf_cgroup.o $out_package_proxyagent_dir/
 
 echo ======= generate rpm package
 echo "Generating rpm package -------------- "
-pkgversion=$($out_dir/GuestProxyAgent --version)
+pkgversion=$($out_dir/azure-proxy-agent --version)
 echo "Package version: '$pkgversion'"
 rootdir=$(pwd)
 rm -rf build
 mkdir build
 pushd build
-    mkdir GuestProxyAgent
-    pushd GuestProxyAgent
+    mkdir azure-proxy-agent
+    pushd azure-proxy-agent
         cp -rf $out_package_dir/ ./
     popd
-    mv GuestProxyAgent azure-proxy-agent_${pkgversion}
+    mv azure-proxy-agent azure-proxy-agent_${pkgversion}
     tar -czf azure-proxy-agent_${pkgversion}.tar.gz azure-proxy-agent_${pkgversion}
 popd
 pushd rpmbuild
@@ -221,10 +221,10 @@ pushd debbuild
     cp -rf $rootdir/debian/* ./DEBIAN/
     cp -rf $rootdir/proxy_agent/Cargo.toml ./Cargo.toml
     cp -rf $rootdir/proxy_agent/src/* ./src/    # cargo deb --no-build command still requires ./src/main.rs
-    cp -f $out_package_proxyagent_dir/GuestProxyAgent ./
-    cp -f $out_package_proxyagent_dir/GuestProxyAgent.json ./
+    cp -f $out_package_proxyagent_dir/azure-proxy-agent ./
+    cp -f $out_package_proxyagent_dir/proxy-agent.json ./
     cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./
-    cp -f $out_package_dir/GuestProxyAgent.service ./DEBIAN/
+    cp -f $out_package_dir/azure-proxy-agent.service ./DEBIAN/
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  # replace pkgversion with actual version
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  # replace pkgversion with actual version
     sed -i "s/pkgversion/${pkgversion}/g" Cargo.toml  # replace pkgversion with actual version
