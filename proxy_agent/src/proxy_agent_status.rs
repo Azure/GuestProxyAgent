@@ -22,6 +22,8 @@ use std::time::{Duration, Instant};
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn start_async(interval: Duration) {
     _ = thread::Builder::new()
@@ -61,8 +63,14 @@ fn start(mut interval: Duration) {
 
         //Clear the connection map and reset start_time after 24 hours
         if elapsed_time >= map_clear_duration {
+            logger::write_information(
+                "Clearing the connection summary map and failed authenticate summary map."
+                    .to_string(),
+            );
             unsafe {
                 let mut summary_map_guard = SUMMARY_MAP.lock().unwrap();
+                summary_map_guard.clear();
+                let mut summary_map_guard = FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap();
                 summary_map_guard.clear();
                 start_time = Instant::now();
             }
@@ -73,13 +81,13 @@ fn start(mut interval: Duration) {
 }
 
 pub fn proxy_agent_status_new() -> ProxyAgentStatus {
-    let keyLatchStatus = key_keeper::get_status();
-    let ebpfProgramStatus = redirector::get_status();
-    let proxyListenerStatus = proxy_listener::get_status();
+    let key_latch_status = key_keeper::get_status();
+    let ebpf_status = redirector::get_status();
+    let proxy_status = proxy_listener::get_status();
     let mut status = OveralState::SUCCESS.to_string();
-    if keyLatchStatus.status != ModuleState::RUNNING
-        || ebpfProgramStatus.status != ModuleState::RUNNING
-        || proxyListenerStatus.status != ModuleState::RUNNING
+    if key_latch_status.status != ModuleState::RUNNING
+        || ebpf_status.status != ModuleState::RUNNING
+        || proxy_status.status != ModuleState::RUNNING
     {
         status = OveralState::ERROR.to_string();
     }
@@ -87,9 +95,9 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status: status,
         monitorStatus: monitor::get_status(),
-        keyLatchStatus: keyLatchStatus,
-        ebpfProgramStatus: ebpfProgramStatus,
-        proxyListenerStatus: proxyListenerStatus,
+        keyLatchStatus: key_latch_status,
+        ebpfProgramStatus: ebpf_status,
+        proxyListenerStatus: proxy_status,
         telemetryLoggerStatus: event_logger::get_status(),
         proxyConnectionsCount: proxy_listener::get_proxy_connection_count(),
     }
@@ -115,13 +123,19 @@ pub fn guest_proxy_agent_aggregate_status_new() -> GuestProxyAgentAggregateStatu
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
         proxyAgentStatus: proxy_agent_status_new(),
-        proxyConnectionSummary: get_all_connection_summary(),
+        proxyConnectionSummary: get_all_connection_summary(false),
+        failedAuthenticateSummary: get_all_connection_summary(true),
     }
 }
 
-pub fn add_connection_summary(summary: ProxySummary) {
+pub fn add_connection_summary(summary: ProxySummary, is_failed_authenticate: bool) {
+    let mut summary_map = if is_failed_authenticate {
+        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
+    } else {
+        unsafe { SUMMARY_MAP.lock().unwrap() }
+    };
+
     let summary_key = summary.to_key_string();
-    let mut summary_map = unsafe { SUMMARY_MAP.lock().unwrap() };
     if !summary_map.contains_key(&summary_key) {
         summary_map.insert(summary_key, proxy_connection_summary_new(summary));
     } else {
@@ -131,9 +145,13 @@ pub fn add_connection_summary(summary: ProxySummary) {
     }
 }
 
-fn get_all_connection_summary() -> Vec<ProxyConnectionSummary> {
+fn get_all_connection_summary(is_failed_authenticate: bool) -> Vec<ProxyConnectionSummary> {
+    let summary_map_lock = if is_failed_authenticate {
+        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
+    } else {
+        unsafe { SUMMARY_MAP.lock().unwrap() }
+    };
     let mut copy_summary: Vec<ProxyConnectionSummary> = Vec::new();
-    let summary_map_lock = unsafe { SUMMARY_MAP.lock().unwrap() };
     for (_, connection_summary) in summary_map_lock.iter() {
         copy_summary.push(connection_summary.clone());
     }
@@ -156,15 +174,13 @@ pub fn write_aggregate_status_to_file(
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
-
-    use proxy_agent_shared::{
-        misc_helpers, proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus,
-    };
-
     use crate::proxy_agent_status::{
         guest_proxy_agent_aggregate_status_new, write_aggregate_status_to_file,
     };
+    use proxy_agent_shared::{
+        misc_helpers, proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus,
+    };
+    use std::{env, fs};
 
     #[test]
     fn write_aggregate_status_test() {
@@ -190,18 +206,18 @@ mod tests {
         assert!(file_content.is_ok(), "Failed to read file content");
 
         //Check if field were written
-        let Gpa_aggregate_status = file_content.unwrap();
+        let gpa_aggregate_status = file_content.unwrap();
         assert!(
-            !Gpa_aggregate_status.timestamp.is_empty(),
+            !gpa_aggregate_status.timestamp.is_empty(),
             "Failed to get Timestamp field"
         );
         assert!(
-            !Gpa_aggregate_status.proxyAgentStatus.version.is_empty(),
+            !gpa_aggregate_status.proxyAgentStatus.version.is_empty(),
             "Failed to get proxy_agent_status field"
         );
         assert!(
-            Gpa_aggregate_status.proxyConnectionSummary.is_empty()
-                || Gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
+            gpa_aggregate_status.proxyConnectionSummary.is_empty()
+                || gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
             "proxyConnectionSummary does not exist"
         );
     }

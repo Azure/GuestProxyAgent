@@ -223,8 +223,8 @@ fn get_local_ip() -> Option<String> {
 
         match nic.address {
             Some(addr) => {
-                if let Some(socketAddr) = addr.as_sockaddr_in() {
-                    return Some(socketAddr.ip().to_string());
+                if let Some(socket_addr) = addr.as_sockaddr_in() {
+                    return Some(socket_addr.ip().to_string());
                 }
             }
             _ => {}

@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 use super::authorization_rules::AuthorizationRules;
 use super::proxy_connection::Connection;
+use super::proxy_summary::ProxySummary;
+use crate::common::http::response::Response;
 use crate::key_keeper::key::AuthorizationItem;
+use crate::proxy_agent_status;
 use crate::{common::config, common::constants, proxy::Claims};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
@@ -119,9 +122,28 @@ impl Authenticate for WireServer {
                         request_url.to_string(),
                         self.claims.clone(),
                     );
-                    if !allowed && rules.mode.to_lowercase() == "audit" {
-                        Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url.to_string()));
-                        return true;
+                    if !allowed {
+                        let summary = ProxySummary {
+                            userId: self.claims.userId,
+                            userName: self.claims.userName.to_string(),
+                            userGroups: self.claims.userGroups.clone(),
+                            clientIp: self.claims.clientIp.to_string(),
+                            processFullPath: self.claims.processFullPath.to_string(),
+                            processCmdLine: self.claims.processCmdLine.to_string(),
+                            runAsElevated: self.claims.runAsElevated,
+                            method: String::new(),
+                            url: request_url.to_string(),
+                            ip: constants::WIRE_SERVER_IP.to_string(),
+                            port: constants::WIRE_SERVER_PORT,
+                            responseStatus: Response::FORBIDDEN.to_string(),
+                            elapsedTime: 0,
+                        };
+                        proxy_agent_status::add_connection_summary(summary, true);
+
+                        if rules.mode.to_lowercase() == "audit" {
+                            Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url.to_string()));
+                            return true;
+                        }
                     }
                     return allowed;
                 }
@@ -155,9 +177,29 @@ impl Authenticate for IMDS {
                         request_url.to_string(),
                         self.claims.clone(),
                     );
-                    if !allowed && rules.mode.to_lowercase() == "audit" {
-                        Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url.to_string()));
-                        return true;
+
+                    if !allowed {
+                        let summary = ProxySummary {
+                            userId: self.claims.userId,
+                            userName: self.claims.userName.to_string(),
+                            userGroups: self.claims.userGroups.clone(),
+                            clientIp: self.claims.clientIp.to_string(),
+                            processFullPath: self.claims.processFullPath.to_string(),
+                            processCmdLine: self.claims.processCmdLine.to_string(),
+                            runAsElevated: self.claims.runAsElevated,
+                            method: String::new(),
+                            url: request_url.to_string(),
+                            ip: constants::IMDS_IP.to_string(),
+                            port: constants::IMDS_PORT,
+                            responseStatus: Response::FORBIDDEN.to_string(),
+                            elapsedTime: 0,
+                        };
+                        proxy_agent_status::add_connection_summary(summary, true);
+
+                        if rules.mode.to_lowercase() == "audit" {
+                            Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url.to_string()));
+                            return true;
+                        }
                     }
                     return allowed;
                 }
@@ -490,13 +532,13 @@ mod tests {
 
         #[cfg(windows)]
         {
-            let windowsProcessNames = [
+            let windows_process_names = [
                 "vm-application-manager",
                 "windowsazureguestagent.exe",
                 "waappagent.exe",
                 "immediateruncommandservice.exe",
             ];
-            for process in windowsProcessNames.iter() {
+            for process in windows_process_names.iter() {
                 claims.processName = process.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
@@ -507,8 +549,8 @@ mod tests {
 
         #[cfg(not(windows))]
         {
-            let linuxProcessNames = ["vm-application-manager", "immediate-run-command-handler"];
-            for process in linuxProcessNames.iter() {
+            let linux_process_names = ["vm-application-manager", "immediate-run-command-handler"];
+            for process in linux_process_names.iter() {
                 claims.processName = process.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
@@ -516,13 +558,13 @@ mod tests {
                 );
             }
 
-            let linuxProcessCmdLines =
+            let linux_process_cmds =
                 ["python3 -u bin/WALinuxAgent-2.9.1.1-py3.8.egg -run-exthandlers"];
-            for processCmdLine in linuxProcessCmdLines.iter() {
-                claims.processCmdLine = processCmdLine.to_string();
+            for process_cmd in linux_process_cmds.iter() {
+                claims.processCmdLine = process_cmd.to_string();
                 assert!(
                     super::default::is_platform_process(&claims),
-                    "{processCmdLine} should be built-in process"
+                    "{process_cmd} should be built-in process"
                 );
             }
         }

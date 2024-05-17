@@ -63,7 +63,7 @@ type NetUserGetLocalGroups = unsafe extern "system" fn(
     totalentries: *mut u32,
 ) -> u32;
 
-fn NetUserGetLocalGroups(
+fn net_user_get_local_groups(
     servername: windows_sys::core::PWSTR,
     username: windows_sys::core::PWSTR,
     level: u32,
@@ -75,14 +75,14 @@ fn NetUserGetLocalGroups(
 ) -> std::io::Result<u32> {
     unsafe {
         let fun_name = "NetUserGetLocalGroups\0";
-        let NetUserGetLocalGroups: Symbol<NetUserGetLocalGroups> =
+        let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> =
             NETAPI32_DLL.get(fun_name.as_bytes()).map_err(|e| {
                 Error::new(
                     ErrorKind::Other,
                     format!("Loading {} failed with error: {}", fun_name, e),
                 )
             })?;
-        let status = NetUserGetLocalGroups(
+        let status = net_user_get_local_groups(
             servername,
             username,
             level,
@@ -140,7 +140,7 @@ pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
         let mut group_count = 0;
         let mut total_group_count = 0;
         let mut group_info = null_mut();
-        let status = NetUserGetLocalGroups(
+        let status = net_user_get_local_groups(
             null_mut(),
             to_pwstr(domain_user_name.as_str()).as_mut_ptr(),
             0,
