@@ -40,7 +40,10 @@ fn main() {
         args::Args::INSTALL => {
             stop_service();
             let proxy_agent_target_folder = copy_proxy_agent();
-            setup_service(proxy_agent_target_folder, misc_helpers::get_current_exe_dir());
+            setup_service(
+                proxy_agent_target_folder,
+                misc_helpers::get_current_exe_dir(),
+            );
         }
         args::Args::UNINSTALL => {
             let proxy_agent_running_folder = uninstall_service();
@@ -58,7 +61,10 @@ fn main() {
             }
             stop_service();
             let proxy_agent_target_folder = restore_proxy_agent();
-            setup_service(proxy_agent_target_folder, backup::proxy_agent_backup_folder());
+            setup_service(
+                proxy_agent_target_folder,
+                backup::proxy_agent_backup_folder(),
+            );
 
             if args.uninstall_mode == args::Args::DELETE_PACKAGE {
                 delete_backup_folder();
@@ -80,18 +86,7 @@ fn copy_proxy_agent() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        copy_file(
-            src_folder.join("azure-proxy-agent"),
-            dst_folder.join("azure-proxy-agent"),
-        );
-        copy_file(
-            src_folder.join("proxy-agent.json"),
-            PathBuf::from(crate::linux::CONFIG_PATH),
-        );
-        copy_file(
-            src_folder.join("ebpf_cgroup.o"),
-            PathBuf::from(crate::linux::EBPF_PATH),
-        );
+        linux::copy_files(src_folder);
     }
     dst_folder
 }
@@ -104,24 +99,9 @@ fn backup_proxy_agent() {
             backup::proxy_agent_backup_package_folder(),
         );
     }
-
-    // copy service config file for linux
     #[cfg(not(windows))]
     {
-        let backup_folder = backup::proxy_agent_backup_package_folder();
-        copy_file(
-            PathBuf::from(crate::linux::CONFIG_PATH),
-            backup_folder.join("proxy-agent.json"),
-        );
-        copy_file(
-            PathBuf::from(crate::linux::EBPF_PATH),
-            backup_folder.join("ebpf_cgroup.o"),
-        );
-        copy_file(
-            running::proxy_agent_running_folder("").join("azure-proxy-agent"),
-            backup_folder.join("azure-proxy-agent"),
-        );
-        linux::backup_service_config_file(backup::proxy_agent_backup_folder());
+        linux::backup_files();
     }
 }
 
@@ -136,18 +116,7 @@ fn restore_proxy_agent() -> path::PathBuf {
     }
     #[cfg(not(windows))]
     {
-        copy_file(
-            src_folder.join("azure-proxy-agent"),
-            dst_folder.join("azure-proxy-agent"),
-        );
-        copy_file(
-            src_folder.join("proxy-agent.json"),
-            PathBuf::from(crate::linux::CONFIG_PATH),
-        );
-        copy_file(
-            src_folder.join("ebpf_cgroup.o"),
-            PathBuf::from(crate::linux::EBPF_PATH),
-        );
+        linux::copy_files(src_folder);
     }
     dst_folder
 }
@@ -185,30 +154,6 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
             logger::write(format!(
                 "Failed to get files from {:?}, error: {:?}",
                 src_folder, e
-            ));
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
-    match dst_file.parent() {
-        Some(p) => match misc_helpers::try_create_folder(p.to_path_buf()) {
-            Ok(_) => {}
-            Err(e) => {
-                logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
-            }
-        },
-        None => {}
-    }
-    match fs::copy(src_file.to_path_buf(), dst_file.to_path_buf()) {
-        Ok(_) => {
-            logger::write(format!("Copied file {:?} to {:?}", src_file, dst_file));
-        }
-        Err(e) => {
-            logger::write(format!(
-                "Failed to copy file {:?} to {:?}, error: {:?}",
-                src_file, dst_file, e
             ));
         }
     }
@@ -330,37 +275,14 @@ fn uninstall_service() -> PathBuf {
     proxy_agent_running_folder
 }
 
-fn delete_package(proxy_agent_running_folder: PathBuf) {
+fn delete_package(_proxy_agent_running_folder: PathBuf) {
     #[cfg(windows)]
     {
-        delete_folder(proxy_agent_running_folder);
+        delete_folder(_proxy_agent_running_folder);
     }
     #[cfg(not(windows))]
     {
-        delete_file(proxy_agent_running_folder.join("azure-proxy-agent"));
-        delete_file(PathBuf::from(crate::linux::CONFIG_PATH));
-        delete_file(PathBuf::from(crate::linux::EBPF_PATH));
-    }
-}
-
-#[cfg(not(windows))]
-fn delete_file(file_to_be_delete: PathBuf) {
-    if file_to_be_delete.exists() {
-        if file_to_be_delete.is_dir() {
-            delete_folder(file_to_be_delete);
-            return;
-        }
-    }
-    match fs::remove_file(file_to_be_delete.to_path_buf()) {
-        Ok(_) => {
-            logger::write(format!("Deleted file {:?}", file_to_be_delete));
-        }
-        Err(e) => {
-            logger::write(format!(
-                "Failed to delete file {:?}, error: {:?}",
-                file_to_be_delete, e
-            ));
-        }
+        linux::delete_files();
     }
 }
 

@@ -18,7 +18,7 @@ pub fn proxy_agent_running_folder(_ervice_name: &str) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        path = PathBuf::from(crate::linux::EXE_PATH);
+        path = PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH);
     }
     path
 }
@@ -45,6 +45,6 @@ pub fn proxy_agent_version_target_folder(proxy_agent_exe: PathBuf) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        PathBuf::from(crate::linux::EXE_PATH)
+        PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH)
     }
 }

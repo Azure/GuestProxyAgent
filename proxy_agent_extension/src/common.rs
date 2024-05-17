@@ -189,8 +189,9 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        // linux service harded to this soft link
-        return PathBuf::from("/usr/sbin/azure-proxy-agent");
+        // linux service harded to this location
+        return PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH)
+            .join("azure-proxy-agent");
     }
 }
 
@@ -208,7 +209,7 @@ pub fn get_proxy_agent_exe_path() -> PathBuf {
     #[cfg(not(windows))]
     {
         exe_path.join("ProxyAgent/ProxyAgent/azure-proxy-agent")
-    }    
+    }
 }
 
 pub fn report_status_enable_command(
