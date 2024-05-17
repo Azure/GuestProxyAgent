@@ -601,6 +601,7 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-with-root")]
 mod tests {
     use crate::common::config;
     use crate::common::logger;

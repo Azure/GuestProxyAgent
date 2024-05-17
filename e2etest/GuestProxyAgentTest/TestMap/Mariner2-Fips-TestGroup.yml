@@ -1,0 +1,10 @@
+groupName: Mariner2-Fips
+vmImagePublisher: microsoftcblmariner
+vmImageOffer: cbl-mariner
+vmImageSku: cbl-mariner-2-gen2-fips
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario

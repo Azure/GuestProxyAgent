@@ -65,6 +65,9 @@ features = [
   "Win32_System_Kernel",
 ]
 
+[features]
+test-with-root = []
+
 [package.metadata.deb]
 name = "azure-proxy-agent"
 revision = "0"
