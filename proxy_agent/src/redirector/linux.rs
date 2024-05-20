@@ -5,7 +5,7 @@ mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::provision;
-use crate::redirector::AuditEntry;
+use crate::redirector::{AuditEntry, ip_to_string};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
@@ -553,12 +553,11 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                                 Some(ip) => ip,
                                 None => constants::PROXY_AGENT_IP.to_string(),
                             };
-                            let dest_ip = redirector::ip_to_string(dest_ipv4);
                             event_logger::write_event(
                                 event_logger::WARN_LEVEL,
                                 format!(
                                     "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
-                                    local_ip.to_string(), dest_ip, dest_port, LOCAL_PORT
+                                    local_ip.to_string(), ip_to_string(dest_ipv4), dest_port, LOCAL_PORT
                                 ),
                                 "update_redirect_policy_internal",
                                 "redirector/linux",
