@@ -556,8 +556,8 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                             event_logger::write_event(
                                 event_logger::WARN_LEVEL,
                                 format!(
-                                    "update_redirect_policy_internal with local ip address: {}",
-                                    local_ip.to_string()
+                                    "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
+                                    local_ip.to_string(), dest_ipv4, dest_port, LOCAL_PORT
                                 ),
                                 "update_redirect_policy_internal",
                                 "redirector/linux",
