@@ -9,8 +9,8 @@ use std::{
     path::PathBuf,
 };
 
-pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/lib/systemd/system/";
-pub const SERVICE_PACKAGE_LINK_NAME: &str = "/usr/lib/azure-proxy-agent/package";
+pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
+pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
 
 #[derive(Serialize, Deserialize)]
 struct FileMount {
