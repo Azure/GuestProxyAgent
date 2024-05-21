@@ -4,7 +4,7 @@ use crate::common::constants;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
-use std::{env, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 #[cfg(not(windows))]
 const CONFIG_FILE_NAME: &str = "proxy-agent.json";
@@ -49,6 +49,10 @@ pub fn get_max_event_file_count() -> usize {
     SYSTEM_CONFIG.get_max_event_file_count()
 }
 
+pub fn get_ebpf_file_full_path() -> Option<PathBuf> {
+    SYSTEM_CONFIG.get_ebpf_file_full_path()
+}
+
 pub fn get_ebpf_program_name() -> String {
     SYSTEM_CONFIG.get_ebpf_program_name().to_string()
 }
@@ -73,6 +77,8 @@ pub struct Config {
     imdsSupport: u8,       // 0 not support; 1 proxy only; 2 proxy + authentication check
     #[serde(skip_serializing_if = "Option::is_none")]
     maxEventFileCount: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ebpfFileFullPath: Option<String>,
     ebpfProgramName: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(not(windows))]
@@ -90,12 +96,7 @@ impl Config {
     }
 
     pub fn default() -> Self {
-        // get config file full path from environment variable
-        let mut config_file_full_path =
-            match env::var(super::constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH) {
-                Ok(file_path) => PathBuf::from(file_path),
-                Err(_) => PathBuf::new(),
-            };
+        let mut config_file_full_path = PathBuf::new();
         #[cfg(not(windows))]
         {
             if !config_file_full_path.exists() {
@@ -156,6 +157,13 @@ impl Config {
 
     pub fn get_ebpf_program_name(&self) -> &str {
         &self.ebpfProgramName
+    }
+
+    pub fn get_ebpf_file_full_path(&self) -> Option<PathBuf> {
+        match &self.ebpfFileFullPath {
+            Some(ebpf_full_path) => Some(PathBuf::from(ebpf_full_path)),
+            None => None,
+        }
     }
 
     #[cfg(not(windows))]
@@ -276,57 +284,6 @@ mod tests {
         }
 
         // clean up
-        _ = fs::remove_dir_all(&temp_test_path);
-    }
-
-    #[test]
-    fn default_config_test() {
-        let mut temp_test_path: PathBuf = env::temp_dir();
-        temp_test_path.push("default_config_test");
-        _ = fs::remove_dir_all(&temp_test_path);
-        match misc_helpers::try_create_folder(temp_test_path.to_path_buf()) {
-            Ok(_) => {}
-            Err(err) => panic!("Failed to create folder: {}", err),
-        }
-        let config_file_path = temp_test_path.join("test_config.json");
-        let test_config = create_config_file(config_file_path.to_path_buf());
-
-        // no env variable set, use the default config copied over to current exe folder
-        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH);
-        let config = Config::default();
-        assert_ne!(
-            test_config.get_log_folder(),
-            config.get_log_folder(),
-            "default config should not be the same as the test config when no env variable set"
-        );
-
-        // set env variable to the invalid test config file
-        let invalid_config_file_path = temp_test_path.join("invalid_test_config.json");
-        env::set_var(
-            constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH,
-            misc_helpers::path_to_string(invalid_config_file_path),
-        );
-        let config = Config::default();
-        assert_ne!(
-            test_config.get_log_folder(),
-            config.get_log_folder(),
-            "default config should not be the same as the test config when env variable set to invalid file"
-        );
-
-        // set env variable to the valid test config file
-        env::set_var(
-            constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH,
-            misc_helpers::path_to_string(config_file_path.to_path_buf()),
-        );
-        let config = Config::default();
-        assert_eq!(
-            test_config.get_log_folder(),
-            config.get_log_folder(),
-            "default config should be the same as the test config when env variable set to valid file"
-        );
-
-        // clean up
-        env::remove_var(constants::AZURE_PROXY_AGENT_ENV_CONFIG_FULL_PATH);
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
