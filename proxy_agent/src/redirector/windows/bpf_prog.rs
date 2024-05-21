@@ -21,7 +21,6 @@ const EBPF_FIND_MAP_ERROR: i32 = 2027;
 const EBPF_UPDATE_MAP_ERROR: i32 = 2028;
 const EBPF_DELETE_MAP_ERROR: i32 = 2029;
 
-
 pub static mut BPF_OBJECT: Option<*mut bpf_object> = None;
 
 pub fn init() -> std::io::Result<()> {

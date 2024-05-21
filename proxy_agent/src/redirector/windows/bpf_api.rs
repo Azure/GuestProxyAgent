@@ -84,7 +84,7 @@ type BpfMapUpdateElem = unsafe extern "C" fn(
 ) -> c_int;
 type BpfMapLookupElem =
     unsafe extern "C" fn(map_fd: c_int, key: *const c_void, value: *mut c_void) -> c_int;
-    
+
 type BpfMapDeleteElem = unsafe extern "C" fn(map_fd: c_int, key: *const c_void) -> c_int;
 
 fn get_cstring(s: &str) -> std::io::Result<CString> {

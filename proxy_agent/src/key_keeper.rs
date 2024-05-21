@@ -322,7 +322,7 @@ fn poll_secure_channel_status(
                 status.get_wire_server_mode() != DISABLE_STATE,
             );
             redirector::update_imds_redirect_policy(status.get_imds_mode() != DISABLE_STATE);
-            unsafe{
+            unsafe {
                 *CURRENT_SECURE_CHANNEL_STATE = state.to_string();
             }
             // customer has not enforce the secure channel state

@@ -596,7 +596,7 @@ impl KeyStatus {
             }
         }
     }
-    
+
     pub fn to_string(&self) -> String {
         return format!(
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
@@ -825,7 +825,11 @@ mod tests {
             status_v1.get_wireserver_rule_id(),
             "WireServer rule id must be empty"
         );
-        assert_eq!(status_v1.get_wire_server_mode(), "enforce", "WireServer mode mismatch");
+        assert_eq!(
+            status_v1.get_wire_server_mode(),
+            "enforce",
+            "WireServer mode mismatch"
+        );
         assert_eq!(status_v1.get_imds_mode(), "audit", "IMDS mode mismatch");
     }
 
@@ -1000,7 +1004,11 @@ mod tests {
             status.get_wireserver_rule_id(),
             "WireServer rule id mismatch"
         );
-        assert_eq!("enforce", status.get_wire_server_mode(), "WireServer mode mismatch");
+        assert_eq!(
+            "enforce",
+            status.get_wire_server_mode(),
+            "WireServer mode mismatch"
+        );
 
         // validate WireServer rule details
         let first_privilege = &wireserver_rules
