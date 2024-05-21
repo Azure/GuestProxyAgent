@@ -3,14 +3,13 @@
 pub mod key;
 
 use self::key::Key;
-use crate::common::{constants, helpers, logger};
+use crate::common::{constants, helpers};
 use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::{acl, redirector};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
-use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -73,7 +72,7 @@ fn poll_secure_channel_status(
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    logger::write(message.to_string());
+    tracing::info!(message);
 
     // launch redirector initialization when the key keeper thread is running
     if config_start_redirector {
@@ -81,24 +80,24 @@ fn poll_secure_channel_status(
     }
 
     _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
-    logger::write(format!(
+    tracing::info!(
         "key folder {} created if not exists before.",
         misc_helpers::path_to_string(key_dir.to_path_buf())
-    ));
+    );
 
     match acl::acl_directory(key_dir.to_path_buf()) {
         Ok(()) => {
-            logger::write(format!(
+            tracing::info!(
                 "key folder {} ACLed if has not before.",
                 misc_helpers::path_to_string(key_dir.to_path_buf())
-            ));
+            );
         }
         Err(e) => {
-            logger::write_warning(format!(
+            tracing::warn!(
                 "key folder {} ACLed failed with error {}.",
                 misc_helpers::path_to_string(key_dir.to_path_buf()),
                 e
-            ));
+            );
         }
     }
 
@@ -112,7 +111,7 @@ fn poll_secure_channel_status(
             unsafe {
                 *STATUS_MESSAGE = message.to_string();
             }
-            logger::write_warning(message.to_string());
+            tracing::warn!(message);
             break;
         }
 
@@ -160,7 +159,7 @@ fn poll_secure_channel_status(
                 unsafe {
                     *STATUS_MESSAGE = message.to_string();
                 }
-                logger::write_warning(message);
+                tracing::warn!(message);
                 continue;
             }
         };
@@ -170,26 +169,28 @@ fn poll_secure_channel_status(
             None => guid = String::new(),
         }
 
-        logger::write_information(format!("Got key status successfully: {}.", status));
+        tracing::info!("Got key status successfully: {}.", status);
 
         let wireserver_rule_id = status.get_wireserver_rule_id();
         let imds_rule_id = status.get_imds_rule_id();
         unsafe {
             if wireserver_rule_id != *WIRESERVER_RULE_ID {
-                logger::write_warning(format!(
+                tracing::warn!(
                     "Wireserver rule id changed from {} to {}.",
-                    *WIRESERVER_RULE_ID, wireserver_rule_id
-                ));
+                    *WIRESERVER_RULE_ID,
+                    wireserver_rule_id
+                );
                 *WIRESERVER_RULE_ID = wireserver_rule_id.to_string();
                 proxy_authentication::set_wireserver_rules(status.get_wireserver_rules());
             }
         }
         unsafe {
             if imds_rule_id != *IMDS_RULE_ID {
-                logger::write_warning(format!(
+                tracing::warn!(
                     "IMDS rule id changed from {} to {}.",
-                    *IMDS_RULE_ID, imds_rule_id
-                ));
+                    *IMDS_RULE_ID,
+                    imds_rule_id
+                );
                 *IMDS_RULE_ID = imds_rule_id.to_string();
                 proxy_authentication::set_imds_rules(status.get_imds_rules());
             }
@@ -213,11 +214,9 @@ fn poll_secure_channel_status(
                             unsafe {
                                 *CURRENT_KEY = key;
                             }
-                            let message = helpers::write_startup_event(
+                            tracing::info!(
+                                startup = true,
                                 "Found key details from local and ready to use.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
                             );
                             unsafe {
                                 *STATUS_MESSAGE = message.to_string();
@@ -227,26 +226,11 @@ fn poll_secure_channel_status(
                             provision::key_latched();
                         }
                         Err(e) => {
-                            let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
-                                e);
-                            event_logger::write_event(
-                                event_logger::WARN_LEVEL,
-                                message.to_string(),
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
+                            tracing::warn!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.", e);
                         }
                     };
                 } else {
-                    let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
-                    event_logger::write_event(
-                        event_logger::WARN_LEVEL,
-                        message.to_string(),
-                        "poll_secure_channel_status",
-                        "key_keeper",
-                        logger::AGENT_LOGGER_KEY,
-                    );
+                    tracing::warn!( "The latched key file does not exist locally. Will try acquire the key details from Server.");
                 }
             }
 
@@ -258,7 +242,7 @@ fn poll_secure_channel_status(
                 let key = match key::acquire_key(base_url.clone()) {
                     Ok(k) => k,
                     Err(e) => {
-                        logger::write_warning(format!("Failed to acquire key details: {:?}", e));
+                        tracing::warn!("Failed to acquire key details: {:?}", e);
                         continue;
                     }
                 };
@@ -271,10 +255,10 @@ fn poll_secure_channel_status(
                     key_file.set_extension("key");
                 }
                 _ = misc_helpers::json_write_to_file(&key, key_file);
-                logger::write_information(format!(
+                tracing::info!(
                     "Successfully acquired the key '{}' details from server and saved locally.",
                     guid
-                ));
+                );
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {
@@ -284,11 +268,9 @@ fn poll_secure_channel_status(
                             unsafe {
                                 *CURRENT_KEY = key;
                             }
-                            helpers::write_startup_event(
+                            tracing::info!(
+                                startup = true,
                                 "Successfully attest the key and ready to use.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
                             );
                             unsafe {
                                 *STATUS_MESSAGE = message.to_string();
@@ -297,12 +279,12 @@ fn poll_secure_channel_status(
                             provision::key_latched();
                         }
                         Err(e) => {
-                            logger::write_warning(format!("Failed to attest the key: {:?}", e));
+                            tracing::warn!("Failed to attest the key: {:?}", e);
                             continue;
                         }
                     }
                 } else {
-                    logger::write_warning(format!("Saved key '{}' details lost locally.", guid));
+                    tracing::warn!("Saved key '{}' details lost locally.", guid);
                 }
             }
         }
@@ -319,11 +301,9 @@ fn poll_secure_channel_status(
             }
             // customer has not enforce the secure channel state
             if state == DISABLE_STATE {
-                let message = helpers::write_startup_event(
+                tracing::info!(
+                    startup = true,
                     "Customer has not enforce the secure channel state.",
-                    "poll_secure_channel_status",
-                    "key_keeper",
-                    logger::AGENT_LOGGER_KEY,
                 );
                 // Update the status message and let the provision to continue
                 unsafe {
@@ -393,10 +373,9 @@ pub fn get_status() -> ProxyAgentDetailStatus {
 #[cfg(test)]
 mod tests {
     use super::key::Key;
-    use crate::common::logger;
     use crate::key_keeper;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::thread;
@@ -410,13 +389,6 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger_key.to_string(),
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            200,
-            6,
-        );
         _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
 
         let key_str = r#"{
@@ -451,15 +423,6 @@ mod tests {
                 print!("Failed to remove_dir_all with error {}.", e);
             }
         }
-
-        // init main logger
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        );
 
         // start wire_server listener
         let ip = "127.0.0.1";

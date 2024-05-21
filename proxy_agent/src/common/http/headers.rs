@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{constants, logger};
+use crate::common::constants;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -59,10 +59,7 @@ impl Headers {
                 self.add_header(key.trim().to_string(), value.trim().to_string());
             }
             None => {
-                logger::write_warning(format!(
-                    "{} is not a valid header, need to look further why",
-                    line
-                ));
+                tracing::info!("{} is not a valid header, need to look further why", line);
             }
         }
     }

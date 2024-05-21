@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
-use crate::common::logger;
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -41,10 +40,12 @@ fn load_dll_with_retry(dll_name: &str, max_retry: u8) -> Library {
                         panic!("Loading {} failed with error: {}", dll_name, e);
                     }
                     retry += 1;
-                    logger::write_warning(format!(
+                    tracing::warn!(
                         "Loading {} failed with error: {}, retrying {}...",
-                        dll_name, e, retry
-                    ));
+                        dll_name,
+                        e,
+                        retry
+                    );
                     std::thread::sleep(std::time::Duration::from_secs(1));
                 }
             }
@@ -167,7 +168,7 @@ pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
                 domain_user_name, status
             );
             eprintln!("{}", message);
-            logger::write_warning(message);
+            tracing::warn!(message);
         }
 
         // update user name if it's a built-in user

@@ -3,7 +3,6 @@
 
 mod args;
 pub mod backup;
-pub mod logger;
 pub mod running;
 pub mod setup;
 
@@ -15,6 +14,7 @@ use proxy_agent_shared::service;
 use std::process;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
+use tracing_subscriber::prelude::*;
 
 #[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";
@@ -24,13 +24,25 @@ const SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";
 const SERVICE_NAME: &str = "azure-proxy-agent";
 
 fn main() {
-    logger::init_logger();
+    let format = tracing_subscriber::fmt::format()
+        .with_level(true)
+        .with_thread_names(true);
+    // Configurable via environment variable for now
+    // https://docs.rs/tracing-subscriber/0.3.18/tracing_subscriber/filter/struct.EnvFilter.html#directives
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .event_format(format)
+        .with_writer(std::io::stderr)
+        .with_filter(tracing_subscriber::EnvFilter::from_env(
+            "GUEST_PROXY_AGENT_LOG",
+        ));
+    let registry = tracing_subscriber::registry().with(stderr_layer);
+    tracing::subscriber::set_global_default(registry).expect("Unable to configure logging!");
     let args = args::Args::parse(std::env::args().collect());
-    logger::write(format!(
+    tracing::info!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
         misc_helpers::get_current_version(),
         args
-    ));
+    );
 
     match args.action.as_str() {
         args::Args::INSTALL => {
@@ -52,7 +64,7 @@ fn main() {
         }
         args::Args::RESTORE => {
             if !check_backup_exists() {
-                logger::write("Backup check failed, skip the restore operation.".to_string());
+                tracing::info!("Backup check failed, skip the restore operation.");
                 return;
             }
             stop_service();
@@ -122,10 +134,7 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     match misc_helpers::try_create_folder(dst_folder.to_path_buf()) {
         Ok(_) => {}
         Err(e) => {
-            logger::write(format!(
-                "Failed to create folder {:?}, error: {:?}",
-                dst_folder, e
-            ));
+            tracing::info!("Failed to create folder {:?}, error: {:?}", dst_folder, e);
         }
     }
     match misc_helpers::get_files(&src_folder) {
@@ -135,22 +144,21 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
                 let dst_file = dst_folder.join(&file_name);
                 match fs::copy(&file, &dst_file) {
                     Ok(_) => {
-                        logger::write(format!("Copied {:?} to {:?}", file, dst_file));
+                        tracing::info!("Copied {:?} to {:?}", file, dst_file);
                     }
                     Err(e) => {
-                        logger::write(format!(
+                        tracing::info!(
                             "Failed to copy {:?} to {:?}, error: {:?}",
-                            file, dst_file, e
-                        ));
+                            file,
+                            dst_file,
+                            e
+                        );
                     }
                 }
             }
         }
         Err(e) => {
-            logger::write(format!(
-                "Failed to get files from {:?}, error: {:?}",
-                src_folder, e
-            ));
+            tracing::info!("Failed to get files from {:?}, error: {:?}", src_folder, e);
         }
     }
 }
@@ -158,13 +166,10 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
 fn stop_service() {
     match service::stop_service(SERVICE_NAME) {
         Ok(_) => {
-            logger::write(format!("Stopped service {} successfully", SERVICE_NAME));
+            tracing::info!("Stopped service {} successfully", SERVICE_NAME);
         }
         Err(e) => {
-            logger::write(format!(
-                "Stopped service {} failed, error: {:?}",
-                SERVICE_NAME, e
-            ));
+            tracing::info!("Stopped service {} failed, error: {:?}", SERVICE_NAME, e);
         }
     }
 }
@@ -195,23 +200,23 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
                 ],
                 1,
             );
-            logger::write(format!(
+            tracing::info!(
                 "ebpf_setup: invoked script file '{}' with result: '{}'-'{}'-'{}'.",
-                setup_script_file_str, output.0, output.1, output.2
-            ));
+                setup_script_file_str,
+                output.0,
+                output.1,
+                output.2
+            );
         }
     }
     #[cfg(not(windows))]
     {
         match linux::setup_service(SERVICE_NAME, _service_config_folder_path) {
             Ok(_) => {
-                logger::write(format!("Setup service {} successfully", SERVICE_NAME));
+                tracing::info!("Setup service {} successfully", SERVICE_NAME);
             }
             Err(e) => {
-                logger::write(format!(
-                    "Setup service {} failed, error: {:?}",
-                    SERVICE_NAME, e
-                ));
+                tracing::info!("Setup service {} failed, error: {:?}", SERVICE_NAME, e);
                 process::exit(1);
             }
         }
@@ -224,28 +229,22 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         setup::proxy_agent_exe_path(proxy_agent_target_folder),
     ) {
         Ok(_) => {
-            logger::write(format!("Install service {} successfully", SERVICE_NAME));
+            tracing::info!("Install service {} successfully", SERVICE_NAME);
         }
         Err(e) => {
-            logger::write(format!(
-                "Install service {} failed, error: {:?}",
-                SERVICE_NAME, e
-            ));
+            tracing::info!("Install service {} failed, error: {:?}", SERVICE_NAME, e);
             process::exit(1);
         }
     }
 
     service::start_service(SERVICE_NAME, 5, Duration::from_secs(15));
-    logger::write(format!("Service {} start successfully", SERVICE_NAME));
+    tracing::info!("Service {} start successfully", SERVICE_NAME);
 }
 
 fn check_backup_exists() -> bool {
     let proxy_agent_exe = setup::proxy_agent_exe_path(backup::proxy_agent_backup_package_folder());
     if !proxy_agent_exe.exists() {
-        logger::write(format!(
-            "GuestProxyAgent ({:?}) does not exists.",
-            proxy_agent_exe
-        ));
+        tracing::info!("GuestProxyAgent ({:?}) does not exists.", proxy_agent_exe);
         return false;
     }
 
@@ -257,13 +256,10 @@ fn uninstall_service() -> PathBuf {
 
     match service::stop_and_delete_service(SERVICE_NAME) {
         Ok(_) => {
-            logger::write(format!("Uninstall service {} successfully", SERVICE_NAME));
+            tracing::info!("Uninstall service {} successfully", SERVICE_NAME);
         }
         Err(e) => {
-            logger::write(format!(
-                "Uninstall service {} failed, error: {:?}",
-                SERVICE_NAME, e
-            ));
+            tracing::info!("Uninstall service {} failed, error: {:?}", SERVICE_NAME, e);
             process::exit(1);
         }
     }
@@ -285,13 +281,14 @@ fn delete_package(_proxy_agent_running_folder: PathBuf) {
 fn delete_folder(folder_to_be_delete: PathBuf) {
     match fs::remove_dir_all(&folder_to_be_delete) {
         Ok(_) => {
-            logger::write(format!("Deleted folder {:?}", folder_to_be_delete));
+            tracing::info!("Deleted folder {:?}", folder_to_be_delete);
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Failed to delete folder {:?}, error: {:?}",
-                folder_to_be_delete, e
-            ));
+                folder_to_be_delete,
+                e
+            );
         }
     }
 }

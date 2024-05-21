@@ -1,12 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::constants;
-use crate::logger;
 use crate::structs;
 use crate::structs::FormattedMessage;
 use crate::structs::HandlerEnvironment;
 use crate::structs::TopLevelStatus;
-use proxy_agent_shared::{misc_helpers, telemetry};
+use proxy_agent_shared::misc_helpers;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
@@ -47,19 +46,19 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
     let root_heartbeat = match serde_json::to_string(&root_obj) {
         Ok(temp) => temp,
         Err(e) => {
-            logger::write(format!("Error in serializing heartbeat object: {e}"));
+            tracing::info!("Error in serializing heartbeat object: {e}");
             return;
         }
     };
     match fs::write(&heartbeat_file_path, root_heartbeat) {
         Ok(_) => {
-            logger::write(format!(
+            tracing::info!(
                 "HeartBeat file created: {:?}",
                 heartbeat_file_path.to_path_buf()
-            ));
+            );
         }
         Err(e) => {
-            logger::write(format!("Error in creating HeartBeat file: {:?}", e));
+            tracing::info!("Error in creating HeartBeat file: {:?}", e);
         }
     }
 }
@@ -107,17 +106,17 @@ pub fn report_status(
     let root_status = match serde_json::to_string(&root_vec) {
         Ok(temp) => temp,
         Err(e) => {
-            logger::write(format!("Error in serializing status object: {e}"));
+            tracing::info!("Error in serializing status object: {e}");
             return;
         }
     };
     // TODO: retry if write failed
     match fs::write(&status_file, root_status) {
         Ok(_) => {
-            logger::write(format!("Status file created: {:?}", status_file));
+            tracing::info!("Status file created: {:?}", status_file);
         }
         Err(e) => {
-            logger::write(format!("Error in creating status file: {:?}", e));
+            tracing::info!("Error in creating status file: {:?}", e);
         }
     }
 }
@@ -129,29 +128,26 @@ pub fn update_current_seq_no(
     let mut should_report_status = true;
     match config_seq_no {
         Some(new_seq_no) => {
-            logger::write(format!("enable command with new seq no: {new_seq_no}"));
+            tracing::info!("enable command with new seq no: {new_seq_no}");
             let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
             match fs::read_to_string(&current_seq_no_stored_file) {
                 Ok(seq_no) => {
                     if seq_no != *new_seq_no {
-                        logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
+                        tracing::info!("updating seq no from {} to {}", seq_no, new_seq_no);
                         _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                     } else {
-                        logger::write("no update on seq no".to_string());
+                        tracing::info!("no update on seq no");
                         should_report_status = false;
                     }
                 }
                 Err(_e) => {
-                    logger::write(format!(
-                        "no seq no found, writing seq no {} to file",
-                        new_seq_no
-                    ));
+                    tracing::info!("no seq no found, writing seq no {} to file", new_seq_no);
                     _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                 }
             }
         }
         None => {
-            logger::write("No config seq no found for enable command".to_string());
+            tracing::info!("No config seq no found for enable command");
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "No config seq no found for enable command",
@@ -165,11 +161,11 @@ pub fn get_current_seq_no(exe_path: PathBuf) -> String {
     let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
-            logger::write(format!("Current seq no: {}", seq_no));
+            tracing::info!("Current seq no: {}", seq_no);
             seq_no
         }
         Err(e) => {
-            logger::write(format!("Error reading current seq no file: {:?}", e));
+            tracing::info!("Error reading current seq no file: {:?}", e);
             "".to_string()
         }
     }
@@ -189,9 +185,9 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
 
 pub fn get_proxy_agent_exe_path() -> PathBuf {
     let exe_path = misc_helpers::get_current_exe_dir();
-    logger::write(
-        "Current proxy agent exe path: ".to_string()
-            + &misc_helpers::path_to_string(exe_path.clone()),
+    tracing::info!(
+        "Current proxy agent exe path: {}",
+        &misc_helpers::path_to_string(exe_path.clone()),
     );
 
     #[cfg(windows)]
@@ -224,24 +220,6 @@ pub fn report_status_enable_command(
         substatus: Default::default(),
     };
     report_status(status_folder, config_seq_no, &handler_status);
-}
-
-pub fn start_event_logger(logger_key: &str) {
-    logger::write("starting event logger".to_string());
-    let interval: std::time::Duration = std::time::Duration::from_secs(60);
-    let max_event_file_count: usize = 50;
-    let exe_path = misc_helpers::get_current_exe_dir();
-    let event_folder = PathBuf::from(
-        get_handler_environment(exe_path.to_path_buf())
-            .eventsFolder
-            .to_string(),
-    );
-    telemetry::event_logger::start_async(event_folder, interval, max_event_file_count, logger_key);
-}
-
-pub fn stop_event_logger() {
-    logger::write("stopping event logger".to_string());
-    telemetry::event_logger::stop();
 }
 
 pub struct StatusState {
@@ -439,8 +417,6 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
         _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
 
         let config_seq_no = None;
@@ -511,8 +487,6 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
         _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
 
         let expected_heartbeat_file: PathBuf = temp_test_path.join("heartbeat.json");

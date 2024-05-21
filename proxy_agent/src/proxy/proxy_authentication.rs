@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use super::authorization_rules::AuthorizationRules;
-use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;
 use crate::common::http::response::Response;
 use crate::key_keeper::key::AuthorizationItem;
@@ -135,7 +134,7 @@ impl Authenticate for WireServer {
                         proxy_agent_status::add_connection_summary(summary, true);
 
                         if rules.mode.to_lowercase() == "audit" {
-                            Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
+                            tracing::info!(connection_id, "WireServer request {} denied in audit mode, continue forward the request", request_url);
                             return true;
                         }
                     }
@@ -191,7 +190,7 @@ impl Authenticate for Imds {
                         proxy_agent_status::add_connection_summary(summary, true);
 
                         if rules.mode.to_lowercase() == "audit" {
-                            Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
+                            tracing::info!(connection_id, "IMDS request {} denied in audit mode, continue forward the request", request_url);
                             return true;
                         }
                     }

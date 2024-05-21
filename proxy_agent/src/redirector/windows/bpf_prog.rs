@@ -3,7 +3,6 @@
 use super::bpf_api::*;
 use super::bpf_obj::*;
 use crate::common::constants;
-use crate::common::logger;
 use crate::redirector::AuditEntry;
 use proxy_agent_shared::misc_helpers;
 use std::env;
@@ -29,16 +28,16 @@ pub fn init() -> std::io::Result<()> {
     let ebpf_for_windows_dir = program_files_dir.join("ebpf-for-windows");
     let bpf_api_file_path = ebpf_for_windows_dir.join(EBPF_API_FILE_NAME);
 
-    logger::write_information(format!(
+    tracing::info!(
         "Try to load ebpf api file from: {}",
         misc_helpers::path_to_string(bpf_api_file_path.to_path_buf())
-    ));
+    );
     match load_ebpf_api(bpf_api_file_path) {
         Ok(_) => Ok(()),
         Err(e) => {
             let message = format!("{}", e);
-            logger::write_warning(message);
-            logger::write_warning("Try to load ebpf api file from default system path".to_string());
+            tracing::warn!(message);
+            tracing::warn!("Try to load ebpf api file from default system path");
             load_ebpf_api(PathBuf::from(EBPF_API_FILE_NAME))
         }
     }
@@ -58,30 +57,30 @@ Return Value:
     0 on success. On failure appropriate RESULT is returned.
  */
 pub fn load_bpf_object(bpf_file_path: PathBuf) -> i32 {
-    logger::write_information(format!(
+    tracing::info!(
         "Starting redirector with ebpf file {}",
         misc_helpers::path_to_string(bpf_file_path.to_path_buf())
-    ));
+    );
     close_bpf_object();
     unsafe {
         let obj = match bpf_object__open(&misc_helpers::path_to_string(bpf_file_path.to_path_buf()))
         {
             Ok(obj) => obj,
             Err(e) => {
-                logger::write_error(format!("{}", e));
+                tracing::error!("{:?}", e);
                 return EBPF_OPEN_ERROR;
             }
         };
 
         if obj.is_null() {
-            logger::write_error("bpf_object__open return null".to_string());
+            tracing::error!("bpf_object__open return null");
             return EBPF_OBJECT_NULL;
         }
 
         let result = match bpf_object__load(obj) {
             Ok(r) => r,
             Err(e) => {
-                logger::write_error(format!("{}", e));
+                tracing::error!("{:?}", e);
                 return EBPF_LOAD_ERROR;
             }
         };
@@ -113,28 +112,27 @@ pub fn attach_bpf_prog() -> i32 {
                     match bpf_object__find_program_by_name(obj, "authorize_connect4") {
                         Ok(p) => p,
                         Err(e) => {
-                            logger::write_error(format!("{}", e));
+                            tracing::error!("{:?}", e);
                             return EBPF_FIND_PROGRAM_ERROR;
                         }
                     };
                 if connect4_program.is_null() {
-                    logger::write_error(
+                    tracing::error!(
                         "bpf_object__find_program_by_name 'authorize_connect4' return null"
-                            .to_string(),
                     );
                     return EBPF_FIND_PROGRAM_ERROR;
                 }
                 let fd_id = match bpf_program__fd(connect4_program) {
                     Ok(fd) => fd,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{:?}", e);
                         return EBPF_FIND_PROGRAM_ERROR;
                     }
                 };
                 match bpf_prog_attach(fd_id, 0, bpf_attach_type::BPF_CGROUP_INET4_CONNECT, 0) {
                     Ok(r) => r,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{:?}", e);
                         EBPF_ATTACH_PROGRAM_ERROR
                     }
                 }
@@ -166,20 +164,18 @@ pub fn update_policy_elem_bpf_map(local_port: u16, dest_ipv4: u32, dest_port: u1
                 let proxy_map = match bpf_object__find_map_by_name(obj, "policy_map") {
                     Ok(m) => m,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{:?}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
                 if proxy_map.is_null() {
-                    logger::write_error(
-                        "bpf_object__find_map_by_name 'policy_map' return null".to_string(),
-                    );
+                    tracing::error!("bpf_object__find_map_by_name 'policy_map' return null");
                     return EBPF_FIND_MAP_ERROR;
                 }
                 let map_fd = match bpf_map__fd(proxy_map) {
                     Ok(fd) => fd,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
@@ -198,7 +194,7 @@ pub fn update_policy_elem_bpf_map(local_port: u16, dest_ipv4: u32, dest_port: u1
                 ) {
                     Ok(r) => r,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         EBPF_UPDATE_MAP_ERROR
                     }
                 }
@@ -329,20 +325,18 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                 let skip_process_map = match bpf_object__find_map_by_name(obj, "skip_process_map") {
                     Ok(m) => m,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
                 if skip_process_map.is_null() {
-                    logger::write_error(
-                        "bpf_object__find_map_by_name 'skip_process_map' return null".to_string(),
-                    );
+                    tracing::error!("bpf_object__find_map_by_name 'skip_process_map' return null");
                     return EBPF_FIND_MAP_ERROR;
                 }
                 let map_fd = match bpf_map__fd(skip_process_map) {
                     Ok(fd) => fd,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
@@ -359,7 +353,7 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                 ) {
                     Ok(r) => r,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         EBPF_UPDATE_MAP_ERROR
                     }
                 }
@@ -385,20 +379,18 @@ pub fn remove_policy_elem_bpf_map(dest_ipv4: u32, dest_port: u16) -> i32 {
                 let proxy_map = match bpf_object__find_map_by_name(obj, "policy_map") {
                     Ok(m) => m,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
                 if proxy_map.is_null() {
-                    logger::write_error(
-                        "bpf_object__find_map_by_name 'policy_map' return null".to_string(),
-                    );
+                    tracing::error!("bpf_object__find_map_by_name 'policy_map' return null");
                     return EBPF_FIND_MAP_ERROR;
                 }
                 let map_fd = match bpf_map__fd(proxy_map) {
                     Ok(fd) => fd,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         return EBPF_FIND_MAP_ERROR;
                     }
                 };
@@ -410,7 +402,7 @@ pub fn remove_policy_elem_bpf_map(dest_ipv4: u32, dest_port: u16) -> i32 {
                 ) {
                     Ok(r) => r,
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
+                        tracing::error!("{}", e);
                         EBPF_DELETE_MAP_ERROR
                     }
                 }

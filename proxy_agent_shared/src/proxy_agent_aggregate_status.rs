@@ -33,7 +33,6 @@ pub struct ProxyAgentStatus {
     pub keyLatchStatus: ProxyAgentDetailStatus,
     pub ebpfProgramStatus: ProxyAgentDetailStatus,
     pub proxyListenerStatus: ProxyAgentDetailStatus,
-    pub telemetryLoggerStatus: ProxyAgentDetailStatus,
     pub proxyConnectionsCount: u128,
 }
 

@@ -1,12 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{config, helpers, logger};
+use crate::common::{config, helpers};
 use crate::proxy::proxy_listener;
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
-use proxy_agent_shared::telemetry::event_logger;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -46,7 +45,7 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
                 }
             }
             Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
+                tracing::error!("Failed to lock provision state with error: {e}");
             }
         }
     }
@@ -64,7 +63,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
                 }
             }
             Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
+                tracing::error!("Failed to lock provision state with error: {e}");
             }
         }
     }
@@ -80,18 +79,12 @@ pub fn start_event_threads() {
                     return;
                 }
 
-                event_logger::start_async(
-                    config::get_events_dir(),
-                    Duration::default(),
-                    config::get_max_event_file_count(),
-                    logger::AGENT_LOGGER_KEY,
-                );
                 event_reader::start_async(config::get_events_dir(), Duration::from_secs(300), true);
                 *cloned = true;
                 proxy_agent_status::start_async(Duration::default());
             }
             Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
+                tracing::error!("Failed to lock provision state with error: {e}");
             }
         }
     }
@@ -132,12 +125,12 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    logger::write_error(format!("Failed to rename status file with error: {e}"));
+                    tracing::error!("Failed to rename status file with error: {e}");
                 }
             }
         }
         Err(e) => {
-            logger::write_error(format!("Failed to write temp status file with error: {e}"));
+            tracing::error!("Failed to write temp status file with error: {e}");
         }
     }
 }

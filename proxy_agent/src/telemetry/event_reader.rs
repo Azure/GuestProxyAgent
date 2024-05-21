@@ -3,12 +3,10 @@
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
-use crate::common::logger;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
-use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
@@ -74,7 +72,7 @@ pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool) {
 }
 
 fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
-    logger::write("telemetry event reader thread started.".to_string());
+    tracing::info!("telemetry event reader thread started.");
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
     let shutdown = SHUT_DOWN.clone();
@@ -82,9 +80,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
-            logger::write_warning(
-                "Stop signal received, closing event telemetry thread.".to_string(),
-            );
+            tracing::warn!("Stop signal received, closing event telemetry thread.",);
             break;
         }
 
@@ -101,14 +97,11 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
                             verify_thread_priority(thread_priority::get_current_thread_priority());
                         }
                     }
-                    logger::write(
-                        "Successfully set the event_reader thread priority to min.".to_string(),
-                    );
+                    tracing::info!("Successfully set the event_reader thread priority to min.",);
                 }
                 Err(_) => {
-                    logger::write_warning(
+                    tracing::warn!(
                         "Failed to set the event_reader thread priority to min with error."
-                            .to_string(),
                     );
                 }
             }
@@ -117,10 +110,10 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
 
         match update_vm_meta_data() {
             Ok(()) => {
-                logger::write("success updated the vm metadata.".to_string());
+                tracing::info!("success updated the vm metadata.");
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                tracing::warn!("Failed to read vm metadata with error {}.", e);
             }
         }
 
@@ -132,20 +125,14 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
                         let event_count = process_events_and_clean(files);
                         let message =
                             format!("Send {} events from {} files", event_count, file_count);
-                        event_logger::write_event(
-                            event_logger::INFO_LEVEL,
-                            message,
-                            "start",
-                            "event_reader",
-                            logger::AGENT_LOGGER_KEY,
-                        )
+                        tracing::info!(message);
                     }
                     Err(e) => {
-                        logger::write_warning(format!(
-                            "Event Files not found in directory {}: {}",
+                        tracing::warn!(
+                            "Event Files not found in directory {}: {:?}",
                             dir_path.display(),
                             e
-                        ));
+                        );
                     }
                 }
             }
@@ -202,11 +189,7 @@ fn process_events_and_clean(files: Vec<PathBuf>) -> usize {
                 clean_files(file);
             }
             Err(e) => {
-                logger::write_warning(format!(
-                    "Failed to read events from file {}: {}",
-                    file.display(),
-                    e
-                ));
+                tracing::warn!("Failed to read events from file {}: {}", file.display(), e);
                 continue;
             }
         }
@@ -232,14 +215,14 @@ fn send_events(mut events: Vec<Event>) {
                         if telemetry_data.event_count() == 0 {
                             match serde_json::to_string(&event) {
                                 Ok(json) => {
-                                    logger::write_warning(format!(
+                                    tracing::warn!(
                                         "Event data too large. Not sending to wire-server. Event: {}.",
                                         json
-                                    ));
+                                    );
                                 }
                                 Err(_) => {
-                                    logger::write_warning(
-                                        "Event data too large. Not sending to wire-server. Event cannot be displayed.".to_string()
+                                    tracing::warn!(
+                                        "Event data too large. Not sending to wire-server. Event cannot be displayed."
                                         );
                                 }
                             }
@@ -312,10 +295,7 @@ fn send_data_to_wire_server(telemetry_data: TelemetryData) {
                 break;
             }
             Err(e) => {
-                logger::write_warning(format!(
-                    "Failed to send telemetry data to host with error: {}",
-                    e
-                ));
+                tracing::warn!("Failed to send telemetry data to host with error: {:?}", e);
                 // wait 15 seconds and retry
                 thread::sleep(Duration::from_secs(15));
             }
@@ -326,10 +306,10 @@ fn send_data_to_wire_server(telemetry_data: TelemetryData) {
 fn clean_files(file: PathBuf) {
     match remove_file(&file) {
         Ok(_) => {
-            logger::write(format!("Removed File: {}", file.display()));
+            tracing::info!("Removed File: {}", file.display());
         }
         Err(e) => {
-            logger::write_warning(format!("Failed to remove file {}: {}", file.display(), e));
+            tracing::warn!("Failed to remove file {}: {}", file.display(), e);
         }
     }
 }
@@ -337,9 +317,8 @@ fn clean_files(file: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::logger;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     #[cfg(windows)]
     use std::sync::Mutex;
     use std::{env, fs};
@@ -454,14 +433,6 @@ mod tests {
         let mut events_dir = temp_dir.to_path_buf();
         events_dir.push("Events");
 
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        );
-
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 7071u16;
@@ -477,10 +448,10 @@ mod tests {
 
         match update_vm_meta_data() {
             Ok(()) => {
-                logger::write("success updated the vm metadata.".to_string());
+                tracing::info!("success updated the vm metadata.");
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                tracing::warn!("Failed to read vm metadata with error {}.", e);
             }
         }
 

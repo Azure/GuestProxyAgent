@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
-use crate::common::{constants, logger};
+use crate::common::constants;
 use crate::service;
 use std::ffi::OsString;
 use std::time::Duration;
@@ -36,9 +36,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
                         }
                         _ => {
                             // workaround to stop the service by exiting the process
-                            logger::write_warning(
-                                "Force exit the process to stop the service.".to_string(),
-                            );
+                            tracing::warn!("Force exit the process to stop the service.",);
                             std::process::exit(0);
                         }
                     };

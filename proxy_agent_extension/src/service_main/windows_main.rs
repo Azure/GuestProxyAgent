@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common;
 use crate::constants;
-use crate::logger;
 use crate::service_main;
 use std::ffi::OsStr;
 use std::ffi::OsString;
@@ -26,7 +24,6 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
-                common::stop_event_logger();
                 unsafe {
                     match SERVICE_STATUS_HANDLE {
                         Some(status_handle) => {
@@ -43,9 +40,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
                         }
                         _ => {
                             // workaround to stop the service by exiting the process
-                            logger::write(
-                                "Force exit the process to stop the service.".to_string(),
-                            );
+                            tracing::info!("Force exit the process to stop the service.",);
                             std::process::exit(0);
                         }
                     };
@@ -82,7 +77,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
 
 #[cfg(windows)]
 pub fn get_file_version(file: PathBuf) -> std::io::Result<String> {
-    logger::write(format!("get_file_version: {:?}", file.to_path_buf()));
+    tracing::info!("get_file_version: {:?}", file.to_path_buf());
     let file = file
         .as_os_str()
         .encode_wide()

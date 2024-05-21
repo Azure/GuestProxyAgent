@@ -18,6 +18,9 @@ url = "2.3.1"                 # parse url string
 hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
 regex = "1.9.5"               # match process name in cmdline
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-appender = "0.2.3"
 
 [dependencies.uuid]
 version = "1.3.0"
@@ -26,6 +29,9 @@ features = [
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(not(windows))'.dependencies]
 sysinfo = "0.28.4"            # read process information for Linux

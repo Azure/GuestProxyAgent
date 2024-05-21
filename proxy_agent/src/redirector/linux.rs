@@ -3,7 +3,7 @@
 mod ebpf_obj;
 mod iptable_redirect;
 
-use crate::common::{config, constants, helpers, logger};
+use crate::common::{config, constants};
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
 use aya::maps::{HashMap, MapData};
@@ -14,7 +14,6 @@ use ebpf_obj::{
 };
 use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
-use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
@@ -31,15 +30,15 @@ pub fn start(local_port: u16) -> bool {
     };
 
     for (name, _map) in bpf.maps() {
-        logger::write(format!("found map '{}'", name));
+        tracing::info!("found map '{}'", name);
     }
 
     for (name, prog) in bpf.programs() {
-        logger::write(format!(
+        tracing::info!(
             "found program '{}' with type '{:?}'",
             name,
             prog.prog_type()
-        ));
+        );
     }
 
     // maps
@@ -59,32 +58,22 @@ pub fn start(local_port: u16) -> bool {
     let mut iptable_redirect = false;
     let cgroup2_path = match proxy_agent_shared::linux::get_cgroup2_mount_path() {
         Ok(path) => {
-            logger::write(format!(
+            tracing::info!(
                 "Got cgroup2 mount path: '{}'",
                 misc_helpers::path_to_string(path.to_path_buf())
-            ));
+            );
             path
         }
         Err(e) => {
-            event_logger::write_event(
-                event_logger::WARN_LEVEL,
-                format!("Failed to get the cgroup2 mpunt path {}, fallback to use the cgroup2 path from config file.", e),
-                "start",
-                "redirector/linux",
-                logger::AGENT_LOGGER_KEY,
+            tracing::warn!(
+                "Failed to get the cgroup2 mpunt path {}, fallback to use the cgroup2 path from config file.", e,
             );
             config::get_cgroup_root()
         }
     };
     if !attach_cgroup_program(&mut bpf, cgroup2_path) {
         let message = "Failed to attach cgroup program for redirection.";
-        event_logger::write_event(
-            event_logger::WARN_LEVEL,
-            message.to_string(),
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        );
+        tracing::warn!(message);
 
         if !config::get_fallback_with_iptable_redirect() {
             return false;
@@ -104,20 +93,11 @@ pub fn start(local_port: u16) -> bool {
     }
 
     let message = if iptable_redirect {
-        helpers::write_startup_event(
-            "Started Redirector with iptables redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        )
+        "Started Redirector with iptables redirection"
     } else {
-        helpers::write_startup_event(
-            "Started Redirector with cgroup redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        )
+        "Started Redirector with cgroup redirection"
     };
+    tracing::info!(startup = true, message);
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
@@ -154,7 +134,7 @@ fn update_skip_process_map(bpf: &mut Bpf) -> bool {
                 let key = sock_addr_skip_process_entry::from_pid(pid);
                 let value = sock_addr_skip_process_entry::from_pid(pid);
                 match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
-                    Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
+                    Ok(_) => tracing::info!("skip_process_map updated with {}", pid),
                     Err(err) => {
                         set_error_status(format!(
                             "Failed to insert pid {} to skip_process_map with error: {}",
@@ -238,13 +218,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                         Some(ip) => ip,
                         None => constants::PROXY_AGENT_IP.to_string(),
                     };
-                    event_logger::write_event(
-                        event_logger::WARN_LEVEL,
-                        format!("update_policy_map with local ip address: {}", local_ip),
-                        "update_policy_map",
-                        "redirector/linux",
-                        logger::AGENT_LOGGER_KEY,
-                    );
+                    tracing::warn!("update_policy_map with local ip address: {}", local_ip);
                     let local_ip = super::string_to_ip(&local_ip);
                     let key = destination_entry::from_ipv4(
                         constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
@@ -253,7 +227,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                     let value = destination_entry::from_ipv4(local_ip, local_port);
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => {
-                            logger::write("policy_map updated for WireServer endpoints".to_string())
+                            tracing::info!("policy_map updated for WireServer endpoints")
                         }
                         Err(err) => {
                             set_error_status(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err));
@@ -266,7 +240,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                         constants::IMDS_PORT,
                     );
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
-                        Ok(_) => logger::write("policy_map updated for IMDS endpoints".to_string()),
+                        Ok(_) => tracing::info!("policy_map updated for IMDS endpoints"),
                         Err(err) => {
                             set_error_status(format!(
                                 "Failed to insert IMDS endpoints to policy_map with error: {}",
@@ -281,9 +255,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                         constants::GA_PLUGIN_PORT,
                     );
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
-                        Ok(_) => logger::write(
-                            "policy_map updated for HostGAPlugin endpoints".to_string(),
-                        ),
+                        Ok(_) => tracing::info!("policy_map updated for HostGAPlugin endpoints",),
                         Err(err) => {
                             set_error_status( format!(
                                 "Failed to insert HostGAPlugin endpoints to policy_map with error: {}",
@@ -317,7 +289,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
                 Ok(p) => {
                     let program: &mut CgroupSockAddr = p;
                     match program.load() {
-                        Ok(_) => logger::write("connect4 program loaded.".to_string()),
+                        Ok(_) => tracing::info!("connect4 program loaded."),
                         Err(err) => {
                             let message =
                                 format!("Failed to load program 'connect4' with error: {}", err);
@@ -327,10 +299,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
                     }
                     match program.attach(cgroup) {
                         Ok(link_id) => {
-                            logger::write(format!(
-                                "connect4 program attached with id {:?}.",
-                                link_id
-                            ));
+                            tracing::info!("connect4 program attached with id {:?}.", link_id);
                         }
                         Err(err) => {
                             let message =
@@ -371,7 +340,7 @@ fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
             Ok(p) => {
                 let program: &mut KProbe = p;
                 match program.load() {
-                    Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
+                    Ok(_) => tracing::info!("tcp_v4_connect program loaded."),
                     Err(err) => {
                         set_error_status(format!(
                             "Failed to load program 'tcp_v4_connect' with error: {}",
@@ -382,10 +351,7 @@ fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
                 }
                 match program.attach("tcp_connect", 0) {
                     Ok(link_id) => {
-                        logger::write(format!(
-                            "tcp_v4_connect program attached with id {:?}.",
-                            link_id
-                        ));
+                        tracing::info!("tcp_v4_connect program attached with id {:?}.", link_id);
                     }
                     Err(err) => {
                         set_error_status(format!(
@@ -421,13 +387,7 @@ fn set_error_status(message: String) {
         *STATUS_MESSAGE = message.to_string();
     }
 
-    event_logger::write_event(
-        event_logger::ERROR_LEVEL,
-        message,
-        "start",
-        "redirector/linux",
-        logger::AGENT_LOGGER_KEY,
-    );
+    tracing::error!(message);
 }
 
 pub fn get_status() -> String {
@@ -520,20 +480,14 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                     if !redirect {
                         match policy_map.remove(&key.to_array()) {
                             Ok(_) => {
-                                event_logger::write_event(
-                                    event_logger::INFO_LEVEL,
-                                    format!(
-                                        "policy_map removed for destination: {}:{}",
-                                        ip_to_string(dest_ipv4),
-                                        dest_port
-                                    ),
-                                    "update_redirect_policy_internal",
-                                    "redirector/linux",
-                                    logger::AGENT_LOGGER_KEY,
+                                tracing::info!(
+                                    "policy_map removed for destination: {}:{}",
+                                    ip_to_string(dest_ipv4),
+                                    dest_port
                                 );
                             }
                             Err(err) => {
-                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                tracing::info!("Failed to remove destination: {}:{} from policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err);
                             }
                         };
                     } else {
@@ -541,49 +495,34 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                             Some(ip) => ip,
                             None => constants::PROXY_AGENT_IP.to_string(),
                         };
-                        event_logger::write_event(
-                            event_logger::WARN_LEVEL,
-                            format!(
+                        tracing::warn!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
                                 local_ip, ip_to_string(dest_ipv4), dest_port, unsafe{LOCAL_PORT}
-                            ),
-                            "update_redirect_policy_internal",
-                            "redirector/linux",
-                            logger::AGENT_LOGGER_KEY,
                         );
                         let local_ip: u32 = super::string_to_ip(&local_ip);
                         let value = destination_entry::from_ipv4(local_ip, unsafe { LOCAL_PORT });
                         match policy_map.insert(key.to_array(), value.to_array(), 0) {
-                            Ok(_) => event_logger::write_event(
-                                event_logger::INFO_LEVEL,
-                                format!(
-                                    "policy_map updated for destination: {}:{}",
-                                    ip_to_string(dest_ipv4),
-                                    dest_port
-                                ),
-                                "update_redirect_policy_internal",
-                                "redirector/linux",
-                                logger::AGENT_LOGGER_KEY,
+                            Ok(_) => tracing::info!(
+                                "policy_map updated for destination: {}:{}",
+                                ip_to_string(dest_ipv4),
+                                dest_port
                             ),
                             Err(err) => {
-                                logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                tracing::info!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err);
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    logger::write(format!(
-                        "Failed to load HashMap 'policy_map' with error: {}",
-                        err
-                    ));
+                    tracing::info!("Failed to load HashMap 'policy_map' with error: {}", err);
                 }
             },
             None => {
-                logger::write("Failed to get map 'policy_map'.".to_string());
+                tracing::info!("Failed to get map 'policy_map'.");
             }
         },
         None => {
-            logger::write("BPF object is not initialized.".to_string());
+            tracing::info!("BPF object is not initialized.");
         }
     }
 }
@@ -592,11 +531,9 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
 #[cfg(feature = "test-with-root")]
 mod tests {
     use crate::common::config;
-    use crate::common::logger;
     use crate::redirector::linux::ebpf_obj::sock_addr_aduit_key;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
     use aya::maps::HashMap;
-    use proxy_agent_shared::logger_manager;
     use proxy_agent_shared::misc_helpers;
     use std::env;
 
@@ -605,13 +542,6 @@ mod tests {
         let logger_key = "linux_ebpf_test";
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push(logger_key);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        );
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");

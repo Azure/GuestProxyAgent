@@ -5,7 +5,6 @@ use url::Url;
 use super::request::Request;
 use crate::common::constants;
 use crate::common::helpers;
-use crate::common::logger;
 use proxy_agent_shared::misc_helpers;
 
 pub struct HttpRequest {
@@ -55,15 +54,9 @@ impl HttpRequest {
                 helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
             );
             match String::from_utf8(input_to_sign) {
-                Ok(data) => logger::write_information(format!(
-                    "Computed the signature with input: {}",
-                    data
-                )),
+                Ok(data) => tracing::info!("Computed the signature with input: {}", data),
                 Err(e) => {
-                    logger::write_information(format!(
-                        "Failed convert the input_to_sign to string, error {}",
-                        e
-                    ));
+                    tracing::info!("Failed convert the input_to_sign to string, error {}", e);
                 }
             }
             http_request.request.headers.add_header(

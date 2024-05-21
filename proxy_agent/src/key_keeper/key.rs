@@ -5,7 +5,7 @@ use crate::{
         constants,
         http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
     },
-    proxy::{proxy_connection::Connection, Claims},
+    proxy::Claims,
 };
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
@@ -188,52 +188,43 @@ impl Clone for Privilege {
 
 impl Privilege {
     pub fn is_match(&self, connection_id: u128, request_url: Url) -> bool {
-        Connection::write_information(
-            connection_id,
-            format!("Start to match privilege '{}'", self.name),
-        );
+        tracing::info!(connection_id, "Start to match privilege '{}'", self.name,);
         if request_url.path().to_lowercase().starts_with(&self.path) {
-            Connection::write_information(
-                connection_id,
-                format!("Matched privilege path '{}'", self.path),
-            );
+            tracing::info!(connection_id, "Matched privilege path '{}'", self.path,);
 
             match &self.queryParameters {
                 Some(query_parameters) => {
-                    Connection::write_information(
+                    tracing::info!(
                         connection_id,
-                        format!(
-                            "Start to match query_parameters from privilege '{}'",
-                            self.name
-                        ),
+                        "Start to match query_parameters from privilege '{}'",
+                        self.name
                     );
 
                     for (key, value) in query_parameters {
                         match request_url.query_pairs().find(|(k, _)| k == key) {
                             Some((_, v)) => {
                                 if v.to_lowercase() == value.to_lowercase() {
-                                    Connection::write_information(
+                                    tracing::info!(
                                         connection_id,
-                                        format!(
-                                            "Matched query_parameters '{}:{}' from privilege '{}'",
-                                            key, v, self.name
-                                        ),
+                                        "Matched query_parameters '{}:{}' from privilege '{}'",
+                                        key,
+                                        v,
+                                        self.name
                                     );
                                 } else {
-                                    Connection::write_information(
+                                    tracing::info!(
                                         connection_id,
-                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
+                                        "Not matched query_parameters value '{}' from privilege '{}'", key, self.name,
                                     );
                                     return false;
                                 }
                             }
                             None => {
-                                Connection::write_information(
+                                tracing::info!(
                                     connection_id,
-                                    format!(
-                                        "Not matched query_parameters key '{}' from privilege '{}'",
-                                        key, self.name
-                                    ),
+                                    "Not matched query_parameters key '{}' from privilege '{}'",
+                                    key,
+                                    self.name
                                 );
                                 return false;
                             }
@@ -271,66 +262,57 @@ impl Clone for Identity {
 
 impl Identity {
     pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
-        Connection::write_information(
-            connection_id,
-            format!("Start to match identity '{}'", self.name),
-        );
+        tracing::info!(connection_id, "Start to match identity '{}'", self.name,);
         if let Some(ref user_name) = self.userName {
             if user_name.to_lowercase() == claims.userName.to_lowercase() {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Matched user name '{}' from identity '{}'",
-                        user_name, self.name
-                    ),
+                    "Matched user name '{}' from identity '{}'",
+                    user_name,
+                    self.name.to_string()
                 );
             } else {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Not matched user name '{}' from identity '{}'",
-                        user_name, self.name
-                    ),
+                    "Not matched user name '{}' from identity '{}'",
+                    user_name,
+                    self.name.to_string()
                 );
                 return false;
             }
         }
         if let Some(ref process_name) = self.processName {
             if process_name.to_lowercase() == claims.processName.to_lowercase() {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Matched process name '{}' from identity '{}'",
-                        process_name, self.name
-                    ),
+                    "Matched process name '{}' from identity '{}'",
+                    process_name,
+                    self.name
                 );
             } else {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Not matched process name '{}' from identity '{}'",
-                        process_name, self.name
-                    ),
+                    "Not matched process name '{}' from identity '{}'",
+                    process_name,
+                    self.name
                 );
                 return false;
             }
         }
         if let Some(ref exe_path) = self.exePath {
             if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Matched process full path '{}' from identity '{}'",
-                        exe_path, self.name
-                    ),
+                    "Matched process full path '{}' from identity '{}'",
+                    exe_path,
+                    self.name
                 );
             } else {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Not matched process full path '{}' from identity '{}'",
-                        exe_path, self.name
-                    ),
+                    "Not matched process full path '{}' from identity '{}'",
+                    exe_path,
+                    self.name
                 );
                 return false;
             }
@@ -339,24 +321,22 @@ impl Identity {
             let mut matched = false;
             for claims_user_group_name in &claims.userGroups {
                 if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
-                    Connection::write_information(
+                    tracing::info!(
                         connection_id,
-                        format!(
-                            "Matched user group name '{}' from identity '{}'",
-                            group_name, self.name
-                        ),
+                        "Not matched user group name '{}' from identity '{}'",
+                        group_name,
+                        self.name
                     );
                     matched = true;
                     break;
                 }
             }
             if !matched {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    format!(
-                        "Not matched user group name '{}' from identity '{}'",
-                        group_name, self.name
-                    ),
+                    "Not matched user group name '{}' from identity '{}'",
+                    group_name,
+                    self.name
                 );
                 return false;
             }
@@ -744,7 +724,6 @@ mod tests {
     use crate::common::constants;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
-    use crate::proxy::proxy_connection::Connection;
 
     #[test]
     fn key_status_v1_test() {
@@ -1121,11 +1100,6 @@ mod tests {
 
     #[test]
     fn test_privelege_is_match() {
-        let logger_key = "test_privelege_is_match";
-        let mut temp_test_path = std::env::temp_dir();
-        temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
-
         let privilege = r#"{
             "name": "test",
             "path": "/test",
@@ -1178,18 +1152,10 @@ mod tests {
             !privilege2.is_match(1, url.clone()),
             "privilege should not be matched"
         );
-
-        // clean up and ignore the clean up errors
-        _ = std::fs::remove_dir_all(temp_test_path);
     }
 
     #[test]
     fn test_identity_is_match() {
-        let logger_key = "test_identity_is_match";
-        let mut temp_test_path = std::env::temp_dir();
-        temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
-
         let claims = super::Claims {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
@@ -1308,8 +1274,5 @@ mod tests {
             identity5.is_match(1, claims.clone()),
             "identity should be matched"
         );
-
-        // clean up and ignore the clean up errors
-        _ = std::fs::remove_dir_all(temp_test_path);
     }
 }

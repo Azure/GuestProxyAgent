@@ -1,17 +1,17 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{constants, logger};
+use crate::common::constants;
 use proxy_agent_shared::misc_helpers;
 
 pub fn setup_firewall_redirection(local_port: u16) -> bool {
     unsafe {
         // set our current GuestProxyAgent process to gid 3080
         let ret = libc::setegid(constants::EGID);
-        logger::write_information(format!(
+        tracing::info!(
             "libc::setegid gid '{}' with result '{}'",
             constants::EGID,
             ret
-        ))
+        );
     }
 
     let gid = constants::EGID.to_string();
@@ -117,7 +117,7 @@ fn config_one_firewall_redirection(
         super::set_error_status(message);
         return false;
     }
-    logger::write_information(message);
+    tracing::info!(message);
 
     output.0 == 0
 }

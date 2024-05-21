@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::logger_manager;
 use std::ffi::OsString;
 use std::io;
 use std::path::PathBuf;
@@ -19,33 +18,26 @@ pub fn start_service_with_retry(
     duration: std::time::Duration,
 ) {
     for i in 0..retry_count {
-        logger_manager::write_info(format!("Starting service {} attempt {}", service_name, i));
+        tracing::info!("Starting service {} attempt {}", service_name, i);
 
         match start_service_once(service_name) {
             Ok(service) => {
                 if service.current_state == ServiceState::Running {
-                    logger_manager::write_info(format!(
-                        "Service {} is at Running state",
-                        service_name
-                    ));
+                    tracing::info!("Service {} is at Running state", service_name);
                     return;
                 }
 
-                logger_manager::write_info(
-                    format!(
-                        "Service {} failed to start with current state {:?}",
-                        service_name, service.current_state
-                    )
-                    .to_string(),
+                tracing::info!(
+                    "Service {} failed to start with current state {:?}",
+                    service_name,
+                    service.current_state,
                 );
             }
             Err(e) => {
-                logger_manager::write_info(
-                    format!(
-                        "Extension service {} start failed with error: {}",
-                        service_name, e
-                    )
-                    .to_string(),
+                tracing::info!(
+                    "Extension service {} start failed with error: {}",
+                    service_name,
+                    e,
                 );
             }
         }
@@ -58,10 +50,7 @@ fn start_service_once(service_name: &str) -> windows_service::Result<ServiceStat
     // Start service if it already isn't running
     query_service_status(service_name).and_then(|service| {
         if service.current_state == ServiceState::Running {
-            logger_manager::write_info(format!(
-                "Extension service '{}' is already running",
-                service_name
-            ));
+            tracing::info!("Extension service '{}' is already running", service_name);
             Ok(service)
         } else {
             let service_manager: ServiceManager =
@@ -71,10 +60,8 @@ fn start_service_once(service_name: &str) -> windows_service::Result<ServiceStat
                 ServiceAccess::START | ServiceAccess::QUERY_STATUS,
             )?;
             service.start(&[""])?;
-            logger_manager::write_info(format!("Staring Extension service '{}'", service_name));
-            logger_manager::write_info(
-                "Wait for 1 second before querying service status".to_string(),
-            );
+            tracing::info!("Staring Extension service '{}'", service_name);
+            tracing::info!("Wait for 1 second before querying service status");
             thread::sleep(std::time::Duration::from_secs(1));
             service.query_status()
         }
@@ -98,17 +85,15 @@ pub fn stop_service(service_name: &str) -> windows_service::Result<ServiceStatus
             )?;
             match service.stop() {
                 Ok(service) => {
-                    logger_manager::write_info(format!(
+                    tracing::info!(
                         "Stopped service {} successfully with current status {:?}",
-                        service_name, service.current_state
-                    ));
+                        service_name,
+                        service.current_state
+                    );
                     thread::sleep(std::time::Duration::from_secs(1));
                 }
                 Err(e) => {
-                    logger_manager::write_info(format!(
-                        "Stopped service {} failed, error: {:?}",
-                        service_name, e
-                    ));
+                    tracing::info!("Stopped service {} failed, error: {:?}", service_name, e);
                 }
             }
             service.query_status()
@@ -238,28 +223,11 @@ fn create_service(
 
 #[cfg(test)]
 mod tests {
-    use crate::logger_manager;
-    use std::env;
     use std::{path::PathBuf, process::Command};
 
     #[test]
     fn test_install_service() {
         const TEST_SERVICE_NAME: &str = "test_nt_service";
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push("test_install_service");
-
-        let log_folder: PathBuf = temp_test_path.to_path_buf();
-        let log_key: &str = "test_install_service";
-        let log_name: String = "test_install_service.log".to_string();
-        let log_size: u64 = 20 * 1024 * 1024;
-        let log_count: u16 = 30;
-        logger_manager::init_logger(
-            log_key.to_string(),
-            log_folder,
-            log_name,
-            log_size,
-            log_count,
-        );
 
         // Delete Service if it exists
         _ = super::stop_and_delete_service(TEST_SERVICE_NAME);

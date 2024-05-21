@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{config, logger};
+use crate::common::config;
 use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -11,7 +11,6 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{
     GuestProxyAgentAggregateStatus, ModuleState, OveralState, ProxyAgentStatus,
     ProxyConnectionSummary,
 };
-use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,7 +38,7 @@ fn start(mut interval: Duration) {
         interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    logger::write("proxy_agent_status thread started.".to_string());
+    tracing::info!("proxy_agent_status thread started.");
 
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
@@ -47,25 +46,22 @@ fn start(mut interval: Duration) {
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
-            logger::write_warning(
-                "Stop signal received, exiting the guest_proxy_agent_status thread.".to_string(),
-            );
+            tracing::warn!("Stop signal received, exiting the guest_proxy_agent_status thread.",);
             break;
         }
 
         let aggregate_status = guest_proxy_agent_aggregate_status_new();
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
-            logger::write_error(format!("Error writing aggregate status to file: {}", e));
+            tracing::error!("Error writing aggregate status to file: {}", e);
         }
 
         let elapsed_time = start_time.elapsed();
 
         //Clear the connection map and reset start_time after 24 hours
         if elapsed_time >= map_clear_duration {
-            logger::write_information(
+            tracing::info!(
                 "Clearing the connection summary map and failed authenticate summary map."
-                    .to_string(),
             );
             unsafe {
                 let mut summary_map_guard = SUMMARY_MAP.lock().unwrap();
@@ -98,7 +94,6 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
-        telemetryLoggerStatus: event_logger::get_status(),
         proxyConnectionsCount: proxy_listener::get_proxy_connection_count(),
     }
 }
@@ -164,7 +159,7 @@ pub fn write_aggregate_status_to_file(
     let full_file_path = full_file_path.join("status.json");
 
     if let Err(e) = misc_helpers::json_write_to_file(&status, full_file_path.clone()) {
-        logger::write_error(format!("Error writing status to status file: {}", e));
+        tracing::info!("Error writing status to status file: {}", e);
     }
 
     Ok(())

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 use crate::common::http::request::Request;
 use crate::common::http::{self, response::Response};
-use crate::common::logger;
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
 use once_cell::sync::Lazy;
@@ -16,7 +15,7 @@ static mut CURRENT_STATE: Lazy<String> =
     Lazy::new(|| String::from(key_keeper::MUST_SIG_WIRESERVER));
 
 pub fn start(ip: String, port: u16) {
-    logger::write_information("WireServer starting...".to_string());
+    tracing::info!("WireServer starting...");
     let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -35,7 +34,7 @@ pub fn stop(ip: String, port: u16) {
 }
 
 fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
-    logger::write_information("WireServer processing request.".to_string());
+    tracing::info!("WireServer processing request.");
 
     let request = http::receive_request_data(&stream).unwrap();
     if request.url == "stop" {
@@ -341,7 +340,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
 
     _ = stream.write_all(response.as_raw_string().as_bytes());
     _ = stream.flush();
-    logger::write_information("WireServer processed request.".to_string());
+    tracing::info!("WireServer processed request.");
 
     true
 }
