@@ -244,6 +244,16 @@ pub fn get_ebpf_file_path() -> PathBuf {
     bpf_file_path
 }
 
+#[cfg(not(windows))]
+pub use linux::update_imds_redirect_policy;
+#[cfg(windows)]
+pub use windows::update_imds_redirect_policy;
+
+#[cfg(not(windows))]
+pub use linux::update_wire_server_redirect_policy;
+#[cfg(windows)]
+pub use windows::update_wire_server_redirect_policy;
+
 #[cfg(test)]
 mod tests {
     #[test]

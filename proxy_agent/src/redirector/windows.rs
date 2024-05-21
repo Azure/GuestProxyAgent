@@ -21,6 +21,7 @@ use windows_sys::Win32::Networking::WinSock;
 static mut IS_STARTED: bool = false;
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
+static mut LOCAL_PORT: u16 = 0;
 
 pub fn start(local_port: u16) -> bool {
     match bpf_prog::init() {
@@ -63,7 +64,7 @@ pub fn start(local_port: u16) -> bool {
     if (key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE)
         || (config::get_wire_server_support() > 0)
     {
-        let result = bpf_prog::update_bpf_map(
+        let result = bpf_prog::update_policy_elem_bpf_map(
             local_port,
             constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
             constants::WIRE_SERVER_PORT,
@@ -78,7 +79,7 @@ pub fn start(local_port: u16) -> bool {
         }
     }
     if config::get_host_gaplugin_support() > 0 {
-        let result = bpf_prog::update_bpf_map(
+        let result = bpf_prog::update_policy_elem_bpf_map(
             local_port,
             constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
             constants::GA_PLUGIN_PORT,
@@ -95,7 +96,7 @@ pub fn start(local_port: u16) -> bool {
     if (key_keeper::get_secure_channel_state() == key_keeper::MUST_SIG_WIRESERVER_IMDS)
         || (config::get_imds_support() > 0)
     {
-        let result = bpf_prog::update_bpf_map(
+        let result = bpf_prog::update_policy_elem_bpf_map(
             local_port,
             constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
             constants::IMDS_PORT,
@@ -112,6 +113,7 @@ pub fn start(local_port: u16) -> bool {
 
     unsafe {
         IS_STARTED = true;
+        LOCAL_PORT = local_port;
     }
 
     let message = helpers::write_startup_event(
@@ -177,5 +179,67 @@ pub fn get_audit_from_redirect_context(tcp_stream: &TcpStream) -> std::io::Resul
         )?;
 
         Ok(value)
+    }
+}
+
+pub fn update_wire_server_redirect_policy(redirect: bool) {
+    if redirect {
+        let result = unsafe {
+            bpf_prog::update_policy_elem_bpf_map(
+                LOCAL_PORT,
+                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+                constants::WIRE_SERVER_PORT,
+            )
+        };
+        if result != 0 {
+            set_error_status(format!(
+                "Failed to update bpf map for wireserver redirect policy with result: {result}"
+            ));
+        } else {
+            logger::write("Success updated bpf map for wireserver redirect policy.".to_string());
+        }
+    } else {
+        let result = bpf_prog::remove_policy_elem_bpf_map(
+            constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+            constants::WIRE_SERVER_PORT,
+        );
+        if result != 0 {
+            set_error_status(format!(
+                "Failed to delete bpf map for wireserver redirect policy with result: {result}"
+            ));
+        } else {
+            logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());
+        }
+    }
+}
+
+pub fn update_imds_redirect_policy(redirect: bool) {
+    if redirect {
+        let result = unsafe {
+            bpf_prog::update_policy_elem_bpf_map(
+                LOCAL_PORT,
+                constants::IMDS_IP_NETWORK_BYTE_ORDER,
+                constants::IMDS_PORT,
+            )
+        };
+        if result != 0 {
+            set_error_status(format!(
+                "Failed to update bpf map for IMDS redirect policy with result: {result}"
+            ));
+        } else {
+            logger::write("Success updated bpf map for IMDS redirect policy.".to_string());
+        }
+    } else {
+        let result = bpf_prog::remove_policy_elem_bpf_map(
+            constants::IMDS_IP_NETWORK_BYTE_ORDER,
+            constants::IMDS_PORT,
+        );
+        if result != 0 {
+            set_error_status(format!(
+                "Failed to delete bpf map for IMDS redirect policy with result: {result}"
+            ));
+        } else {
+            logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
+        }
     }
 }

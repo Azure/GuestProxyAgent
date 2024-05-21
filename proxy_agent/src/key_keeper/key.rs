@@ -553,6 +553,50 @@ impl KeyStatus {
         }
     }
 
+    pub fn get_wire_server_mode(&self) -> String {
+        if self.version == "2.0" {
+            match &self.authorizationRules {
+                Some(rules) => match &rules.wireserver {
+                    Some(item) => item.mode.to_lowercase(),
+                    None => "disabled".to_string(),
+                },
+                None => "disabled".to_string(),
+            }
+        } else {
+            let state = match &self.secureChannelState {
+                Some(s) => s.to_lowercase(),
+                None => "disabled".to_string(),
+            };
+            if state == "wireserver" || state == "wireserverandimds" {
+                return ENFORCE_MODE.to_string();
+            } else {
+                return AUDIT_MODE.to_string();
+            }
+        }
+    }
+
+    pub fn get_imds_mode(&self) -> String {
+        if self.version == "2.0" {
+            match &self.authorizationRules {
+                Some(rules) => match &rules.imds {
+                    Some(item) => item.mode.to_lowercase(),
+                    None => "disabled".to_string(),
+                },
+                None => "disabled".to_string(),
+            }
+        } else {
+            let state = match &self.secureChannelState {
+                Some(s) => s.to_lowercase(),
+                None => "disabled".to_string(),
+            };
+            if state == "wireserverandimds" {
+                return ENFORCE_MODE.to_string();
+            } else {
+                return AUDIT_MODE.to_string();
+            }
+        }
+    }
+
     pub fn to_string(&self) -> String {
         return format!(
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
@@ -781,6 +825,12 @@ mod tests {
             status_v1.get_wireserver_rule_id(),
             "WireServer rule id must be empty"
         );
+        assert_eq!(
+            status_v1.get_wire_server_mode(),
+            "enforce",
+            "WireServer mode mismatch"
+        );
+        assert_eq!(status_v1.get_imds_mode(), "audit", "IMDS mode mismatch");
     }
 
     #[test]
@@ -940,8 +990,8 @@ mod tests {
         // validate IMDS rules
         let imds_rules = status.get_imds_rules().unwrap();
         assert_eq!("allow", imds_rules.defaultAccess, "defaultAccess mismatch");
-        assert_eq!("enforce", imds_rules.mode, "mode mismatch");
         assert_eq!("sigid", status.get_imds_rule_id(), "IMDS rule id mismatch");
+        assert_eq!("enforce", status.get_imds_mode(), "IMDS mode mismatch");
 
         // validate WireServer rules
         let wireserver_rules = status.get_wireserver_rules().unwrap();
@@ -949,11 +999,15 @@ mod tests {
             "deny", wireserver_rules.defaultAccess,
             "defaultAccess mismatch"
         );
-        assert_eq!("enforce", wireserver_rules.mode, "mode mismatch");
         assert_eq!(
             "sigid",
             status.get_wireserver_rule_id(),
             "WireServer rule id mismatch"
+        );
+        assert_eq!(
+            "enforce",
+            status.get_wire_server_mode(),
+            "WireServer mode mismatch"
         );
 
         // validate WireServer rule details
