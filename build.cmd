@@ -76,6 +76,9 @@ echo ======= copy redirect.bpf.sys
 xcopy /Y %out_dir%\redirect.bpf.sys %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\redirect.bpf.pdb %out_package_proxyagent_dir%\
 
+echo ======= cargo fmt
+cargo fmt --all
+
 echo ======= build proxy_agent_shared
 set cargo_toml=%root_path%proxy_agent_shared\Cargo.toml
 SET release_flag=
