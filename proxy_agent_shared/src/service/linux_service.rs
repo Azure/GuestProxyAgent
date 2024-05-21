@@ -4,8 +4,8 @@ use crate::linux;
 use crate::logger_manager;
 use crate::misc_helpers;
 
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 pub fn stop_service(service_name: &str) {
     let output = misc_helpers::execute_command("systemctl", vec!["stop", service_name], -1);
@@ -31,7 +31,7 @@ pub fn install_or_update_service(service_name: &str) {
     enable_service(service_name);
 }
 
-fn unmask_service(service_name: &str){
+fn unmask_service(service_name: &str) {
     let output = misc_helpers::execute_command("systemctl", vec!["unmask", service_name], -1);
     let message = format!(
         "unmask_service: {}  result: '{}'-'{}'-'{}'.",

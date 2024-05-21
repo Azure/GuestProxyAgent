@@ -277,7 +277,6 @@ pub fn ntohs(u: u16) -> u16 {
     u16::from_be(u)
 }
 
-
 #[cfg(test)]
 mod tests {
 

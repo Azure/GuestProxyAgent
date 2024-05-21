@@ -33,28 +33,28 @@ impl Connection {
         logger_manager::get_logger(Connection::CONNECTION_LOGGER_KEY)
     }
 
-    pub fn write(connection_id:u128, message: String) {
+    pub fn write(connection_id: u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
             .write(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_information(connection_id:u128, message: String) {
+    pub fn write_information(connection_id: u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
             .write_information(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_warning(connection_id:u128, message: String) {
+    pub fn write_warning(connection_id: u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()
             .write_warning(format!("Connection:{} - {}", connection_id, message));
     }
 
-    pub fn write_error(connection_id:u128, message: String) {
+    pub fn write_error(connection_id: u128, message: String) {
         _ = Connection::get_connection_logger()
             .lock()
             .unwrap()

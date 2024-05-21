@@ -31,4 +31,3 @@ fn ebpf_folder() -> PathBuf {
 pub fn ebpf_setup_script_file() -> PathBuf {
     ebpf_folder().join("setup.ps1")
 }
-

@@ -86,14 +86,8 @@ fn delete_file(file_to_be_delete: PathBuf) {
 // copy azure-proxy-agent, proxy-agent.json, ebpf_cgroup.o, service config files to backup folder
 pub fn backup_files() {
     let backup_folder = backup::proxy_agent_backup_package_folder();
-    copy_file(
-        PathBuf::from(CONFIG_PATH),
-        backup_folder.join(CONFIG_FILE),
-    );
-    copy_file(
-        PathBuf::from(EBPF_PATH),
-        backup_folder.join(EBPF_FILE),
-    );
+    copy_file(PathBuf::from(CONFIG_PATH), backup_folder.join(CONFIG_FILE));
+    copy_file(PathBuf::from(EBPF_PATH), backup_folder.join(EBPF_FILE));
     copy_file(
         running::proxy_agent_running_folder("").join("azure-proxy-agent"),
         backup_folder.join("azure-proxy-agent"),
@@ -108,10 +102,7 @@ pub fn copy_files(src_folder: PathBuf) {
         src_folder.join("azure-proxy-agent"),
         dst_folder.join("azure-proxy-agent"),
     );
-    copy_file(
-        src_folder.join(CONFIG_FILE),
-        PathBuf::from(CONFIG_PATH),
-    );
+    copy_file(src_folder.join(CONFIG_FILE), PathBuf::from(CONFIG_PATH));
     copy_file(src_folder.join(EBPF_FILE), PathBuf::from(EBPF_PATH));
 }
 

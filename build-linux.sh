@@ -38,6 +38,9 @@ rustup component add rust-std-x86_64-unknown-linux-musl
 rustup update stable
 cargo install cargo-deb
 
+echo ======= cargo fmt
+cargo fmt --all
+
 echo ======= build proxy_agent_shared
 cargo_toml=$root_path/proxy_agent_shared/Cargo.toml
 echo cargo_toml=$cargo_toml
