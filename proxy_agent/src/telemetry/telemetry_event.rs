@@ -3,8 +3,8 @@
 use super::event_reader;
 use crate::common::helpers;
 use once_cell::sync::Lazy;
-use serde_derive::{Deserialize, Serialize};
 use proxy_agent_shared::telemetry::Event;
+use serde_derive::{Deserialize, Serialize};
 
 pub struct TelemetryData {
     events: Vec<TelemetryEvent>,

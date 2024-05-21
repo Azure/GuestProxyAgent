@@ -157,9 +157,11 @@ mod tests {
             }
             None => assert!(false, "deploymentid not found"),
         }
-        
+
         match handlerEnvironment.rolename {
-            Some(rolename) => assert_eq!("test_rolename".to_string(), rolename, "rolename mismatch"),
+            Some(rolename) => {
+                assert_eq!("test_rolename".to_string(), rolename, "rolename mismatch")
+            }
             None => assert!(false, "rolename not found"),
         }
     }
@@ -198,11 +200,7 @@ mod tests {
         let status_obj: super::TopLevelStatus = serde_json::from_str(json_status).unwrap();
         let status = status_obj.status;
 
-        assert_eq!(
-            "1.0".to_string(), 
-            status_obj.version, 
-            "version mismatch"
-        );
+        assert_eq!("1.0".to_string(), status_obj.version, "version mismatch");
 
         assert_eq!(
             "2021-01-01T00:00:00.000Z".to_string(),
@@ -210,23 +208,11 @@ mod tests {
             "timestampUTC mismatch"
         );
 
-        assert_eq!(
-            "test_status_name".to_string(), 
-            status.name, 
-            "name mismatch"
-        );
+        assert_eq!("test_status_name".to_string(), status.name, "name mismatch");
 
-        assert_eq!(
-            0, 
-            status.code, 
-            "code mismatch"
-        );
+        assert_eq!(0, status.code, "code mismatch");
 
-        assert_eq!(
-            "test_status".to_string(), 
-            status.status, 
-            "status mismatch"
-        );
+        assert_eq!("test_status".to_string(), status.status, "status mismatch");
     }
 
     #[test]
@@ -250,11 +236,7 @@ mod tests {
         let heartbeat_obj: super::TopLevelHeartbeat = serde_json::from_str(json_heartbeat).unwrap();
         let heartbeat = heartbeat_obj.heartbeat;
 
-        assert_eq!(
-            "1.0".to_string(), 
-            heartbeat_obj.version, 
-            "version mismatch"
-        );
+        assert_eq!("1.0".to_string(), heartbeat_obj.version, "version mismatch");
 
         assert_eq!(
             "test_status".to_string(),
@@ -262,10 +244,6 @@ mod tests {
             "status mismatch"
         );
 
-        assert_eq!(
-            "0".to_string(), 
-            heartbeat.code, 
-            "code mismatch"
-        );
+        assert_eq!("0".to_string(), heartbeat.code, "code mismatch");
     }
 }

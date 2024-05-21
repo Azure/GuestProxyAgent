@@ -70,7 +70,8 @@ impl GoalState {
     pub fn get_shared_config_uri(&self) -> String {
         self.Container.RoleInstanceList.RoleInstance[0]
             .Configuration
-            .SharedConfig.to_string()
+            .SharedConfig
+            .to_string()
     }
 }
 

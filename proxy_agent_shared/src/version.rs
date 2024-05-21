@@ -31,33 +31,49 @@ impl Version {
             revision: revision,
         }
     }
- 
+
     pub fn from_string(version_string: String) -> std::io::Result<Version> {
         let version_parts = version_string.split('.').collect::<Vec<&str>>();
         if version_parts.len() < 2 {
-            return Err(Error::new(ErrorKind::InvalidInput, "Invalid version string"));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Invalid version string",
+            ));
         }
 
-        let major; 
+        let major;
         match version_parts[0].parse::<u32>() {
             Ok(u) => major = u,
-            Err(_) => return Err(Error::new(ErrorKind::InvalidInput, "Cannot read Major build")),
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "Cannot read Major build",
+                ))
+            }
         };
 
-        let minor; 
+        let minor;
         match version_parts[1].parse::<u32>() {
             Ok(u) => minor = u,
-            Err(_) => return Err(Error::new(ErrorKind::InvalidInput, "Cannot read Minor build")),
+            Err(_) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    "Cannot read Minor build",
+                ))
+            }
         };
         if version_parts.len() == 2 {
             return Ok(Version::from_major_minor(major, minor));
-        }  
+        }
         if version_parts.len() > 4 {
-            return Err(Error::new(ErrorKind::InvalidInput, "Invalid version string"));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Invalid version string",
+            ));
         }
 
-        let mut build = None; 
-        let mut revision= None;
+        let mut build = None;
+        let mut revision = None;
         if version_parts.len() > 2 {
             match version_parts[2].parse::<u32>() {
                 Ok(u) => build = Some(u),
@@ -68,7 +84,7 @@ impl Version {
                     Ok(u) => revision = Some(u),
                     Err(_) => revision = None,
                 };
-            } 
+            }
         }
 
         return Ok(Version::from_major_minor_build_revision(

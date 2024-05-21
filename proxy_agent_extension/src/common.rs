@@ -190,8 +190,7 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
     #[cfg(not(windows))]
     {
         // linux service harded to this location
-        return PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH)
-            .join("azure-proxy-agent");
+        return PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent");
     }
 }
 
