@@ -46,7 +46,7 @@ pub fn start_service() {
 }
 
 #[cfg(not(windows))]
-pub fn start_service_wait(){
+pub fn start_service_wait() {
     start_service();
 
     loop {

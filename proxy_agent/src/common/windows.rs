@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
+use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
+use windows_sys::Win32::Networking::WinSock;
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
     GlobalMemoryStatusEx, // kernel32.dll
     MEMORYSTATUSEX,
     SYSTEM_INFO,
 };
-use std::io::{Error, ErrorKind};
-use windows_sys::Win32::Networking::WinSock;
 
 pub fn get_processor_count() -> usize {
     unsafe {

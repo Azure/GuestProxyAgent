@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
+use crate::common;
 use core::ffi::c_void;
 use std::mem::{self, MaybeUninit};
 use std::net::TcpStream;
@@ -10,7 +11,6 @@ use std::os::windows::io::AsRawSocket;
 use std::os::windows::prelude::{FromRawSocket, RawSocket};
 use std::ptr;
 use windows_sys::Win32::Networking::WinSock;
-use crate::common;
 
 fn to_in_addr(addr: &Ipv4Addr) -> WinSock::IN_ADDR {
     WinSock::IN_ADDR {

@@ -73,7 +73,8 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                     if *CURRENT_STATE == key_keeper::DISABLE_STATE {
                         status.secureChannelState = Some(key_keeper::DISABLE_STATE.to_string());
                     } else {
-                        status.secureChannelState = Some( key_keeper::MUST_SIG_WIRESERVER.to_string());
+                        status.secureChannelState =
+                            Some(key_keeper::MUST_SIG_WIRESERVER.to_string());
                     }
                 }
                 response.set_body_as_string(serde_json::to_string(&status).unwrap());
@@ -114,9 +115,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             let goal_state_str = goal_state_str.replace("##ip##", &ip);
             let goal_state_str = goal_state_str.replace("##port##", &port.to_string());
             response.set_body_as_string(goal_state_str.to_string());
-        } else if path.starts_with("machine/")
-            && path.contains("type=sharedConfig")
-        {
+        } else if path.starts_with("machine/") && path.contains("type=sharedConfig") {
             let shared_config_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <SharedConfig version="1.0.0.0" goalStateIncarnation="16">
               <Deployment name="7d2798bb72a0413d9a60b355277df726" guid="{25a2c1a1-2986-4d1c-bd37-6abe8571218d}" incarnation="132" isNonCancellableTopologyChangeEnabled="false">
