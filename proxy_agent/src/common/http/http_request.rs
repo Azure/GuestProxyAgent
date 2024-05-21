@@ -58,12 +58,10 @@ impl HttpRequest {
                 helpers::compute_signature(key.to_string(), &input_to_sign.as_slice())?
             );
             match String::from_utf8(input_to_sign) {
-                Ok(data) => {
-                    logger::write_information(format!(
-                        "Computed the signature with input: {}",
-                        data
-                    ))
-                }
+                Ok(data) => logger::write_information(format!(
+                    "Computed the signature with input: {}",
+                    data
+                )),
                 Err(e) => {
                     logger::write_information(format!(
                         "Failed convert the input_to_sign to string, error {}",

@@ -65,9 +65,6 @@ impl Args {
     }
 
     pub fn to_string(&self) -> String {
-        format!(
-            "{} {}",
-            self.action, self.uninstall_mode
-        )
+        format!("{} {}", self.action, self.uninstall_mode)
     }
 }

@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#[cfg(windows)]
-mod windows_service;
 #[cfg(not(windows))]
 mod linux_service;
+#[cfg(windows)]
+mod windows_service;
 
 use std::path::PathBuf;
 
@@ -132,7 +132,10 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
                 return service_config.executable_path.to_path_buf();
             }
             Err(e) => {
-                logger_manager::write_info(format!("Service {} query failed: {}", _service_name, e));
+                logger_manager::write_info(format!(
+                    "Service {} query failed: {}",
+                    _service_name, e
+                ));
                 eprintln!("Service {} query failed: {}", _service_name, e);
                 return PathBuf::new();
             }
@@ -147,11 +150,13 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
 
 pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     let message;
-    #[cfg(windows)] {
+    #[cfg(windows)]
+    {
         match windows_service::query_service_config(_service_name) {
             Ok(_service_config) => {
                 message = format!(
-                    "check_service_installed: Ebpf Driver: {} successfully queried.", _service_name
+                    "check_service_installed: Ebpf Driver: {} successfully queried.",
+                    _service_name
                 );
                 return (true, message);
             }

@@ -1,14 +1,14 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 #[cfg(not(windows))]
-use std::time::Duration;
-#[cfg(not(windows))]
 use std::thread;
+#[cfg(not(windows))]
+use std::time::Duration;
 
 use crate::service_main;
 
 #[cfg(not(windows))]
-pub fn start_service_wait(){
+pub fn start_service_wait() {
     // start service
     service_main::enable_agent();
 
