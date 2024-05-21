@@ -104,7 +104,7 @@ fn monitor_thread() {
                 telemetry::event_logger::write_event(
                     telemetry::event_logger::INFO_LEVEL,
                     format!("Version mismatch between file versions. ProxyAgentService File Version: {}, ProxyAgent in Extension File Version: {}", 
-                        proxyagent_service_file_version, 
+                        proxyagent_service_file_version,
                         proxyagent_file_version_in_extension),
                     "monitor_thread",
                     "service_main",
@@ -116,7 +116,7 @@ fn monitor_thread() {
                 // Set the current directory to the directory of the current executable for the setup tool to work properly
                 install_command.current_dir(misc_helpers::get_current_exe_dir());
                 let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
-                proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new()); 
+                proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new());
                 install_command.arg("install");
                 let output = install_command.output();
                 report_proxy_agent_service_status(
@@ -151,25 +151,29 @@ fn monitor_thread() {
                         "Proxy Agent Service is updated and reporting successful status",
                         "monitor_thread",
                         "service_main",
-                        logger_key
+                        logger_key,
                     );
                 }
                 None => {}
             }
-            proxy_agent_update_reported = None;           
-        } 
-        #[cfg(windows)] 
+            proxy_agent_update_reported = None;
+        }
+        #[cfg(windows)]
         {
             report_ebpf_status(&mut status);
         }
 
-        common::report_status(status_folder_path.to_path_buf(), &Some(cache_seq_no.to_string()), &status);
+        common::report_status(
+            status_folder_path.to_path_buf(),
+            &Some(cache_seq_no.to_string()),
+            &status,
+        );
 
         thread::sleep(Duration::from_secs(15));
     }
 }
 
-#[cfg(windows)] 
+#[cfg(windows)]
 fn report_ebpf_status(status_obj: &mut StatusObj) {
     match service::check_service_installed(constants::EBPF_CORE) {
         (true, message) => {
@@ -185,9 +189,7 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                             code: constants::STATUS_CODE_OK,
                             formattedMessage: FormattedMessage {
                                 lang: constants::LANG_EN_US.to_string(),
-                                message: format!(
-                                    "Ebpf Drivers successfully queried."
-                                ),
+                                message: format!("Ebpf Drivers successfully queried."),
                             },
                         });
                         substatus
@@ -204,7 +206,8 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                             formattedMessage: FormattedMessage {
                                 lang: constants::LANG_EN_US.to_string(),
                                 message: format!(
-                                    "Ebpf Driver: {} unsuccessfully queried.", constants::EBPF_EXT
+                                    "Ebpf Driver: {} unsuccessfully queried.",
+                                    constants::EBPF_EXT
                                 ),
                             },
                         });
@@ -224,7 +227,8 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                     formattedMessage: FormattedMessage {
                         lang: constants::LANG_EN_US.to_string(),
                         message: format!(
-                            "Ebpf Driver: {} unsuccessfully queried.", constants::EBPF_CORE
+                            "Ebpf Driver: {} unsuccessfully queried.",
+                            constants::EBPF_CORE
                         ),
                     },
                 });
@@ -232,7 +236,6 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
             };
         }
     }
-   
 }
 
 fn backup_proxyagent(setup_tool: &String) {
@@ -247,7 +250,7 @@ fn backup_proxyagent(setup_tool: &String) {
                 event_level,
                 format!(
                     "Backup Proxy Agent command finished with stdoutput: {}, stderr: {}",
-                    String::from_utf8_lossy(&output.stdout), 
+                    String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 ),
                 "backup_proxyagent",
@@ -258,10 +261,7 @@ fn backup_proxyagent(setup_tool: &String) {
         Err(e) => {
             telemetry::event_logger::write_event(
                 telemetry::event_logger::INFO_LEVEL,
-                format!(
-                    "Error in running Backup Proxy Agent command: {}",
-                    e
-                ),
+                format!("Error in running Backup Proxy Agent command: {}", e),
                 "backup_proxyagent",
                 "service_main",
                 &logger::get_logger_key(),
@@ -303,7 +303,7 @@ fn report_proxy_agent_aggregate_status(
         }
         Err(e) => {
             let error_message =
-                        format!("Error in reading proxy agent aggregate status file: {}", e);
+                format!("Error in reading proxy agent aggregate status file: {}", e);
             telemetry::event_logger::write_state_event(
                 constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
                 constants::ERROR_STATUS,
@@ -350,8 +350,7 @@ fn extension_substatus(
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
 ) {
-    let proxy_agent_aggregate_status_obj =
-        proxy_agent_aggregate_status_top_level.proxyAgentStatus;
+    let proxy_agent_aggregate_status_obj = proxy_agent_aggregate_status_top_level.proxyAgentStatus;
 
     let proxy_agent_aggregate_status_file_version =
         proxy_agent_aggregate_status_obj.version.to_string();
@@ -466,7 +465,6 @@ fn extension_substatus(
             "service_main",
             &logger::get_logger_key(),
         );
-
     }
 }
 
@@ -485,7 +483,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                     event_level,
                     format!(
                         "Restore Proxy Agent command finished with stdoutput: {}, stderr: {}",
-                        String::from_utf8_lossy(&output.stdout), 
+                        String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     ),
                     "restore_purge_proxyagent",
@@ -496,20 +494,16 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             Err(e) => {
                 telemetry::event_logger::write_event(
                     telemetry::event_logger::INFO_LEVEL,
-                    format!(
-                        "Error in running Restore Proxy Agent command: {}",
-                        e
-                    ),
+                    format!("Error in running Restore Proxy Agent command: {}", e),
                     "restore_purge_proxyagent",
                     "service_main",
                     &logger::get_logger_key(),
                 );
             }
-        } 
+        }
         return true;
-    }
-    else if status.status == constants::SUCCESS_STATUS.to_string() {
-        let output =  Command::new(setup_tool).arg("purge").output();
+    } else if status.status == constants::SUCCESS_STATUS.to_string() {
+        let output = Command::new(setup_tool).arg("purge").output();
         match output {
             Ok(output) => {
                 let event_level = if output.status.success() {
@@ -521,7 +515,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                     event_level,
                     format!(
                         "Purge Proxy Agent command finished with stdoutput: {}, stderr: {}",
-                        String::from_utf8_lossy(&output.stdout), 
+                        String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     ),
                     "restore_purge_proxyagent",
@@ -532,10 +526,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             Err(e) => {
                 telemetry::event_logger::write_event(
                     telemetry::event_logger::INFO_LEVEL,
-                    format!(
-                        "Error in running Purge Proxy Agent command: {}",
-                        e
-                    ),
+                    format!("Error in running Purge Proxy Agent command: {}", e),
                     "restore_purge_proxyagent",
                     "service_main",
                     &logger::get_logger_key(),
@@ -596,10 +587,7 @@ fn report_proxy_agent_service_status(
         Err(e) => {
             telemetry::event_logger::write_event(
                 telemetry::event_logger::INFO_LEVEL,
-                format!(
-                    "Error in running Update Proxy Agent command: {}",
-                    e
-                ),
+                format!("Error in running Update Proxy Agent command: {}", e),
                 "report_proxy_agent_service_status",
                 "service_main",
                 &logger::get_logger_key(),
@@ -620,7 +608,11 @@ fn get_proxy_agent_file_version_in_extension() -> String {
     // File version of proxy agent service already downloaded by VM Agent
     let path = common::get_proxy_agent_exe_path();
     let version = misc_helpers::get_proxy_agent_version(path.to_path_buf());
-    logger::write(format!("get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}", version.to_string(), misc_helpers::path_to_string(path.to_path_buf())));
+    logger::write(format!(
+        "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
+        version.to_string(),
+        misc_helpers::path_to_string(path.to_path_buf())
+    ));
     version
 }
 
@@ -634,7 +626,7 @@ mod tests {
     use proxy_agent_shared::proxy_agent_aggregate_status::*;
     use std::env;
     use std::fs;
-   
+
     #[cfg(windows)]
     use std::io::Write;
     #[cfg(windows)]
@@ -656,8 +648,7 @@ mod tests {
             let status_folder: PathBuf = temp_test_path.join("status");
             let log_folder: String = temp_test_path.to_str().unwrap().to_string();
             logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
-    
-    
+
             let mut test_good = temp_test_path.clone();
             test_good.push("test.ps1");
             let mut file = fs::File::create(&test_good).unwrap();
@@ -741,27 +732,27 @@ mod tests {
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
             status: OveralState::SUCCESS.to_string(),
-            monitorStatus: ProxyAgentDetailStatus{
+            monitorStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),
                 states: None,
             },
-            keyLatchStatus: ProxyAgentDetailStatus{
+            keyLatchStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),
                 states: None,
             },
-            ebpfProgramStatus: ProxyAgentDetailStatus{
+            ebpfProgramStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),
                 states: None,
             },
-            proxyListenerStatus: ProxyAgentDetailStatus{
+            proxyListenerStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),
                 states: None,
             },
-            telemetryLoggerStatus: ProxyAgentDetailStatus{
+            telemetryLoggerStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),
                 states: None,
@@ -809,7 +800,7 @@ mod tests {
             proxyagent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
-        );  
+        );
         assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
 
         //Clean up and ignore the clean up errors
@@ -818,7 +809,8 @@ mod tests {
 
     #[test]
     fn test_report_ebpf_status() {
-        #[cfg(windows)] {
+        #[cfg(windows)]
+        {
             // Create temp directory for status folder
             let mut temp_test_path = env::temp_dir();
             temp_test_path.push("test_status_file");
@@ -860,13 +852,22 @@ mod tests {
                         },
                     });
                     substatus
-                }
+                },
             };
 
             super::report_ebpf_status(&mut status);
-            assert_eq!(status.substatus[0].name, constants::PLUGIN_CONNECTION_NAME.to_string());
-            assert_eq!(status.substatus[1].name, constants::PLUGIN_STATUS_NAME.to_string());
-            assert_eq!(status.substatus[2].name, constants::EBPF_SUBSTATUS_NAME.to_string());
+            assert_eq!(
+                status.substatus[0].name,
+                constants::PLUGIN_CONNECTION_NAME.to_string()
+            );
+            assert_eq!(
+                status.substatus[1].name,
+                constants::PLUGIN_STATUS_NAME.to_string()
+            );
+            assert_eq!(
+                status.substatus[2].name,
+                constants::EBPF_SUBSTATUS_NAME.to_string()
+            );
 
             //Clean up and ignore the clean up errors
             _ = fs::remove_dir_all(&temp_test_path);

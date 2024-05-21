@@ -349,7 +349,10 @@ mod tests {
             cloned.date_time_string_with_miliseconds
         );
         assert_eq!(test.date_time_string, cloned.date_time_string);
-        assert_eq!(test.date_time_rfc1123_string, cloned.date_time_rfc1123_string);
+        assert_eq!(
+            test.date_time_rfc1123_string,
+            cloned.date_time_rfc1123_string
+        );
         assert_eq!(test.date_time_unix_nano, cloned.date_time_unix_nano);
         assert_eq!(test.long_os_version, cloned.long_os_version);
         assert_eq!(test.current_exe_dir, cloned.current_exe_dir);

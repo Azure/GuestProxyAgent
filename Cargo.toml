@@ -1,0 +1,14 @@
+[workspace]
+
+resolver = "2"
+
+members = [
+    "proxy_agent",
+    "proxy_agent_extension",
+    "proxy_agent_setup",
+    "proxy_agent_shared",
+]
+
+exclude = [
+    "debbuild"
+]

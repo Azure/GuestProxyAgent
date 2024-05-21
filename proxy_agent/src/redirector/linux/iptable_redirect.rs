@@ -115,7 +115,7 @@ fn config_one_firewall_redirection(
         &local_endpoint,
     ];
     let output = misc_helpers::execute_command("iptables", args, -1);
-    
+
     let message = format!(
         "config_one_firewall_redirection: {} redirect {}:{} to {} result: '{}'-'{}'-'{}'.",
         iptable_cmd, dest_ip, dest_port, local_endpoint, output.0, output.1, output.2
