@@ -3,16 +3,16 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 
-zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
+#zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
 
 currentDir=$(pwd)
 echo "currentDir=$currentDir"
 
 echo "Starting install guest proxy agent extension script" 
 
-# find extension version from /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-1.0.11
+# from /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-1.0.11 get 1.0.11 and store is at extensionVersion 
 
-extensionVersion=$(ls /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-*)
+
 PIRExtensionFolderPath=$(ls /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-*/)
 echo "extensionVersion=$extensionVersion"
 
