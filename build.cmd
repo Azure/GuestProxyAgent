@@ -16,6 +16,7 @@ SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.11.0\build\
 SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.11.0\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 SET rustup_version=1.69.0
+SET RUST_BACKTRACE=1
 
 
 if "%CleanBuild%"=="clean" (
