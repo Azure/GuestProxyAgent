@@ -37,6 +37,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="linuxscripts\GuestProxyAgentExtensionValidation.sh" />
+    <None Remove="linuxscripts\InstallGuestProxyAgentExtension.sh" />
     <None Remove="scripts\ConfigTCPPortScalability.ps1" />
     <None Remove="Scripts\IMDSPingTest.ps1" />
     <None Remove="scripts\PingTestOnBindingLocalIP.ps1" />
