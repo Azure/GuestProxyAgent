@@ -139,7 +139,7 @@ namespace GuestProxyAgentTest.Utilities
                     //ProvisionVMAgent = true,
                     //IsPasswordAuthenticationDisabled = false,
                 };
-                vmData.Resources.Append(new VirtualMachineExtensionData(AzureLocation.EastUS2)
+                vmData.Resources.Append(new VirtualMachineExtensionData(TestSetting.Instance.location)
                 {
                     Publisher = "Microsoft.CPlat.ProxyAgent",
                     ExtensionType = "ProxyAgentLinuxTest", 

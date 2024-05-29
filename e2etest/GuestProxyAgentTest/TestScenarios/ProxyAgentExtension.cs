@@ -9,11 +9,14 @@ namespace GuestProxyAgentTest.TestScenarios
     {
         public override void TestScenarioSetup()
         {
-            EnableProxyAgent = true;
+           
             if (!Constants.IS_WINDOWS())
             {
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
+            } else
+            {
+                EnableProxyAgent = true;
             }
             AddTestCase(new GuestProxyAgentExtensionValidationCase("BeforeUpdate"));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
