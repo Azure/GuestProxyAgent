@@ -3,73 +3,58 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 
-#zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
+zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
 
 currentDir=$(pwd)
 echo "currentDir=$currentDir"
 
 echo "Starting install guest proxy agent extension script" 
-
-# from /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-1.0.11 get 1.0.11 and store is at extensionVersion 
-
-
-PIRExtensionFolderPath=$(ls /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-*/)
+directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
+if [ $(echo "$directories" | wc -l) -eq 1 ]; then
+    for dir in $directories; do 
+        PIRExtensionFolderPath=$dir
+        echo "PIR extension folder path" $PIRExtensionFolderPath
+    done 
+fi
+extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "extensionVersion=$extensionVersion"
-
-# Get status file from /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-1.0.11/status
-
-statusFolder=$(ls /var/lib/waagent/Microsoft.CPlat.ProxyAgent.ProxyAgentLinuxTest-*/status)
-
-echo "statusFolder=$statusFolder"
-
+statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
+echo "Status Directory: $statusFolder"
 echo "Delete status file of PIR version" 
-
-# delete status file inside status folder
-
 rm -f $statusFolder/*
-
 echo "Check that status file is success with 5 minute timeout"
-
-# get status file from status folder ending in .status
-
 statusFile=$(ls $statusFolder/*.status)
-
-# check status file for success by converting to json and checking status.status field, in a loop with 5 minute timeout and echo if status is not success or reached timeout
-
-timeout 5m bash -c 'until [[ $(cat $statusFile | jq -r .status) == "success" ]]; do sleep 10; done' || echo "Status file is not success or reached timeout"
-
-# check that process ProxyAgentExt is running 
+timeout=300
+elpased=0
+while :; do 
+    extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
+    if [[ "$extensionStatus" == "Success" ]]; then
+        guestProxyAgentExtensionStatusObjGenerated=true
+        echo "The status is success."
+        break
+    fi
+    ((elapsed += interval))
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timeout reached. Exiting the loop."
+        break
+    fi
+    sleep 5
+done
 
 echo "Check that process ProxyAgentExt is running"
-
-# get process id of ProxyAgentExt
-
 processId=$(pgrep ProxyAgentExt)
-
 echo "processId=$processId"
-
-# check that process id is not empty
-
 if [ -z "$processId" ]; then
     echo "Process ProxyAgentExt is not running"
 fi
 else 
     echo "Process ProxyAgentExt is running"
 
-# delete PIR extension folder
-
 echo "Delete PIR extension folder"
-
 rm -rf $PIRExtensionFolderPath
 
-# get PID of ProxyAgentExt and kill pidof
-
 echo "Get PID of ProxyAgentExt and kill pidof"
-
 pidof ProxyAgentExt | xargs kill -9
 
-# delete status file inside status folder
-
 echo "Delete status file inside status folder"
-
 rm -f $statusFolder/*
