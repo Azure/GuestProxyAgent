@@ -5,9 +5,6 @@
 
 zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
 
-currentDir=$(pwd)
-echo "currentDir=$currentDir"
-
 echo "Starting install guest proxy agent extension script" 
 directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
 if [ $(echo "$directories" | wc -l) -eq 1 ]; then
@@ -29,7 +26,6 @@ elpased=0
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
     if [[ "$extensionStatus" == "Success" ]]; then
-        guestProxyAgentExtensionStatusObjGenerated=true
         echo "The status is success."
         break
     fi
@@ -52,6 +48,10 @@ else
 
 echo "Delete PIR extension folder"
 rm -rf $PIRExtensionFolderPath
+
+decodedUrl=$(echo $zipFile | base64 -d)
+curl -L -o $PIRExtensionFolderPath "$decodedUrl"
+echo "downloaded the proxyagent extension file to path: $PIRExtensionFolderPath"
 
 echo "Get PID of ProxyAgentExt and kill pidof"
 pidof ProxyAgentExt | xargs kill -9
