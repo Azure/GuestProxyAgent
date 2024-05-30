@@ -23,8 +23,7 @@ echo "TEST: Check that status file is success with 5 minute timeout"
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 statusFile=$(ls $statusFolder/*.status)
-#update timeout to 300 after testing 
-timeout=30
+timeout=300
 elpased=0
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')

@@ -3,7 +3,7 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 
-zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
+zipFile=$devExtensionSas   
 
 echo "Starting install guest proxy agent extension script" 
 directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
