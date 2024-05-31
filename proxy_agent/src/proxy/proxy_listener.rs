@@ -355,7 +355,7 @@ fn handle_connection_with_signature(
     }
 
     // send to remote server
-    _ = server_stream.write_all(request.to_raw_string().as_bytes());
+    _ = server_stream.write_all(request.as_raw_string().as_bytes());
     _ = server_stream.flush();
 
     // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
@@ -480,7 +480,7 @@ fn handle_connection_without_signature(
     let mut client_stream = &connection.stream;
 
     // send the request without signature to host
-    _ = server_stream.write_all(request.to_raw_string().as_bytes());
+    _ = server_stream.write_all(request.as_raw_string().as_bytes());
     _ = server_stream.flush();
     let mut response;
     match http::receive_response_data(server_stream) {
@@ -623,7 +623,7 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     );
 
     // response to original client
-    _ = client_stream.write_all(response.to_raw_string().as_bytes());
+    _ = client_stream.write_all(response.as_raw_string().as_bytes());
     _ = client_stream.flush();
 }
 
@@ -664,7 +664,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use std::time::Instant;
-    use std::{thread, time};
+    use std::thread;
 
     #[test]
     fn direct_request_test() {
@@ -687,13 +687,13 @@ mod tests {
         });
 
         // give some time to let the listener started
-        let sleep_duration = time::Duration::from_millis(100);
+        let sleep_duration = Duration::from_millis(100);
         thread::sleep(sleep_duration);
 
         let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
         let mut request = Request::new(format!("http://127.0.0.1:{}", port), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
@@ -798,7 +798,7 @@ mod tests {
 
         let mut response = Response::from_status(Response::OK.to_string());
         if request.method == "GET" {
-            let file = std::env::current_exe().unwrap();
+            let file = env::current_exe().unwrap();
             let body = fs::read(file).unwrap();
             response.headers.add_header(
                 headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
@@ -817,7 +817,7 @@ mod tests {
                 }
 
                 let mut response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(response.to_raw_string().as_bytes());
+                _ = stream.write_all(response.as_raw_string().as_bytes());
                 _ = stream.flush();
 
                 request.set_body(http::receive_body(&stream, content_length).unwrap());
@@ -875,7 +875,7 @@ mod tests {
         let mut client = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
         let mut request = Request::new("/file".to_string(), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
@@ -886,7 +886,7 @@ mod tests {
             "get_body_len and content_length mismatch."
         );
 
-        let file = std::env::current_exe().unwrap();
+        let file = env::current_exe().unwrap();
         assert_eq!(
             file.metadata().unwrap().len() as usize,
             response.get_body_len(),
@@ -895,7 +895,7 @@ mod tests {
     }
 
     fn test_post_requests(uri: &str) {
-        let file = std::env::current_exe().unwrap();
+        let file = env::current_exe().unwrap();
         let body = fs::read(file).unwrap();
 
         let mut request = Request::new(uri.to_string(), "POST".to_string());
@@ -928,7 +928,7 @@ mod tests {
         );
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
         client_stream
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();

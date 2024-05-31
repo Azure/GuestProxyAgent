@@ -65,7 +65,7 @@ pub fn connect_with_redirect_record(
             redirect_record_size,
             &mut redirect_record_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS",
@@ -80,7 +80,7 @@ pub fn connect_with_redirect_record(
             0,
             &mut redirect_record_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_SET_WFP_CONNECTION_REDIRECT_RECORDS",

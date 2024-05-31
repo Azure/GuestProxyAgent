@@ -45,7 +45,7 @@ fn heartbeat_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(exe_path);
     let heartbeat_file_path: PathBuf = handler_environment.heartbeatFile.to_string().into();
-    let duration = std::time::Duration::from_secs(5 * 60);
+    let duration = Duration::from_secs(5 * 60);
     loop {
         let heartbeat_obj = HeartbeatObj {
             status: constants::HEARTBEAT_READY_STATUS.to_string(),
@@ -426,7 +426,7 @@ fn extension_substatus(
                 }
             }
         } else {
-            logger::write(("proxy connection summary is empty").to_string());
+            logger::write("proxy connection summary is empty".to_string());
             substatus_proxy_agent_connection_message =
                 "proxy connection summary is empty".to_string();
         }

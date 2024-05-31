@@ -17,7 +17,7 @@ pub fn install_service(
     _service_display_name: &str,
     _service_dependencies: Vec<&str>,
     _exe_path: PathBuf,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::install_or_update_service(
@@ -37,7 +37,7 @@ pub fn install_service(
     }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> std::io::Result<()> {
+pub fn stop_and_delete_service(service_name: &str) -> io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::stop_and_delete_service(service_name) {
@@ -64,7 +64,7 @@ pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time
     }
 }
 
-pub fn stop_service(service_name: &str) -> std::io::Result<()> {
+pub fn stop_service(service_name: &str) -> io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::stop_service(service_name) {
@@ -84,7 +84,7 @@ pub fn update_service(
     _service_display_name: &str,
     _service_dependencies: Vec<&str>,
     _exe_path: PathBuf,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::update_service(

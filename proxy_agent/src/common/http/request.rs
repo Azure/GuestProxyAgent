@@ -125,7 +125,7 @@ impl Request {
         Ok(request)
     }
 
-    pub fn to_raw_string(&mut self) -> String {
+    pub fn as_raw_string(&mut self) -> String {
         let mut raw_data = self.get_raw_string_without_body();
 
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/100
@@ -308,7 +308,7 @@ mod tests {
         raw_string.push_str(super::super::CRLF);
 
         let mut request = Request::from_raw_request(raw_string.to_string()).unwrap();
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(), // cannot compare the content of the string since the headers are not in the same order in to_raw_string
             to_raw_string.len(),
@@ -319,7 +319,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("Löwe 老虎 Léopard Gepardi");
         let mut request = Request::from_raw_request(raw_string.to_string()).unwrap();
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),
@@ -330,7 +330,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("\r\n\r\nAother line\r\n");
         let mut request = Request::from_raw_request(raw_string.to_string()).unwrap();
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),

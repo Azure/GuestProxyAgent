@@ -98,7 +98,7 @@ impl Response {
         response
     }
 
-    pub fn to_raw_string(&mut self) -> String {
+    pub fn as_raw_string(&mut self) -> String {
         let mut raw_response = self.get_raw_string_without_body();
         match self.get_body_as_string() {
             Ok(data) => raw_response.push_str(&data),
@@ -198,7 +198,7 @@ mod tests {
         raw_string.push_str(super::super::CRLF);
 
         let mut response = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = response.to_raw_string();
+        let to_raw_string = response.as_raw_string();
         assert_eq!(
             raw_string.len(), // cannot compare the content of the string since the headers are not in the same order in to_raw_string
             to_raw_string.len(),
@@ -209,7 +209,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("Löwe 老虎 Léopard Gepardi");
         let mut request = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),
@@ -220,7 +220,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("\n\nAother line\n");
         let mut request = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),

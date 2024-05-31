@@ -17,7 +17,7 @@ use std::process;
 use std::time::Duration;
 use std::{
     fs,
-    path::{self, PathBuf},
+    path::PathBuf,
 };
 
 #[cfg(windows)]
@@ -32,7 +32,7 @@ fn main() {
     let args = args::Args::parse(std::env::args().collect());
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
-        proxy_agent_shared::misc_helpers::get_current_version(),
+        misc_helpers::get_current_version(),
         args
     ));
 
@@ -105,7 +105,7 @@ fn backup_proxy_agent() {
     }
 }
 
-fn restore_proxy_agent() -> path::PathBuf {
+fn restore_proxy_agent() -> PathBuf {
     let src_folder = backup::proxy_agent_backup_package_folder();
     let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_path(
         src_folder.to_path_buf(),

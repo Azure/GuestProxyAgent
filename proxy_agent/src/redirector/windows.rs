@@ -172,7 +172,7 @@ pub fn get_audit_from_redirect_context(tcp_stream: &TcpStream) -> std::io::Resul
             redirect_context_size,
             &mut redirect_context_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT",

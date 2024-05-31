@@ -43,5 +43,5 @@ By default this will clone the project under the `GuestProxyAgent` directory.
 ### Build the project
 1. Launch `Developer Command Prompt for VS 2022` with administrators permission.
 2. Navigate to this repo root folder.
-2. ```build.cmd```
+3. ```build.cmd```
 

@@ -71,7 +71,7 @@ fn start(local_port: u16) -> bool {
         if is_started() {
             return true;
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        thread::sleep(std::time::Duration::from_millis(10));
     }
 
     return is_started();

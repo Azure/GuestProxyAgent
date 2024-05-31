@@ -331,7 +331,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 // post telemetry data
                 // send continue response
                 let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(continue_response.to_raw_string().as_bytes());
+                _ = stream.write_all(continue_response.as_raw_string().as_bytes());
                 _ = stream.flush();
 
                 // receive the data
@@ -343,7 +343,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
         }
     }
 
-    _ = stream.write_all(response.to_raw_string().as_bytes());
+    _ = stream.write_all(response.as_raw_string().as_bytes());
     _ = stream.flush();
     logger::write_information("WireServer processed request.".to_string());
 

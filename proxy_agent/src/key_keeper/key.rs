@@ -187,7 +187,7 @@ impl Privilege {
         }
     }
 
-    pub fn is_match(&self, connection_id: u128, request_url: url::Url) -> bool {
+    pub fn is_match(&self, connection_id: u128, request_url: Url) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match privilege '{}'", self.name.to_string()),
@@ -755,7 +755,7 @@ pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
     if response.status != Response::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("{}", response.to_raw_string()),
+            format!("{}", response.as_raw_string()),
         ));
     }
 

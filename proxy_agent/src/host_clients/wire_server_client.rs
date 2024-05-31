@@ -85,7 +85,7 @@ impl WireServerClient {
 
         let mut client = TcpStream::connect(self.endpoint())?;
         // send http request without body
-        _ = client.write_all(http_request.request.to_raw_string().as_bytes());
+        _ = client.write_all(http_request.request.as_raw_string().as_bytes());
         _ = client.flush();
         let raw_response_data = http::receive_data_in_string(&client)?;
         let response = Response::from_raw_data(raw_response_data);
@@ -129,8 +129,8 @@ impl WireServerClient {
         let goal_state_str = response.get_body_as_string()?;
         match serde_xml_rs::from_str::<GoalState>(&goal_state_str) {
             Ok(goalstate) => Ok(goalstate),
-            Err(err) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(err) => Err(Error::new(
+                ErrorKind::Other,
                 format!(
                     "Recevied goalstate is invalid: {}, Error: {}",
                     goal_state_str, err
@@ -158,8 +158,8 @@ impl WireServerClient {
         let shared_config_str = response.get_body_as_string()?;
         match serde_xml_rs::from_str::<SharedConfig>(&shared_config_str) {
             Ok(shared_config) => Ok(shared_config),
-            Err(err) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(err) => Err(Error::new(
+                ErrorKind::Other,
                 format!(
                     "Recevied shared_config is invalid: {}, Error: {}",
                     shared_config_str, err

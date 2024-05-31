@@ -248,15 +248,15 @@ pub fn query_basic_process_info(handler: isize) -> std::io::Result<PROCESS_BASIC
         );
 
         if status != 0 {
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         Ok(process_basic_information)
     }
 }
 pub fn get_process_handler(pid: u32) -> std::io::Result<HANDLE> {
     if pid == 0 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
             "pid 0 is not a valid process id",
         ));
     }
@@ -265,7 +265,7 @@ pub fn get_process_handler(pid: u32) -> std::io::Result<HANDLE> {
     unsafe {
         let handler = OpenProcess(options, FALSE, pid);
         if handler == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         Ok(handler)
     }
@@ -286,7 +286,7 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
             && status != STATUS_BUFFER_TOO_SMALL
             && status != STATUS_INFO_LENGTH_MISMATCH
         {
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         println!("return_length: {}", return_length);
 
@@ -303,7 +303,7 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
         );
         if status < 0 {
             eprintln!("NtQueryInformationProcess failed with status: {}", status);
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         buffer.set_len(buf_len);
         buffer.push(0);
@@ -325,7 +325,7 @@ pub fn get_process_name(handler: isize) -> std::io::Result<String> {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleBaseNameW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)
@@ -337,7 +337,7 @@ pub fn get_process_full_name(handler: isize) -> std::io::Result<String> {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleFileNameExW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)

@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs;
@@ -100,7 +99,7 @@ pub fn report_status(
     );
 
     let current_datetime: String = misc_helpers::get_date_time_string_with_miliseconds();
-    let root_status_obj = structs::TopLevelStatus {
+    let root_status_obj = TopLevelStatus {
         version: constants::VERSION.to_string(),
         timestampUTC: current_datetime,
         status: status_obj.clone(),
@@ -239,7 +238,7 @@ pub fn start_event_logger(logger_key: &str) {
     let max_event_file_count: usize = 50;
     let exe_path = misc_helpers::get_current_exe_dir();
     let event_folder = PathBuf::from(
-        common::get_handler_environment(exe_path.to_path_buf())
+        get_handler_environment(exe_path.to_path_buf())
             .eventsFolder
             .to_string(),
     );

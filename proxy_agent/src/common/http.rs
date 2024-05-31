@@ -48,7 +48,7 @@ pub fn receive_data_in_string(stream: &TcpStream) -> std::io::Result<String> {
 pub fn get_response_in_string(http_req: &mut HttpRequest) -> std::io::Result<Response> {
     let addrs = format!("{}:{}", http_req.get_host(), http_req.get_port());
     let mut client = TcpStream::connect(addrs)?;
-    _ = client.write_all(http_req.request.to_raw_string().as_bytes());
+    _ = client.write_all(http_req.request.as_raw_string().as_bytes());
     _ = client.flush();
 
     let data = receive_data_in_string(&client)?;
@@ -358,7 +358,7 @@ mod tests {
                 }
 
                 let mut response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(response.to_raw_string().as_bytes());
+                _ = stream.write_all(response.as_raw_string().as_bytes());
                 _ = stream.flush();
 
                 request.set_body(http::receive_body(&stream, content_length).unwrap());
@@ -389,7 +389,7 @@ mod tests {
         let mut client = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
         let mut request = Request::new("/file".to_string(), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
@@ -453,7 +453,7 @@ mod tests {
         );
         let mut client_stream = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
         client_stream
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();

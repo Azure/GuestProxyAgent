@@ -468,8 +468,8 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 7071u16;
         unsafe {
-            super::MOCK_WIRE_SERVER_IP = Some(ip);
-            super::MOCK_WIRE_SERVER_PORT = Some(port);
+            MOCK_WIRE_SERVER_IP = Some(ip);
+            MOCK_WIRE_SERVER_PORT = Some(port);
         }
 
         thread::spawn(move || {
@@ -477,7 +477,7 @@ mod tests {
         });
         thread::sleep(Duration::from_millis(100));
 
-        match super::update_vm_meta_data() {
+        match update_vm_meta_data() {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -512,8 +512,8 @@ mod tests {
 
         _ = fs::remove_dir_all(&temp_dir);
         unsafe {
-            super::MOCK_WIRE_SERVER_IP = None;
-            super::MOCK_WIRE_SERVER_PORT = None;
+            MOCK_WIRE_SERVER_IP = None;
+            MOCK_WIRE_SERVER_PORT = None;
         }
         server_mock::stop(ip.to_string(), port);
     }

@@ -131,7 +131,7 @@ pub fn install_or_update_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     service_exe_path: PathBuf,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     // if query_service returns Ok, then the service needs to be updated otherwise create a service
     match query_service_status(service_name) {
         Ok(_service) => {
