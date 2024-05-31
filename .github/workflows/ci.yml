@@ -23,6 +23,8 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check -l
+      - name: Clippy
+        run: cargo clippy -- -D warnings
 
   build:
     uses: ./.github/workflows/reusable-build.yml
