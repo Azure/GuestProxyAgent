@@ -28,12 +28,9 @@ pub fn start(ip: String, port: u16) {
 
 pub fn stop(ip: String, port: u16) {
     let stop_request = Request::new("stop".to_string(), "GET".to_string());
-    match TcpStream::connect(format!("{}:{}", ip, port)) {
-        Ok(mut client) => {
-            _ = client.write_all(&stop_request.to_raw_bytes());
-            _ = client.flush();
-        }
-        Err(_) => {}
+    if let Ok(mut client) = TcpStream::connect(format!("{}:{}", ip, port)) {
+        _ = client.write_all(&stop_request.to_raw_bytes());
+        _ = client.flush();
     }
 }
 
@@ -44,13 +41,10 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
     if request.url == "stop" {
         return false;
     }
-    let path: String;
-    match request.get_url() {
-        Some(url) => {
-            path = url.path().to_string().chars().skip(1).collect();
-        }
-        None => path = request.url.chars().skip(1).collect(),
-    }
+    let path: String = match request.get_url() {
+        Some(url) => url.path().to_string().chars().skip(1).collect(),
+        None => request.url.chars().skip(1).collect(),
+    };
     let segments: Vec<&str> = path.split('/').collect();
 
     let mut response = Response::from_status(Response::OK.to_string());
@@ -79,7 +73,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 }
                 response.set_body_as_string(serde_json::to_string(&status).unwrap());
             }
-        } else if segments.len() > 0 && segments[0] == "machine?comp=goalstate" {
+        } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <GoalState xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="goalstate10.xsd">
               <Version>2015-04-05</Version>
