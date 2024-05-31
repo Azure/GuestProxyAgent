@@ -927,8 +927,8 @@ mod tests {
             headers::EXPECT_HEADER_VALUE.to_string(),
         );
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_string().as_bytes());
-        _ = client_stream.flush();
+        client_stream.write_all(request.to_raw_string().as_bytes()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(
             Response::CONTINUE,
@@ -942,8 +942,8 @@ mod tests {
         );
 
         // Send body only after CONTINUE response
-        _ = client_stream.write_all(&request.get_body());
-        _ = client_stream.flush();
+        client_stream.write_all(request.get_body()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(Response::OK, response.status, "response.status must be OK");
         assert_eq!(

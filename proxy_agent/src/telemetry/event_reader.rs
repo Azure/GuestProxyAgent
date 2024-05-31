@@ -479,10 +479,10 @@ mod tests {
 
         match super::update_vm_meta_data() {
             Ok(()) => {
-                _ = logger::write("success updated the vm metadata.".to_string());
+                logger::write("success updated the vm metadata.".to_string());
             }
             Err(e) => {
-                _ = logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
             }
         }
 

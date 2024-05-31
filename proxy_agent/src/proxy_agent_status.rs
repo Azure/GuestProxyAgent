@@ -193,12 +193,8 @@ mod tests {
 
         _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
-        let file_path = temp_test_path.join("status.json".to_string());
-        assert_eq!(
-            file_path.exists(),
-            true,
-            "File does not exist in the directory"
-        );
+        let file_path = temp_test_path.join("status.json");
+        assert!(file_path.exists(), "File does not exist in the directory");
 
         let file_content = misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
             file_path.clone().to_path_buf(),
@@ -217,7 +213,7 @@ mod tests {
         );
         assert!(
             gpa_aggregate_status.proxyConnectionSummary.is_empty()
-                || gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
+                || !gpa_aggregate_status.proxyConnectionSummary.is_empty(),
             "proxyConnectionSummary does not exist"
         );
     }

@@ -33,7 +33,7 @@ fn main() {
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
         proxy_agent_shared::misc_helpers::get_current_version(),
-        args.to_string()
+        args
     ));
 
     match args.action.as_str() {

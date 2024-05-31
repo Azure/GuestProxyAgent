@@ -375,7 +375,7 @@ mod tests {
                     println!("user_name cannot be 'undefined'");
                     continue;
                 }
-                if user_groups.len() > 0 {
+                if user_groups.is_empty() {
                     return;
                 }
             }
@@ -398,8 +398,11 @@ mod tests {
         let base_info = super::query_basic_process_info(handler);
         assert!(base_info.is_ok(), "base_info must be ok");
 
-        assert!(name.len() > 0, "process name should not be empty");
-        assert!(full_name.len() > 0, "process full name should not be empty");
-        assert!(cmd.len() > 0, "process cmd should not be empty");
+        assert!(!name.is_empty(), "process name should not be empty");
+        assert!(
+            !full_name.is_empty(),
+            "process full name should not be empty"
+        );
+        assert!(!cmd.is_empty(), "process cmd should not be empty");
     }
 }
