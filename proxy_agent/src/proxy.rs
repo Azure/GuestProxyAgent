@@ -210,13 +210,11 @@ impl User {
                     user_name = u.name().to_string_lossy().to_string();
                     let g: Option<Vec<users::Group>> =
                         users::get_user_groups(&user_name, u.primary_group_id());
-                    match g {
-                        Some(groups) => {
-                            for group in groups {
-                                user_groups.push(group.name().to_string_lossy().to_string());
-                            }
+
+                    if let Some(groups) = g {
+                        for group in groups {
+                            user_groups.push(group.name().to_string_lossy().to_string());
                         }
-                        None => {}
                     }
                 }
                 None => user_name = UNDEFINED.to_string(),

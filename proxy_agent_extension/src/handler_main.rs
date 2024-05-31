@@ -241,15 +241,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
     }
     #[cfg(not(windows))]
     {
-        let process_running;
-        match get_linux_extension_long_running_process() {
-            Some(_) => {
-                process_running = true;
-            }
-            None => {
-                process_running = false;
-            }
-        }
+        let process_running = get_linux_extension_long_running_process().is_some();
         let mut count = 0;
         loop {
             if process_running {

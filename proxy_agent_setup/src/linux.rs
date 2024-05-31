@@ -47,15 +47,12 @@ fn backup_service_config_file(backup_folder: PathBuf) {
 }
 
 fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
-    match dst_file.parent() {
-        Some(p) => match misc_helpers::try_create_folder(p.to_path_buf()) {
-            Ok(_) => {}
-            Err(e) => {
-                logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
-            }
-        },
-        None => {}
+    if let Some(p) = dst_file.parent() {
+        if let Err(e) = misc_helpers::try_create_folder(p.to_path_buf()) {
+            logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
+        }
     }
+
     match fs::copy(src_file.to_path_buf(), dst_file.to_path_buf()) {
         Ok(_) => {
             logger::write(format!("Copied file {:?} to {:?}", src_file, dst_file));

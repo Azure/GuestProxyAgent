@@ -103,22 +103,21 @@ pub fn start(local_port: u16) -> bool {
         IS_STARTED = true;
     }
 
-    let message;
-    if iptable_redirect {
-        message = helpers::write_startup_event(
+    let message = if iptable_redirect {
+        helpers::write_startup_event(
             "Started Redirector with iptables redirection",
             "start",
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
-        );
+        )
     } else {
-        message = helpers::write_startup_event(
+        helpers::write_startup_event(
             "Started Redirector with cgroup redirection",
             "start",
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
-        );
-    }
+        )
+    };
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
@@ -223,14 +222,11 @@ fn get_local_ip() -> Option<String> {
             continue;
         }
 
-        match nic.address {
-            Some(addr) => {
-                if let Some(socket_addr) = addr.as_sockaddr_in() {
-                    return Some(socket_addr.ip().to_string());
-                }
-            }
-            _ => {}
-        }
+        if let Some(addr) = nic.address {
+            if let Some(socket_addr) = addr.as_sockaddr_in() {
+           return Some(socket_addr.ip().to_string());
+    }
+              }
     }
 
     return None;

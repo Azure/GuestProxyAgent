@@ -85,12 +85,11 @@ fn config_one_firewall_redirection(
     enable: bool,
     exclude_gid: &str,
 ) -> bool {
-    let iptable_cmd;
-    if enable {
-        iptable_cmd = "-A";
+    let iptable_cmd= if enable {
+        "-A"
     } else {
-        iptable_cmd = "-D";
-    }
+        "-D"
+    };
     let local_endpoint = format!("127.0.0.1:{}", local_port);
 
     let args = vec![
