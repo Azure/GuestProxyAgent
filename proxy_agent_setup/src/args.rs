@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 pub struct Args {
@@ -61,8 +63,10 @@ impl Args {
         println!("  action: install, uninstall, backup, restore, purge, or help");
         println!("  service: optional parameter for uninstall or restore: service or package. Default is package.");
     }
+}
 
-    pub fn to_string(&self) -> String {
-        format!("{} {}", self.action, self.uninstall_mode)
+impl Display for Args {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.action, self.uninstall_mode)
     }
 }

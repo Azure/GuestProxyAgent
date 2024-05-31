@@ -257,7 +257,7 @@ mod tests {
 
         let long_os_version = super::get_long_os_version();
         assert_eq!(
-            format!("Windows:{}-{}", os_name, os_version.to_string()),
+            format!("Windows:{}-{}", os_name, os_version),
             long_os_version,
             "long_os_version mismatch"
         )
