@@ -751,7 +751,7 @@ mod tests {
             .spawn(move || {
                 let listener = TcpListener::bind(PROXY_ENDPOINT_ADDRESS).unwrap();
 
-                let mut id = 0u128;
+                let mut id = 0;
                 for stream in listener.incoming() {
                     if cloned_shut_down.load(Ordering::Relaxed) {
                         break;
