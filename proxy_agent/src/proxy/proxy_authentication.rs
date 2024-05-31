@@ -211,7 +211,7 @@ impl Authenticate for IMDS {
     }
 
     fn to_string(&self) -> String {
-        format!("IMDS")
+        "IMDS".to_string()
     }
 }
 
@@ -248,7 +248,7 @@ impl Authenticate for ProxyAgent {
     }
 
     fn to_string(&self) -> String {
-        format!("ProxyAgent")
+        "ProxyAgent".to_string()
     }
 }
 
@@ -259,7 +259,7 @@ impl Authenticate for Default {
     }
 
     fn to_string(&self) -> String {
-        format!("Default")
+        "Default".to_string()
     }
 }
 

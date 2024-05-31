@@ -29,7 +29,7 @@ impl Response {
 
     pub fn new(status: String, body: String) -> Self {
         Response {
-            status: status,
+            status,
             version: "HTTP/1.1".to_string(),
             headers: Headers::new(),
             body: body.as_bytes().to_vec(),
@@ -54,7 +54,7 @@ impl Response {
         };
 
         Response {
-            version: version,
+            version,
             status: status.trim().to_string(),
             headers: Headers::new(),
             body: Vec::new(),
@@ -148,13 +148,13 @@ impl Response {
     }
 
     pub fn get_body_as_string(&self) -> std::io::Result<String> {
-        match String::from_utf8(self.body.clone()) {
-            Ok(data) => return Ok(data),
+        return match String::from_utf8(self.body.clone()) {
+            Ok(data) => Ok(data),
             Err(e) => {
                 let message = format!("Failed convert the body to string, error {}", e);
-                return Err(Error::new(ErrorKind::InvalidData, message));
+                Err(Error::new(ErrorKind::InvalidData, message))
             }
-        }
+        };
     }
 
     pub fn set_body(&mut self, body: Vec<u8>) {

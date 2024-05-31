@@ -133,13 +133,13 @@ impl Headers {
         let content_length_key = CONTENT_LENGTH_HEADER_NAME.to_lowercase();
         if self.map.contains_key(&content_length_key) {
             let length = self.map[&content_length_key].1.to_string();
-            match length.parse::<usize>() {
-                Ok(len) => return Ok(len),
+            return match length.parse::<usize>() {
+                Ok(len) => Ok(len),
                 Err(e) => {
                     let message = format!("Failed parse content-length header, error {}", e);
-                    return Err(Error::new(ErrorKind::InvalidData, message));
+                    Err(Error::new(ErrorKind::InvalidData, message))
                 }
-            }
+            };
         }
 
         Ok(0)

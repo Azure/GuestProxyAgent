@@ -101,10 +101,7 @@ pub fn start_event_threads() {
 }
 
 fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+    let provision_dir = provision_dir.unwrap_or_else(|| config::get_keys_dir());
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
     _ = misc_helpers::try_create_folder(provision_dir.to_path_buf());
@@ -179,25 +176,20 @@ pub fn get_provision_status_wait(
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, emtpy means provision success or provision failed.
 fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+    let provision_dir = provision_dir.unwrap_or_else(|| config::get_keys_dir());
 
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_FILE_NAME);
     if !status_file.exists() {
         return (false, String::new());
     }
 
-    match std::fs::read_to_string(status_file) {
-        Ok(status) => {
-            return (true, status);
-        }
+    return match std::fs::read_to_string(status_file) {
+        Ok(status) => (true, status),
         Err(e) => {
             println!("Failed to read status.tag file with error: {}", e);
-            return (false, String::new());
+            (false, String::new())
         }
-    }
+    };
 }
 
 #[cfg(test)]

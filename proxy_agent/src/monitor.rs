@@ -51,13 +51,13 @@ fn start(mut interval: Duration) {
 }
 
 fn redirect_should_run() -> bool {
-    if key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE {
-        return true;
+    return if key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE {
+        true
     } else if config::get_start_redirector() {
-        return true;
+        true
     } else {
-        return false;
-    }
+        false
+    };
 }
 
 pub fn stop() {

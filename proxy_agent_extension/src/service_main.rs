@@ -685,7 +685,7 @@ mod tests {
                 expected_status_file.to_path_buf(),
             )
             .unwrap();
-            assert!(handler_status.len() == 1);
+            assert_eq!(handler_status.len(), 1);
             assert_eq!(handler_status[0].status.code, 0);
 
             let status_folder_bad = temp_test_path.join("status_bad");
@@ -708,7 +708,7 @@ mod tests {
                 expected_status_file_bad.to_path_buf(),
             )
             .unwrap();
-            assert!(handler_status_bad.len() == 1);
+            assert_eq!(handler_status_bad.len(), 1);
             assert_eq!(handler_status_bad[0].status.code, 1);
 
             //Clean up and ignore the clean up errors

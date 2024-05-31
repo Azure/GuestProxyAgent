@@ -412,7 +412,7 @@ mod tests {
             expected_status_file.to_path_buf(),
         )
         .unwrap();
-        assert!(status_obj.len() == 1);
+        assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.name, "test".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);
@@ -455,7 +455,7 @@ mod tests {
 
         let should_report_status: Error =
             common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf()).unwrap_err();
-        assert!(should_report_status.kind() == ErrorKind::InvalidInput);
+        assert_eq!(should_report_status.kind(), ErrorKind::InvalidInput);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "".to_string());
 
@@ -505,7 +505,7 @@ mod tests {
             expected_status_file.to_path_buf(),
         )
         .unwrap();
-        assert!(status_obj.len() == 1);
+        assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.operation, "Enable");
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -536,7 +536,7 @@ mod tests {
             expected_heartbeat_file.to_path_buf(),
         )
         .unwrap();
-        assert!(heartbeat_obj.len() == 1);
+        assert_eq!(heartbeat_obj.len(), 1);
         assert_eq!(heartbeat_obj[0].heartbeat.status, "test".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);

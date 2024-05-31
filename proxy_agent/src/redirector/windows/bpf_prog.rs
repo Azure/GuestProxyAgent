@@ -355,8 +355,8 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                 };
 
                 // insert process id entry.
-                let key = sock_addr_skip_process_entry { pid: pid };
-                let value = sock_addr_skip_process_entry { pid: pid };
+                let key = sock_addr_skip_process_entry { pid };
+                let value = sock_addr_skip_process_entry { pid };
 
                 match bpf_map_update_elem(
                     map_fd,

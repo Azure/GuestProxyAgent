@@ -18,7 +18,7 @@ impl WireServerClient {
     pub fn new(ip: &str, port: u16) -> Self {
         WireServerClient {
             ip: ip.to_string(),
-            port: port,
+            port,
         }
     }
 

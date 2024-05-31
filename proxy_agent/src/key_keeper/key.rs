@@ -135,7 +135,7 @@ impl AuthorizationItem {
         AuthorizationItem {
             defaultAccess: self.defaultAccess.to_string(),
             mode: self.mode.to_string(),
-            rules: rules,
+            rules,
             id: self.id.to_string(),
         }
     }
@@ -463,7 +463,7 @@ impl KeyStatus {
     }
 
     pub fn get_secure_channel_state(&self) -> String {
-        if self.version == "2.0" {
+        return if self.version == "2.0" {
             match &self.secureChannelEnabled {
                 Some(s) => {
                     if *s {
@@ -503,54 +503,54 @@ impl KeyStatus {
                             None => return super::DISABLE_STATE.to_string(),
                         }
 
-                        return format!("{} - {}", wireserver, imds);
+                        format!("{} - {}", wireserver, imds)
                     } else {
-                        return super::DISABLE_STATE.to_string();
+                        super::DISABLE_STATE.to_string()
                     }
                 }
-                None => return super::DISABLE_STATE.to_string(),
+                None => super::DISABLE_STATE.to_string(),
             }
         } else {
             // version 1.0
             match &self.secureChannelState {
-                Some(s) => return s.to_lowercase(),
-                None => return super::DISABLE_STATE.to_string(),
+                Some(s) => s.to_lowercase(),
+                None => super::DISABLE_STATE.to_string(),
             }
-        }
+        };
     }
 
     pub fn get_wireserver_rule_id(&self) -> String {
-        match self.get_wireserver_rules() {
-            Some(item) => return item.id.to_string(),
-            None => return String::new(),
-        }
+        return match self.get_wireserver_rules() {
+            Some(item) => item.id.to_string(),
+            None => String::new(),
+        };
     }
 
     pub fn get_imds_rule_id(&self) -> String {
-        match self.get_imds_rules() {
-            Some(item) => return item.id.to_string(),
-            None => return String::new(),
-        }
+        return match self.get_imds_rules() {
+            Some(item) => item.id.to_string(),
+            None => String::new(),
+        };
     }
 
     pub fn get_wireserver_rules(&self) -> Option<AuthorizationItem> {
-        match &self.authorizationRules {
+        return match &self.authorizationRules {
             Some(rules) => match &rules.wireserver {
-                Some(item) => return Some(item.clone()),
-                None => return None,
+                Some(item) => Some(item.clone()),
+                None => None,
             },
-            None => return None,
-        }
+            None => None,
+        };
     }
 
     pub fn get_imds_rules(&self) -> Option<AuthorizationItem> {
-        match &self.authorizationRules {
+        return match &self.authorizationRules {
             Some(rules) => match &rules.imds {
-                Some(item) => return Some(item.clone()),
-                None => return None,
+                Some(item) => Some(item.clone()),
+                None => None,
             },
-            None => return None,
-        }
+            None => None,
+        };
     }
 
     pub fn get_wire_server_mode(&self) -> String {
@@ -567,11 +567,11 @@ impl KeyStatus {
                 Some(s) => s.to_lowercase(),
                 None => "disabled".to_string(),
             };
-            if state == "wireserver" || state == "wireserverandimds" {
-                return ENFORCE_MODE.to_string();
+            return if state == "wireserver" || state == "wireserverandimds" {
+                ENFORCE_MODE.to_string()
             } else {
-                return AUDIT_MODE.to_string();
-            }
+                AUDIT_MODE.to_string()
+            };
         }
     }
 
@@ -589,11 +589,11 @@ impl KeyStatus {
                 Some(s) => s.to_lowercase(),
                 None => "disabled".to_string(),
             };
-            if state == "wireserverandimds" {
-                return ENFORCE_MODE.to_string();
+            return if state == "wireserverandimds" {
+                ENFORCE_MODE.to_string()
             } else {
-                return AUDIT_MODE.to_string();
-            }
+                AUDIT_MODE.to_string()
+            };
         }
     }
 

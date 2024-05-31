@@ -15,10 +15,7 @@ pub struct HttpRequest {
 
 impl HttpRequest {
     pub fn new(uri: Url, request: Request) -> Self {
-        HttpRequest {
-            uri: uri,
-            request: request,
-        }
+        HttpRequest { uri, request }
     }
 
     pub fn new_proxy_agent_request(
@@ -80,7 +77,7 @@ impl HttpRequest {
 
     pub fn clone_without_body(uri: Url, request: &Request) -> Self {
         HttpRequest {
-            uri: uri,
+            uri,
             request: request.clone_without_body(),
         }
     }
@@ -93,9 +90,6 @@ impl HttpRequest {
     }
 
     pub fn get_port(&self) -> u16 {
-        match self.uri.port_or_known_default() {
-            Some(port) => port,
-            None => 0,
-        }
+        self.uri.port_or_known_default().unwrap_or_else(|| 0)
     }
 }

@@ -33,9 +33,9 @@ impl Request {
 
     pub fn create(uri: String, method: String, version: String) -> Self {
         Request {
-            method: method,
+            method,
             url: uri,
-            version: version,
+            version,
             headers: Headers::new(),
             body: Vec::new(),
         }
@@ -261,13 +261,13 @@ impl Request {
     }
 
     fn get_body_as_string(&self) -> std::io::Result<String> {
-        match String::from_utf8(self.body.clone()) {
-            Ok(data) => return Ok(data),
+        return match String::from_utf8(self.body.clone()) {
+            Ok(data) => Ok(data),
             Err(e) => {
                 let message = format!("Failed convert the body to string, error {}", e);
-                return Err(Error::new(ErrorKind::InvalidData, message));
+                Err(Error::new(ErrorKind::InvalidData, message))
             }
-        }
+        };
     }
 
     pub fn get_body(&self) -> &Vec<u8> {

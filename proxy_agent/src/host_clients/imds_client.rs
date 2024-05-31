@@ -15,7 +15,7 @@ impl ImdsClient {
     pub fn new(ip: &str, port: u16) -> Self {
         ImdsClient {
             ip: ip.to_string(),
-            port: port,
+            port,
         }
     }
 

@@ -93,7 +93,7 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
     }
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
-        status: status,
+        status,
         monitorStatus: monitor::get_status(),
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,

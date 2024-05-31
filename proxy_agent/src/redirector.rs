@@ -224,10 +224,7 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
 
 pub fn get_ebpf_file_path() -> PathBuf {
     // get ebpf file full path from environment variable
-    let mut bpf_file_path = match config::get_ebpf_file_full_path() {
-        Some(file_path) => file_path,
-        None => PathBuf::new(),
-    };
+    let mut bpf_file_path = config::get_ebpf_file_full_path().unwrap_or_else(|| PathBuf::new());
     let ebpf_file_name = config::get_ebpf_program_name();
     #[cfg(not(windows))]
     {

@@ -80,8 +80,8 @@ impl AuthorizationRules {
 
                         rules.push(Rule {
                             roleName: role_name,
-                            privileges: privileges,
-                            identities: identities,
+                            privileges,
+                            identities,
                         });
                     }
                     Some(rules)
@@ -94,15 +94,12 @@ impl AuthorizationRules {
         AuthorizationRules {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
             mode: authorization_item.mode.to_lowercase(),
-            rules: rules,
+            rules,
         }
     }
 
     pub fn clone(&self) -> AuthorizationRules {
-        match misc_helpers::json_clone(self) {
-            Ok(rules) => rules,
-            Err(_) => AuthorizationRules::new(),
-        }
+        misc_helpers::json_clone(self).unwrap_or_else(|_| AuthorizationRules::new())
     }
 
     pub fn is_allowed(&self, connection_id: u128, request_url: String, claims: Claims) -> bool {
