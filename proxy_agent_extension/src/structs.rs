@@ -151,19 +151,16 @@ mod tests {
             "heartbeatFile mismatch"
         );
 
-        match handlerEnvironment.deploymentid {
-            Some(deploymentid) => {
-                assert_eq!("000".to_string(), deploymentid, "deploymentid mismatch")
-            }
-            None => assert!(false, "deploymentid not found"),
-        }
-
-        match handlerEnvironment.rolename {
-            Some(rolename) => {
-                assert_eq!("test_rolename".to_string(), rolename, "rolename mismatch")
-            }
-            None => assert!(false, "rolename not found"),
-        }
+        assert_eq!(
+            "000".to_string(),
+            handlerEnvironment.deploymentid.unwrap(),
+            "deploymentid mismatch"
+        );
+        assert_eq!(
+            "test_rolename".to_string(),
+            handlerEnvironment.rolename.unwrap(),
+            "rolename mismatch"
+        );
     }
 
     #[test]

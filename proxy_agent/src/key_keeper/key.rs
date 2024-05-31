@@ -9,6 +9,7 @@ use crate::{
 };
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
     io::{Error, ErrorKind},
@@ -568,9 +569,11 @@ impl KeyStatus {
             }
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        format!(
+impl Display for KeyStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f,
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
             self.authorizationScheme,
             self.keyDeliveryMethod,

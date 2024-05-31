@@ -170,10 +170,7 @@ fn poll_secure_channel_status(
             None => guid = String::new(),
         }
 
-        logger::write_information(format!(
-            "Got key status successfully: {}.",
-            status.to_string()
-        ));
+        logger::write_information(format!("Got key status successfully: {}.", status));
 
         let wireserver_rule_id = status.get_wireserver_rule_id();
         let imds_rule_id = status.get_imds_rule_id();

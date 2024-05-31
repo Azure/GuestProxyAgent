@@ -646,7 +646,7 @@ mod tests {
             let mut test_good = temp_test_path.clone();
             test_good.push("test.ps1");
             let mut file = fs::File::create(&test_good).unwrap();
-            file.write(b"\"Hello World\"").unwrap();
+            file.write_all(b"\"Hello World\"").unwrap();
 
             let output = Command::new("powershell.exe").args(&test_good).output();
 
