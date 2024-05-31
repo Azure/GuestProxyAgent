@@ -15,10 +15,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
 use std::process;
 use std::time::Duration;
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 #[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";
