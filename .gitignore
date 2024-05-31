@@ -13,6 +13,8 @@
 /rpmbuild/SRPMS/
 /debbuild/
 
+.idea/
+
 # ignore the nuget restore packages
 /packages/
 
