@@ -751,21 +751,19 @@ mod tests {
             .spawn(move || {
                 let listener = TcpListener::bind(PROXY_ENDPOINT_ADDRESS).unwrap();
 
-                let mut id = 0;
-                for stream in listener.incoming() {
+                for (id, stream) in listener.incoming().enumerate() {
                     if cloned_shut_down.load(Ordering::Relaxed) {
                         break;
                     }
                     let stream = stream.unwrap();
                     let mut connection = Connection {
                         stream,
-                        id,
+                        id: id.try_into().unwrap(),
                         now: Instant::now(),
                         cliams: None,
                         ip: String::new(),
                         port: 0,
                     };
-                    id += 1;
                     proxy_connection_stream(&mut connection);
                 }
             })
