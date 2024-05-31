@@ -127,7 +127,7 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
     #[cfg(not(windows))]
     {
         println!("Not support query service on this platform");
-        return PathBuf::new();
+        PathBuf::new()
     }
 }
 
@@ -153,8 +153,8 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     }
     #[cfg(not(windows))]
     {
-        message = format!("Not support query service on this platform");
-        return (false, message);
+        message = "Not support query service on this platform".to_string();
+        (false, message)
     }
 }
 
