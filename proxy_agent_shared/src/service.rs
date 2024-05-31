@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 #[cfg(windows)]
 use crate::logger_manager;
-#[cfg(windows)]
 use std::io;
 
 pub fn install_service(
