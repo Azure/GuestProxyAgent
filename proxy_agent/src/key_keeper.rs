@@ -437,14 +437,11 @@ mod tests {
             "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"        
         }"#;
         let key: Key = serde_json::from_str(key_str).unwrap();
-        let mut key_file = temp_test_path.to_path_buf().join(key.guid.to_string());
+        let mut key_file = temp_test_path.to_path_buf().join(key.guid.clone());
         key_file.set_extension("key");
         _ = misc_helpers::json_write_to_file(&key, key_file);
 
-        assert_eq!(
-            true,
-            super::check_local_key(temp_test_path.to_path_buf(), &key)
-        );
+        assert!(super::check_local_key(temp_test_path.to_path_buf(), &key));
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -505,7 +502,7 @@ mod tests {
 
         let key_files: Vec<std::path::PathBuf> = misc_helpers::get_files(&keys_dir).unwrap();
         assert!(
-            key_files.len() == 0,
+            key_files.is_empty(),
             "Should not write key file at disable secure channel state"
         );
 

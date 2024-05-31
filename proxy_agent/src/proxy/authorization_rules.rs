@@ -201,9 +201,9 @@ mod tests {
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         let _clone_rules = rules.clone();
-        assert_eq!(rules.defaultAllowed, false);
+        assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "enforce");
-        assert_eq!(rules.rules.is_some(), true);
+        assert!(rules.rules.is_some());
 
         let mut claims = Claims {
             userId: 0,
@@ -218,9 +218,9 @@ mod tests {
         };
         // assert the claim is allowed given the rules above
         let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
+        assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
         claims.userName = "test1".to_string();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), false);
+        assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
 
         // Test Audit Mode
         let access_control_rules = AccessControlRules {
@@ -252,9 +252,9 @@ mod tests {
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        assert_eq!(rules.defaultAllowed, false);
+        assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "audit");
-        assert_eq!(rules.rules.is_some(), true);
+        assert!(rules.rules.is_some());
 
         // Test Disabled Mode
         let access_control_rules = AccessControlRules {
@@ -286,12 +286,12 @@ mod tests {
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        assert_eq!(rules.defaultAllowed, false);
+        assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "disabled");
-        assert_eq!(rules.rules.is_some(), true);
+        assert!(rules.rules.is_some());
 
         let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), true);
+        assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
 
         // Test enforce mode, identity not match
         let access_control_rules = AccessControlRules {
@@ -323,11 +323,11 @@ mod tests {
             id: "0".to_string(),
         };
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
-        assert_eq!(rules.defaultAllowed, false);
+        assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "enforce");
-        assert_eq!(rules.rules.is_some(), true);
+        assert!(rules.rules.is_some());
 
         let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert_eq!(rules.is_allowed(0, url.to_string(), claims.clone()), false);
+        assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
     }
 }

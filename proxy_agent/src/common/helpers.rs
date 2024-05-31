@@ -121,18 +121,16 @@ mod tests {
         println!("compute_signature: {result}");
         let invalid_hex_encoded_key =
             "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
-        match super::compute_signature(invalid_hex_encoded_key.to_string(), message.as_bytes()) {
-            Ok(_) => {
-                assert!(false, "invalid key should fail.");
-            }
-            Err(e) => {
-                assert_eq!(ErrorKind::InvalidInput, e.kind(), "ErrorKind mismatch");
-                let error = e.to_string();
-                assert!(
-                    error.contains(invalid_hex_encoded_key),
-                    "Error does not contains the invalid key"
-                )
-            }
-        }
+        let result =
+            super::compute_signature(invalid_hex_encoded_key.to_string(), message.as_bytes());
+        assert!(result.is_err(), "invalid key should fail.");
+
+        let e = result.unwrap_err();
+        assert_eq!(ErrorKind::InvalidInput, e.kind(), "ErrorKind mismatch");
+        let error = e.to_string();
+        assert!(
+            error.contains(invalid_hex_encoded_key),
+            "Error does not contains the invalid key"
+        )
     }
 }

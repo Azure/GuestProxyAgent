@@ -260,7 +260,7 @@ mod tests {
         );
 
         let event_threads_initialized =
-            unsafe { super::LOGGER_THREADS_INITIALIZED.lock().unwrap().clone() };
+            unsafe { *super::LOGGER_THREADS_INITIALIZED.lock().unwrap() };
         assert!(event_threads_initialized);
 
         // write status.tag file
@@ -268,7 +268,7 @@ mod tests {
         let provision_status = super::get_provision_status(Some(temp_test_path.to_path_buf()));
         assert!(provision_status.0, "provision_status.0 must be true");
         assert!(
-            provision_status.1.len() > 0,
+            !provision_status.1.is_empty(),
             "provision_status.1 should not empty"
         );
 

@@ -418,7 +418,7 @@ mod tests {
         }
 
         let temp_dir = env::temp_dir();
-        _ = start_async(temp_dir, Duration::from_millis(1000), false);
+        start_async(temp_dir, Duration::from_millis(1000), false);
 
         let mut wait_milli_sec: i32 = 100;
         while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed) {

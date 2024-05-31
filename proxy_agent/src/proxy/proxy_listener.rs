@@ -697,7 +697,7 @@ mod tests {
             .unwrap();
         client.flush().unwrap();
 
-        let response = http::receive_response_data(&mut client).unwrap();
+        let response = http::receive_response_data(&client).unwrap();
 
         // stop listener
         proxy_listener::stop(port);
@@ -758,14 +758,14 @@ mod tests {
                     }
                     let stream = stream.unwrap();
                     let mut connection = Connection {
-                        stream: stream,
-                        id: id,
+                        stream,
+                        id,
                         now: Instant::now(),
                         cliams: None,
                         ip: String::new(),
                         port: 0,
                     };
-                    id = id + 1;
+                    id += 1;
                     proxy_connection_stream(&mut connection);
                 }
             })
@@ -837,7 +837,7 @@ mod tests {
         let stream = &connection.stream;
         // set read timeout to handle the case when body content is less than Content-Length in request header
         _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-        let mut request = http::receive_request_data(&stream).unwrap();
+        let mut request = http::receive_request_data(stream).unwrap();
         let claims = Claims {
             userId: 999,
             userName: "test user".to_string(),
@@ -907,8 +907,8 @@ mod tests {
         // post request with full body directly
         request.set_body(body);
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_bytes());
-        _ = client_stream.flush();
+        client_stream.write_all(&request.to_raw_bytes()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(
             Response::BAD_REQUEST,
@@ -927,7 +927,9 @@ mod tests {
             headers::EXPECT_HEADER_VALUE.to_string(),
         );
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
-        client_stream.write_all(request.to_raw_string().as_bytes()).unwrap();
+        client_stream
+            .write_all(request.to_raw_string().as_bytes())
+            .unwrap();
         client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(

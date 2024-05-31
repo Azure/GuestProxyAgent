@@ -114,19 +114,9 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         let client = TcpStream::connect(format!("{}:{}", ip, port)).unwrap();
-        match super::connect_with_redirect_record(ip.to_string(), port, &client) {
-            Ok(_) => {
-                // test failed if no error thrown
-                assert!(false);
-            }
-            Err(e) => {
-                // expected to throw error
-                let error = format!("expected connect_with_redirect_record_test error: {}", e);
-                assert!(
-                    error.contains("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS")
-                );
-            }
-        }
+        let e = super::connect_with_redirect_record(ip.to_string(), port, &client).unwrap_err();
+        let error = format!("expected connect_with_redirect_record_test error: {}", e);
+        assert!(error.contains("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS"));
 
         server_mock::stop(ip.to_string(), port);
     }
