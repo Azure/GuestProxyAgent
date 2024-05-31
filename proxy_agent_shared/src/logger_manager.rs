@@ -7,7 +7,7 @@ use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-static mut LOGGERS: Lazy<HashMap<String, Arc<Mutex<RollingLogger>>>> = Lazy::new(|| HashMap::new());
+static mut LOGGERS: Lazy<HashMap<String, Arc<Mutex<RollingLogger>>>> = Lazy::new(HashMap::new);
 static mut FIRST_LOGGER_KEY: Lazy<Option<Arc<Mutex<String>>>> = Lazy::new(|| None);
 
 pub fn init_logger(

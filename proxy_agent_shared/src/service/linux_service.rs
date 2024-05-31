@@ -75,7 +75,7 @@ fn enable_service(service_name: &str) {
 fn delete_service_config_file(service_name: &str) {
     let config_file_path =
         PathBuf::from(linux::SERVICE_CONFIG_FOLDER_PATH).join(format!("{}.service", service_name));
-    match fs::remove_file(config_file_path.to_path_buf()) {
+    match fs::remove_file(&config_file_path) {
         Ok(_) => {
             reload_systemd_daemon();
         }

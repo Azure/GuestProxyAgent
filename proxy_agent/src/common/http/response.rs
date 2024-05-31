@@ -29,7 +29,7 @@ impl Response {
 
     pub fn new(status: String, body: String) -> Self {
         Response {
-            status: status,
+            status,
             version: "HTTP/1.1".to_string(),
             headers: Headers::new(),
             body: body.as_bytes().to_vec(),
@@ -40,7 +40,7 @@ impl Response {
     // HTTP-Version Status-Code Reason-Phrase CRLF
     pub fn from_first_line(first_line: String) -> Self {
         // parse first line, format "{version} {status}"
-        let split = first_line.find(" ");
+        let split = first_line.find(' ');
         let version;
         let mut status = "".to_string();
         match split {
@@ -49,12 +49,12 @@ impl Response {
                 status = first_line.chars().skip(index + 1).collect();
             }
             None => {
-                version = String::from(first_line);
+                version = first_line;
             }
         };
 
         Response {
-            version: version,
+            version,
             status: status.trim().to_string(),
             headers: Headers::new(),
             body: Vec::new(),
@@ -73,7 +73,7 @@ impl Response {
                 body = raw_data.chars().skip(index + 4).collect(); // index+2 because of "\r\n\r\n"
             }
             None => {
-                first_part = String::from(raw_data);
+                first_part = raw_data;
             }
         }
 
@@ -87,7 +87,7 @@ impl Response {
                 raw_headers = first_part.chars().skip(index + 2).collect();
             }
             None => {
-                first_line = String::from(first_part);
+                first_line = first_part;
             }
         }
 
@@ -98,7 +98,7 @@ impl Response {
         response
     }
 
-    pub fn to_raw_string(&mut self) -> String {
+    pub fn as_raw_string(&mut self) -> String {
         let mut raw_response = self.get_raw_string_without_body();
         match self.get_body_as_string() {
             Ok(data) => raw_response.push_str(&data),
@@ -149,10 +149,10 @@ impl Response {
 
     pub fn get_body_as_string(&self) -> std::io::Result<String> {
         match String::from_utf8(self.body.clone()) {
-            Ok(data) => return Ok(data),
+            Ok(data) => Ok(data),
             Err(e) => {
                 let message = format!("Failed convert the body to string, error {}", e);
-                return Err(Error::new(ErrorKind::InvalidData, message));
+                Err(Error::new(ErrorKind::InvalidData, message))
             }
         }
     }
@@ -166,7 +166,7 @@ impl Response {
     }
 
     pub fn is_continue_response(&self) -> bool {
-        self.status == Response::CONTINUE.to_string()
+        self.status == *Response::CONTINUE
     }
 
     pub fn get_body_len(&self) -> usize {
@@ -198,7 +198,7 @@ mod tests {
         raw_string.push_str(super::super::CRLF);
 
         let mut response = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = response.to_raw_string();
+        let to_raw_string = response.as_raw_string();
         assert_eq!(
             raw_string.len(), // cannot compare the content of the string since the headers are not in the same order in to_raw_string
             to_raw_string.len(),
@@ -209,7 +209,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("Löwe 老虎 Léopard Gepardi");
         let mut request = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),
@@ -220,7 +220,7 @@ mod tests {
         let mut raw_string = raw_string.to_string();
         raw_string.push_str("\n\nAother line\n");
         let mut request = Response::from_raw_data(raw_string.to_string());
-        let to_raw_string = request.to_raw_string();
+        let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),

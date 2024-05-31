@@ -45,7 +45,7 @@ fn heartbeat_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(exe_path);
     let heartbeat_file_path: PathBuf = handler_environment.heartbeatFile.to_string().into();
-    let duration = std::time::Duration::from_secs(5 * 60);
+    let duration = Duration::from_secs(5 * 60);
     loop {
         let heartbeat_obj = HeartbeatObj {
             status: constants::HEARTBEAT_READY_STATUS.to_string(),
@@ -89,8 +89,7 @@ fn monitor_thread() {
                 telemetry::event_logger::INFO_LEVEL,
                 format!(
                     "Current seq_no: {} does not match cached seq no {}",
-                    current_seq_no.to_string(),
-                    cache_seq_no.to_string()
+                    current_seq_no, cache_seq_no
                 ),
                 "monitor_thread",
                 "service_main",
@@ -144,17 +143,14 @@ fn monitor_thread() {
         );
 
         // Time taken to report success for proxy agent service after update
-        if status.status == constants::SUCCESS_STATUS.to_string() {
-            match proxy_agent_update_reported.as_ref() {
-                Some(proxy_agent_update_reported) => {
-                    proxy_agent_update_reported.write_event(
-                        "Proxy Agent Service is updated and reporting successful status",
-                        "monitor_thread",
-                        "service_main",
-                        logger_key,
-                    );
-                }
-                None => {}
+        if status.status == *constants::SUCCESS_STATUS {
+            if let Some(proxy_agent_update_reported) = proxy_agent_update_reported.as_ref() {
+                proxy_agent_update_reported.write_event(
+                    "Proxy Agent Service is updated and reporting successful status",
+                    "monitor_thread",
+                    "service_main",
+                    logger_key,
+                );
             }
             proxy_agent_update_reported = None;
         }
@@ -189,7 +185,7 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                             code: constants::STATUS_CODE_OK,
                             formattedMessage: FormattedMessage {
                                 lang: constants::LANG_EN_US.to_string(),
-                                message: format!("Ebpf Drivers successfully queried."),
+                                message: "Ebpf Drivers successfully queried.".to_string(),
                             },
                         });
                         substatus
@@ -316,30 +312,30 @@ fn report_proxy_agent_aggregate_status(
             status.status = status_state_obj.update_state(false);
             status.configurationAppliedTime = misc_helpers::get_date_time_string();
             status.substatus = {
-                let mut substatus = Vec::new();
-                substatus.push(SubStatus {
-                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: error_message.to_string(),
+                vec![
+                    SubStatus {
+                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                        status: constants::TRANSITIONING_STATUS.to_string(),
+                        code: constants::STATUS_CODE_NOT_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: error_message.to_string(),
+                        },
                     },
-                });
-                substatus.push(SubStatus {
-                    name: constants::PLUGIN_STATUS_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: error_message.to_string(),
+                    SubStatus {
+                        name: constants::PLUGIN_STATUS_NAME.to_string(),
+                        status: constants::TRANSITIONING_STATUS.to_string(),
+                        code: constants::STATUS_CODE_NOT_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: error_message.to_string(),
+                        },
                     },
-                });
-                substatus
+                ]
             };
         }
     }
-    if *restored_in_error == false {
+    if !(*restored_in_error) {
         *restored_in_error = restore_purge_proxyagent(status);
     }
 }
@@ -368,42 +364,40 @@ fn extension_substatus(
         );
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
         status.substatus = {
-            let mut substatus = Vec::new();
-            substatus.push(SubStatus {
-                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                status: constants::TRANSITIONING_STATUS.to_string(),
-                code: constants::STATUS_CODE_NOT_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: version_mismatch_message.to_string(),
+            vec![
+                SubStatus {
+                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                    status: constants::TRANSITIONING_STATUS.to_string(),
+                    code: constants::STATUS_CODE_NOT_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: version_mismatch_message.to_string(),
+                    },
                 },
-            });
-            substatus.push(SubStatus {
-                name: constants::PLUGIN_STATUS_NAME.to_string(),
-                status: constants::TRANSITIONING_STATUS.to_string(),
-                code: constants::STATUS_CODE_NOT_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: version_mismatch_message.to_string(),
+                SubStatus {
+                    name: constants::PLUGIN_STATUS_NAME.to_string(),
+                    status: constants::TRANSITIONING_STATUS.to_string(),
+                    code: constants::STATUS_CODE_NOT_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: version_mismatch_message.to_string(),
+                    },
                 },
-            });
-            substatus
+            ]
         };
     }
     // Success Status and report to status file for CRP to read from
     else {
-        let substatus_proxy_agent_message;
-        match serde_json::to_string(&proxy_agent_aggregate_status_obj) {
-            Ok(proxy_agent_aggregate_status) => {
-                substatus_proxy_agent_message = proxy_agent_aggregate_status;
-            }
-            Err(e) => {
-                let error_message =
-                    format!("Error in serializing proxy agent aggregate status: {}", e);
-                logger::write(error_message.to_string());
-                substatus_proxy_agent_message = error_message;
-            }
-        }
+        let substatus_proxy_agent_message =
+            match serde_json::to_string(&proxy_agent_aggregate_status_obj) {
+                Ok(proxy_agent_aggregate_status) => proxy_agent_aggregate_status,
+                Err(e) => {
+                    let error_message =
+                        format!("Error in serializing proxy agent aggregate status: {}", e);
+                    logger::write(error_message.to_string());
+                    error_message
+                }
+            };
         let substatus_proxy_agent_connection_message: String;
         if !proxy_agent_aggregate_status_top_level
             .proxyConnectionSummary
@@ -427,32 +421,32 @@ fn extension_substatus(
                 }
             }
         } else {
-            logger::write(("proxy connection summary is empty").to_string());
+            logger::write("proxy connection summary is empty".to_string());
             substatus_proxy_agent_connection_message =
                 "proxy connection summary is empty".to_string();
         }
 
         status.substatus = {
-            let mut substatus = Vec::new();
-            substatus.push(SubStatus {
-                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                status: constants::SUCCESS_STATUS.to_string(),
-                code: constants::STATUS_CODE_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: substatus_proxy_agent_connection_message.to_string(),
+            vec![
+                SubStatus {
+                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                    status: constants::SUCCESS_STATUS.to_string(),
+                    code: constants::STATUS_CODE_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: substatus_proxy_agent_connection_message.to_string(),
+                    },
                 },
-            });
-            substatus.push(SubStatus {
-                name: constants::PLUGIN_STATUS_NAME.to_string(),
-                status: constants::SUCCESS_STATUS.to_string(),
-                code: constants::STATUS_CODE_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: substatus_proxy_agent_message.to_string(),
+                SubStatus {
+                    name: constants::PLUGIN_STATUS_NAME.to_string(),
+                    status: constants::SUCCESS_STATUS.to_string(),
+                    code: constants::STATUS_CODE_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: substatus_proxy_agent_message.to_string(),
+                    },
                 },
-            });
-            substatus
+            ]
         };
         status.status = status_state_obj.update_state(true);
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
@@ -470,7 +464,7 @@ fn extension_substatus(
 
 fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
     let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
-    if status.status == constants::ERROR_STATUS.to_string() {
+    if status.status == *constants::ERROR_STATUS {
         let output = Command::new(&setup_tool).arg("restore").output();
         match output {
             Ok(output) => {
@@ -501,8 +495,8 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                 );
             }
         }
-        return true;
-    } else if status.status == constants::SUCCESS_STATUS.to_string() {
+        true
+    } else if status.status == *constants::SUCCESS_STATUS {
         let output = Command::new(setup_tool).arg("purge").output();
         match output {
             Ok(output) => {
@@ -560,7 +554,7 @@ fn report_proxy_agent_service_status(
                 status.formattedMessage.message =
                     "Update Proxy Agent command output successfully".to_string();
                 status.substatus = Default::default();
-                common::report_status(status_folder, seq_no, &status);
+                common::report_status(status_folder, seq_no, status);
             } else {
                 telemetry::event_logger::write_event(
                     telemetry::event_logger::INFO_LEVEL,
@@ -576,12 +570,12 @@ fn report_proxy_agent_service_status(
                 status.code = output
                     .status
                     .code()
-                    .unwrap_or_else(|| constants::STATUS_CODE_NOT_OK);
+                    .unwrap_or(constants::STATUS_CODE_NOT_OK);
                 status.status = status_state_obj.update_state(false);
                 status.formattedMessage.message =
                     "Update Proxy Agent command failed with error".to_string();
                 status.substatus = Default::default();
-                common::report_status(status_folder, seq_no, &status);
+                common::report_status(status_folder, seq_no, status);
             }
         }
         Err(e) => {
@@ -599,7 +593,7 @@ fn report_proxy_agent_service_status(
             status.formattedMessage.message =
                 format!("Update Proxy Agent command failed with error: {}", e);
             status.substatus = Default::default();
-            common::report_status(status_folder, seq_no, &status);
+            common::report_status(status_folder, seq_no, status);
         }
     }
 }
@@ -610,7 +604,7 @@ fn get_proxy_agent_file_version_in_extension() -> String {
     let version = misc_helpers::get_proxy_agent_version(path.to_path_buf());
     logger::write(format!(
         "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
-        version.to_string(),
+        version,
         misc_helpers::path_to_string(path.to_path_buf())
     ));
     version
@@ -652,7 +646,7 @@ mod tests {
             let mut test_good = temp_test_path.clone();
             test_good.push("test.ps1");
             let mut file = fs::File::create(&test_good).unwrap();
-            file.write(b"\"Hello World\"").unwrap();
+            file.write_all(b"\"Hello World\"").unwrap();
 
             let output = Command::new("powershell.exe").args(&test_good).output();
 
@@ -686,7 +680,7 @@ mod tests {
                 expected_status_file.to_path_buf(),
             )
             .unwrap();
-            assert!(handler_status.len() == 1);
+            assert_eq!(handler_status.len(), 1);
             assert_eq!(handler_status[0].status.code, 0);
 
             let status_folder_bad = temp_test_path.join("status_bad");
@@ -709,7 +703,7 @@ mod tests {
                 expected_status_file_bad.to_path_buf(),
             )
             .unwrap();
-            assert!(handler_status_bad.len() == 1);
+            assert_eq!(handler_status_bad.len(), 1);
             assert_eq!(handler_status_bad[0].status.code, 1);
 
             //Clean up and ignore the clean up errors
@@ -832,26 +826,26 @@ mod tests {
                     message: "Update Proxy Agent command output successfully".to_string(),
                 },
                 substatus: {
-                    let mut substatus = Vec::new();
-                    substatus.push(SubStatus {
-                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
+                    vec![
+                        SubStatus {
+                            name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
                         },
-                    });
-                    substatus.push(SubStatus {
-                        name: constants::PLUGIN_STATUS_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
+                        SubStatus {
+                            name: constants::PLUGIN_STATUS_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
                         },
-                    });
-                    substatus
+                    ]
                 },
             };
 

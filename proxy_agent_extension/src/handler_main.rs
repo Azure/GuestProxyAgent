@@ -60,9 +60,9 @@ fn check_windows_os_version(version: Version) -> bool {
     match version.build {
         Some(build) => {
             logger::write(format!("OS build version: {}", build));
-            return build >= constants::MIN_SUPPORTED_OS_BUILD;
+            build >= constants::MIN_SUPPORTED_OS_BUILD
         }
-        None => return false,
+        None => false,
     }
 }
 
@@ -70,24 +70,20 @@ fn check_os_version_supported() -> bool {
     #[cfg(windows)]
     {
         match windows::get_os_version() {
-            Ok(version) => {
-                return check_windows_os_version(version);
-            }
+            Ok(version) => check_windows_os_version(version),
             Err(e) => {
                 logger::write(format!("Error in getting OS version: {e}"));
-                return false;
+                false
             }
         }
     }
     #[cfg(not(windows))]
     {
         match Version::from_string(linux::get_os_version()) {
-            Ok(version) => {
-                return check_linux_os_supported(version);
-            }
+            Ok(version) => check_linux_os_supported(version),
             Err(e) => {
                 logger::write(format!("Error in getting OS version: {e}"));
-                return false;
+                false
             }
         }
     }
@@ -97,7 +93,7 @@ fn check_os_version_supported() -> bool {
 fn check_linux_os_supported(version: Version) -> bool {
     let linux_type = linux::get_os_type().to_lowercase();
     if linux_type.contains("ubuntu") {
-        return version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD;
+        version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD
     } else if linux_type.contains("mariner") {
         return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
     } else {
@@ -132,35 +128,35 @@ fn report_os_not_supported(config_seq_no: Option<String>) {
 fn get_update_tag_file() -> PathBuf {
     let exe_parent = get_exe_parent();
     let update_tag_file = exe_parent.join(constants::UPDATE_TAG_FILE);
-    return update_tag_file.to_path_buf();
+    update_tag_file.to_path_buf()
 }
 
 fn update_tag_file_exists() -> bool {
     let update_tag_file = get_update_tag_file();
     if update_tag_file.exists() {
         logger::write(format!("update tag file exists: {:?}", update_tag_file));
-        return true;
+        true
     } else {
         logger::write(format!(
             "update tag file does not exist: {:?}",
             update_tag_file
         ));
-        return false;
+        false
     }
 }
 
 fn get_exe_parent() -> PathBuf {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let exe_parent;
-    match exe_path.parent() {
-        Some(parent) => exe_parent = parent,
+
+    let exe_parent = match exe_path.parent() {
+        Some(parent) => parent,
         None => {
-            logger::write(format!("exe parent is None"));
-            exe_parent = Path::new("");
+            logger::write("exe parent is None".to_string());
+            Path::new("")
         }
-    }
+    };
     logger::write(format!("exe parent: {:?}", exe_parent));
-    return exe_parent.to_path_buf();
+    exe_parent.to_path_buf()
 }
 
 fn handle_command(cmd: &str, config_seq_no: &Option<String>) {
@@ -243,15 +239,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
     }
     #[cfg(not(windows))]
     {
-        let process_running;
-        match get_linux_extension_long_running_process() {
-            Some(_) => {
-                process_running = true;
-            }
-            None => {
-                process_running = false;
-            }
-        }
+        let process_running = get_linux_extension_long_running_process().is_some();
         let mut count = 0;
         loop {
             if process_running {
@@ -289,7 +277,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
     }
     if update_tag_file_exists() {
         let update_tag_file = get_update_tag_file();
-        match fs::remove_file(update_tag_file.to_path_buf()) {
+        match fs::remove_file(&update_tag_file) {
             Ok(_) => logger::write(format!(
                 "update tag file removed: {:?}",
                 update_tag_file.to_path_buf()
@@ -312,7 +300,7 @@ fn get_linux_extension_long_running_process() -> Option<Pid> {
             return Some(p.pid());
         }
     }
-    return None;
+    None
 }
 
 fn disable_handler() {
@@ -333,7 +321,7 @@ fn disable_handler() {
                 ));
             }
             None => {
-                logger::write(format!("ProxyAgentExt not running"));
+                logger::write("ProxyAgentExt not running".to_string());
             }
         }
     }
@@ -343,14 +331,14 @@ fn reset_handler() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let update_tag_file = get_update_tag_file();
     let seq_no_file = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
-    match fs::remove_file(update_tag_file.to_path_buf()) {
+    match fs::remove_file(&update_tag_file) {
         Ok(_) => logger::write(format!(
             "update tag file removed: {:?}",
             update_tag_file.to_path_buf()
         )),
         Err(e) => logger::write(format!("error in removing update tag file: {:?}", e)),
     }
-    match fs::remove_file(seq_no_file.to_path_buf()) {
+    match fs::remove_file(&seq_no_file) {
         Ok(_) => logger::write(format!(
             "seq no file removed: {:?}",
             seq_no_file.to_path_buf()
@@ -385,10 +373,7 @@ fn update_handler() {
             ));
             break;
         } else {
-            match fs::write(
-                update_tag_file.to_path_buf(),
-                misc_helpers::get_date_time_string(),
-            ) {
+            match fs::write(&update_tag_file, misc_helpers::get_date_time_string()) {
                 Ok(_) => {
                     logger::write(format!(
                         "update tag file created: {:?}",

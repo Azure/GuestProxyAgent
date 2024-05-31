@@ -38,7 +38,7 @@ impl InstanceInfo {
         let image_origin: u64;
         match &self.compute.offer {
             Some(offer) => {
-                if offer == "" {
+                if offer.is_empty() {
                     image_origin = 0; // custom
                 } else {
                     image_origin = 1; // platform

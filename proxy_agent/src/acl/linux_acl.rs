@@ -8,25 +8,19 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
     let dir_str = misc_helpers::path_to_string(dir_to_acl);
     logger::write(format!(
         "acl_directory: start to set root-only permission to folder {}.",
-        dir_str.to_string()
+        dir_str
     ));
 
     let output = misc_helpers::execute_command("chown", vec!["-R", "root:root", &dir_str], -1);
     logger::write(format!(
         "acl_directory: set folder {} to owner root, result: '{}'-'{}'-'{}'.",
-        dir_str.to_string(),
-        output.0,
-        output.1,
-        output.2
+        dir_str, output.0, output.1, output.2
     ));
 
     let output = misc_helpers::execute_command("chmod", vec!["-cR", "700", &dir_str], -1);
     logger::write(format!(
         "acl_directory: set root access only permission to folder {} result: '{}'-'{}'-'{}'.",
-        dir_str.to_string(),
-        output.0,
-        output.1,
-        output.2
+        dir_str, output.0, output.1, output.2
     ));
 
     Ok(())
