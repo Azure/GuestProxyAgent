@@ -826,26 +826,26 @@ mod tests {
                     message: "Update Proxy Agent command output successfully".to_string(),
                 },
                 substatus: {
-                    let mut substatus = Vec::new();
-                    substatus.push(SubStatus {
-                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
+                    vec![
+                        SubStatus {
+                            name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
                         },
-                    });
-                    substatus.push(SubStatus {
-                        name: constants::PLUGIN_STATUS_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
+                        SubStatus {
+                            name: constants::PLUGIN_STATUS_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
                         },
-                    });
-                    substatus
+                    ]
                 },
             };
 

@@ -512,17 +512,17 @@ impl KeyStatus {
     }
 
     pub fn get_wireserver_rules(&self) -> Option<AuthorizationItem> {
-        return match &self.authorizationRules {
-            Some(rules) => rules.wireserver.as_ref().map(|item| item.clone()),
+        match &self.authorizationRules {
+            Some(rules) => rules.wireserver.clone(),
             None => None,
-        };
+        }
     }
 
     pub fn get_imds_rules(&self) -> Option<AuthorizationItem> {
-        return match &self.authorizationRules {
-            Some(rules) => rules.imds.as_ref().map(|item| item.clone()),
+        match &self.authorizationRules {
+            Some(rules) => rules.imds.clone(),
             None => None,
-        };
+        }
     }
 
     pub fn get_wire_server_mode(&self) -> String {
