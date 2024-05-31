@@ -76,9 +76,13 @@ echo ======= copy redirect.bpf.sys
 xcopy /Y %out_dir%\redirect.bpf.sys %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\redirect.bpf.pdb %out_package_proxyagent_dir%\
 
-echo ======= cargo fmt
+echo ======= cargo fmt & clippy
 cargo fmt --all
-
+cargo clippy -- -D warnings
+if  %ERRORLEVEL% NEQ 0 (
+    echo cargo clippy failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
 echo ======= build proxy_agent_shared
 set cargo_toml=%root_path%proxy_agent_shared\Cargo.toml
 SET release_flag=
