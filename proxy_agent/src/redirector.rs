@@ -94,7 +94,7 @@ fn get_status_message() -> String {
     }
     #[cfg(not(windows))]
     {
-        return linux::get_status();
+        linux::get_status()
     }
 }
 
@@ -157,10 +157,10 @@ pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Resu
     }
     #[cfg(not(windows))]
     {
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "get_audit_from_redirect_context for linux is not supported",
-        ));
+        ))
     }
 }
 

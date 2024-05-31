@@ -264,7 +264,7 @@ mod tests {
             #[cfg(not(windows))]
             {
                 assert!(
-                    user.user_groups.len() > 0,
+                    !user.user_groups.is_empty(),
                     "user_groups should not be empty."
                 );
             }
