@@ -24,7 +24,7 @@ static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATE_MAP: Lazy<HashMap<String, (String, u32)>> =
-    Lazy::new(|| HashMap::<String, (String, u32)>::new());
+    Lazy::new(HashMap::<String, (String, u32)>::new);
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Telemetry event logger thread has not started yet."));
 
@@ -89,7 +89,7 @@ fn start(
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    _ = logger_manager::write(logger_key, message.to_string());
+    logger_manager::write(logger_key, message.to_string());
 
     misc_helpers::try_create_folder(event_dir.to_path_buf())?;
 
@@ -127,7 +127,7 @@ fn start(
         let mut i = 0;
         let mut events: Vec<Event> = Vec::new();
         while i < len {
-            i = i + 1;
+            i += 1;
             match EVENT_QUEUE.pop() {
                 Ok(e) => events.push(e),
                 Err(e) => {
@@ -275,7 +275,7 @@ mod tests {
         );
 
         let cloned_events_dir = events_dir.to_path_buf();
-        _ = super::start_async(cloned_events_dir, Duration::from_millis(100), 3, logger_key);
+        super::start_async(cloned_events_dir, Duration::from_millis(100), 3, logger_key);
 
         // write some events to the queue and flush to disk
         write_events(logger_key);

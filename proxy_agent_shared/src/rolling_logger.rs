@@ -125,7 +125,7 @@ impl RollingLogger {
             let mut count = max_count;
             for log in log_files {
                 fs::remove_file(log)?;
-                count = count + 1;
+                count += 1;
 
                 if count > file_count {
                     break;
@@ -165,8 +165,8 @@ impl RollingLogger {
 
         match timestamp {
             Some(time) => {
-                file_name.push_str(".");
-                file_name.push_str(&time.replace(":", "."));
+                file_name.push('.');
+                file_name.push_str(&time.replace(':', "."));
                 file_name.push_str(".log")
             }
             None => {}

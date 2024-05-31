@@ -26,13 +26,9 @@ pub fn install_service(
             _service_dependencies,
             _exe_path,
         ) {
-            Ok(_service) => {
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::Other, e));
-            }
-        };
+            Ok(_service) => Ok(()),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        }
     }
     #[cfg(not(windows))]
     {
@@ -45,13 +41,9 @@ pub fn stop_and_delete_service(service_name: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::stop_and_delete_service(service_name) {
-            Ok(_service) => {
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::Other, e));
-            }
-        };
+            Ok(_service) => Ok(()),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        }
     }
     #[cfg(not(windows))]
     {
@@ -76,13 +68,9 @@ pub fn stop_service(service_name: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         match windows_service::stop_service(service_name) {
-            Ok(_service) => {
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::Other, e));
-            }
-        };
+            Ok(_service) => Ok(()),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        }
     }
     #[cfg(not(windows))]
     {
@@ -105,12 +93,8 @@ pub fn update_service(
             _service_dependencies,
             _exe_path,
         ) {
-            Ok(_service) => {
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::Other, e));
-            }
+            Ok(_service) => Ok(()),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
         }
     }
     #[cfg(not(windows))]
@@ -129,7 +113,7 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
                     "Service {} successfully queried",
                     _service_name
                 ));
-                return service_config.executable_path.to_path_buf();
+                service_config.executable_path.to_path_buf()
             }
             Err(e) => {
                 logger_manager::write_info(format!(
@@ -137,7 +121,7 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
                     _service_name, e
                 ));
                 eprintln!("Service {} query failed: {}", _service_name, e);
-                return PathBuf::new();
+                PathBuf::new()
             }
         }
     }
@@ -158,13 +142,13 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
                     "check_service_installed: Ebpf Driver: {} successfully queried.",
                     _service_name
                 );
-                return (true, message);
+                (true, message)
             }
             Err(e) => {
                 message = format!(
                     "check_service_installed: Ebpf Driver: {} unsuccessfully queried with error: {}.", _service_name, e
                 );
-                return (false, message);
+                (false, message)
             }
         }
     }

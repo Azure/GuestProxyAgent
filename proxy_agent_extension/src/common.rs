@@ -29,12 +29,12 @@ pub fn get_handler_environment(exe_path: PathBuf) -> HandlerEnvironment {
             process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
         }
     }
-    if handler_env_file.len() == 0 {
+    if handler_env_file.is_empty() {
         eprintln!("Handler environment file is empty");
         process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
     }
-    let root_handler_environment = handler_env_file[0].handlerEnvironment.clone();
-    root_handler_environment
+
+    handler_env_file[0].handlerEnvironment.clone()
 }
 
 pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::HeartbeatObj) {
@@ -55,7 +55,7 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
             return;
         }
     }
-    match fs::write(heartbeat_file_path.to_path_buf(), &root_heartbeat) {
+    match fs::write(&heartbeat_file_path, root_heartbeat) {
         Ok(_) => {
             logger::write(format!(
                 "HeartBeat file created: {:?}",
@@ -95,7 +95,7 @@ pub fn report_status(
     //Status Instance
     let status_file: PathBuf = get_file_path(
         status_folder_path,
-        &config_seq_no,
+        config_seq_no,
         constants::STATUS_FILE_SUFFIX,
     );
 
@@ -119,7 +119,7 @@ pub fn report_status(
         }
     }
     // TODO: retry if write failed
-    match fs::write(status_file.to_path_buf(), root_status) {
+    match fs::write(&status_file, root_status) {
         Ok(_) => {
             logger::write(format!("Status file created: {:?}", status_file));
         }
@@ -138,11 +138,11 @@ pub fn update_current_seq_no(
         Some(new_seq_no) => {
             logger::write(format!("enable command with new seq no: {new_seq_no}"));
             let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
-            match fs::read_to_string(current_seq_no_stored_file.to_path_buf()) {
+            match fs::read_to_string(&current_seq_no_stored_file) {
                 Ok(seq_no) => {
                     if seq_no != *new_seq_no {
                         logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
-                        _ = fs::write(current_seq_no_stored_file.to_path_buf(), new_seq_no);
+                        _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                     } else {
                         logger::write("no update on seq no".to_string());
                         should_report_status = false;
@@ -153,7 +153,7 @@ pub fn update_current_seq_no(
                         "no seq no found, writing seq no {} to file",
                         new_seq_no
                     ));
-                    _ = fs::write(current_seq_no_stored_file.to_path_buf(), new_seq_no);
+                    _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                 }
             }
         }
@@ -173,11 +173,11 @@ pub fn get_current_seq_no(exe_path: PathBuf) -> String {
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
             logger::write(format!("Current seq no: {}", seq_no));
-            return seq_no;
+            seq_no
         }
         Err(e) => {
             logger::write(format!("Error reading current seq no file: {:?}", e));
-            return "".to_string();
+            "".to_string()
         }
     }
 }
@@ -185,7 +185,7 @@ pub fn get_current_seq_no(exe_path: PathBuf) -> String {
 pub fn get_proxy_agent_service_path() -> PathBuf {
     #[cfg(windows)]
     {
-        return service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME);
+        service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME)
     }
     #[cfg(not(windows))]
     {
@@ -269,6 +269,12 @@ pub fn setup_tool_exe_path() -> PathBuf {
     }
 }
 
+impl Default for StatusState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatusState {
     const MAX_CONSECUTIVE_COUNT: u32 = 10000;
 
@@ -315,7 +321,7 @@ impl StatusState {
                 self.current_state = constants::TRANSITIONING_STATUS.to_string();
             }
         }
-        return self.current_state.clone();
+        self.current_state.clone()
     }
 }
 
@@ -457,7 +463,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, true);
+        assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "0".to_string());
 
@@ -465,7 +471,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, true);
+        assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
 
@@ -473,7 +479,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, false);
+        assert!(!should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
 

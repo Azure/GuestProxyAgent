@@ -31,6 +31,12 @@ impl ElapsedMessage {
     }
 }
 
+impl Default for SimpleSpan {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleSpan {
     pub fn new() -> Self {
         SimpleSpan {

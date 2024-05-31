@@ -135,6 +135,6 @@ mod tests {
     fn test_get_file_version() {
         let exe_path = std::env::current_exe().unwrap();
         let version = super::get_file_version(exe_path).unwrap();
-        assert!(version.contains("."), "version should contain .");
+        assert!(version.contains('.'), "version should contain .");
     }
 }

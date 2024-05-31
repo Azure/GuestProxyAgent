@@ -25,10 +25,10 @@ impl Version {
         revision: Option<u32>,
     ) -> Self {
         Version {
-            major: major,
-            minor: minor,
-            build: build,
-            revision: revision,
+            major,
+            minor,
+            build,
+            revision,
         }
     }
 
@@ -87,9 +87,9 @@ impl Version {
             }
         }
 
-        return Ok(Version::from_major_minor_build_revision(
+        Ok(Version::from_major_minor_build_revision(
             major, minor, build, revision,
-        ));
+        ))
     }
 
     pub fn to_string(&self) -> String {
@@ -102,8 +102,8 @@ impl Version {
         }
 
         match self.revision {
-            Some(r) => return format!("{}.{}", ver, r),
-            None => return ver,
+            Some(r) => format!("{}.{}", ver, r),
+            None => ver,
         }
     }
 }

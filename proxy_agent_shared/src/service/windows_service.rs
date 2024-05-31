@@ -141,13 +141,9 @@ pub fn install_or_update_service(
                 service_dependencies,
                 service_exe_path,
             ) {
-                Ok(_service) => {
-                    return Ok(());
-                }
-                Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, e));
-                }
-            };
+                Ok(_service) => Ok(()),
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
         }
         Err(_e) => {
             match create_service(
@@ -156,15 +152,11 @@ pub fn install_or_update_service(
                 service_dependencies,
                 service_exe_path,
             ) {
-                Ok(_service) => {
-                    return Ok(());
-                }
-                Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, e));
-                }
-            };
+                Ok(_service) => Ok(()),
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
         }
-    };
+    }
 }
 
 fn query_service_status(service_name: &str) -> windows_service::Result<ServiceStatus> {
@@ -303,7 +295,7 @@ mod tests {
 
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", TEST_SERVICE_NAME])
+            .args(["query", TEST_SERVICE_NAME])
             .output()
             .expect("Failed to execute command");
 
@@ -331,7 +323,7 @@ mod tests {
         super::stop_and_delete_service(TEST_SERVICE_NAME).unwrap();
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", TEST_SERVICE_NAME])
+            .args(["query", TEST_SERVICE_NAME])
             .output()
             .expect("Failed to execute command");
 
@@ -349,7 +341,7 @@ mod tests {
         super::create_service(service_name, service_name, vec![], exe_path).unwrap();
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", service_name])
+            .args(["query", service_name])
             .output()
             .expect("Failed to execute command");
 

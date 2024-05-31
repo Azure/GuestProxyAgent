@@ -111,7 +111,7 @@ pub fn get_os_version() -> std::io::Result<Version> {
         CURRENT_BUILD_NUMBER_STRING,
         "".to_string(),
     );
-    if build_str == "" {
+    if build_str.is_empty() {
         build = read_reg_int(OS_VERSION_REGISTRY_KEY, CURRENT_BUILD_NUMBER_STRING, None);
     } else {
         match build_str.parse::<u32>() {
@@ -122,7 +122,7 @@ pub fn get_os_version() -> std::io::Result<Version> {
 
     let revision_str = read_reg_string(OS_VERSION_REGISTRY_KEY, UBRSTRING, "".to_string());
     let revision;
-    if revision_str == "" {
+    if revision_str.is_empty() {
         revision = read_reg_int(OS_VERSION_REGISTRY_KEY, UBRSTRING, None);
     } else {
         match revision_str.parse::<u32>() {
@@ -191,24 +191,23 @@ pub fn get_processor_arch() -> String {
 }
 
 pub fn ensure_service_running(service_name: String) -> (bool, String) {
-    let service_manager;
     let mut message = String::new();
-    match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
-        Ok(manager) => service_manager = manager,
-        Err(e) => {
-            message = format!(
-                "ensure_service_running:: Failed to connect to service manager with error {e}."
-            );
-            return (false, message);
-        }
-    };
+    let service_manager =
+        match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
+            Ok(manager) => manager,
+            Err(e) => {
+                message = format!(
+                    "ensure_service_running:: Failed to connect to service manager with error {e}."
+                );
+                return (false, message);
+            }
+        };
 
-    let service;
-    match service_manager.open_service(
-        service_name.to_string(),
+    let service = match service_manager.open_service(
+        &service_name,
         ServiceAccess::QUERY_STATUS | ServiceAccess::START,
     ) {
-        Ok(s) => service = s,
+        Ok(s) => s,
         Err(e) => {
             message = format!(
                 "ensure_service_running:: Failed to open service {service_name} with error {e}."

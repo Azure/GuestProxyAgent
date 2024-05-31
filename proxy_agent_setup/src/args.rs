@@ -50,12 +50,10 @@ impl Args {
             Args::DELETE_PACKAGE.to_string()
         };
 
-        let args = Args {
+        Args {
             action: action.to_string(),
-            uninstall_mode: uninstall_mode,
-        };
-
-        args
+            uninstall_mode,
+        }
     }
 
     fn print_help() {

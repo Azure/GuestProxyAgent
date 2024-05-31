@@ -56,7 +56,7 @@ fn main() {
         }
         args::Args::RESTORE => {
             if !check_backup_exists() {
-                logger::write(format!("Backup check failed, skip the restore operation."));
+                logger::write("Backup check failed, skip the restore operation.".to_string());
                 return;
             }
             stop_service();
@@ -253,7 +253,7 @@ fn check_backup_exists() -> bool {
         return false;
     }
 
-    return true;
+    true
 }
 
 fn uninstall_service() -> PathBuf {
@@ -287,7 +287,7 @@ fn delete_package(_proxy_agent_running_folder: PathBuf) {
 }
 
 fn delete_folder(folder_to_be_delete: PathBuf) {
-    match fs::remove_dir_all(folder_to_be_delete.to_path_buf()) {
+    match fs::remove_dir_all(&folder_to_be_delete) {
         Ok(_) => {
             logger::write(format!("Deleted folder {:?}", folder_to_be_delete));
         }

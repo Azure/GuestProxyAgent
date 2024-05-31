@@ -89,8 +89,7 @@ fn monitor_thread() {
                 telemetry::event_logger::INFO_LEVEL,
                 format!(
                     "Current seq_no: {} does not match cached seq no {}",
-                    current_seq_no.to_string(),
-                    cache_seq_no.to_string()
+                    current_seq_no, cache_seq_no
                 ),
                 "monitor_thread",
                 "service_main",
@@ -144,7 +143,7 @@ fn monitor_thread() {
         );
 
         // Time taken to report success for proxy agent service after update
-        if status.status == constants::SUCCESS_STATUS.to_string() {
+        if status.status == *constants::SUCCESS_STATUS {
             match proxy_agent_update_reported.as_ref() {
                 Some(proxy_agent_update_reported) => {
                     proxy_agent_update_reported.write_event(
@@ -189,7 +188,7 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                             code: constants::STATUS_CODE_OK,
                             formattedMessage: FormattedMessage {
                                 lang: constants::LANG_EN_US.to_string(),
-                                message: format!("Ebpf Drivers successfully queried."),
+                                message: "Ebpf Drivers successfully queried.".to_string(),
                             },
                         });
                         substatus
@@ -339,7 +338,7 @@ fn report_proxy_agent_aggregate_status(
             };
         }
     }
-    if *restored_in_error == false {
+    if !(*restored_in_error) {
         *restored_in_error = restore_purge_proxyagent(status);
     }
 }
@@ -470,7 +469,7 @@ fn extension_substatus(
 
 fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
     let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
-    if status.status == constants::ERROR_STATUS.to_string() {
+    if status.status == *constants::ERROR_STATUS {
         let output = Command::new(&setup_tool).arg("restore").output();
         match output {
             Ok(output) => {
@@ -501,8 +500,8 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                 );
             }
         }
-        return true;
-    } else if status.status == constants::SUCCESS_STATUS.to_string() {
+        true
+    } else if status.status == *constants::SUCCESS_STATUS {
         let output = Command::new(setup_tool).arg("purge").output();
         match output {
             Ok(output) => {
@@ -560,7 +559,7 @@ fn report_proxy_agent_service_status(
                 status.formattedMessage.message =
                     "Update Proxy Agent command output successfully".to_string();
                 status.substatus = Default::default();
-                common::report_status(status_folder, seq_no, &status);
+                common::report_status(status_folder, seq_no, status);
             } else {
                 telemetry::event_logger::write_event(
                     telemetry::event_logger::INFO_LEVEL,
@@ -576,12 +575,12 @@ fn report_proxy_agent_service_status(
                 status.code = output
                     .status
                     .code()
-                    .unwrap_or_else(|| constants::STATUS_CODE_NOT_OK);
+                    .unwrap_or(constants::STATUS_CODE_NOT_OK);
                 status.status = status_state_obj.update_state(false);
                 status.formattedMessage.message =
                     "Update Proxy Agent command failed with error".to_string();
                 status.substatus = Default::default();
-                common::report_status(status_folder, seq_no, &status);
+                common::report_status(status_folder, seq_no, status);
             }
         }
         Err(e) => {
@@ -599,7 +598,7 @@ fn report_proxy_agent_service_status(
             status.formattedMessage.message =
                 format!("Update Proxy Agent command failed with error: {}", e);
             status.substatus = Default::default();
-            common::report_status(status_folder, seq_no, &status);
+            common::report_status(status_folder, seq_no, status);
         }
     }
 }
@@ -610,7 +609,7 @@ fn get_proxy_agent_file_version_in_extension() -> String {
     let version = misc_helpers::get_proxy_agent_version(path.to_path_buf());
     logger::write(format!(
         "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
-        version.to_string(),
+        version,
         misc_helpers::path_to_string(path.to_path_buf())
     ));
     version
