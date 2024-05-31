@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use super::event_logger;
@@ -25,9 +26,11 @@ impl ElapsedMessage {
             self.elapsed, self.message
         )
     }
+}
 
-    fn to_string(&self) -> String {
-        format!("{} - {}", self.message, self.elapsed)
+impl Display for ElapsedMessage {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{} - {}", self.message, self.elapsed)
     }
 }
 
