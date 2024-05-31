@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![deny(warnings)]
+
 
 mod args;
 pub mod backup;
