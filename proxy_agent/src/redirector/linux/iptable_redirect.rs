@@ -22,8 +22,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
-    )
-    {
+    ) {
         return false;
     }
     if !config_one_firewall_redirection(
@@ -32,8 +31,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
-    )
-    {
+    ) {
         return false;
     }
     if !config_one_firewall_redirection(
@@ -42,8 +40,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
-    )
-    {
+    ) {
         return false;
     }
 
@@ -85,11 +82,7 @@ fn config_one_firewall_redirection(
     enable: bool,
     exclude_gid: &str,
 ) -> bool {
-    let iptable_cmd= if enable {
-        "-A"
-    } else {
-        "-D"
-    };
+    let iptable_cmd = if enable { "-A" } else { "-D" };
     let local_endpoint = format!("127.0.0.1:{}", local_port);
 
     let args = vec![

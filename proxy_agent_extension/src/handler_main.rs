@@ -80,9 +80,7 @@ fn check_os_version_supported() -> bool {
     #[cfg(not(windows))]
     {
         match Version::from_string(linux::get_os_version()) {
-            Ok(version) => {
-                check_linux_os_supported(version)
-            }
+            Ok(version) => check_linux_os_supported(version),
             Err(e) => {
                 logger::write(format!("Error in getting OS version: {e}"));
                 false

@@ -127,7 +127,6 @@ pub fn start(local_port: u16) -> bool {
 }
 
 fn open_ebpf_file(bpf_file_path: PathBuf) -> Result<Bpf, bool> {
-    
     let bpf: Bpf = match BpfLoader::new()
         // load the BTF data from /sys/kernel/btf/vmlinux
         .btf(Btf::from_sys_fs().ok().as_ref())
@@ -222,9 +221,9 @@ fn get_local_ip() -> Option<String> {
 
         if let Some(addr) = nic.address {
             if let Some(socket_addr) = addr.as_sockaddr_in() {
-           return Some(socket_addr.ip().to_string());
-    }
-              }
+                return Some(socket_addr.ip().to_string());
+            }
+        }
     }
 
     None
@@ -241,10 +240,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                     };
                     event_logger::write_event(
                         event_logger::WARN_LEVEL,
-                        format!(
-                            "update_policy_map with local ip address: {}",
-                            local_ip
-                        ),
+                        format!("update_policy_map with local ip address: {}", local_ip),
                         "update_policy_map",
                         "redirector/linux",
                         logger::AGENT_LOGGER_KEY,
@@ -475,12 +471,10 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
                             destination_port: audit_value.destination_port as u16,
                         })
                     }
-                    Err(err) => {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to lookup audit entry {}: {}", source_port, err),
-                        ))
-                    }
+                    Err(err) => Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to lookup audit entry {}: {}", source_port, err),
+                    )),
                 }
             }
             Err(err) => {
