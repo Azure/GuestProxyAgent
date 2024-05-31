@@ -29,14 +29,14 @@ pub const DOUBLE_CRLF: &str = "\r\n\r\n";
 pub fn receive_data_in_string(stream: &TcpStream) -> std::io::Result<String> {
     let mut reader = BufReader::new(stream);
     let received: Vec<u8> = reader.fill_buf()?.to_vec();
-    let rec_data;
-    match String::from_utf8(received) {
-        Ok(data) => rec_data = data,
+
+    let rec_data = match String::from_utf8(received) {
+        Ok(data) => data,
         Err(e) => {
             let message = format!("Failed convert the received data to string, error {}", e);
             return Err(Error::new(ErrorKind::InvalidData, message));
         }
-    }
+    };
     reader.consume(rec_data.len());
 
     Ok(rec_data)
@@ -55,14 +55,11 @@ pub fn get_response_in_string(http_req: &mut HttpRequest) -> std::io::Result<Res
     let mut response = Response::from_raw_data(data);
 
     // check the body is streamed or not
-    match response.headers.get_content_length() {
-        Ok(len) => {
-            let body_len = response.get_body_len();
-            if len != 0 && body_len == 0 {
-                response.set_body_as_string(receive_data_in_string(&client)?);
-            }
+    if let Ok(len) = response.headers.get_content_length() {
+        let body_len = response.get_body_len();
+        if len != 0 && body_len == 0 {
+            response.set_body_as_string(receive_data_in_string(&client)?);
         }
-        Err(_) => {}
     }
 
     Ok(response)
@@ -105,7 +102,7 @@ fn read_header_lines(reader: &mut BufReader<&TcpStream>) -> std::io::Result<Stri
         lines.push_str(&line);
 
         let line = line.trim();
-        if line.len() == 0 {
+        if line.is_empty() {
             // empty line means end of the headers section
             break;
         }
@@ -155,7 +152,7 @@ fn stream_body_internal(
                 let read = d.len();
                 dest_stream.write_all(d)?;
                 reader.consume(read);
-                received = received + read;
+                received += read;
             }
             Err(_e) => {
                 // read timeout, assume no more incoming data in the TcpStream
@@ -216,23 +213,22 @@ pub fn forward_response(
     }
 
     // stream body
-    let content_length;
-    match response_without_body.headers.get_content_length() {
-        Ok(len) => content_length = len,
+
+    let content_length = match response_without_body.headers.get_content_length() {
+        Ok(len) => len,
         Err(e) => {
             let message = format!("Failed to get content length {}", e);
             return Err(Error::new(e.kind(), message));
         }
-    }
+    };
 
-    let forwarded;
-    match stream_body_internal(response_reader, client_stream, content_length) {
-        Ok(len) => forwarded = len,
+    let forwarded = match stream_body_internal(response_reader, client_stream, content_length) {
+        Ok(len) => len,
         Err(e) => {
             let message = format!("Failed to stream body {}", e);
             return Err(Error::new(e.kind(), message));
         }
-    }
+    };
 
     Ok((response_without_body, forwarded))
 }

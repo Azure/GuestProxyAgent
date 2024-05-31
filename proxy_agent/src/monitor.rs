@@ -51,13 +51,11 @@ fn start(mut interval: Duration) {
 }
 
 fn redirect_should_run() -> bool {
-    return if key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE {
-        true
-    } else if config::get_start_redirector() {
+    if key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE {
         true
     } else {
-        false
-    };
+        config::get_start_redirector()
+    }
 }
 
 pub fn stop() {
@@ -66,12 +64,12 @@ pub fn stop() {
 
 pub fn get_status() -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
-    let status;
-    if shutdown.load(Ordering::Relaxed) {
-        status = ModuleState::STOPPED.to_string();
+
+    let status = if shutdown.load(Ordering::Relaxed) {
+        ModuleState::STOPPED.to_string()
     } else {
-        status = ModuleState::RUNNING.to_string();
-    }
+        ModuleState::RUNNING.to_string()
+    };
 
     ProxyAgentDetailStatus {
         status,

@@ -74,7 +74,7 @@ pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool) {
 }
 
 fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
-    _ = logger::write("telemetry event reader thread started.".to_string());
+    logger::write("telemetry event reader thread started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
     let shutdown = SHUT_DOWN.clone();
@@ -125,9 +125,8 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
         }
 
         unsafe {
-            match *VM_META_DATA {
-                // only start to send the telemetry events when the VM_META_DATA has value
-                Some(_) => match misc_helpers::get_files(&dir_path) {
+            if VM_META_DATA.is_some() {
+                match misc_helpers::get_files(&dir_path) {
                     Ok(files) => {
                         let file_count = files.len();
                         let event_count = process_events_and_clean(files);
@@ -148,8 +147,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
                             e
                         ));
                     }
-                },
-                None => {}
+                }
             }
         }
         thread::sleep(interval);
@@ -221,10 +219,10 @@ static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
 static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
 fn send_events(mut events: Vec<Event>) {
-    while events.len() > 0 {
+    while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
-        while events.len() > 0 && add_more_events {
+        while !events.is_empty() && add_more_events {
             match events.pop() {
                 Some(event) => {
                     telemetry_data.add_event(TelemetryEvent::from_event_log(&event));
@@ -326,7 +324,7 @@ fn send_data_to_wire_server(telemetry_data: TelemetryData) {
 }
 
 fn clean_files(file: PathBuf) {
-    match remove_file(file.to_path_buf()) {
+    match remove_file(&file) {
         Ok(_) => {
             logger::write(format!("Removed File: {}", file.display()));
         }

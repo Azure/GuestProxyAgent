@@ -46,13 +46,13 @@ impl HttpRequest {
             .headers
             .add_header("Host".to_string(), http_request.get_host());
 
-        if key != "" {
+        if !key.is_empty() {
             let input_to_sign = http_request.request.as_sig_input();
             let authorization_value = format!(
                 "{} {} {}",
                 constants::AUTHORIZATION_SCHEME,
                 key_guid,
-                helpers::compute_signature(key.to_string(), &input_to_sign.as_slice())?
+                helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
             );
             match String::from_utf8(input_to_sign) {
                 Ok(data) => logger::write_information(format!(
@@ -90,6 +90,6 @@ impl HttpRequest {
     }
 
     pub fn get_port(&self) -> u16 {
-        self.uri.port_or_known_default().unwrap_or_else(|| 0)
+        self.uri.port_or_known_default().unwrap_or(0)
     }
 }

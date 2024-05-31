@@ -23,8 +23,8 @@ impl ImdsClient {
         const IMDS_URI: &str = "/metadata/instance?api-version=2018-02-01";
 
         let req = Request::new(IMDS_URI.to_string(), "GET".to_string());
-        let url = Url::parse(&format!("http://{}:{}", self.ip.to_string(), self.port)).unwrap();
-        let url = url.join(&IMDS_URI).unwrap();
+        let url = Url::parse(&format!("http://{}:{}", self.ip, self.port)).unwrap();
+        let url = url.join(IMDS_URI).unwrap();
         let mut http_request = HttpRequest::new_proxy_agent_request(
             url,
             req,
@@ -47,15 +47,13 @@ impl ImdsClient {
         let instance_info_str = response.get_body_as_string()?;
         match serde_json::from_str::<InstanceInfo>(&instance_info_str) {
             Ok(instnce) => Ok(instnce),
-            Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "Recevied instance info is invalid: {}, Error: {}",
-                        instance_info_str, e
-                    ),
-                ));
-            }
+            Err(e) => Err(Error::new(
+                ErrorKind::Other,
+                format!(
+                    "Recevied instance info is invalid: {}, Error: {}",
+                    instance_info_str, e
+                ),
+            )),
         }
     }
 }

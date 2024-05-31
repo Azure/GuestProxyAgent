@@ -15,20 +15,14 @@ static mut WIRESERVER_RULES: Lazy<Mutex<Option<AuthorizationRules>>> =
 static mut IMDS_RULES: Lazy<Mutex<Option<AuthorizationRules>>> = Lazy::new(|| Mutex::new(None));
 
 pub fn set_wireserver_rules(authorization_item: Option<AuthorizationItem>) {
-    let rules = match authorization_item {
-        Some(item) => Some(AuthorizationRules::from_authorization_item(item)),
-        None => None,
-    };
+    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
     unsafe {
         *WIRESERVER_RULES.lock().unwrap() = rules;
     }
 }
 
 pub fn set_imds_rules(authorization_item: Option<AuthorizationItem>) {
-    let rules = match authorization_item {
-        Some(item) => Some(AuthorizationRules::from_authorization_item(item)),
-        None => None,
-    };
+    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
     unsafe {
         *IMDS_RULES.lock().unwrap() = rules;
     }
@@ -60,7 +54,7 @@ mod default {
             return true;
         }
 
-        return false;
+        false
     }
 }
 
@@ -141,7 +135,7 @@ impl Authenticate for WireServer {
                         proxy_agent_status::add_connection_summary(summary, true);
 
                         if rules.mode.to_lowercase() == "audit" {
-                            Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url.to_string()));
+                            Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
                             return true;
                         }
                     }
@@ -162,11 +156,11 @@ impl Authenticate for WireServer {
     }
 }
 
-struct IMDS {
+struct Imds {
     #[allow(dead_code)]
     claims: Claims,
 }
-impl Authenticate for IMDS {
+impl Authenticate for Imds {
     fn authenticate(&self, connection_id: u128, request_url: String) -> bool {
         if config::get_imds_support() == 2 {
             let imds_rules = unsafe { IMDS_RULES.lock().unwrap() };
@@ -197,7 +191,7 @@ impl Authenticate for IMDS {
                         proxy_agent_status::add_connection_summary(summary, true);
 
                         if rules.mode.to_lowercase() == "audit" {
-                            Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url.to_string()));
+                            Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
                             return true;
                         }
                     }
@@ -265,11 +259,11 @@ impl Authenticate for Default {
 
 pub fn get_authenticate(ip: String, port: u16, claims: Claims) -> Box<dyn Authenticate> {
     if ip == constants::WIRE_SERVER_IP && port == constants::WIRE_SERVER_PORT {
-        return Box::new(WireServer { claims });
+        Box::new(WireServer { claims })
     } else if ip == constants::GA_PLUGIN_IP && port == constants::GA_PLUGIN_PORT {
         return Box::new(GAPlugin { claims });
     } else if ip == constants::IMDS_IP && port == constants::IMDS_PORT {
-        return Box::new(IMDS { claims });
+        return Box::new(Imds { claims });
     } else if ip == constants::PROXY_AGENT_IP && port == constants::PROXY_AGENT_PORT {
         return Box::new(ProxyAgent {});
     } else {

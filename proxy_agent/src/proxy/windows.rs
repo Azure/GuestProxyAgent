@@ -63,6 +63,7 @@ type NetUserGetLocalGroups = unsafe extern "system" fn(
     totalentries: *mut u32,
 ) -> u32;
 
+#[allow(clippy::too_many_arguments)]
 fn net_user_get_local_groups(
     servername: windows_sys::core::PWSTR,
     username: windows_sys::core::PWSTR,
@@ -96,7 +97,7 @@ fn net_user_get_local_groups(
     }
 }
 
-static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(|| load_users());
+static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(load_users);
 fn load_users() -> HashMap<u64, &'static str> {
     let mut users = HashMap::new();
     users.insert(0x3e4, "NETWORK SERVICE");
@@ -163,10 +164,9 @@ pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
         } else {
             let message = format!(
                 "NetUserGetLocalGroups '{}' failed with status: {}",
-                domain_user_name.to_string(),
-                status
+                domain_user_name, status
             );
-            eprintln!("{}", message.to_string());
+            eprintln!("{}", message);
             logger::write_warning(message);
         }
 
@@ -291,7 +291,7 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
         println!("return_length: {}", return_length);
 
         let buf_len = (return_length as usize) / 2;
-        let mut buffer: Vec<u16> = Vec::with_capacity(buf_len + 1);
+        let mut buffer: Vec<u16> = vec![0; buf_len + 1];
         buffer.resize(buf_len + 1, 0); // set everything to 0
 
         let status: NTSTATUS = NtQueryInformationProcess(

@@ -16,6 +16,12 @@ pub struct Headers {
     map: HashMap<String, (String, String)>,
 }
 
+impl Default for Headers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Headers {
     pub fn new() -> Self {
         Headers {
@@ -46,7 +52,7 @@ impl Headers {
     }
 
     fn add_header_line(&mut self, line: String) {
-        match line.find(":") {
+        match line.find(':') {
             Some(split) => {
                 let key: String = line.chars().take(split).collect();
                 let value: String = line.chars().skip(split + 1).collect();
@@ -109,12 +115,14 @@ impl Headers {
         self.map.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn has_expect_continue(&self) -> bool {
         let expect_key = EXPECT_HEADER_NAME.to_lowercase();
-        if self.map.contains_key(&expect_key) {
-            if self.map[&expect_key].1 == EXPECT_HEADER_VALUE {
-                return true;
-            }
+        if self.map.contains_key(&expect_key) && self.map[&expect_key].1 == EXPECT_HEADER_VALUE {
+            return true;
         }
 
         false

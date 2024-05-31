@@ -15,8 +15,8 @@ pub struct HandlerEnvironment {
     pub hostResolverAddress: Option<String>,
     pub eventsFolder: String,
 }
-impl HandlerEnvironment {
-    pub fn clone(&self) -> Self {
+impl Clone for HandlerEnvironment {
+    fn clone(&self) -> Self {
         HandlerEnvironment {
             logFolder: self.logFolder.clone(),
             statusFolder: self.statusFolder.clone(),

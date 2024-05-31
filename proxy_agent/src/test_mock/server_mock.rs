@@ -20,7 +20,7 @@ pub fn start(ip: String, port: u16) {
     let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        if handle_request(stream, ip.to_string(), port) == false {
+        if !handle_request(stream, ip.to_string(), port) {
             return;
         }
     }
@@ -49,7 +49,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
 
     let mut response = Response::from_status(Response::OK.to_string());
     if request.method == "GET" {
-        if segments.len() > 0 && segments[0] == "secure-channel" {
+        if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "status" {
                 // get key status
                 let status_response = r#"{
@@ -301,7 +301,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             response.set_body_as_string(response_data.to_string());
         }
     } else if request.method == "POST" {
-        if segments.len() > 0 && segments[0] == "secure-channel" {
+        if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "key" {
                 // get key details
                 let key_response = r#"{
@@ -320,20 +320,22 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 }
                 response.set_body_as_string(serde_json::to_string(&key).unwrap());
             }
-        } else if segments.len() > 0 && segments[0] == "machine" {
-            if segments.len() > 1 && segments[1] == "?comp=telemetrydata" {
-                // post telemetry data
-                // send continue response
-                let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(continue_response.as_raw_string().as_bytes());
-                _ = stream.flush();
+        } else if !segments.is_empty()
+            && segments[0] == "machine"
+            && segments.len() > 1
+            && segments[1] == "?comp=telemetrydata"
+        {
+            // post telemetry data
+            // send continue response
+            let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
+            _ = stream.write_all(continue_response.as_raw_string().as_bytes());
+            _ = stream.flush();
 
-                // receive the data
-                let content_length = request.headers.get_content_length().unwrap();
+            // receive the data
+            let content_length = request.headers.get_content_length().unwrap();
 
-                // receive body content from client
-                http::receive_body(&stream, content_length).unwrap();
-            }
+            // receive body content from client
+            http::receive_body(&stream, content_length).unwrap();
         }
     }
 

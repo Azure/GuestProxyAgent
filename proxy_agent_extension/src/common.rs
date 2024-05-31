@@ -18,16 +18,15 @@ use proxy_agent_shared::service;
 pub fn get_handler_environment(exe_path: PathBuf) -> HandlerEnvironment {
     let mut handler_env_path: PathBuf = exe_path.to_path_buf();
     handler_env_path.push(constants::HANDLER_ENVIRONMENT_FILE);
-    let handler_env_file: Vec<structs::Handler>;
-    match misc_helpers::json_read_from_file(handler_env_path) {
-        Ok(temp) => {
-            handler_env_file = temp;
-        }
-        Err(e) => {
-            eprintln!("Error in reading handler env file: {e}");
-            process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
-        }
-    }
+
+    let handler_env_file: Vec<structs::Handler> =
+        match misc_helpers::json_read_from_file(handler_env_path) {
+            Ok(temp) => temp,
+            Err(e) => {
+                eprintln!("Error in reading handler env file: {e}");
+                process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+            }
+        };
     if handler_env_file.is_empty() {
         eprintln!("Handler environment file is empty");
         process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
@@ -44,16 +43,14 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
     };
 
     let root_obj: Vec<structs::TopLevelHeartbeat> = vec![root_heartbeat_obj];
-    let root_heartbeat;
-    match serde_json::to_string(&root_obj) {
-        Ok(temp) => {
-            root_heartbeat = temp;
-        }
+
+    let root_heartbeat = match serde_json::to_string(&root_obj) {
+        Ok(temp) => temp,
         Err(e) => {
             logger::write(format!("Error in serializing heartbeat object: {e}"));
             return;
         }
-    }
+    };
     match fs::write(&heartbeat_file_path, root_heartbeat) {
         Ok(_) => {
             logger::write(format!(
@@ -106,17 +103,14 @@ pub fn report_status(
     };
 
     let root_vec: Vec<TopLevelStatus> = vec![root_status_obj];
-    let root_status;
 
-    match serde_json::to_string(&root_vec) {
-        Ok(temp) => {
-            root_status = temp;
-        }
+    let root_status = match serde_json::to_string(&root_vec) {
+        Ok(temp) => temp,
         Err(e) => {
             logger::write(format!("Error in serializing status object: {e}"));
             return;
         }
-    }
+    };
     // TODO: retry if write failed
     match fs::write(&status_file, root_status) {
         Ok(_) => {

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #![allow(non_snake_case)]
 
-
 pub mod common;
 pub mod constants;
 pub mod handler_main;

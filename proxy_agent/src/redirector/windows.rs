@@ -127,7 +127,7 @@ pub fn start(local_port: u16) -> bool {
     }
     provision::redirector_ready();
 
-    return true;
+    true
 }
 
 fn set_error_status(message: String) {

@@ -29,17 +29,17 @@ pub fn start_async(interval: Duration) {
     _ = thread::Builder::new()
         .name("guest_proxy_agent_status".to_string())
         .spawn(move || {
-            _ = start(interval);
+            start(interval);
         });
 }
 
 fn start(mut interval: Duration) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
-        interval = Duration::from_secs(60 * 1); // update status every 1 minute
+        interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    _ = logger::write("proxy_agent_status thread started.".to_string());
+    logger::write("proxy_agent_status thread started.".to_string());
 
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
@@ -136,12 +136,10 @@ pub fn add_connection_summary(summary: ProxySummary, is_failed_authenticate: boo
     };
 
     let summary_key = summary.to_key_string();
-    if !summary_map.contains_key(&summary_key) {
-        summary_map.insert(summary_key, proxy_connection_summary_new(summary));
-    } else {
-        if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
-            increase_count(connection_summary);
-        }
+    if let std::collections::hash_map::Entry::Vacant(e) = summary_map.entry(summary_key.clone()) {
+        e.insert(proxy_connection_summary_new(summary));
+    } else if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
+        increase_count(connection_summary);
     }
 }
 

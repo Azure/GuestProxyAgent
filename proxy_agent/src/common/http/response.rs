@@ -40,7 +40,7 @@ impl Response {
     // HTTP-Version Status-Code Reason-Phrase CRLF
     pub fn from_first_line(first_line: String) -> Self {
         // parse first line, format "{version} {status}"
-        let split = first_line.find(" ");
+        let split = first_line.find(' ');
         let version;
         let mut status = "".to_string();
         match split {
@@ -49,7 +49,7 @@ impl Response {
                 status = first_line.chars().skip(index + 1).collect();
             }
             None => {
-                version = String::from(first_line);
+                version = first_line;
             }
         };
 
@@ -73,7 +73,7 @@ impl Response {
                 body = raw_data.chars().skip(index + 4).collect(); // index+2 because of "\r\n\r\n"
             }
             None => {
-                first_part = String::from(raw_data);
+                first_part = raw_data;
             }
         }
 
@@ -87,7 +87,7 @@ impl Response {
                 raw_headers = first_part.chars().skip(index + 2).collect();
             }
             None => {
-                first_line = String::from(first_part);
+                first_line = first_part;
             }
         }
 
@@ -148,13 +148,13 @@ impl Response {
     }
 
     pub fn get_body_as_string(&self) -> std::io::Result<String> {
-        return match String::from_utf8(self.body.clone()) {
+        match String::from_utf8(self.body.clone()) {
             Ok(data) => Ok(data),
             Err(e) => {
                 let message = format!("Failed convert the body to string, error {}", e);
                 Err(Error::new(ErrorKind::InvalidData, message))
             }
-        };
+        }
     }
 
     pub fn set_body(&mut self, body: Vec<u8>) {
@@ -166,7 +166,7 @@ impl Response {
     }
 
     pub fn is_continue_response(&self) -> bool {
-        self.status == Response::CONTINUE.to_string()
+        self.status == *Response::CONTINUE
     }
 
     pub fn get_body_len(&self) -> usize {

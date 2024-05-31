@@ -31,17 +31,13 @@ impl WireServerClient {
         match Url::parse(&uri) {
             Ok(u) => url = u,
             Err(_) => {
-                url = Url::parse(&format!("http://{}:{}", self.ip.to_string(), self.port)).unwrap();
+                url = Url::parse(&format!("http://{}:{}", self.ip, self.port)).unwrap();
                 match url.join(&uri) {
                     Ok(u) => url = u,
                     Err(e) => {
                         return Err(Error::new(
                             ErrorKind::InvalidData,
-                            format!(
-                                "Failed to construct url - {} with error: {}",
-                                uri.to_string(),
-                                e
-                            ),
+                            format!("Failed to construct url - {} with error: {}", uri, e),
                         ));
                     }
                 }
@@ -63,7 +59,7 @@ impl WireServerClient {
     }
 
     pub fn send_telemetry_data(&self, xml_data: String) -> std::io::Result<()> {
-        if xml_data.len() == 0 {
+        if xml_data.is_empty() {
             return Ok(());
         }
 
@@ -90,7 +86,7 @@ impl WireServerClient {
         let raw_response_data = http::receive_data_in_string(&client)?;
         let response = Response::from_raw_data(raw_response_data);
         if response.is_continue_response() {
-            _ = client.write_all(&data);
+            _ = client.write_all(data);
             _ = client.flush();
             let raw_response_data = http::receive_data_in_string(&client)?;
             let response = Response::from_raw_data(raw_response_data);
@@ -148,7 +144,7 @@ impl WireServerClient {
                 ErrorKind::Other,
                 format!(
                     "Failed to retrieve SharedConfig from url: {}. Response: {} - {}",
-                    url.to_string(),
+                    url,
                     response.status,
                     response.get_body_as_string()?
                 ),

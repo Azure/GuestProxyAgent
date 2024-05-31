@@ -45,7 +45,7 @@ pub fn connect_with_redirect_record(
         let socket = WinSock::WSASocketW(
             WinSock::AF_INET as i32,
             WinSock::SOCK_STREAM as i32,
-            WinSock::IPPROTO_TCP as i32,
+            WinSock::IPPROTO_TCP,
             ptr::null_mut(),
             0,
             0,

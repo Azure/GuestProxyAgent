@@ -50,8 +50,7 @@ impl AuthorizationRules {
                                         if role.name == role_name {
                                             for privilege_name in &role.privileges {
                                                 for privilege in input_privileges {
-                                                    if privilege.name == privilege_name.to_string()
-                                                    {
+                                                    if privilege.name == *privilege_name {
                                                         privileges.push(privilege.clone());
                                                     }
                                                 }

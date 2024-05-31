@@ -236,9 +236,7 @@ impl _ip_address {
     #[allow(dead_code)]
     pub fn from_ipv6(ipv6: [u32; 4]) -> Self {
         let mut ip = Self::empty();
-        for i in 0..4 {
-            ip.ip[i] = ipv6[i];
-        }
+        ip.ip.copy_from_slice(&ipv6);
         ip
     }
 }

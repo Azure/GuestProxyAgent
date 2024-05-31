@@ -100,7 +100,7 @@ impl Request {
                 body = raw_data.chars().skip(index + 4).collect(); // index+4 because of "\r\n\r\n"
             }
             None => {
-                first_part = String::from(raw_data);
+                first_part = raw_data;
             }
         }
 
@@ -114,7 +114,7 @@ impl Request {
                 raw_headers = first_part.chars().skip(index + 2).collect();
             }
             None => {
-                first_line = String::from(first_part);
+                first_line = first_part;
             }
         }
 
@@ -213,7 +213,7 @@ impl Request {
             let mut first = true;
             for key in pairs.keys().sorted() {
                 if !first {
-                    canonicalized_parameters.push_str("&");
+                    canonicalized_parameters.push('&');
                 }
                 first = false;
                 // Join each parameter key value pair with '='
@@ -261,13 +261,13 @@ impl Request {
     }
 
     fn get_body_as_string(&self) -> std::io::Result<String> {
-        return match String::from_utf8(self.body.clone()) {
+        match String::from_utf8(self.body.clone()) {
             Ok(data) => Ok(data),
             Err(e) => {
                 let message = format!("Failed convert the body to string, error {}", e);
                 Err(Error::new(ErrorKind::InvalidData, message))
             }
-        };
+        }
     }
 
     pub fn get_body(&self) -> &Vec<u8> {

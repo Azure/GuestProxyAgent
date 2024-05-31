@@ -32,9 +32,8 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         }
     }
 
-    let system_sid;
-    match helper::string_to_sid(LOCAL_SYSTEM_SID) {
-        Ok(sid) => system_sid = sid,
+    let system_sid = match helper::string_to_sid(LOCAL_SYSTEM_SID) {
+        Ok(sid) => sid,
         Err(e) => {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -44,10 +43,10 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
                 ),
             ));
         }
-    }
-    let admin_sid;
-    match helper::string_to_sid(BUILDIN_ADMIN_SID) {
-        Ok(sid) => admin_sid = sid,
+    };
+
+    let admin_sid = match helper::string_to_sid(BUILDIN_ADMIN_SID) {
+        Ok(sid) => sid,
         Err(e) => {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -57,7 +56,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
                 ),
             ));
         }
-    }
+    };
 
     logger::write(format!(
         "acl_directory: removing all the remaining access rules for folder {}.",

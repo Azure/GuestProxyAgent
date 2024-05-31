@@ -54,35 +54,33 @@ pub fn get_long_os_version() -> String {
 }
 
 pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> std::io::Result<String> {
-    match hex::decode(hex_encoded_key.to_string()) {
+    match hex::decode(&hex_encoded_key) {
         Ok(key) => {
             let mut mac = hmac_sha256::HMAC::new(key);
             mac.update(input_to_sign);
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!(
-                    "hex_encoded_key '{}' is invalid, error: {}",
-                    hex_encoded_key, e
-                ),
-            ));
-        }
+        Err(e) => Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "hex_encoded_key '{}' is invalid, error: {}",
+                hex_encoded_key, e
+            ),
+        )),
     }
 }
 
 // replace xml escape characters
 pub fn xml_escape(s: String) -> String {
-    s.replace("&", "&amp;")
-        .replace("'", "&apos;")
-        .replace("\"", "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+    s.replace('&', "&amp;")
+        .replace('\'', "&apos;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
-static START: Lazy<SimpleSpan> = Lazy::new(|| SimpleSpan::new());
+static START: Lazy<SimpleSpan> = Lazy::new(SimpleSpan::new);
 
 pub fn get_elapsed_time_in_millisec() -> u128 {
     START.get_elapsed_time_in_millisec()

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-
 mod args;
 pub mod backup;
 pub mod logger;

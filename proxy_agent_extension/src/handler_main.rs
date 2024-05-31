@@ -149,14 +149,14 @@ fn update_tag_file_exists() -> bool {
 
 fn get_exe_parent() -> PathBuf {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let exe_parent;
-    match exe_path.parent() {
-        Some(parent) => exe_parent = parent,
+
+    let exe_parent = match exe_path.parent() {
+        Some(parent) => parent,
         None => {
             logger::write("exe parent is None".to_string());
-            exe_parent = Path::new("");
+            Path::new("")
         }
-    }
+    };
     logger::write(format!("exe parent: {:?}", exe_parent));
     exe_parent.to_path_buf()
 }
