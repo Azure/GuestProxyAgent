@@ -26,8 +26,5 @@
         "./proxy_agent_shared/Cargo.toml",
         "./proxy_agent_extension/Cargo.toml",
         "./proxy_agent_setup/Cargo.toml",
-    ],
-    "vscode-nmake-tools.workspaceBuildDirectories": [
-        "."
     ]
 }
