@@ -85,7 +85,7 @@ mod default {
             return true;
         }
 
-        return false;
+        false
     }
 }
 

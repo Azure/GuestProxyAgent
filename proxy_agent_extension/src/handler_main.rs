@@ -81,11 +81,11 @@ fn check_os_version_supported() -> bool {
     {
         match Version::from_string(linux::get_os_version()) {
             Ok(version) => {
-                return check_linux_os_supported(version);
+                check_linux_os_supported(version)
             }
             Err(e) => {
                 logger::write(format!("Error in getting OS version: {e}"));
-                return false;
+                false
             }
         }
     }
@@ -95,7 +95,7 @@ fn check_os_version_supported() -> bool {
 fn check_linux_os_supported(version: Version) -> bool {
     let linux_type = linux::get_os_type().to_lowercase();
     if linux_type.contains("ubuntu") {
-        return version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD;
+        version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD
     } else if linux_type.contains("mariner") {
         return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
     } else {
@@ -310,7 +310,7 @@ fn get_linux_extension_long_running_process() -> Option<Pid> {
             return Some(p.pid());
         }
     }
-    return None;
+    None
 }
 
 fn disable_handler() {
@@ -331,7 +331,7 @@ fn disable_handler() {
                 ));
             }
             None => {
-                logger::write(format!("ProxyAgentExt not running"));
+                logger::write("ProxyAgentExt not running".to_string());
             }
         }
     }

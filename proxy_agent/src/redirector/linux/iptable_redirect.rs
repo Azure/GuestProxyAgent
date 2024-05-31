@@ -16,38 +16,38 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
 
     let gid = constants::EGID.to_string();
     let local_port_str = local_port.to_string();
-    if config_one_firewall_redirection(
+    if !config_one_firewall_redirection(
         constants::WIRE_SERVER_IP,
         &constants::WIRE_SERVER_PORT.to_string(),
         &local_port_str,
         true,
         &gid,
-    ) == false
+    )
     {
         return false;
     }
-    if config_one_firewall_redirection(
+    if !config_one_firewall_redirection(
         constants::IMDS_IP,
         &constants::IMDS_PORT.to_string(),
         &local_port_str,
         true,
         &gid,
-    ) == false
+    )
     {
         return false;
     }
-    if config_one_firewall_redirection(
+    if !config_one_firewall_redirection(
         constants::GA_PLUGIN_IP,
         &constants::GA_PLUGIN_PORT.to_string(),
         &local_port_str,
         true,
         &gid,
-    ) == false
+    )
     {
         return false;
     }
 
-    return true;
+    true
 }
 
 pub fn cleanup_firewall_redirection(local_port: u16) {
@@ -127,5 +127,5 @@ fn config_one_firewall_redirection(
     }
     logger::write_information(message);
 
-    return output.0 == 0;
+    output.0 == 0
 }
