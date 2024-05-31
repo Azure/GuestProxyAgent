@@ -18,8 +18,10 @@ if [ $(echo "$directories" | wc -l) -eq 1 ]; then
 fi
 extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "extensionVersion=$extensionVersion"
+statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 
 echo "TEST: Check that status file is success with 5 minute timeout"
+sudo apt install jq
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 statusFile=$(ls $statusFolder/*.status)
@@ -27,7 +29,7 @@ timeout=300
 elpased=0
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
-    if [[ "$extensionStatus" == "Success" ]]; then
+    if [[ "$extensionStatus" == "success" ]]; then
         guestProxyAgentExtensionStatusObjGenerated=true
         guestProxyAgentExtensionServiceStatus=true
         echo "The status is success."
