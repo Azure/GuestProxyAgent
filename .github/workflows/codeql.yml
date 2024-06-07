@@ -45,7 +45,7 @@ jobs:
       matrix:
         include:
         - language: c-cpp
-          build-mode: autobuild
+          build-mode: manual
         - language: csharp
           build-mode: autobuild
         # CodeQL supports the following values keywords for 'language': 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
@@ -59,6 +59,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      
+    - name: Install Clang
+      uses: egor-tensin/setup-clang@v1
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
@@ -82,12 +85,17 @@ jobs:
     - if: matrix.build-mode == 'manual'
       shell: bash
       run: |
-        echo 'If you are using a "manual" build mode for one or more of the' \
-          'languages you are analyzing, replace this with the commands to build' \
-          'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
+        root_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+        out_dir=$root_path/out
+        mkdir $out_dir
+        ebpf_path=$root_path/linux-ebpf
+        clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+        error_code=$?
+        if [ $error_code -ne 0 ]
+        then 
+            echo "call clang failed with exit-code: $error_code"
+            exit $error_code
+        fi
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
