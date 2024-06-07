@@ -85,11 +85,8 @@ jobs:
     - if: matrix.build-mode == 'manual'
       shell: bash
       run: |
-        root_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-        out_dir=$root_path/out
-        mkdir $out_dir
-        ebpf_path=$root_path/linux-ebpf
-        clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+        mkdir ./out
+        clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c ./linux-ebpf/ebpf_cgroup.c -o ./out/ebpf_cgroup.o
         error_code=$?
         if [ $error_code -ne 0 ]
         then 
