@@ -31,6 +31,7 @@ echo "extensionVersion=$extensionVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "statusFolder=$statusFolder"
 echo "TEST: Check that status file is success with 5 minute timeout"
+sudo apt install jq
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 statusFile=$(ls $statusFolder/*.status)

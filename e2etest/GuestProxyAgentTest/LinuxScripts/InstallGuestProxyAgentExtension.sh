@@ -30,7 +30,7 @@ echo "extensionVersion=$extensionVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "Status Directory: $statusFolder"
 echo "Delete status file of PIR version" 
-rm -f $statusFolder/*
+rm -rf $statusFolder/*
 echo "Check that status file is success with 5 minute timeout"
 statusFile=$(ls $statusFolder/*.status)
 timeout=300
@@ -100,4 +100,4 @@ echo "Get PID of ProxyAgentExt and kill pidof"
 pidof ProxyAgentExt | xargs kill -9
 
 echo "Delete status file inside status folder"
-rm -f $statusFolder/*
+rm -rf $statusFolder/*
