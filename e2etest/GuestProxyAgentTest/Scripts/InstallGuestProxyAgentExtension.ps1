@@ -30,8 +30,8 @@ $statusFilePath = [IO.Path]::Combine($statusFolderPath, $seqNo + ".status")
 Write-Output "Status file path: $statusFilePath"
 $extensionFolder = Split-Path -Path $statusFolderPath -Parent
 Write-Output "Extension Folder: $extensionFolder"
+$PIRExePath = [IO.Path]::Combine($extensionFolder, "ProxyAgentExt.exe")
 $PIRExtensionFolderZIPLocation = [IO.Path]::Combine($extensionFolder, "Microsoft.CPlat.ProxyAgent.ProxyAgentWindows_" + $PIRversion + ".zip")
-
 Write-Output "Delete status file of PIR version" 
 $boolStatus = Test-Path -Path $statusFilePath
 if ($boolStatus) {

@@ -100,7 +100,7 @@ namespace GuestProxyAgentTest.Utilities
                         {
                             StorageAccountType = StorageAccountType.StandardLrs,
                         },
-                    }
+                    },
                 },
                 OSProfile = new VirtualMachineOSProfile()
                 {
@@ -108,7 +108,7 @@ namespace GuestProxyAgentTest.Utilities
                     AdminUsername = this.adminUsername,
                     AdminPassword = this.adminPassword,
                 },
-                NetworkProfile = await DoCreateVMNetWorkProfile(rgr),
+                NetworkProfile = await DoCreateVMNetWorkProfile(rgr), 
             };
 
             if (EnableProxyAgent)
@@ -118,7 +118,7 @@ namespace GuestProxyAgentTest.Utilities
                         Enabled = true 
                     } 
                 };
-            } 
+            }
 
             if (Constants.IS_WINDOWS())
             {
