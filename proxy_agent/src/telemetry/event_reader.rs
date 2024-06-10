@@ -435,6 +435,7 @@ mod tests {
         }
 
         let temp_dir = env::temp_dir();
+        let sender = crate::data_vessel::start_receiver_async();
         start_async(temp_dir, Duration::from_millis(1000), false, sender.clone());
 
         let mut wait_milli_sec: i32 = 100;
@@ -459,6 +460,7 @@ mod tests {
             THREAD_PRIORITY_VERIFY_SUCCESS
         );
         assert!(THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed));
+        _ = sender.send(crate::data_vessel::DataAction::Stop);
     }
 
     #[test]

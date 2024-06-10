@@ -29,7 +29,6 @@ const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 static mut CURRENT_SECURE_CHANNEL_STATE: Lazy<String> = Lazy::new(|| String::from(UNKNOWN_STATE)); // state starts from Unknown
-                                                                                                   //static mut CURRENT_KEY: Lazy<Key> = Lazy::new(Key::empty);
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Key latch thread has not started yet."));
