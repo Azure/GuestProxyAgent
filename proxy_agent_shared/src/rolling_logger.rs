@@ -66,12 +66,11 @@ impl RollingLogger {
         misc_helpers::try_create_folder(self.log_dir.to_path_buf())?;
 
         let file_full_path = self.get_current_file_full_path(None);
-        let f: File;
-        if file_full_path.exists() {
-            f = OpenOptions::new().append(true).open(file_full_path)?;
+        let f = if file_full_path.exists() {
+            OpenOptions::new().append(true).open(file_full_path)?
         } else {
-            f = File::create(file_full_path)?;
-        }
+            File::create(file_full_path)?
+        };
 
         self.log_writer = Some(LineWriter::new(f));
 
@@ -125,7 +124,7 @@ impl RollingLogger {
             let mut count = max_count;
             for log in log_files {
                 fs::remove_file(log)?;
-                count = count + 1;
+                count += 1;
 
                 if count > file_count {
                     break;
@@ -163,14 +162,11 @@ impl RollingLogger {
         let mut full_path = PathBuf::from(&self.log_dir);
         let mut file_name = String::from(&self.log_file_name);
 
-        match timestamp {
-            Some(time) => {
-                file_name.push_str(".");
-                file_name.push_str(&time.replace(":", "."));
-                file_name.push_str(".log")
-            }
-            None => {}
-        };
+        if let Some(time) = timestamp {
+            file_name.push('.');
+            file_name.push_str(&time.replace(':', "."));
+            file_name.push_str(".log")
+        }
 
         full_path.push(&file_name);
         full_path.set_extension(&self.log_file_extension);

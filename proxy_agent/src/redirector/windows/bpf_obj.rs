@@ -196,8 +196,8 @@ pub type ebpf_map_t = bpf_map;
 pub struct bpf_object {
     object_name: *mut c_char,
     file_name: *mut c_char,
-    programs: std::vec::Vec<*mut ebpf_program_t>,
-    maps: std::vec::Vec<*mut ebpf_map_t>,
+    programs: Vec<*mut ebpf_program_t>,
+    maps: Vec<*mut ebpf_map_t>,
     loaded: bool,
     execution_type: ebpf_execution_type_t,
 }
@@ -236,9 +236,7 @@ impl _ip_address {
     #[allow(dead_code)]
     pub fn from_ipv6(ipv6: [u32; 4]) -> Self {
         let mut ip = Self::empty();
-        for i in 0..4 {
-            ip.ip[i] = ipv6[i];
-        }
+        ip.ip.copy_from_slice(&ipv6);
         ip
     }
 }

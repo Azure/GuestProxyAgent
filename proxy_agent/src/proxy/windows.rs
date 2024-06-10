@@ -63,6 +63,7 @@ type NetUserGetLocalGroups = unsafe extern "system" fn(
     totalentries: *mut u32,
 ) -> u32;
 
+#[allow(clippy::too_many_arguments)]
 fn net_user_get_local_groups(
     servername: windows_sys::core::PWSTR,
     username: windows_sys::core::PWSTR,
@@ -96,7 +97,7 @@ fn net_user_get_local_groups(
     }
 }
 
-static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(|| load_users());
+static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(load_users);
 fn load_users() -> HashMap<u64, &'static str> {
     let mut users = HashMap::new();
     users.insert(0x3e4, "NETWORK SERVICE");
@@ -163,10 +164,9 @@ pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
         } else {
             let message = format!(
                 "NetUserGetLocalGroups '{}' failed with status: {}",
-                domain_user_name.to_string(),
-                status
+                domain_user_name, status
             );
-            eprintln!("{}", message.to_string());
+            eprintln!("{}", message);
             logger::write_warning(message);
         }
 
@@ -248,15 +248,15 @@ pub fn query_basic_process_info(handler: isize) -> std::io::Result<PROCESS_BASIC
         );
 
         if status != 0 {
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         Ok(process_basic_information)
     }
 }
 pub fn get_process_handler(pid: u32) -> std::io::Result<HANDLE> {
     if pid == 0 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
             "pid 0 is not a valid process id",
         ));
     }
@@ -265,7 +265,7 @@ pub fn get_process_handler(pid: u32) -> std::io::Result<HANDLE> {
     unsafe {
         let handler = OpenProcess(options, FALSE, pid);
         if handler == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         Ok(handler)
     }
@@ -286,12 +286,12 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
             && status != STATUS_BUFFER_TOO_SMALL
             && status != STATUS_INFO_LENGTH_MISMATCH
         {
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         println!("return_length: {}", return_length);
 
         let buf_len = (return_length as usize) / 2;
-        let mut buffer: Vec<u16> = Vec::with_capacity(buf_len + 1);
+        let mut buffer: Vec<u16> = vec![0; buf_len + 1];
         buffer.resize(buf_len + 1, 0); // set everything to 0
 
         let status: NTSTATUS = NtQueryInformationProcess(
@@ -303,7 +303,7 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
         );
         if status < 0 {
             eprintln!("NtQueryInformationProcess failed with status: {}", status);
-            return Err(std::io::Error::from_raw_os_error(status));
+            return Err(Error::from_raw_os_error(status));
         }
         buffer.set_len(buf_len);
         buffer.push(0);
@@ -325,7 +325,7 @@ pub fn get_process_name(handler: isize) -> std::io::Result<String> {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleBaseNameW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)
@@ -337,7 +337,7 @@ pub fn get_process_full_name(handler: isize) -> std::io::Result<String> {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleFileNameExW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(Error::last_os_error());
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)
@@ -375,7 +375,7 @@ mod tests {
                     println!("user_name cannot be 'undefined'");
                     continue;
                 }
-                if user_groups.len() > 0 {
+                if user_groups.is_empty() {
                     return;
                 }
             }
@@ -398,8 +398,11 @@ mod tests {
         let base_info = super::query_basic_process_info(handler);
         assert!(base_info.is_ok(), "base_info must be ok");
 
-        assert!(name.len() > 0, "process name should not be empty");
-        assert!(full_name.len() > 0, "process full name should not be empty");
-        assert!(cmd.len() > 0, "process cmd should not be empty");
+        assert!(!name.is_empty(), "process name should not be empty");
+        assert!(
+            !full_name.is_empty(),
+            "process full name should not be empty"
+        );
+        assert!(!cmd.is_empty(), "process cmd should not be empty");
     }
 }

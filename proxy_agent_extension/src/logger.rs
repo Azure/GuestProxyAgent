@@ -17,7 +17,7 @@ pub fn get_logger_key() -> String {
             Some(logger_key) => logger_key.lock().unwrap().as_str().to_string(),
             None => {
                 eprintln!("Logge has not init, please call 'init' first");
-                return "".to_string();
+                "".to_string()
             }
         }
     }
@@ -65,8 +65,8 @@ mod test {
         }
 
         //Check if log file exists
-        let log_file: PathBuf = temp_test_path.join("log").join("test.log".to_string());
-        assert_eq!(log_file.exists(), true);
+        let log_file: PathBuf = temp_test_path.join("log").join("test.log");
+        assert!(log_file.exists());
 
         _ = fs::remove_dir_all(&temp_test_path);
     }

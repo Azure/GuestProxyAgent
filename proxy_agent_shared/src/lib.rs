@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![deny(warnings)]
 
 pub mod logger_manager;
 pub mod misc_helpers;

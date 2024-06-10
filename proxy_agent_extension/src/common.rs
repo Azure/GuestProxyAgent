@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs;
@@ -19,22 +18,21 @@ use proxy_agent_shared::service;
 pub fn get_handler_environment(exe_path: PathBuf) -> HandlerEnvironment {
     let mut handler_env_path: PathBuf = exe_path.to_path_buf();
     handler_env_path.push(constants::HANDLER_ENVIRONMENT_FILE);
-    let handler_env_file: Vec<structs::Handler>;
-    match misc_helpers::json_read_from_file(handler_env_path) {
-        Ok(temp) => {
-            handler_env_file = temp;
-        }
-        Err(e) => {
-            eprintln!("Error in reading handler env file: {e}");
-            process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
-        }
-    }
-    if handler_env_file.len() == 0 {
+
+    let handler_env_file: Vec<structs::Handler> =
+        match misc_helpers::json_read_from_file(handler_env_path) {
+            Ok(temp) => temp,
+            Err(e) => {
+                eprintln!("Error in reading handler env file: {e}");
+                process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+            }
+        };
+    if handler_env_file.is_empty() {
         eprintln!("Handler environment file is empty");
         process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
     }
-    let root_handler_environment = handler_env_file[0].handlerEnvironment.clone();
-    root_handler_environment
+
+    handler_env_file[0].handlerEnvironment.clone()
 }
 
 pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::HeartbeatObj) {
@@ -45,17 +43,15 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
     };
 
     let root_obj: Vec<structs::TopLevelHeartbeat> = vec![root_heartbeat_obj];
-    let root_heartbeat;
-    match serde_json::to_string(&root_obj) {
-        Ok(temp) => {
-            root_heartbeat = temp;
-        }
+
+    let root_heartbeat = match serde_json::to_string(&root_obj) {
+        Ok(temp) => temp,
         Err(e) => {
             logger::write(format!("Error in serializing heartbeat object: {e}"));
             return;
         }
-    }
-    match fs::write(heartbeat_file_path.to_path_buf(), &root_heartbeat) {
+    };
+    match fs::write(&heartbeat_file_path, root_heartbeat) {
         Ok(_) => {
             logger::write(format!(
                 "HeartBeat file created: {:?}",
@@ -95,31 +91,28 @@ pub fn report_status(
     //Status Instance
     let status_file: PathBuf = get_file_path(
         status_folder_path,
-        &config_seq_no,
+        config_seq_no,
         constants::STATUS_FILE_SUFFIX,
     );
 
     let current_datetime: String = misc_helpers::get_date_time_string_with_miliseconds();
-    let root_status_obj = structs::TopLevelStatus {
+    let root_status_obj = TopLevelStatus {
         version: constants::VERSION.to_string(),
         timestampUTC: current_datetime,
         status: status_obj.clone(),
     };
 
     let root_vec: Vec<TopLevelStatus> = vec![root_status_obj];
-    let root_status;
 
-    match serde_json::to_string(&root_vec) {
-        Ok(temp) => {
-            root_status = temp;
-        }
+    let root_status = match serde_json::to_string(&root_vec) {
+        Ok(temp) => temp,
         Err(e) => {
             logger::write(format!("Error in serializing status object: {e}"));
             return;
         }
-    }
+    };
     // TODO: retry if write failed
-    match fs::write(status_file.to_path_buf(), root_status) {
+    match fs::write(&status_file, root_status) {
         Ok(_) => {
             logger::write(format!("Status file created: {:?}", status_file));
         }
@@ -138,11 +131,11 @@ pub fn update_current_seq_no(
         Some(new_seq_no) => {
             logger::write(format!("enable command with new seq no: {new_seq_no}"));
             let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
-            match fs::read_to_string(current_seq_no_stored_file.to_path_buf()) {
+            match fs::read_to_string(&current_seq_no_stored_file) {
                 Ok(seq_no) => {
                     if seq_no != *new_seq_no {
                         logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
-                        _ = fs::write(current_seq_no_stored_file.to_path_buf(), new_seq_no);
+                        _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                     } else {
                         logger::write("no update on seq no".to_string());
                         should_report_status = false;
@@ -153,7 +146,7 @@ pub fn update_current_seq_no(
                         "no seq no found, writing seq no {} to file",
                         new_seq_no
                     ));
-                    _ = fs::write(current_seq_no_stored_file.to_path_buf(), new_seq_no);
+                    _ = fs::write(&current_seq_no_stored_file, new_seq_no);
                 }
             }
         }
@@ -173,11 +166,11 @@ pub fn get_current_seq_no(exe_path: PathBuf) -> String {
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
             logger::write(format!("Current seq no: {}", seq_no));
-            return seq_no;
+            seq_no
         }
         Err(e) => {
             logger::write(format!("Error reading current seq no file: {:?}", e));
-            return "".to_string();
+            "".to_string()
         }
     }
 }
@@ -185,12 +178,12 @@ pub fn get_current_seq_no(exe_path: PathBuf) -> String {
 pub fn get_proxy_agent_service_path() -> PathBuf {
     #[cfg(windows)]
     {
-        return service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME);
+        service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME)
     }
     #[cfg(not(windows))]
     {
         // linux service harded to this location
-        return PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent");
+        PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent")
     }
 }
 
@@ -239,7 +232,7 @@ pub fn start_event_logger(logger_key: &str) {
     let max_event_file_count: usize = 50;
     let exe_path = misc_helpers::get_current_exe_dir();
     let event_folder = PathBuf::from(
-        common::get_handler_environment(exe_path.to_path_buf())
+        get_handler_environment(exe_path.to_path_buf())
             .eventsFolder
             .to_string(),
     );
@@ -266,6 +259,12 @@ pub fn setup_tool_exe_path() -> PathBuf {
     #[cfg(not(windows))]
     {
         misc_helpers::get_current_exe_dir().join("ProxyAgent/proxy_agent_setup")
+    }
+}
+
+impl Default for StatusState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -315,7 +314,7 @@ impl StatusState {
                 self.current_state = constants::TRANSITIONING_STATUS.to_string();
             }
         }
-        return self.current_state.clone();
+        self.current_state.clone()
     }
 }
 
@@ -406,7 +405,7 @@ mod tests {
             expected_status_file.to_path_buf(),
         )
         .unwrap();
-        assert!(status_obj.len() == 1);
+        assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.name, "test".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);
@@ -449,7 +448,7 @@ mod tests {
 
         let should_report_status: Error =
             common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf()).unwrap_err();
-        assert!(should_report_status.kind() == ErrorKind::InvalidInput);
+        assert_eq!(should_report_status.kind(), ErrorKind::InvalidInput);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "".to_string());
 
@@ -457,7 +456,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, true);
+        assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "0".to_string());
 
@@ -465,7 +464,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, true);
+        assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
 
@@ -473,7 +472,7 @@ mod tests {
         let should_report_status =
             common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
                 .unwrap();
-        assert_eq!(should_report_status, false);
+        assert!(!should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
 
@@ -499,7 +498,7 @@ mod tests {
             expected_status_file.to_path_buf(),
         )
         .unwrap();
-        assert!(status_obj.len() == 1);
+        assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.operation, "Enable");
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -530,7 +529,7 @@ mod tests {
             expected_heartbeat_file.to_path_buf(),
         )
         .unwrap();
-        assert!(heartbeat_obj.len() == 1);
+        assert_eq!(heartbeat_obj.len(), 1);
         assert_eq!(heartbeat_obj[0].heartbeat.status, "test".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);

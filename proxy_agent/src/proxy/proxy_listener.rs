@@ -50,9 +50,9 @@ fn start(port: u16, pool_size: u16) {
     // loopback address and local ip addresses
     let addr = format!("{}:{}", Ipv4Addr::UNSPECIFIED, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
-    let listener;
-    match TcpListener::bind(&addr) {
-        Ok(l) => listener = l,
+
+    let listener = match TcpListener::bind(&addr) {
+        Ok(l) => l,
         Err(e) => {
             let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
             unsafe {
@@ -61,7 +61,7 @@ fn start(port: u16, pool_size: u16) {
             logger::write_error(message);
             return;
         }
-    }
+    };
 
     let message = helpers::write_startup_event(
         "Started proxy listener, ready to accept request",
@@ -94,7 +94,7 @@ fn start(port: u16, pool_size: u16) {
             }
             *connection_count_lock += 1;
 
-            connection_count_clone = connection_count_lock.clone();
+            connection_count_clone = *connection_count_lock;
         }
         match connection {
             Ok(stream) => {
@@ -131,7 +131,7 @@ pub fn stop(port: u16) {
 }
 
 fn handle_connection(connection: &mut Connection) {
-    let mut stream = &connection.stream;
+    let stream = &connection.stream;
     Connection::write_information(connection.id, "Received connection.".to_string());
 
     // set read timeout to handle the case
@@ -141,7 +141,7 @@ fn handle_connection(connection: &mut Connection) {
 
     // received data from original client
     let mut request: Request;
-    match http::receive_request_data(&mut stream) {
+    match http::receive_request_data(stream) {
         Ok(data) => request = data,
         Err(e) => {
             Connection::write_warning(
@@ -167,8 +167,7 @@ fn handle_connection(connection: &mut Connection) {
                 connection.id,
                 format!(
                     "Got request from client - {}:{}",
-                    client_source_ip.to_string(),
-                    client_source_port
+                    client_source_ip, client_source_port
                 ),
             );
         }
@@ -197,7 +196,7 @@ fn handle_connection(connection: &mut Connection) {
                 connection.id,
                 "Try to get audit entry from socket stream".to_string(),
             );
-            match redirector::get_audit_from_stream(&stream) {
+            match redirector::get_audit_from_stream(stream) {
                 Ok(data) => entry = data,
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::Unsupported {
@@ -210,7 +209,7 @@ fn handle_connection(connection: &mut Connection) {
                             Connection::CONNECTION_LOGGER_KEY,
                         );
                     }
-                    send_response(&stream, Response::MISDIRECTED);
+                    send_response(stream, Response::MISDIRECTED);
                     log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
                     return;
                 }
@@ -218,19 +217,19 @@ fn handle_connection(connection: &mut Connection) {
         }
     }
     let claims = Claims::from_audit_entry(&entry, client_source_ip);
-    let claim_details: String;
-    match serde_json::to_string(&claims) {
-        Ok(json) => claim_details = json,
+
+    let claim_details: String = match serde_json::to_string(&claims) {
+        Ok(json) => json,
         Err(e) => {
             Connection::write_warning(
                 connection.id,
                 format!("Failed to get claim json string: {}", e),
             );
-            send_response(&stream, Response::MISDIRECTED);
+            send_response(stream, Response::MISDIRECTED);
             log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
             return;
         }
-    }
+    };
     Connection::write(connection.id, claim_details.to_string());
     connection.cliams = Some(claims.clone());
 
@@ -248,9 +247,9 @@ fn handle_connection(connection: &mut Connection) {
     if !auth.authenticate(connection.id, request.url.to_string()) {
         Connection::write_warning(
             connection.id,
-            format!("Denied unauthorize request: {}", claim_details.to_string()),
+            format!("Denied unauthorize request: {}", claim_details),
         );
-        send_response(&stream, Response::FORBIDDEN);
+        send_response(stream, Response::FORBIDDEN);
         log_connection_summary(connection, &request, Response::FORBIDDEN.to_string());
         return;
     }
@@ -264,7 +263,7 @@ fn handle_connection(connection: &mut Connection) {
                 connection.id,
                 format!("Failed to start new request to host: {}", e),
             );
-            send_response(&stream, Response::MISDIRECTED);
+            send_response(stream, Response::MISDIRECTED);
             log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
             return;
         }
@@ -305,9 +304,9 @@ fn handle_connection_with_signature(
 
     // Add header x-ms-azure-host-authorization
     let key = key_keeper::get_current_key();
-    if key != "" {
+    if !key.is_empty() {
         let input_to_sign = request.as_sig_input();
-        match helpers::compute_signature(key.to_string(), &input_to_sign.as_slice()) {
+        match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
             Ok(sig) => {
                 match String::from_utf8(input_to_sign) {
                     Ok(data) => Connection::write(
@@ -334,10 +333,7 @@ fn handle_connection_with_signature(
                 );
                 Connection::write(
                     connection.id,
-                    format!(
-                        "Added authorization header {}",
-                        authorization_value.to_string()
-                    ),
+                    format!("Added authorization header {}", authorization_value),
                 )
             }
             Err(e) => {
@@ -355,7 +351,7 @@ fn handle_connection_with_signature(
     }
 
     // send to remote server
-    _ = server_stream.write_all(request.to_raw_string().as_bytes());
+    _ = server_stream.write_all(request.as_raw_string().as_bytes());
     _ = server_stream.flush();
 
     // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
@@ -363,11 +359,7 @@ fn handle_connection_with_signature(
     extra_response_headers.insert(constants::AUTHORIZATION_HEADER, "value");
 
     let mut response_without_body;
-    match http::forward_response(
-        &server_stream,
-        &client_stream,
-        extra_response_headers.clone(),
-    ) {
+    match http::forward_response(server_stream, client_stream, extra_response_headers.clone()) {
         Ok(data) => {
             response_without_body = data.0;
             Connection::write(
@@ -393,14 +385,10 @@ fn handle_connection_with_signature(
             connection.id,
             "Current response expect sending original request body now.".to_string(),
         );
-        _ = server_stream.write_all(&request.get_body());
+        _ = server_stream.write_all(request.get_body());
         _ = server_stream.flush();
 
-        match http::forward_response(
-            &server_stream,
-            &client_stream,
-            extra_response_headers.clone(),
-        ) {
+        match http::forward_response(server_stream, client_stream, extra_response_headers.clone()) {
             Ok(data) => {
                 response_without_body = data.0;
                 Connection::write(
@@ -437,31 +425,30 @@ fn handle_expect_continue_request(
     // send 'continue' response to the original client
     send_response(client_stream, Response::CONTINUE);
 
-    let content_length;
-    match request.headers.get_content_length() {
-        Ok(len) => content_length = len,
+    let content_length = match request.headers.get_content_length() {
+        Ok(len) => len,
         Err(e) => {
             Connection::write_warning(connection.id, format!(" {}", e));
             send_response(client_stream, Response::BAD_REQUEST);
-            log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
+            log_connection_summary(connection, request, Response::BAD_REQUEST.to_string());
             return;
         }
-    }
+    };
 
     // receive body content from client
-    let data;
-    match http::receive_body(&client_stream, content_length) {
-        Ok(d) => data = d,
+
+    let data = match http::receive_body(client_stream, content_length) {
+        Ok(d) => d,
         Err(e) => {
             Connection::write_warning(
                 connection.id,
                 format!("Failed to received body from client: {}", e),
             );
             send_response(client_stream, Response::BAD_REQUEST);
-            log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
+            log_connection_summary(connection, request, Response::BAD_REQUEST.to_string());
             return;
         }
-    }
+    };
     request.set_body(data);
 }
 
@@ -480,7 +467,7 @@ fn handle_connection_without_signature(
     let mut client_stream = &connection.stream;
 
     // send the request without signature to host
-    _ = server_stream.write_all(request.to_raw_string().as_bytes());
+    _ = server_stream.write_all(request.as_raw_string().as_bytes());
     _ = server_stream.flush();
     let mut response;
     match http::receive_response_data(server_stream) {
@@ -490,7 +477,7 @@ fn handle_connection_without_signature(
                 connection.id,
                 format!("Failed to receive data from host: {}", e),
             );
-            send_response(&client_stream, Response::BAD_GATEWAY);
+            send_response(client_stream, Response::BAD_GATEWAY);
             log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
             return;
         }
@@ -501,25 +488,24 @@ fn handle_connection_without_signature(
     );
 
     if response.is_continue_response() {
-        let content_length;
-        match request.headers.get_content_length() {
-            Ok(len) => content_length = len,
+        let content_length = match request.headers.get_content_length() {
+            Ok(len) => len,
             Err(e) => {
                 Connection::write_warning(connection.id, format!(" {}", e));
-                send_response(&client_stream, Response::BAD_REQUEST);
+                send_response(client_stream, Response::BAD_REQUEST);
                 log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
                 return;
             }
-        }
+        };
 
         // send 'continue' response to the original client
-        send_response(&client_stream, Response::CONTINUE);
+        send_response(client_stream, Response::CONTINUE);
 
         Connection::write(
             connection.id,
             "Current response expect streaming original body now.".to_string(),
         );
-        match http::stream_body(&mut client_stream, server_stream, content_length) {
+        match http::stream_body(client_stream, server_stream, content_length) {
             Ok(l) => {
                 if l < content_length {
                     Connection::write_warning(
@@ -529,7 +515,7 @@ fn handle_connection_without_signature(
                             l, content_length
                         ),
                     );
-                    send_response(&client_stream, Response::BAD_REQUEST);
+                    send_response(client_stream, Response::BAD_REQUEST);
                     log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
                     return;
                 }
@@ -539,7 +525,7 @@ fn handle_connection_without_signature(
                     connection.id,
                     format!("Failed streaming the request body, error {}", e),
                 );
-                send_response(&client_stream, Response::BAD_GATEWAY);
+                send_response(client_stream, Response::BAD_GATEWAY);
                 log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
                 return;
             }
@@ -552,7 +538,7 @@ fn handle_connection_without_signature(
                     connection.id,
                     format!("Failed to receive data from host: {}", e),
                 );
-                send_response(&client_stream, Response::BAD_GATEWAY);
+                send_response(client_stream, Response::BAD_GATEWAY);
                 log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
                 return;
             }
@@ -598,17 +584,14 @@ fn log_connection_summary(connection: &Connection, request: &Request, response_s
         responseStatus: response_status.to_string(),
         elapsedTime: elapsed_time.as_millis(),
     };
-    match serde_json::to_string(&summary) {
-        Ok(json) => {
-            event_logger::write_event(
-                event_logger::INFO_LEVEL,
-                json,
-                "log_connection_summary",
-                "proxy_listener",
-                Connection::CONNECTION_LOGGER_KEY,
-            );
-        }
-        Err(_) => {}
+    if let Ok(json) = serde_json::to_string(&summary) {
+        event_logger::write_event(
+            event_logger::INFO_LEVEL,
+            json,
+            "log_connection_summary",
+            "proxy_listener",
+            Connection::CONNECTION_LOGGER_KEY,
+        );
     };
     proxy_agent_status::add_connection_summary(summary, false);
 }
@@ -623,18 +606,18 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     );
 
     // response to original client
-    _ = client_stream.write_all(response.to_raw_string().as_bytes());
+    _ = client_stream.write_all(response.as_raw_string().as_bytes());
     _ = client_stream.flush();
 }
 
 pub fn get_status() -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
-    let status;
-    if shutdown.load(Ordering::Relaxed) {
-        status = ModuleState::STOPPED.to_string();
+
+    let status = if shutdown.load(Ordering::Relaxed) {
+        ModuleState::STOPPED.to_string()
     } else {
-        status = ModuleState::RUNNING.to_string();
-    }
+        ModuleState::RUNNING.to_string()
+    };
 
     ProxyAgentDetailStatus {
         status,
@@ -662,9 +645,9 @@ mod tests {
     use std::net::TcpStream;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::thread;
     use std::time::Duration;
     use std::time::Instant;
-    use std::{thread, time};
 
     #[test]
     fn direct_request_test() {
@@ -687,17 +670,17 @@ mod tests {
         });
 
         // give some time to let the listener started
-        let sleep_duration = time::Duration::from_millis(100);
+        let sleep_duration = Duration::from_millis(100);
         thread::sleep(sleep_duration);
 
         let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
         let mut request = Request::new(format!("http://127.0.0.1:{}", port), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
-        let response = http::receive_response_data(&mut client).unwrap();
+        let response = http::receive_response_data(&client).unwrap();
 
         // stop listener
         proxy_listener::stop(port);
@@ -751,21 +734,19 @@ mod tests {
             .spawn(move || {
                 let listener = TcpListener::bind(PROXY_ENDPOINT_ADDRESS).unwrap();
 
-                let mut id = 0u128;
-                for stream in listener.incoming() {
+                for (id, stream) in listener.incoming().enumerate() {
                     if cloned_shut_down.load(Ordering::Relaxed) {
                         break;
                     }
                     let stream = stream.unwrap();
                     let mut connection = Connection {
-                        stream: stream,
-                        id: id,
+                        stream,
+                        id: id.try_into().unwrap(),
                         now: Instant::now(),
                         cliams: None,
                         ip: String::new(),
                         port: 0,
                     };
-                    id = id + 1;
                     proxy_connection_stream(&mut connection);
                 }
             })
@@ -798,7 +779,7 @@ mod tests {
 
         let mut response = Response::from_status(Response::OK.to_string());
         if request.method == "GET" {
-            let file = std::env::current_exe().unwrap();
+            let file = env::current_exe().unwrap();
             let body = fs::read(file).unwrap();
             response.headers.add_header(
                 headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
@@ -817,7 +798,7 @@ mod tests {
                 }
 
                 let mut response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(response.to_raw_string().as_bytes());
+                _ = stream.write_all(response.as_raw_string().as_bytes());
                 _ = stream.flush();
 
                 request.set_body(http::receive_body(&stream, content_length).unwrap());
@@ -837,7 +818,7 @@ mod tests {
         let stream = &connection.stream;
         // set read timeout to handle the case when body content is less than Content-Length in request header
         _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-        let mut request = http::receive_request_data(&stream).unwrap();
+        let mut request = http::receive_request_data(stream).unwrap();
         let claims = Claims {
             userId: 999,
             userName: "test user".to_string(),
@@ -875,7 +856,7 @@ mod tests {
         let mut client = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
         let mut request = Request::new("/file".to_string(), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
@@ -886,7 +867,7 @@ mod tests {
             "get_body_len and content_length mismatch."
         );
 
-        let file = std::env::current_exe().unwrap();
+        let file = env::current_exe().unwrap();
         assert_eq!(
             file.metadata().unwrap().len() as usize,
             response.get_body_len(),
@@ -895,7 +876,7 @@ mod tests {
     }
 
     fn test_post_requests(uri: &str) {
-        let file = std::env::current_exe().unwrap();
+        let file = env::current_exe().unwrap();
         let body = fs::read(file).unwrap();
 
         let mut request = Request::new(uri.to_string(), "POST".to_string());
@@ -907,8 +888,8 @@ mod tests {
         // post request with full body directly
         request.set_body(body);
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_bytes());
-        _ = client_stream.flush();
+        client_stream.write_all(&request.to_raw_bytes()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(
             Response::BAD_REQUEST,
@@ -927,8 +908,10 @@ mod tests {
             headers::EXPECT_HEADER_VALUE.to_string(),
         );
         let mut client_stream = TcpStream::connect(PROXY_ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_string().as_bytes());
-        _ = client_stream.flush();
+        client_stream
+            .write_all(request.as_raw_string().as_bytes())
+            .unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(
             Response::CONTINUE,
@@ -942,8 +925,8 @@ mod tests {
         );
 
         // Send body only after CONTINUE response
-        _ = client_stream.write_all(&request.get_body());
-        _ = client_stream.flush();
+        client_stream.write_all(request.get_body()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(Response::OK, response.status, "response.status must be OK");
         assert_eq!(

@@ -98,7 +98,7 @@ pub fn get_file_version(file: PathBuf) -> std::io::Result<String> {
     if result == 0 {
         return Err(std::io::Error::last_os_error());
     }
-    let mut version = std::ptr::null_mut();
+    let mut version = null_mut();
     let mut version_len = 0;
     let result = unsafe {
         VerQueryValueW(
@@ -135,6 +135,6 @@ mod tests {
     fn test_get_file_version() {
         let exe_path = std::env::current_exe().unwrap();
         let version = super::get_file_version(exe_path).unwrap();
-        assert!(version.contains("."), "version should contain .");
+        assert!(version.contains('.'), "version should contain .");
     }
 }

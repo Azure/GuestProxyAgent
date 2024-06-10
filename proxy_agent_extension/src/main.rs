@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 #![allow(non_snake_case)]
-#![deny(warnings)]
 
 pub mod common;
 pub mod constants;
@@ -29,10 +28,8 @@ define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        let config_seq_no = match env::var("ConfigSequenceNumber") {
-            Ok(seq_no) => seq_no,
-            Err(_e) => "no seq no".to_string(),
-        };
+        let config_seq_no =
+            env::var("ConfigSequenceNumber").unwrap_or_else(|_e| "no seq no".to_string());
         handler_main::program_start(args, Some(config_seq_no));
     } else {
         let exe_path = misc_helpers::get_current_exe_dir();

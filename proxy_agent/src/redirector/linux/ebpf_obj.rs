@@ -21,9 +21,7 @@ impl _ip_address {
     #[allow(dead_code)]
     pub fn from_ipv6(ipv6: [u32; 4]) -> Self {
         let mut ip = Self::empty();
-        for i in 0..4 {
-            ip.ip[i] = ipv6[i];
-        }
+        ip.ip.copy_from_slice(&ipv6);
         ip
     }
 }
@@ -53,9 +51,7 @@ impl _destination_entry {
 
     pub fn to_array(&self) -> [u32; 6] {
         let mut array: [u32; 6] = [0; 6];
-        for i in 0..4 {
-            array[i] = self.destination_ip.ip[i];
-        }
+        array[..4].copy_from_slice(&self.destination_ip.ip);
         array[4] = self.destination_port;
         array[5] = self.protocol;
         array

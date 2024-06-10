@@ -10,6 +10,12 @@ pub struct TelemetryData {
     events: Vec<TelemetryEvent>,
 }
 
+impl Default for TelemetryData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TelemetryData {
     pub fn new() -> Self {
         TelemetryData { events: Vec::new() }
@@ -76,14 +82,8 @@ impl TelemetryEvent {
     pub fn from_event_log(event_log: &Event) -> Self {
         let vm_meta_data = event_reader::get_vm_meta_data();
         TelemetryEvent {
-            event_pid: match event_log.EventPid.parse::<u64>() {
-                Ok(pid) => pid,
-                Err(_) => 0, // 0 - default event pid
-            },
-            event_tid: match event_log.EventTid.parse::<u64>() {
-                Ok(tid) => tid,
-                Err(_) => 0, // 0 - default event tid
-            },
+            event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
+            event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
             ga_version: event_log.Version.to_string(),
             task_name: event_log.TaskName.to_string(),
             opcode_name: event_log.TimeStamp.to_string(),
@@ -231,9 +231,6 @@ impl KeywordName {
     }
 
     pub fn to_json(&self) -> String {
-        match serde_json::to_string(self) {
-            Ok(json) => json,
-            Err(_) => "".to_owned(),
-        }
+        serde_json::to_string(self).unwrap_or_else(|_| "".to_owned())
     }
 }
