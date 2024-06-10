@@ -46,8 +46,7 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
                 }
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
@@ -65,8 +64,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
                 }
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
@@ -93,18 +91,14 @@ pub fn start_event_threads() {
                 proxy_agent_status::start_async(Duration::default());
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
 }
 
 fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+    let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
     _ = misc_helpers::try_create_folder(provision_dir.to_path_buf());
@@ -138,14 +132,12 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    _ = logger::write_error(format!(
-                        "Failed to rename status file with error: {e}"
-                    ));
+                    logger::write_error(format!("Failed to rename status file with error: {e}"));
                 }
             }
         }
         Err(e) => {
-            _ = logger::write_error(format!("Failed to write temp status file with error: {e}"));
+            logger::write_error(format!("Failed to write temp status file with error: {e}"));
         }
     }
 }
@@ -160,14 +152,11 @@ pub fn get_provision_status_wait(
             return provision_status;
         }
 
-        match duration {
-            Some(d) => {
-                if d.as_millis() >= helpers::get_elapsed_time_in_millisec() {
-                    std::thread::sleep(Duration::from_millis(100));
-                    continue;
-                }
+        if let Some(d) = duration {
+            if d.as_millis() >= helpers::get_elapsed_time_in_millisec() {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
             }
-            None => {}
         }
 
         return provision_status;
@@ -179,10 +168,7 @@ pub fn get_provision_status_wait(
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, emtpy means provision success or provision failed.
 fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+    let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_FILE_NAME);
     if !status_file.exists() {
@@ -190,12 +176,10 @@ fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
     }
 
     match std::fs::read_to_string(status_file) {
-        Ok(status) => {
-            return (true, status);
-        }
+        Ok(status) => (true, status),
         Err(e) => {
             println!("Failed to read status.tag file with error: {}", e);
-            return (false, String::new());
+            (false, String::new())
         }
     }
 }
@@ -260,7 +244,7 @@ mod tests {
         );
 
         let event_threads_initialized =
-            unsafe { super::LOGGER_THREADS_INITIALIZED.lock().unwrap().clone() };
+            unsafe { *super::LOGGER_THREADS_INITIALIZED.lock().unwrap() };
         assert!(event_threads_initialized);
 
         // write status.tag file
@@ -268,7 +252,7 @@ mod tests {
         let provision_status = super::get_provision_status(Some(temp_test_path.to_path_buf()));
         assert!(provision_status.0, "provision_status.0 must be true");
         assert!(
-            provision_status.1.len() > 0,
+            !provision_status.1.is_empty(),
             "provision_status.1 should not empty"
         );
 

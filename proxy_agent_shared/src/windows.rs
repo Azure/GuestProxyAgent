@@ -31,12 +31,11 @@ fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) ->
 
 fn read_reg_string(key_name: &str, value_name: &str, default_value: String) -> String {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    match hklm.open_subkey(key_name) {
-        Ok(key) => match key.get_value(value_name) {
-            Ok(val) => return val,
-            Err(_) => {}
-        },
-        Err(_) => {}
+
+    if let Ok(key) = hklm.open_subkey(key_name) {
+        if let Ok(val) = key.get_value(value_name) {
+            return val;
+        }
     }
 
     default_value
@@ -111,7 +110,7 @@ pub fn get_os_version() -> std::io::Result<Version> {
         CURRENT_BUILD_NUMBER_STRING,
         "".to_string(),
     );
-    if build_str == "" {
+    if build_str.is_empty() {
         build = read_reg_int(OS_VERSION_REGISTRY_KEY, CURRENT_BUILD_NUMBER_STRING, None);
     } else {
         match build_str.parse::<u32>() {
@@ -122,7 +121,7 @@ pub fn get_os_version() -> std::io::Result<Version> {
 
     let revision_str = read_reg_string(OS_VERSION_REGISTRY_KEY, UBRSTRING, "".to_string());
     let revision;
-    if revision_str == "" {
+    if revision_str.is_empty() {
         revision = read_reg_int(OS_VERSION_REGISTRY_KEY, UBRSTRING, None);
     } else {
         match revision_str.parse::<u32>() {
@@ -137,7 +136,7 @@ pub fn get_os_version() -> std::io::Result<Version> {
 }
 
 pub fn get_os_name() -> String {
-    let mut os_name = read_reg_string(
+    let os_name = read_reg_string(
         OS_VERSION_REGISTRY_KEY,
         PRODUCT_NAME_VAL_STRING,
         "".to_string(),
@@ -145,16 +144,12 @@ pub fn get_os_name() -> String {
 
     // Win11 CurrentVersion Registry Shows Wrong ProductName Key
     // https://docs.microsoft.com/en-us/answers/questions/555857/windows-11-product-name-in-registry.html
-    match get_os_version() {
-        Ok(ver) => match ver.build {
-            Some(build) => {
-                if build >= 22000 {
-                    os_name = os_name.replace("Windows 10 ", "Windows 11 ");
-                }
+    if let Ok(ver) = get_os_version() {
+        if let Some(build) = ver.build {
+            if build >= 22000 {
+                return os_name.replace("Windows 10 ", "Windows 11 ");
             }
-            None => {}
-        },
-        Err(_) => {}
+        }
     }
 
     os_name
@@ -162,7 +157,7 @@ pub fn get_os_name() -> String {
 
 pub fn get_long_os_version() -> String {
     match get_os_version() {
-        Ok(ver) => format!("Windows:{}-{}", get_os_name(), ver.to_string()),
+        Ok(ver) => format!("Windows:{}-{}", get_os_name(), ver),
         Err(_) => format!("Windows:{}-{}", get_os_name(), ""),
     }
 }
@@ -191,24 +186,23 @@ pub fn get_processor_arch() -> String {
 }
 
 pub fn ensure_service_running(service_name: String) -> (bool, String) {
-    let service_manager;
     let mut message = String::new();
-    match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
-        Ok(manager) => service_manager = manager,
-        Err(e) => {
-            message = format!(
-                "ensure_service_running:: Failed to connect to service manager with error {e}."
-            );
-            return (false, message);
-        }
-    };
+    let service_manager =
+        match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
+            Ok(manager) => manager,
+            Err(e) => {
+                message = format!(
+                    "ensure_service_running:: Failed to connect to service manager with error {e}."
+                );
+                return (false, message);
+            }
+        };
 
-    let service;
-    match service_manager.open_service(
-        service_name.to_string(),
+    let service = match service_manager.open_service(
+        &service_name,
         ServiceAccess::QUERY_STATUS | ServiceAccess::START,
     ) {
-        Ok(s) => service = s,
+        Ok(s) => s,
         Err(e) => {
             message = format!(
                 "ensure_service_running:: Failed to open service {service_name} with error {e}."
@@ -263,7 +257,7 @@ mod tests {
 
         let long_os_version = super::get_long_os_version();
         assert_eq!(
-            format!("Windows:{}-{}", os_name, os_version.to_string()),
+            format!("Windows:{}-{}", os_name, os_version),
             long_os_version,
             "long_os_version mismatch"
         )

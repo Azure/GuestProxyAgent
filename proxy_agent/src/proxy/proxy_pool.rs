@@ -27,7 +27,7 @@ impl ProxyPool {
         }
 
         ProxyPool {
-            workers: workers,
+            workers,
             sender: Some(sender),
         }
     }

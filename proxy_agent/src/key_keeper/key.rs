@@ -9,6 +9,7 @@ use crate::{
 };
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
     io::{Error, ErrorKind},
@@ -85,57 +86,54 @@ pub struct AccessControlRules {
     pub roleAssignments: Option<Vec<RoleAssignment>>,
 }
 
-impl AuthorizationItem {
-    pub fn clone(&self) -> Self {
-        let rules = match &self.rules {
-            Some(r) => Some(AccessControlRules {
-                privileges: match r.privileges {
-                    Some(ref p) => {
-                        let mut privileges: Vec<Privilege> = Vec::new();
-                        for privilege in p {
-                            privileges.push(privilege.clone());
-                        }
-                        Some(privileges)
+impl Clone for AuthorizationItem {
+    fn clone(&self) -> Self {
+        let rules = self.rules.as_ref().map(|r| AccessControlRules {
+            privileges: match r.privileges {
+                Some(ref p) => {
+                    let mut privileges: Vec<Privilege> = Vec::new();
+                    for privilege in p {
+                        privileges.push(privilege.clone());
                     }
-                    None => None,
-                },
-                roles: match r.roles {
-                    Some(ref r) => {
-                        let mut roles: Vec<Role> = Vec::new();
-                        for role in r {
-                            roles.push(role.clone());
-                        }
-                        Some(roles)
+                    Some(privileges)
+                }
+                None => None,
+            },
+            roles: match r.roles {
+                Some(ref r) => {
+                    let mut roles: Vec<Role> = Vec::new();
+                    for role in r {
+                        roles.push(role.clone());
                     }
-                    None => None,
-                },
-                identities: match r.identities {
-                    Some(ref i) => {
-                        let mut identities: Vec<Identity> = Vec::new();
-                        for identity in i {
-                            identities.push(identity.clone());
-                        }
-                        Some(identities)
+                    Some(roles)
+                }
+                None => None,
+            },
+            identities: match r.identities {
+                Some(ref i) => {
+                    let mut identities: Vec<Identity> = Vec::new();
+                    for identity in i {
+                        identities.push(identity.clone());
                     }
-                    None => None,
-                },
-                roleAssignments: match r.roleAssignments {
-                    Some(ref r) => {
-                        let mut role_assignments: Vec<RoleAssignment> = Vec::new();
-                        for role_assignment in r {
-                            role_assignments.push(role_assignment.clone());
-                        }
-                        Some(role_assignments)
+                    Some(identities)
+                }
+                None => None,
+            },
+            roleAssignments: match r.roleAssignments {
+                Some(ref r) => {
+                    let mut role_assignments: Vec<RoleAssignment> = Vec::new();
+                    for role_assignment in r {
+                        role_assignments.push(role_assignment.clone());
                     }
-                    None => None,
-                },
-            }),
-            None => None,
-        };
+                    Some(role_assignments)
+                }
+                None => None,
+            },
+        });
         AuthorizationItem {
             defaultAccess: self.defaultAccess.to_string(),
             mode: self.mode.to_string(),
-            rules: rules,
+            rules,
             id: self.id.to_string(),
         }
     }
@@ -178,24 +176,26 @@ pub struct RoleAssignment {
     pub identities: Vec<String>,
 }
 
-impl Privilege {
-    pub fn clone(&self) -> Self {
+impl Clone for Privilege {
+    fn clone(&self) -> Self {
         Privilege {
             name: self.name.to_string(),
             path: self.path.to_string(),
             queryParameters: self.queryParameters.clone(),
         }
     }
+}
 
-    pub fn is_match(&self, connection_id: u128, request_url: url::Url) -> bool {
+impl Privilege {
+    pub fn is_match(&self, connection_id: u128, request_url: Url) -> bool {
         Connection::write_information(
             connection_id,
-            format!("Start to match privilege '{}'", self.name.to_string()),
+            format!("Start to match privilege '{}'", self.name),
         );
         if request_url.path().to_lowercase().starts_with(&self.path) {
             Connection::write_information(
                 connection_id,
-                format!("Matched privilege path '{}'", self.path.to_string()),
+                format!("Matched privilege path '{}'", self.path),
             );
 
             match &self.queryParameters {
@@ -204,7 +204,7 @@ impl Privilege {
                         connection_id,
                         format!(
                             "Start to match query_parameters from privilege '{}'",
-                            self.name.to_string()
+                            self.name
                         ),
                     );
 
@@ -216,15 +216,13 @@ impl Privilege {
                                         connection_id,
                                         format!(
                                             "Matched query_parameters '{}:{}' from privilege '{}'",
-                                            key,
-                                            v,
-                                            self.name.to_string()
+                                            key, v, self.name
                                         ),
                                     );
                                 } else {
                                     Connection::write_information(
                                         connection_id,
-                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name.to_string()),
+                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
                                     );
                                     return false;
                                 }
@@ -234,8 +232,7 @@ impl Privilege {
                                     connection_id,
                                     format!(
                                         "Not matched query_parameters key '{}' from privilege '{}'",
-                                        key,
-                                        self.name.to_string()
+                                        key, self.name
                                     ),
                                 );
                                 return false;
@@ -247,12 +244,12 @@ impl Privilege {
             }
             return true;
         }
-        return false;
+        false
     }
 }
 
-impl Role {
-    pub fn clone(&self) -> Self {
+impl Clone for Role {
+    fn clone(&self) -> Self {
         Role {
             name: self.name.to_string(),
             privileges: self.privileges.clone(),
@@ -260,8 +257,8 @@ impl Role {
     }
 }
 
-impl Identity {
-    pub fn clone(&self) -> Self {
+impl Clone for Identity {
+    fn clone(&self) -> Self {
         Identity {
             name: self.name.to_string(),
             userName: self.userName.clone(),
@@ -270,125 +267,107 @@ impl Identity {
             processName: self.processName.clone(),
         }
     }
+}
 
+impl Identity {
     pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
         Connection::write_information(
             connection_id,
-            format!("Start to match identity '{}'", self.name.to_string()),
+            format!("Start to match identity '{}'", self.name),
         );
-        match self.userName {
-            Some(ref user_name) => {
-                if user_name.to_lowercase() == claims.userName.to_lowercase() {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Matched user name '{}' from identity '{}'",
-                            user_name,
-                            self.name.to_string()
-                        ),
-                    );
-                } else {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Not matched user name '{}' from identity '{}'",
-                            user_name,
-                            self.name.to_string()
-                        ),
-                    );
-                    return false;
-                }
+        if let Some(ref user_name) = self.userName {
+            if user_name.to_lowercase() == claims.userName.to_lowercase() {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Matched user name '{}' from identity '{}'",
+                        user_name, self.name
+                    ),
+                );
+            } else {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Not matched user name '{}' from identity '{}'",
+                        user_name, self.name
+                    ),
+                );
+                return false;
             }
-            None => {}
         }
-        match self.processName {
-            Some(ref process_name) => {
-                if process_name.to_lowercase() == claims.processName.to_lowercase() {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Matched process name '{}' from identity '{}'",
-                            process_name,
-                            self.name.to_string()
-                        ),
-                    );
-                } else {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Not matched process name '{}' from identity '{}'",
-                            process_name,
-                            self.name.to_string()
-                        ),
-                    );
-                    return false;
-                }
+        if let Some(ref process_name) = self.processName {
+            if process_name.to_lowercase() == claims.processName.to_lowercase() {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Matched process name '{}' from identity '{}'",
+                        process_name, self.name
+                    ),
+                );
+            } else {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Not matched process name '{}' from identity '{}'",
+                        process_name, self.name
+                    ),
+                );
+                return false;
             }
-            None => {}
         }
-        match self.exePath {
-            Some(ref exe_path) => {
-                if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Matched process full path '{}' from identity '{}'",
-                            exe_path,
-                            self.name.to_string()
-                        ),
-                    );
-                } else {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Not matched process full path '{}' from identity '{}'",
-                            exe_path,
-                            self.name.to_string()
-                        ),
-                    );
-                    return false;
-                }
+        if let Some(ref exe_path) = self.exePath {
+            if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Matched process full path '{}' from identity '{}'",
+                        exe_path, self.name
+                    ),
+                );
+            } else {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Not matched process full path '{}' from identity '{}'",
+                        exe_path, self.name
+                    ),
+                );
+                return false;
             }
-            None => {}
         }
-        match self.groupName {
-            Some(ref group_name) => {
-                let mut matched = false;
-                for claims_user_group_name in &claims.userGroups {
-                    if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
-                        Connection::write_information(
-                            connection_id,
-                            format!(
-                                "Matched user group name '{}' from identity '{}'",
-                                group_name,
-                                self.name.to_string()
-                            ),
-                        );
-                        matched = true;
-                        break;
-                    }
-                }
-                if !matched {
+        if let Some(ref group_name) = self.groupName {
+            let mut matched = false;
+            for claims_user_group_name in &claims.userGroups {
+                if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
                     Connection::write_information(
                         connection_id,
                         format!(
-                            "Not matched user group name '{}' from identity '{}'",
-                            group_name,
-                            self.name.to_string()
+                            "Matched user group name '{}' from identity '{}'",
+                            group_name, self.name
                         ),
                     );
-                    return false;
+                    matched = true;
+                    break;
                 }
             }
-            None => {}
+            if !matched {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Not matched user group name '{}' from identity '{}'",
+                        group_name, self.name
+                    ),
+                );
+                return false;
+            }
         }
 
-        return true;
+        true
     }
 }
 
-impl RoleAssignment {
-    pub fn clone(&self) -> Self {
+impl Clone for RoleAssignment {
+    fn clone(&self) -> Self {
         RoleAssignment {
             role: self.role.to_string(),
             identities: self.identities.clone(),
@@ -503,53 +482,47 @@ impl KeyStatus {
                             None => return super::DISABLE_STATE.to_string(),
                         }
 
-                        return format!("{} - {}", wireserver, imds);
+                        format!("{} - {}", wireserver, imds)
                     } else {
-                        return super::DISABLE_STATE.to_string();
+                        super::DISABLE_STATE.to_string()
                     }
                 }
-                None => return super::DISABLE_STATE.to_string(),
+                None => super::DISABLE_STATE.to_string(),
             }
         } else {
             // version 1.0
             match &self.secureChannelState {
-                Some(s) => return s.to_lowercase(),
-                None => return super::DISABLE_STATE.to_string(),
+                Some(s) => s.to_lowercase(),
+                None => super::DISABLE_STATE.to_string(),
             }
         }
     }
 
     pub fn get_wireserver_rule_id(&self) -> String {
         match self.get_wireserver_rules() {
-            Some(item) => return item.id.to_string(),
-            None => return String::new(),
+            Some(item) => item.id.to_string(),
+            None => String::new(),
         }
     }
 
     pub fn get_imds_rule_id(&self) -> String {
         match self.get_imds_rules() {
-            Some(item) => return item.id.to_string(),
-            None => return String::new(),
+            Some(item) => item.id.to_string(),
+            None => String::new(),
         }
     }
 
     pub fn get_wireserver_rules(&self) -> Option<AuthorizationItem> {
         match &self.authorizationRules {
-            Some(rules) => match &rules.wireserver {
-                Some(item) => return Some(item.clone()),
-                None => return None,
-            },
-            None => return None,
+            Some(rules) => rules.wireserver.clone(),
+            None => None,
         }
     }
 
     pub fn get_imds_rules(&self) -> Option<AuthorizationItem> {
         match &self.authorizationRules {
-            Some(rules) => match &rules.imds {
-                Some(item) => return Some(item.clone()),
-                None => return None,
-            },
-            None => return None,
+            Some(rules) => rules.imds.clone(),
+            None => None,
         }
     }
 
@@ -568,9 +541,9 @@ impl KeyStatus {
                 None => "disabled".to_string(),
             };
             if state == "wireserver" || state == "wireserverandimds" {
-                return ENFORCE_MODE.to_string();
+                ENFORCE_MODE.to_string()
             } else {
-                return AUDIT_MODE.to_string();
+                AUDIT_MODE.to_string()
             }
         }
     }
@@ -590,15 +563,17 @@ impl KeyStatus {
                 None => "disabled".to_string(),
             };
             if state == "wireserverandimds" {
-                return ENFORCE_MODE.to_string();
+                ENFORCE_MODE.to_string()
             } else {
-                return AUDIT_MODE.to_string();
+                AUDIT_MODE.to_string()
             }
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        return format!(
+impl Display for KeyStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f,
             "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
             self.authorizationScheme,
             self.keyDeliveryMethod,
@@ -607,7 +582,7 @@ impl KeyStatus {
                 None => "None".to_string(),
             },
             self.get_secure_channel_state(),
-            self.version.to_string());
+            self.version)
     }
 }
 
@@ -640,12 +615,14 @@ impl Key {
             key: String::new(),
         }
     }
+}
 
-    pub fn clone(&self) -> Self {
+impl Clone for Key {
+    fn clone(&self) -> Self {
         Key {
             authorizationScheme: self.authorizationScheme.to_string(),
             guid: self.guid.to_string(),
-            incarnationId: self.incarnationId.clone(),
+            incarnationId: self.incarnationId,
             issued: self.issued.to_string(),
             key: self.key.to_string(),
         }
@@ -719,15 +696,13 @@ pub fn acquire_key(base_url: Url) -> std::io::Result<Key> {
     let response_body = response.get_body_as_string()?;
     match serde_json::from_str(&response_body) {
         Ok(key) => Ok(key),
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Cannot parse the json response body {} with error {}",
-                    response_body, e
-                ),
-            ));
-        }
+        Err(e) => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "Cannot parse the json response body {} with error {}",
+                response_body, e
+            ),
+        )),
     }
 }
 
@@ -742,7 +717,7 @@ pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
         .join("key-attestation")
         .unwrap();
     let mut req = Request::new(
-        format!("{}/{}/key-attestation", KEY_URL, key.guid.to_string()),
+        format!("{}/{}/key-attestation", KEY_URL, key.guid),
         "POST".to_string(),
     );
     req.headers.add_header(
@@ -755,7 +730,7 @@ pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
     if response.status != Response::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("{}", response.to_raw_string()),
+            response.as_raw_string().to_string(),
         ));
     }
 

@@ -152,7 +152,7 @@ pub fn get_current_version() -> String {
 pub fn get_files(dir: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
     // search log files
     let mut files: Vec<PathBuf> = Vec::new();
-    for entry in fs::read_dir(&dir)? {
+    for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let file_full_path = entry.path();
         let metadata = fs::metadata(&file_full_path)?;
@@ -173,14 +173,14 @@ pub fn execute_command(
     match Command::new(program).args(args).output() {
         Ok(output) => {
             return (
-                output.status.code().unwrap_or_else(|| default_error_code),
+                output.status.code().unwrap_or(default_error_code),
                 String::from_utf8_lossy(&output.stdout).to_string(),
                 String::from_utf8_lossy(&output.stderr).to_string(),
             );
         }
         Err(e) => {
             let error = format!("Failed to execute command {} with error {}", program, e);
-            return (default_error_code, String::new(), error);
+            (default_error_code, String::new(), error)
         }
     }
 }
@@ -195,7 +195,7 @@ pub fn get_proxy_agent_version(proxy_agent_exe: PathBuf) -> String {
 
     let output = execute_command(&path_to_string(proxy_agent_exe), vec!["--version"], -1);
     if output.0 != 0 {
-        return "Unknown".to_string();
+        "Unknown".to_string()
     } else {
         return output.1.trim().to_string();
     }
@@ -296,7 +296,7 @@ mod tests {
         }
 
         let script_file_path = temp_test_path.join(script_file_name);
-        _ = fs::write(script_file_path.to_path_buf(), script_content);
+        _ = fs::write(&script_file_path, script_content);
 
         let default_error_code = -1;
         let output = super::execute_command(

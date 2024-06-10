@@ -11,7 +11,7 @@ const CONFIG_FILE_NAME: &str = "proxy-agent.json";
 #[cfg(windows)]
 const CONFIG_FILE_NAME: &str = "GuestProxyAgent.json";
 
-static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(|| Config::default());
+static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(Config::default);
 
 #[cfg(not(windows))]
 pub fn get_cgroup_root() -> PathBuf {
@@ -87,15 +87,8 @@ pub struct Config {
     fallBackWithIpTableRedirect: Option<bool>, // fallback to iptable redirect if cgroup redirect is not supported, it should only be use for old kernel, some scenario like docker container may not work
 }
 
-impl Config {
-    pub fn from_json_file(file_path: PathBuf) -> Self {
-        misc_helpers::json_read_from_file::<Config>(file_path.to_path_buf()).expect(&format!(
-            "Error in reading Config from Json file: {}",
-            misc_helpers::path_to_string(file_path.to_path_buf())
-        ))
-    }
-
-    pub fn default() -> Self {
+impl Default for Config {
+    fn default() -> Self {
         let mut config_file_full_path = PathBuf::new();
         #[cfg(not(windows))]
         {
@@ -111,6 +104,17 @@ impl Config {
             config_file_full_path.push(CONFIG_FILE_NAME);
         }
         Config::from_json_file(config_file_full_path)
+    }
+}
+
+impl Config {
+    pub fn from_json_file(file_path: PathBuf) -> Self {
+        misc_helpers::json_read_from_file::<Config>(file_path.to_path_buf()).unwrap_or_else(|_| {
+            panic!(
+                "Error in reading Config from Json file: {}",
+                misc_helpers::path_to_string(file_path.to_path_buf())
+            )
+        })
     }
 
     pub fn get_log_folder(&self) -> &str {
@@ -160,10 +164,7 @@ impl Config {
     }
 
     pub fn get_ebpf_file_full_path(&self) -> Option<PathBuf> {
-        match &self.ebpfFileFullPath {
-            Some(ebpf_full_path) => Some(PathBuf::from(ebpf_full_path)),
-            None => None,
-        }
+        self.ebpfFileFullPath.as_ref().map(PathBuf::from)
     }
 
     #[cfg(not(windows))]

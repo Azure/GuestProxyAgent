@@ -20,7 +20,7 @@ pub fn start(ip: String, port: u16) {
     let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        if handle_request(stream, ip.to_string(), port) == false {
+        if !handle_request(stream, ip.to_string(), port) {
             return;
         }
     }
@@ -28,12 +28,9 @@ pub fn start(ip: String, port: u16) {
 
 pub fn stop(ip: String, port: u16) {
     let stop_request = Request::new("stop".to_string(), "GET".to_string());
-    match TcpStream::connect(format!("{}:{}", ip, port)) {
-        Ok(mut client) => {
-            _ = client.write_all(&stop_request.to_raw_bytes());
-            _ = client.flush();
-        }
-        Err(_) => {}
+    if let Ok(mut client) = TcpStream::connect(format!("{}:{}", ip, port)) {
+        _ = client.write_all(&stop_request.to_raw_bytes());
+        _ = client.flush();
     }
 }
 
@@ -44,18 +41,15 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
     if request.url == "stop" {
         return false;
     }
-    let path: String;
-    match request.get_url() {
-        Some(url) => {
-            path = url.path().to_string().chars().skip(1).collect();
-        }
-        None => path = request.url.chars().skip(1).collect(),
-    }
+    let path: String = match request.get_url() {
+        Some(url) => url.path().to_string().chars().skip(1).collect(),
+        None => request.url.chars().skip(1).collect(),
+    };
     let segments: Vec<&str> = path.split('/').collect();
 
     let mut response = Response::from_status(Response::OK.to_string());
     if request.method == "GET" {
-        if segments.len() > 0 && segments[0] == "secure-channel" {
+        if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "status" {
                 // get key status
                 let status_response = r#"{
@@ -79,7 +73,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 }
                 response.set_body_as_string(serde_json::to_string(&status).unwrap());
             }
-        } else if segments.len() > 0 && segments[0] == "machine?comp=goalstate" {
+        } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <GoalState xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="goalstate10.xsd">
               <Version>2015-04-05</Version>
@@ -307,7 +301,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             response.set_body_as_string(response_data.to_string());
         }
     } else if request.method == "POST" {
-        if segments.len() > 0 && segments[0] == "secure-channel" {
+        if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "key" {
                 // get key details
                 let key_response = r#"{
@@ -326,24 +320,26 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 }
                 response.set_body_as_string(serde_json::to_string(&key).unwrap());
             }
-        } else if segments.len() > 0 && segments[0] == "machine" {
-            if segments.len() > 1 && segments[1] == "?comp=telemetrydata" {
-                // post telemetry data
-                // send continue response
-                let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(continue_response.to_raw_string().as_bytes());
-                _ = stream.flush();
+        } else if !segments.is_empty()
+            && segments[0] == "machine"
+            && segments.len() > 1
+            && segments[1] == "?comp=telemetrydata"
+        {
+            // post telemetry data
+            // send continue response
+            let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
+            _ = stream.write_all(continue_response.as_raw_string().as_bytes());
+            _ = stream.flush();
 
-                // receive the data
-                let content_length = request.headers.get_content_length().unwrap();
+            // receive the data
+            let content_length = request.headers.get_content_length().unwrap();
 
-                // receive body content from client
-                http::receive_body(&stream, content_length).unwrap();
-            }
+            // receive body content from client
+            http::receive_body(&stream, content_length).unwrap();
         }
     }
 
-    _ = stream.write_all(response.to_raw_string().as_bytes());
+    _ = stream.write_all(response.as_raw_string().as_bytes());
     _ = stream.flush();
     logger::write_information("WireServer processed request.".to_string());
 

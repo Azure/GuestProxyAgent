@@ -135,13 +135,11 @@ pub fn attach_bpf_prog() -> i32 {
                     Ok(r) => r,
                     Err(e) => {
                         logger::write_error(format!("{}", e));
-                        return EBPF_ATTACH_PROGRAM_ERROR;
+                        EBPF_ATTACH_PROGRAM_ERROR
                     }
                 }
             }
-            None => {
-                return EBPF_OBJECT_NULL;
-            }
+            None => EBPF_OBJECT_NULL,
         }
     }
 }
@@ -201,13 +199,11 @@ pub fn update_policy_elem_bpf_map(local_port: u16, dest_ipv4: u32, dest_port: u1
                     Ok(r) => r,
                     Err(e) => {
                         logger::write_error(format!("{}", e));
-                        return EBPF_UPDATE_MAP_ERROR;
+                        EBPF_UPDATE_MAP_ERROR
                     }
                 }
             }
-            None => {
-                return EBPF_OBJECT_NULL;
-            }
+            None => EBPF_OBJECT_NULL,
         }
     }
 }
@@ -224,12 +220,9 @@ Return Value:
  */
 pub fn close_bpf_object() {
     unsafe {
-        match BPF_OBJECT {
-            Some(obj) => {
-                _ = bpf_object__close(obj);
-                BPF_OBJECT = None;
-            }
-            None => {}
+        if let Some(obj) = BPF_OBJECT {
+            _ = bpf_object__close(obj);
+            BPF_OBJECT = None;
         }
     }
 }
@@ -310,7 +303,7 @@ pub fn lookup_bpf_audit_map(source_port: u16) -> std::io::Result<AuditEntry> {
                 let message = format!(
                     "Failed to lookup {source_port} in bpf audit map because bpf has not loaded."
                 );
-                return Err(Error::new(ErrorKind::InvalidInput, message));
+                Err(Error::new(ErrorKind::InvalidInput, message))
             }
         }
     }
@@ -355,8 +348,8 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                 };
 
                 // insert process id entry.
-                let key = sock_addr_skip_process_entry { pid: pid };
-                let value = sock_addr_skip_process_entry { pid: pid };
+                let key = sock_addr_skip_process_entry { pid };
+                let value = sock_addr_skip_process_entry { pid };
 
                 match bpf_map_update_elem(
                     map_fd,
@@ -367,13 +360,11 @@ pub fn update_bpf_skip_process_map(pid: u32) -> i32 {
                     Ok(r) => r,
                     Err(e) => {
                         logger::write_error(format!("{}", e));
-                        return EBPF_UPDATE_MAP_ERROR;
+                        EBPF_UPDATE_MAP_ERROR
                     }
                 }
             }
-            None => {
-                return EBPF_OBJECT_NULL;
-            }
+            None => EBPF_OBJECT_NULL,
         }
     }
 }
@@ -420,13 +411,11 @@ pub fn remove_policy_elem_bpf_map(dest_ipv4: u32, dest_port: u16) -> i32 {
                     Ok(r) => r,
                     Err(e) => {
                         logger::write_error(format!("{}", e));
-                        return EBPF_DELETE_MAP_ERROR;
+                        EBPF_DELETE_MAP_ERROR
                     }
                 }
             }
-            None => {
-                return EBPF_OBJECT_NULL;
-            }
+            None => EBPF_OBJECT_NULL,
         }
     }
 }

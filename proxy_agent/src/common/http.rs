@@ -29,14 +29,14 @@ pub const DOUBLE_CRLF: &str = "\r\n\r\n";
 pub fn receive_data_in_string(stream: &TcpStream) -> std::io::Result<String> {
     let mut reader = BufReader::new(stream);
     let received: Vec<u8> = reader.fill_buf()?.to_vec();
-    let rec_data;
-    match String::from_utf8(received) {
-        Ok(data) => rec_data = data,
+
+    let rec_data = match String::from_utf8(received) {
+        Ok(data) => data,
         Err(e) => {
             let message = format!("Failed convert the received data to string, error {}", e);
             return Err(Error::new(ErrorKind::InvalidData, message));
         }
-    }
+    };
     reader.consume(rec_data.len());
 
     Ok(rec_data)
@@ -48,21 +48,18 @@ pub fn receive_data_in_string(stream: &TcpStream) -> std::io::Result<String> {
 pub fn get_response_in_string(http_req: &mut HttpRequest) -> std::io::Result<Response> {
     let addrs = format!("{}:{}", http_req.get_host(), http_req.get_port());
     let mut client = TcpStream::connect(addrs)?;
-    _ = client.write_all(http_req.request.to_raw_string().as_bytes());
+    _ = client.write_all(http_req.request.as_raw_string().as_bytes());
     _ = client.flush();
 
     let data = receive_data_in_string(&client)?;
     let mut response = Response::from_raw_data(data);
 
     // check the body is streamed or not
-    match response.headers.get_content_length() {
-        Ok(len) => {
-            let body_len = response.get_body_len();
-            if len != 0 && body_len == 0 {
-                response.set_body_as_string(receive_data_in_string(&client)?);
-            }
+    if let Ok(len) = response.headers.get_content_length() {
+        let body_len = response.get_body_len();
+        if len != 0 && body_len == 0 {
+            response.set_body_as_string(receive_data_in_string(&client)?);
         }
-        Err(_) => {}
     }
 
     Ok(response)
@@ -105,7 +102,7 @@ fn read_header_lines(reader: &mut BufReader<&TcpStream>) -> std::io::Result<Stri
         lines.push_str(&line);
 
         let line = line.trim();
-        if line.len() == 0 {
+        if line.is_empty() {
             // empty line means end of the headers section
             break;
         }
@@ -155,7 +152,7 @@ fn stream_body_internal(
                 let read = d.len();
                 dest_stream.write_all(d)?;
                 reader.consume(read);
-                received = received + read;
+                received += read;
             }
             Err(_e) => {
                 // read timeout, assume no more incoming data in the TcpStream
@@ -216,23 +213,22 @@ pub fn forward_response(
     }
 
     // stream body
-    let content_length;
-    match response_without_body.headers.get_content_length() {
-        Ok(len) => content_length = len,
+
+    let content_length = match response_without_body.headers.get_content_length() {
+        Ok(len) => len,
         Err(e) => {
             let message = format!("Failed to get content length {}", e);
             return Err(Error::new(e.kind(), message));
         }
-    }
+    };
 
-    let forwarded;
-    match stream_body_internal(response_reader, client_stream, content_length) {
-        Ok(len) => forwarded = len,
+    let forwarded = match stream_body_internal(response_reader, client_stream, content_length) {
+        Ok(len) => len,
         Err(e) => {
             let message = format!("Failed to stream body {}", e);
             return Err(Error::new(e.kind(), message));
         }
-    }
+    };
 
     Ok((response_without_body, forwarded))
 }
@@ -358,7 +354,7 @@ mod tests {
                 }
 
                 let mut response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(response.to_raw_string().as_bytes());
+                _ = stream.write_all(response.as_raw_string().as_bytes());
                 _ = stream.flush();
 
                 request.set_body(http::receive_body(&stream, content_length).unwrap());
@@ -389,7 +385,7 @@ mod tests {
         let mut client = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
         let mut request = Request::new("/file".to_string(), "GET".to_string());
         client
-            .write_all(request.to_raw_string().as_bytes())
+            .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
 
@@ -452,8 +448,10 @@ mod tests {
             headers::EXPECT_HEADER_VALUE.to_string(),
         );
         let mut client_stream = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_string().as_bytes());
-        _ = client_stream.flush();
+        client_stream
+            .write_all(request.as_raw_string().as_bytes())
+            .unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(
             Response::CONTINUE,
@@ -467,8 +465,8 @@ mod tests {
         );
 
         // Send body only after CONTINUE response
-        _ = client_stream.write_all(&request.get_body());
-        _ = client_stream.flush();
+        client_stream.write_all(request.get_body()).unwrap();
+        client_stream.flush().unwrap();
         let response = http::receive_response_data(&client_stream).unwrap();
         assert_eq!(Response::OK, response.status, "response.status must be OK");
         assert_eq!(

@@ -24,7 +24,7 @@ static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATE_MAP: Lazy<HashMap<String, (String, u32)>> =
-    Lazy::new(|| HashMap::<String, (String, u32)>::new());
+    Lazy::new(HashMap::<String, (String, u32)>::new);
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Telemetry event logger thread has not started yet."));
 
@@ -89,7 +89,7 @@ fn start(
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    _ = logger_manager::write(logger_key, message.to_string());
+    logger_manager::write(logger_key, message.to_string());
 
     misc_helpers::try_create_folder(event_dir.to_path_buf())?;
 
@@ -118,29 +118,20 @@ fn start(
             EVENT_QUEUE.close();
         }
 
-        let len = EVENT_QUEUE.len();
-        if len == 0 {
+        if EVENT_QUEUE.is_empty() {
             // no event in the queue, skip this loop
             continue;
         }
 
-        let mut i = 0;
         let mut events: Vec<Event> = Vec::new();
-        while i < len {
-            i = i + 1;
-            match EVENT_QUEUE.pop() {
-                Ok(e) => events.push(e),
-                Err(e) => {
-                    logger_manager::write_warning(
-                        logger_key,
-                        format!("Failed to pop event from the queue with error: {}", e),
-                    );
-                }
-            };
+        events.reserve_exact(EVENT_QUEUE.len());
+
+        for event in EVENT_QUEUE.try_iter() {
+            events.push(event);
         }
 
         // Check the event file counts,
-        // if it exceed the max file number, drop the new events
+        // if it exceeds the max file number, drop the new events
         match misc_helpers::get_files(&event_dir) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
@@ -199,12 +190,11 @@ pub fn write_event(
     module_name: &str,
     logger_key: &str,
 ) {
-    let event_message;
-    if message.len() > MAX_MESSAGE_LENGTH {
-        event_message = message[..MAX_MESSAGE_LENGTH].to_string();
+    let event_message = if message.len() > MAX_MESSAGE_LENGTH {
+        message[..MAX_MESSAGE_LENGTH].to_string()
     } else {
-        event_message = message.to_string();
-    }
+        message.to_string()
+    };
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
@@ -232,12 +222,11 @@ pub fn write_event(
 
 pub fn get_status() -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
-    let status;
-    if shutdown.load(Ordering::Relaxed) {
-        status = ModuleState::STOPPED.to_string();
+    let status = if shutdown.load(Ordering::Relaxed) {
+        ModuleState::STOPPED.to_string()
     } else {
-        status = ModuleState::RUNNING.to_string();
-    }
+        ModuleState::RUNNING.to_string()
+    };
 
     ProxyAgentDetailStatus {
         status,
@@ -275,7 +264,7 @@ mod tests {
         );
 
         let cloned_events_dir = events_dir.to_path_buf();
-        _ = super::start_async(cloned_events_dir, Duration::from_millis(100), 3, logger_key);
+        super::start_async(cloned_events_dir, Duration::from_millis(100), 3, logger_key);
 
         // write some events to the queue and flush to disk
         write_events(logger_key);

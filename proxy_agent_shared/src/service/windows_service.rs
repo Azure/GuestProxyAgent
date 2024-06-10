@@ -131,7 +131,7 @@ pub fn install_or_update_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     service_exe_path: PathBuf,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     // if query_service returns Ok, then the service needs to be updated otherwise create a service
     match query_service_status(service_name) {
         Ok(_service) => {
@@ -141,13 +141,9 @@ pub fn install_or_update_service(
                 service_dependencies,
                 service_exe_path,
             ) {
-                Ok(_service) => {
-                    return Ok(());
-                }
-                Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, e));
-                }
-            };
+                Ok(_service) => Ok(()),
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
         }
         Err(_e) => {
             match create_service(
@@ -156,15 +152,11 @@ pub fn install_or_update_service(
                 service_dependencies,
                 service_exe_path,
             ) {
-                Ok(_service) => {
-                    return Ok(());
-                }
-                Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, e));
-                }
-            };
+                Ok(_service) => Ok(()),
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
         }
-    };
+    }
 }
 
 fn query_service_status(service_name: &str) -> windows_service::Result<ServiceStatus> {
@@ -303,7 +295,7 @@ mod tests {
 
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", TEST_SERVICE_NAME])
+            .args(["query", TEST_SERVICE_NAME])
             .output()
             .expect("Failed to execute command");
 
@@ -317,8 +309,9 @@ mod tests {
 
         super::start_service_with_retry(TEST_SERVICE_NAME, 2, std::time::Duration::from_millis(15));
         let service_staus = super::query_service_status(TEST_SERVICE_NAME).unwrap();
-        assert!(
-            service_staus.current_state != windows_service::service::ServiceState::Running,
+        assert_ne!(
+            service_staus.current_state,
+            windows_service::service::ServiceState::Running,
             "Test service should not be able to run"
         );
 
@@ -331,7 +324,7 @@ mod tests {
         super::stop_and_delete_service(TEST_SERVICE_NAME).unwrap();
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", TEST_SERVICE_NAME])
+            .args(["query", TEST_SERVICE_NAME])
             .output()
             .expect("Failed to execute command");
 
@@ -349,7 +342,7 @@ mod tests {
         super::create_service(service_name, service_name, vec![], exe_path).unwrap();
         //Check if service is running
         let output = Command::new("sc")
-            .args(&["query", service_name])
+            .args(["query", service_name])
             .output()
             .expect("Failed to execute command");
 

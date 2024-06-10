@@ -19,6 +19,6 @@ fn force_init_logger(log_folder: PathBuf, log_name: &str) {
 }
 
 pub fn write(message: String) {
-    println!("{}", message.to_string());
+    println!("{}", message);
     logger_manager::write(LOGGER_KEY, message);
 }
