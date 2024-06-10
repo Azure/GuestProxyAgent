@@ -8,6 +8,7 @@ use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -17,19 +18,23 @@ static mut STATE: Lazy<Arc<Mutex<u8>>> = Lazy::new(|| Arc::new(Mutex::new(0)));
 static mut LOGGER_THREADS_INITIALIZED: Lazy<Arc<Mutex<bool>>> =
     Lazy::new(|| Arc::new(Mutex::new(false)));
 
-pub fn redirector_ready() {
-    update_provision_state(1, None);
+pub fn redirector_ready(sender: Sender<crate::data_vessel::DataAction>) {
+    update_provision_state(1, None, sender);
 }
 
-pub fn key_latched() {
-    update_provision_state(2, None);
+pub fn key_latched(sender: Sender<crate::data_vessel::DataAction>) {
+    update_provision_state(2, None, sender);
 }
 
-pub fn listener_started() {
-    update_provision_state(4, None);
+pub fn listener_started(sender: Sender<crate::data_vessel::DataAction>) {
+    update_provision_state(4, None, sender);
 }
 
-fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
+fn update_provision_state(
+    state: u8,
+    provision_dir: Option<PathBuf>,
+    sender: Sender<crate::data_vessel::DataAction>,
+) {
     unsafe {
         let cloned_state: Arc<Mutex<u8>> = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -39,10 +44,10 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
 
                 if *cloned_state == 7 {
                     // write provision success state here
-                    write_provision_state(true, provision_dir);
+                    write_provision_state(true, provision_dir, sender.clone());
 
                     // start event threads right after provision successfully
-                    start_event_threads();
+                    start_event_threads(sender);
                 }
             }
             Err(e) => {
@@ -52,7 +57,10 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
     }
 }
 
-pub fn provision_timeup(provision_dir: Option<PathBuf>) {
+pub fn provision_timeup(
+    provision_dir: Option<PathBuf>,
+    sender: Sender<crate::data_vessel::DataAction>,
+) {
     unsafe {
         let cloned_state = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -60,7 +68,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
             Ok(cloned_state) => {
                 if *cloned_state != 7 {
                     // write provision fail state here
-                    write_provision_state(false, provision_dir);
+                    write_provision_state(false, provision_dir, sender);
                 }
             }
             Err(e) => {
@@ -70,7 +78,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
     }
 }
 
-pub fn start_event_threads() {
+pub fn start_event_threads(sender: Sender<crate::data_vessel::DataAction>) {
     unsafe {
         let cloned = Arc::clone(&*LOGGER_THREADS_INITIALIZED);
         let cloned = cloned.lock();
@@ -86,9 +94,14 @@ pub fn start_event_threads() {
                     config::get_max_event_file_count(),
                     logger::AGENT_LOGGER_KEY,
                 );
-                event_reader::start_async(config::get_events_dir(), Duration::from_secs(300), true);
+                event_reader::start_async(
+                    config::get_events_dir(),
+                    Duration::from_secs(300),
+                    true,
+                    sender.clone(),
+                );
                 *cloned = true;
-                proxy_agent_status::start_async(Duration::default());
+                proxy_agent_status::start_async(Duration::default(), sender);
             }
             Err(e) => {
                 logger::write_error(format!("Failed to lock provision state with error: {e}"));
@@ -97,7 +110,11 @@ pub fn start_event_threads() {
     }
 }
 
-fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>) {
+fn write_provision_state(
+    provision_success: bool,
+    provision_dir: Option<PathBuf>,
+    sender: Sender<crate::data_vessel::DataAction>,
+) {
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
@@ -111,15 +128,15 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
     if !provision_success {
         status.push_str(&format!(
             "keyLatchStatus - {}\r\n",
-            key_keeper::get_status().message
+            key_keeper::get_status(sender.clone()).message
         ));
         status.push_str(&format!(
             "ebpfProgramStatus - {}\r\n",
-            redirector::get_status().message
+            redirector::get_status(sender.clone()).message
         ));
         status.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
-            proxy_listener::get_status().message
+            proxy_listener::get_status(sender.clone()).message
         ));
     }
 
@@ -208,13 +225,17 @@ mod tests {
             "provision_status.1 must be empty"
         );
 
+        let sender = crate::data_vessel::start_receiver_async();
         let dir1 = temp_test_path.to_path_buf();
         let dir2 = temp_test_path.to_path_buf();
         let dir3 = temp_test_path.to_path_buf();
+        let s1 = sender.clone();
+        let s2 = sender.clone();
+        let s3 = sender.clone();
         let handles = vec![
-            thread::spawn(move || super::update_provision_state(1, Some(dir1))),
-            thread::spawn(move || super::update_provision_state(2, Some(dir2))),
-            thread::spawn(move || super::update_provision_state(4, Some(dir3))),
+            thread::spawn(move || super::update_provision_state(1, Some(dir1), s1)),
+            thread::spawn(move || super::update_provision_state(2, Some(dir2), s2)),
+            thread::spawn(move || super::update_provision_state(4, Some(dir3), s3)),
         ];
 
         for handle in handles {
@@ -258,5 +279,6 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+        _ = sender.send(crate::data_vessel::DataAction::Stop);
     }
 }

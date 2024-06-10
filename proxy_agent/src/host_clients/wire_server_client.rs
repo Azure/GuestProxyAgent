@@ -3,22 +3,25 @@
 use crate::common::http::{
     self, headers, http_request::HttpRequest, request::Request, response::Response,
 };
+use crate::data_vessel::key_keeper;
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
-use crate::key_keeper;
 use std::io::{Error, ErrorKind};
+use std::sync::mpsc::Sender;
 use std::{io::prelude::*, net::TcpStream};
 use url::{Position, Url};
 
 pub struct WireServerClient {
     ip: String,
     port: u16,
+    sender: Sender<crate::data_vessel::DataAction>,
 }
 
 impl WireServerClient {
-    pub fn new(ip: &str, port: u16) -> Self {
+    pub fn new(ip: &str, port: u16, sender: Sender<crate::data_vessel::DataAction>) -> Self {
         WireServerClient {
             ip: ip.to_string(),
             port,
+            sender,
         }
     }
 
@@ -51,8 +54,8 @@ impl WireServerClient {
         let http_request = HttpRequest::new_proxy_agent_request(
             url,
             req,
-            key_keeper::get_current_key_guid(),
-            key_keeper::get_current_key(),
+            key_keeper::get_current_key_guid(self.sender.clone()),
+            key_keeper::get_current_key_value(self.sender.clone()),
         )?;
 
         Ok(http_request)

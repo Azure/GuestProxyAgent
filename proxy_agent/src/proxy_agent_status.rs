@@ -15,6 +15,7 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -25,15 +26,15 @@ static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
 static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn start_async(interval: Duration) {
+pub fn start_async(interval: Duration, sender: Sender<crate::data_vessel::DataAction>) {
     _ = thread::Builder::new()
         .name("guest_proxy_agent_status".to_string())
         .spawn(move || {
-            start(interval);
+            start(interval, sender);
         });
 }
 
-fn start(mut interval: Duration) {
+fn start(mut interval: Duration, sender: Sender<crate::data_vessel::DataAction>) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
@@ -53,7 +54,7 @@ fn start(mut interval: Duration) {
             break;
         }
 
-        let aggregate_status = guest_proxy_agent_aggregate_status_new();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(sender.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
             logger::write_error(format!("Error writing aggregate status to file: {}", e));
@@ -80,10 +81,10 @@ fn start(mut interval: Duration) {
     }
 }
 
-pub fn proxy_agent_status_new() -> ProxyAgentStatus {
-    let key_latch_status = key_keeper::get_status();
-    let ebpf_status = redirector::get_status();
-    let proxy_status = proxy_listener::get_status();
+pub fn proxy_agent_status_new(sender: Sender<crate::data_vessel::DataAction>) -> ProxyAgentStatus {
+    let key_latch_status = key_keeper::get_status(sender.clone());
+    let ebpf_status = redirector::get_status(sender.clone());
+    let proxy_status = proxy_listener::get_status(sender.clone());
     let mut status = OveralState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
@@ -119,10 +120,12 @@ pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
     connection_summary.count += 1;
 }
 
-pub fn guest_proxy_agent_aggregate_status_new() -> GuestProxyAgentAggregateStatus {
+pub fn guest_proxy_agent_aggregate_status_new(
+    sender: Sender<crate::data_vessel::DataAction>,
+) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
-        proxyAgentStatus: proxy_agent_status_new(),
+        proxyAgentStatus: proxy_agent_status_new(sender.clone()),
         proxyConnectionSummary: get_all_connection_summary(false),
         failedAuthenticateSummary: get_all_connection_summary(true),
     }
@@ -186,8 +189,8 @@ mod tests {
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
         misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
-
-        let aggregate_status = guest_proxy_agent_aggregate_status_new();
+        let sender = crate::data_vessel::start_receiver_async();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(sender.clone());
 
         _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
@@ -214,5 +217,7 @@ mod tests {
                 || !gpa_aggregate_status.proxyConnectionSummary.is_empty(),
             "proxyConnectionSummary does not exist"
         );
+
+        _ = sender.send(crate::data_vessel::DataAction::Stop);
     }
 }

@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: MIT
 use super::instance_info::InstanceInfo;
 use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
-use crate::key_keeper;
+use crate::data_vessel::key_keeper;
 use std::io::{Error, ErrorKind};
+use std::sync::mpsc::Sender;
 use url::Url;
 
 pub struct ImdsClient {
     ip: String,
     port: u16,
+    sender: Sender<crate::data_vessel::DataAction>,
 }
 
 impl ImdsClient {
-    pub fn new(ip: &str, port: u16) -> Self {
+    pub fn new(ip: &str, port: u16, sender: Sender<crate::data_vessel::DataAction>) -> Self {
         ImdsClient {
             ip: ip.to_string(),
             port,
+            sender,
         }
     }
 
@@ -28,8 +31,8 @@ impl ImdsClient {
         let mut http_request = HttpRequest::new_proxy_agent_request(
             url,
             req,
-            key_keeper::get_current_key_guid(),
-            key_keeper::get_current_key(),
+            key_keeper::get_current_key_guid(self.sender.clone()),
+            key_keeper::get_current_key_value(self.sender.clone()),
         )?;
 
         let response = http::get_response_in_string(&mut http_request)?;

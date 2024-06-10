@@ -16,6 +16,7 @@ use std::mem;
 use std::net::TcpStream;
 use std::os::windows::io::AsRawSocket;
 use std::ptr;
+use std::sync::mpsc::Sender;
 use windows_sys::Win32::Networking::WinSock;
 
 static mut IS_STARTED: bool = false;
@@ -23,7 +24,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
 static mut LOCAL_PORT: u16 = 0;
 
-pub fn start(local_port: u16) -> bool {
+pub fn start(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) -> bool {
     match bpf_prog::init() {
         Ok(_) => (),
         Err(e) => {
@@ -125,7 +126,7 @@ pub fn start(local_port: u16) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready();
+    provision::redirector_ready(sender);
 
     true
 }

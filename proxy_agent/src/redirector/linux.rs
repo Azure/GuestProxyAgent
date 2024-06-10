@@ -17,6 +17,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
 
 static mut IS_STARTED: bool = false;
 static mut STATUS_MESSAGE: Lazy<String> =
@@ -24,7 +25,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
 static mut LOCAL_PORT: u16 = 0;
 static mut BPF_OBJECT: Option<Bpf> = None;
 
-pub fn start(local_port: u16) -> bool {
+pub fn start(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(value) => return value,
@@ -121,7 +122,7 @@ pub fn start(local_port: u16) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready();
+    provision::redirector_ready(sender);
 
     true
 }
