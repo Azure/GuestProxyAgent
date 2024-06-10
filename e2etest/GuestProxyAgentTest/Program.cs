@@ -25,7 +25,7 @@ namespace GuestProxyAgentTest
             var guestProxyAgentZipFilePath = args[2];*/
             var testConfigFilePath = @"C:\Users\neeralishah\Downloads\testConfig.yml";
             var testResultFolder = @"C:\Users\neeralishah\Downloads\testResultFolder";
-            var guestProxyAgentZipFilePath = @"C:\Users\neeralishah\Downloads\Linux_GuestProxyAgent_All_AMD64.zip";
+            var guestProxyAgentZipFilePath = @"C:\Users\neeralishah\Downloads\Linux_GuestProxyAgent_All_AMD64";
             TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder);
 
             VMHelper.Instance.CleanupOldTestResourcesAndForget();

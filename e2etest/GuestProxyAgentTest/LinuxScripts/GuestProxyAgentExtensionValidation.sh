@@ -4,30 +4,72 @@
 # SPDX-License-Identifier: MIT
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
-
 currentDir=$(pwd)
-customOutputJsonPath=$currentDir/proxyagentvalidation.json
+customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
 
 echo "Starting guest proxy agent extension validation script" 
-directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
-if [ $(echo "$directories" | wc -l) -eq 1 ]; then
-    for dir in $directories; do 
-        PIRExtensionFolderPath=$dir
-        echo "PIR extension folder path" $PIRExtensionFolderPath
-    done 
-fi
+timeout=300
+elpased=0
+while :; do
+    directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
+    if [ $(echo "$directories" | wc -l) -eq 1 ]; then
+        for dir in $directories; do 
+            PIRExtensionFolderPath=$dir
+            echo "PIR extension folder path" $PIRExtensionFolderPath
+        done 
+        break
+    fi
+    ((elapsed += interval))
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timeout reached. Exiting the loop."
+        break
+    fi
+    sleep 5
+done 
 extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "extensionVersion=$extensionVersion"
-
+statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
+echo "statusFolder=$statusFolder"
 echo "TEST: Check that status file is success with 5 minute timeout"
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 statusFile=$(ls $statusFolder/*.status)
+
+echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
+os=$(hostnamectl | grep "Operating System")
+echo "os=$os"
+if [[ $os == *"Ubuntu"* ]]; then
+    for  i in {1..3}; do
+        echo "start installing jq via apt-get $i"
+        sudo apt update
+        sudo apt-get install jq
+        sleep 10
+        install=$(apt list --installed jq)
+        echo "install=$install"
+        if [[ $install == *"jq"* ]]; then
+            echo "jq installed successfully"
+            break
+        fi
+    done
+else
+    for  i in {1..3}; do
+        echo "start installing jq via yum $i"
+        sudo yum -y install jq
+        sleep 10
+        install=$(yum list --installed jq)
+        echo "install=$install"
+        if [[ $install == *"jq"* ]]; then
+            echo "jq installed successfully"
+            break
+        fi
+    done
+fi
+
 timeout=300
 elpased=0
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
-    if [[ "$extensionStatus" == "Success" ]]; then
+    if [[ "$extensionStatus" == "success" ]]; then
         guestProxyAgentExtensionStatusObjGenerated=true
         guestProxyAgentExtensionServiceStatus=true
         echo "The status is success."

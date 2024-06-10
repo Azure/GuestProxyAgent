@@ -9,7 +9,7 @@ namespace GuestProxyAgentTest.TestScenarios
     {
         public override void TestScenarioSetup()
         {
-           
+            
             if (!Constants.IS_WINDOWS())
             {
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
@@ -18,9 +18,9 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 EnableProxyAgent = true;
             }
-            AddTestCase(new GuestProxyAgentExtensionValidationCase("BeforeUpdate"));
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate"));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
-            AddTestCase(new GuestProxyAgentExtensionValidationCase("AfterUpdate"));
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));

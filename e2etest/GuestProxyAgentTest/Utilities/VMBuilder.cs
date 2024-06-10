@@ -85,7 +85,7 @@ namespace GuestProxyAgentTest.Utilities
                 },
                 StorageProfile = new VirtualMachineStorageProfile()
                 {
-                    ImageReference = new ImageReference()
+                    ImageReference = new Azure.ResourceManager.Compute.Models.ImageReference()
                     {
                         Publisher = this.testScenarioSetting.VMImageDetails.Publisher,
                         Offer = this.testScenarioSetting.VMImageDetails.Offer,
@@ -100,7 +100,7 @@ namespace GuestProxyAgentTest.Utilities
                         {
                             StorageAccountType = StorageAccountType.StandardLrs,
                         },
-                    },
+                    }
                 },
                 OSProfile = new VirtualMachineOSProfile()
                 {
@@ -108,7 +108,7 @@ namespace GuestProxyAgentTest.Utilities
                     AdminUsername = this.adminUsername,
                     AdminPassword = this.adminPassword,
                 },
-                NetworkProfile = await DoCreateVMNetWorkProfile(rgr), 
+                NetworkProfile = await DoCreateVMNetWorkProfile(rgr),
             };
 
             if (EnableProxyAgent)
@@ -118,7 +118,7 @@ namespace GuestProxyAgentTest.Utilities
                         Enabled = true 
                     } 
                 };
-            }
+            } 
 
             if (Constants.IS_WINDOWS())
             {
@@ -139,7 +139,11 @@ namespace GuestProxyAgentTest.Utilities
                     //ProvisionVMAgent = true,
                     //IsPasswordAuthenticationDisabled = false,
                 };
-                vmData.Resources.Append(new VirtualMachineExtensionData(TestSetting.Instance.location)
+                
+                var vmCollection = rgr.GetVirtualMachines();
+                var linux = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, vmData)).Value;
+                var extCollection = linux.GetVirtualMachineExtensions(); 
+                var extData = new VirtualMachineExtensionData(TestSetting.Instance.location)
                 {
                     Publisher = "Microsoft.CPlat.ProxyAgent",
                     ExtensionType = "ProxyAgentLinuxTest", 
@@ -147,9 +151,9 @@ namespace GuestProxyAgentTest.Utilities
                     AutoUpgradeMinorVersion=false, 
                     EnableAutomaticUpgrade=false,
                     Settings = { }
-                });
+                };
+                await extCollection.CreateOrUpdateAsync(WaitUntil.Completed, "ProxyAgentLinuxTest", extData);
             }
-
             return vmData;
         }
 
