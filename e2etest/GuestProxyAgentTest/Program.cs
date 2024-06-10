@@ -25,7 +25,7 @@ namespace GuestProxyAgentTest
             var guestProxyAgentZipFilePath = args[2];
 
             TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder);
-            
+
             VMHelper.Instance.CleanupOldTestResourcesAndForget();
 
             await new GuestProxyAgentScenarioTests().StartAsync(TestMapReader.ReadFlattenTestScenarioSettingFromTestMap());
