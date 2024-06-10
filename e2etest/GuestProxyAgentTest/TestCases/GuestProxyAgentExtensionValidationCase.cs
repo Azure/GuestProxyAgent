@@ -19,7 +19,6 @@ namespace GuestProxyAgentTest.TestCases
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, null!)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
-                Console.WriteLine("GuestProxyAgentExtensionValidationCase");
                 var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentExtensionValidationDetails>();
                 if (validationDetails != null
                     && validationDetails.guestProxyAgentExtensionServiceExist

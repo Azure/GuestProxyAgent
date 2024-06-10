@@ -85,7 +85,7 @@ namespace GuestProxyAgentTest.Utilities
                 },
                 StorageProfile = new VirtualMachineStorageProfile()
                 {
-                    ImageReference = new Azure.ResourceManager.Compute.Models.ImageReference()
+                    ImageReference = new ImageReference()
                     {
                         Publisher = this.testScenarioSetting.VMImageDetails.Publisher,
                         Offer = this.testScenarioSetting.VMImageDetails.Offer,

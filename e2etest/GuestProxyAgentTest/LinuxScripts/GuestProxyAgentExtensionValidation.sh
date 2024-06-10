@@ -8,6 +8,8 @@ currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
 
 echo "Starting guest proxy agent extension validation script" 
+
+echo "Get Extension Folder and Version"
 timeout=300
 elpased=0
 while :; do
@@ -28,13 +30,7 @@ while :; do
 done 
 extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "extensionVersion=$extensionVersion"
-statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
-echo "statusFolder=$statusFolder"
-echo "TEST: Check that status file is success with 5 minute timeout"
-sudo apt install jq
-guestProxyAgentExtensionStatusObjGenerated=false
-guestProxyAgentExtensionServiceStatus=false
-statusFile=$(ls $statusFolder/*.status)
+guestProxyAgentExtensionVersion=true
 
 echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
 os=$(hostnamectl | grep "Operating System")
@@ -43,7 +39,7 @@ if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
         echo "start installing jq via apt-get $i"
         sudo apt update
-        sudo apt-get install jq
+        sudo apt-get install -y jq
         sleep 10
         install=$(apt list --installed jq)
         echo "install=$install"
@@ -66,6 +62,12 @@ else
     done
 fi
 
+echo "TEST: Check that status file is success with 5 minute timeout"
+statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
+echo "statusFolder=$statusFolder"
+statusFile=$(ls $statusFolder/*.status)
+guestProxyAgentExtensionStatusObjGenerated=false
+guestProxyAgentExtensionServiceStatus=false
 timeout=300
 elpased=0
 while :; do 
@@ -99,12 +101,10 @@ fi
 
 echo "TEST: Check that detailed status of the extension status to see if the key latch is successful"
 proxyAgentstatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
-guestProxyAgentExtensionKeyLatchSuccessful=false
-guestProxyAgentExtensionServiceStatus=false
+guestProxyAgentExtensionKeyLatch=false
 if [[ $proxyAgentstatus == *"ready to use"* ]]; then
     echo "Key latch is successful" 
     guestProxyAgentExtensionKeyLatch=true
-    guestProxyAgentExtensionServiceStatus=true
 else
     echo "Key latch is not successful"
 fi
@@ -112,12 +112,7 @@ fi
 echo "Create a json object with the variables guestProxyAgentExtensionStatusObjGenerated,
 guestProxyAgentExtensionProcessExist, and guestProxyAgentExtensionKeyLatchSuccessful"
 
-jsonString="{\"guestProxyAgentExtensionStatusObjGenerated\":$guestProxyAgentExtensionStatusObjGenerated,
-\"guestProxyAgentExtensionProcessExist\":$guestProxyAgentExtensionProcessExist,
-\"guestProxyAgentExtensionServiceExist\":$guestProxyAgentExtensionServiceExist, 
-\"guestProxyAgentExtensionServiceStatus\":$guestProxyAgentExtensionServiceStatus, 
-\"guestProxyAgentExtensionVersion\":$guestProxyAgentExtensionVersion, 
-\"guestProxyAgentExtensionKeyLatchSuccessful\":$guestProxyAgentExtensionKeyLatch}"
+jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionKeyLatch": "'$guestProxyAgentExtensionKeyLatch'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
 echo "$jsonString"
 
 echo "$jsonString" > $customOutputJsonPath

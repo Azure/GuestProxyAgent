@@ -8,3 +8,5 @@ scenarios:
     name: BVTScenario
   - name: LinuxPackageScenario
     className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
