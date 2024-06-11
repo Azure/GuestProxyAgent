@@ -86,11 +86,11 @@ impl DataVessel {
     }
 
     pub fn get_current_key_value(&self) -> String {
-        self.get_current_key().key.to_string()
+        self.get_current_key().key
     }
 
     pub fn get_current_key_guid(&self) -> String {
-        self.get_current_key().guid.to_string()
+        self.get_current_key().guid
     }
 
     pub fn get_current_key_incarnation(&self) -> Option<u32> {
