@@ -4,7 +4,7 @@ use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
 use crate::common::logger;
-use crate::data_vessel;
+use crate::data_vessel::DataVessel;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use once_cell::sync::Lazy;
@@ -66,12 +66,7 @@ impl VMMetaData {
     }
 }
 
-pub fn start_async(
-    dir_path: PathBuf,
-    interval: Duration,
-    delay_start: bool,
-    vessel: data_vessel::DataVessel,
-) {
+pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
@@ -79,12 +74,7 @@ pub fn start_async(
         });
 }
 
-fn start(
-    dir_path: PathBuf,
-    interval: Option<Duration>,
-    delay_start: bool,
-    vessel: data_vessel::DataVessel,
-) {
+fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool, vessel: DataVessel) {
     logger::write("telemetry event reader thread started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
@@ -169,7 +159,7 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-fn update_vm_meta_data(vessel: data_vessel::DataVessel) -> std::io::Result<()> {
+fn update_vm_meta_data(vessel: DataVessel) -> std::io::Result<()> {
     let wire_server_client =
         WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel.clone());
     let goal_state = wire_server_client.get_goalstate()?;
@@ -204,7 +194,7 @@ pub fn get_vm_meta_data() -> VMMetaData {
     }
 }
 
-fn process_events_and_clean(files: Vec<PathBuf>, vessel: data_vessel::DataVessel) -> usize {
+fn process_events_and_clean(files: Vec<PathBuf>, vessel: DataVessel) -> usize {
     let mut num_events_logged = 0;
     for file in files {
         match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
@@ -230,7 +220,7 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 64;
 static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
 static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
-fn send_events(mut events: Vec<Event>, vessel: data_vessel::DataVessel) {
+fn send_events(mut events: Vec<Event>, vessel: DataVessel) {
     while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
@@ -312,7 +302,7 @@ fn get_imds_port() -> u16 {
     val
 }
 
-fn send_data_to_wire_server(telemetry_data: TelemetryData, vessel: data_vessel::DataVessel) {
+fn send_data_to_wire_server(telemetry_data: TelemetryData, vessel: DataVessel) {
     if telemetry_data.event_count() == 0 {
         return;
     }

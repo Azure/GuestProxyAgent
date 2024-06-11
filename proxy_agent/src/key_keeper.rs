@@ -4,7 +4,7 @@ pub mod key;
 
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
-use crate::data_vessel;
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::{acl, redirector};
@@ -44,7 +44,7 @@ pub fn poll_status_async(
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
-    vessel: data_vessel::DataVessel,
+    vessel: DataVessel,
 ) {
     thread::spawn(move || {
         poll_secure_channel_status(base_url, key_dir, interval, config_start_redirector, vessel);
@@ -57,7 +57,7 @@ fn poll_secure_channel_status(
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
-    vessel: data_vessel::DataVessel,
+    vessel: DataVessel,
 ) {
     let message = "poll secure channel status thread started.";
     unsafe {
@@ -96,7 +96,6 @@ fn poll_secure_channel_status(
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
     let shutdown = SHUT_DOWN.clone();
-    let key_keeper_vessel: Box<dyn data_vessel::KeyKeeper> = Box::new(vessel.clone());
     loop {
         if shutdown.load(Ordering::Relaxed) {
             let message = "Stop signal received, exiting the poll_secure_channel_status thread.";
@@ -191,7 +190,7 @@ fn poll_secure_channel_status(
         let state = status.get_secure_channel_state();
 
         // check if need fetch the key
-        if state != DISABLE_STATE && guid != key_keeper_vessel.get_current_key_guid() {
+        if state != DISABLE_STATE && guid != vessel.get_current_key_guid() {
             // search the key locally first
             let mut key_found = false;
             if !guid.is_empty() {
@@ -200,7 +199,7 @@ fn poll_secure_channel_status(
                     // read the key details locally and update
                     match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
                         Ok(key) => {
-                            key_keeper_vessel.update_current_key(key.clone());
+                            vessel.update_current_key(key.clone());
 
                             let message = helpers::write_startup_event(
                                 "Found key details from local and ready to use.",
@@ -270,7 +269,7 @@ fn poll_secure_channel_status(
                     match key::attest_key(base_url.clone(), &key) {
                         Ok(()) => {
                             // update in memory
-                            key_keeper_vessel.update_current_key(key.clone());
+                            vessel.update_current_key(key.clone());
 
                             helpers::write_startup_event(
                                 "Successfully attest the key and ready to use.",
@@ -348,7 +347,7 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-pub fn get_status(vessel: impl data_vessel::KeyKeeper) -> ProxyAgentDetailStatus {
+pub fn get_status(vessel: DataVessel) -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
 
     let status = if shutdown.load(Ordering::Relaxed) {

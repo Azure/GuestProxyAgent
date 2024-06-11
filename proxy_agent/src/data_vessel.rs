@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::key_keeper::key::Key;
+use crate::{common::logger, key_keeper::key::Key};
 use std::sync::mpsc::Sender;
 
 pub enum DataAction {
@@ -25,7 +25,7 @@ impl DataVessel {
 
         std::thread::spawn(move || {
             // chached data are defined here
-            let mut cached_key: Key = Key::empty();
+            let mut cached_key: Key = Key::empty(); // start with empyt key
 
             while let Ok(action) = receiver.recv() {
                 match action {
@@ -53,13 +53,20 @@ impl DataVessel {
     }
 }
 
-impl KeyKeeper for DataVessel {
-    fn update_current_key(&self, key: Key) -> bool {
+/// KeyKeeper implementation
+impl DataVessel {
+    pub fn update_current_key(&self, key: Key) -> bool {
         let (response, receiver) = std::sync::mpsc::channel::<bool>();
         let _ = self
             .sender
             .send(DataAction::KeyKeeperSetKey { key, response });
-        receiver.recv().unwrap_or(false)
+        match receiver.recv() {
+            Ok(result) => result,
+            Err(e) => {
+                logger::write_warning(format!("Failed to update current key with error: {e}"));
+                false
+            }
+        }
     }
 
     fn get_current_key(&self) -> Key {
@@ -68,26 +75,25 @@ impl KeyKeeper for DataVessel {
             .sender
             .clone()
             .send(DataAction::KeyKeeperGetKeyValue { response });
-        receiver.recv().unwrap_or(Key::empty())
+        match receiver.recv() {
+            Ok(key) => key,
+            Err(e) => {
+                logger::write_warning(format!("Failed to get current key with error: {e}"));
+                // return empty key if failed to get the key
+                Key::empty()
+            }
+        }
     }
 
-    fn get_current_key_value(&self) -> String {
+    pub fn get_current_key_value(&self) -> String {
         self.get_current_key().key.to_string()
     }
 
-    fn get_current_key_guid(&self) -> String {
+    pub fn get_current_key_guid(&self) -> String {
         self.get_current_key().guid.to_string()
     }
 
-    fn get_current_key_incarnation(&self) -> Option<u32> {
+    pub fn get_current_key_incarnation(&self) -> Option<u32> {
         self.get_current_key().incarnationId
     }
-}
-
-pub trait KeyKeeper {
-    fn update_current_key(&self, key: Key) -> bool;
-    fn get_current_key(&self) -> Key;
-    fn get_current_key_value(&self) -> String;
-    fn get_current_key_guid(&self) -> String;
-    fn get_current_key_incarnation(&self) -> Option<u32>;
 }

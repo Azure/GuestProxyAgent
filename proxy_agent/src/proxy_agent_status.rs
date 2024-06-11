@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
-use crate::data_vessel::{DataVessel, KeyKeeper};
+use crate::data_vessel::DataVessel;
 use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -81,7 +81,7 @@ fn start(mut interval: Duration, vessel: DataVessel) {
     }
 }
 
-pub fn proxy_agent_status_new(vessel: impl KeyKeeper + Clone) -> ProxyAgentStatus {
+pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
     let key_latch_status = key_keeper::get_status(vessel.clone());
     let ebpf_status = redirector::get_status();
     let proxy_status = proxy_listener::get_status();
@@ -121,7 +121,7 @@ pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
 }
 
 pub fn guest_proxy_agent_aggregate_status_new(
-    vessel: impl KeyKeeper + Clone,
+    vessel: DataVessel,
 ) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),

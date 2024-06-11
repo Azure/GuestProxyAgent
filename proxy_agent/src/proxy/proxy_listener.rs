@@ -9,7 +9,7 @@ use crate::common::http;
 use crate::common::http::request::Request;
 use crate::common::http::response::Response;
 use crate::common::logger;
-use crate::data_vessel;
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_connection::Connection;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -34,7 +34,7 @@ static mut CONNECTION_COUNT: Lazy<Mutex<u128>> = Lazy::new(|| Mutex::new(0));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Proxy listner has not started yet."));
 
-pub fn start_async(port: u16, pool_size: u16, vessel: data_vessel::DataVessel) {
+pub fn start_async(port: u16, pool_size: u16, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("proxy_listener".to_string())
         .spawn(move || {
@@ -42,7 +42,7 @@ pub fn start_async(port: u16, pool_size: u16, vessel: data_vessel::DataVessel) {
         });
 }
 
-fn start(port: u16, pool_size: u16, vessel: data_vessel::DataVessel) {
+fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     Connection::init_logger(config::get_logs_dir());
 
     let shutdown = SHUT_DOWN.clone();
@@ -131,7 +131,7 @@ pub fn stop(port: u16) {
     logger::write_warning("Sending stop signal.".to_string());
 }
 
-fn handle_connection(connection: &mut Connection, vessel: impl data_vessel::KeyKeeper + Clone) {
+fn handle_connection(connection: &mut Connection, vessel: DataVessel) {
     let stream = &connection.stream;
     Connection::write_information(connection.id, "Received connection.".to_string());
 
@@ -297,7 +297,7 @@ fn handle_connection_with_signature(
     connection: &mut Connection,
     mut request: Request,
     server_stream: &mut TcpStream,
-    vessel: impl data_vessel::KeyKeeper + Clone,
+    vessel: DataVessel,
 ) {
     let client_stream = &connection.stream;
     if request.expect_continue_request() {

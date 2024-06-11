@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 use super::instance_info::InstanceInfo;
 use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
-use crate::data_vessel::KeyKeeper;
+use crate::data_vessel::DataVessel;
 use std::io::{Error, ErrorKind};
 use url::Url;
 
-pub struct ImdsClient<T: KeyKeeper> {
+pub struct ImdsClient {
     ip: String,
     port: u16,
-    vessel: T,
+    vessel: DataVessel,
 }
 
-impl<T: KeyKeeper> ImdsClient<T> {
-    pub fn new(ip: &str, port: u16, vessel: T) -> Self {
+impl ImdsClient {
+    pub fn new(ip: &str, port: u16, vessel: DataVessel) -> Self {
         ImdsClient {
             ip: ip.to_string(),
             port,

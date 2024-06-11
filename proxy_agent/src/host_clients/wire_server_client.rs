@@ -3,20 +3,20 @@
 use crate::common::http::{
     self, headers, http_request::HttpRequest, request::Request, response::Response,
 };
-use crate::data_vessel::KeyKeeper;
+use crate::data_vessel::DataVessel;
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use std::io::{Error, ErrorKind};
 use std::{io::prelude::*, net::TcpStream};
 use url::{Position, Url};
 
-pub struct WireServerClient<T: KeyKeeper> {
+pub struct WireServerClient {
     ip: String,
     port: u16,
-    vessel: T,
+    vessel: DataVessel,
 }
 
-impl<T: KeyKeeper> WireServerClient<T> {
-    pub fn new(ip: &str, port: u16, vessel: T) -> Self {
+impl WireServerClient {
+    pub fn new(ip: &str, port: u16, vessel: DataVessel) -> Self {
         WireServerClient {
             ip: ip.to_string(),
             port,
