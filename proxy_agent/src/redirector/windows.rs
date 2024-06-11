@@ -8,6 +8,7 @@ mod bpf_prog;
 
 use crate::common::{self, config, constants, helpers, logger};
 use crate::data_vessel::DataVessel;
+use crate::key_keeper;
 use crate::provision;
 use crate::redirector::AuditEntry;
 use core::ffi::c_void;
@@ -16,7 +17,6 @@ use std::mem;
 use std::net::TcpStream;
 use std::os::windows::io::AsRawSocket;
 use std::ptr;
-use std::sync::mpsc::Sender;
 use windows_sys::Win32::Networking::WinSock;
 
 static mut IS_STARTED: bool = false;
