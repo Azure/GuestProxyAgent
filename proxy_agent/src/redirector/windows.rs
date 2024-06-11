@@ -7,7 +7,7 @@ mod bpf_obj;
 mod bpf_prog;
 
 use crate::common::{self, config, constants, helpers, logger};
-use crate::key_keeper;
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::redirector::AuditEntry;
 use core::ffi::c_void;
@@ -24,7 +24,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
 static mut LOCAL_PORT: u16 = 0;
 
-pub fn start(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) -> bool {
+pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     match bpf_prog::init() {
         Ok(_) => (),
         Err(e) => {
@@ -126,7 +126,7 @@ pub fn start(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) ->
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready(sender);
+    provision::redirector_ready(vessel);
 
     true
 }

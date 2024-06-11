@@ -7,12 +7,12 @@ mod windows;
 mod linux;
 
 use crate::common::{config, logger};
+use crate::data_vessel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::mpsc::Sender;
 use std::thread;
 
 #[derive(Serialize, Deserialize)]
@@ -39,21 +39,21 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) {
+pub fn start_async(local_port: u16, vessel: data_vessel::DataVessel) {
     thread::spawn(move || {
-        start(local_port, sender);
+        start(local_port, vessel);
     });
 }
 
-fn start(local_port: u16, sender: Sender<crate::data_vessel::DataAction>) -> bool {
+fn start(local_port: u16, vessel: data_vessel::DataVessel) -> bool {
     for _ in 0..5 {
         #[cfg(windows)]
         {
-            windows::start(local_port, sender.clone());
+            windows::start(local_port, vessel.clone());
         }
         #[cfg(not(windows))]
         {
-            linux::start(local_port, sender.clone());
+            linux::start(local_port, vessel.clone());
         }
 
         let level = if is_started() {
@@ -99,7 +99,7 @@ fn get_status_message() -> String {
     }
 }
 
-pub fn get_status(_sender: Sender<crate::data_vessel::DataAction>) -> ProxyAgentDetailStatus {
+pub fn get_status() -> ProxyAgentDetailStatus {
     let mut message = get_status_message();
     if message.len() > MAX_STATUS_MESSAGE_LENGTH {
         event_logger::write_event(

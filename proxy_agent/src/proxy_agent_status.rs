@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
+use crate::data_vessel::{DataVessel, KeyKeeper};
 use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -15,7 +16,6 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -26,15 +26,15 @@ static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
 static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn start_async(interval: Duration, sender: Sender<crate::data_vessel::DataAction>) {
+pub fn start_async(interval: Duration, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("guest_proxy_agent_status".to_string())
         .spawn(move || {
-            start(interval, sender);
+            start(interval, vessel);
         });
 }
 
-fn start(mut interval: Duration, sender: Sender<crate::data_vessel::DataAction>) {
+fn start(mut interval: Duration, vessel: DataVessel) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
@@ -54,7 +54,7 @@ fn start(mut interval: Duration, sender: Sender<crate::data_vessel::DataAction>)
             break;
         }
 
-        let aggregate_status = guest_proxy_agent_aggregate_status_new(sender.clone());
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
             logger::write_error(format!("Error writing aggregate status to file: {}", e));
@@ -81,10 +81,10 @@ fn start(mut interval: Duration, sender: Sender<crate::data_vessel::DataAction>)
     }
 }
 
-pub fn proxy_agent_status_new(sender: Sender<crate::data_vessel::DataAction>) -> ProxyAgentStatus {
-    let key_latch_status = key_keeper::get_status(sender.clone());
-    let ebpf_status = redirector::get_status(sender.clone());
-    let proxy_status = proxy_listener::get_status(sender.clone());
+pub fn proxy_agent_status_new(vessel: impl KeyKeeper + Clone) -> ProxyAgentStatus {
+    let key_latch_status = key_keeper::get_status(vessel.clone());
+    let ebpf_status = redirector::get_status();
+    let proxy_status = proxy_listener::get_status();
     let mut status = OveralState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
@@ -121,11 +121,11 @@ pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
 }
 
 pub fn guest_proxy_agent_aggregate_status_new(
-    sender: Sender<crate::data_vessel::DataAction>,
+    vessel: impl KeyKeeper + Clone,
 ) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
-        proxyAgentStatus: proxy_agent_status_new(sender.clone()),
+        proxyAgentStatus: proxy_agent_status_new(vessel.clone()),
         proxyConnectionSummary: get_all_connection_summary(false),
         failedAuthenticateSummary: get_all_connection_summary(true),
     }
@@ -189,8 +189,8 @@ mod tests {
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
         misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
-        let sender = crate::data_vessel::start_receiver_async();
-        let aggregate_status = guest_proxy_agent_aggregate_status_new(sender.clone());
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
 
         _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
@@ -218,6 +218,6 @@ mod tests {
             "proxyConnectionSummary does not exist"
         );
 
-        _ = sender.send(crate::data_vessel::DataAction::Stop);
+        vessel.stop();
     }
 }

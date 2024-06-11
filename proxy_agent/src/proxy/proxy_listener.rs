@@ -9,7 +9,7 @@ use crate::common::http;
 use crate::common::http::request::Request;
 use crate::common::http::response::Response;
 use crate::common::logger;
-use crate::data_vessel::key_keeper;
+use crate::data_vessel;
 use crate::provision;
 use crate::proxy::proxy_connection::Connection;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -24,7 +24,6 @@ use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -35,15 +34,15 @@ static mut CONNECTION_COUNT: Lazy<Mutex<u128>> = Lazy::new(|| Mutex::new(0));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Proxy listner has not started yet."));
 
-pub fn start_async(port: u16, pool_size: u16, sender: Sender<crate::data_vessel::DataAction>) {
+pub fn start_async(port: u16, pool_size: u16, vessel: data_vessel::DataVessel) {
     _ = thread::Builder::new()
         .name("proxy_listener".to_string())
         .spawn(move || {
-            start(port, pool_size, sender);
+            start(port, pool_size, vessel);
         });
 }
 
-fn start(port: u16, pool_size: u16, sender: Sender<crate::data_vessel::DataAction>) {
+fn start(port: u16, pool_size: u16, vessel: data_vessel::DataVessel) {
     Connection::init_logger(config::get_logs_dir());
 
     let shutdown = SHUT_DOWN.clone();
@@ -73,7 +72,7 @@ fn start(port: u16, pool_size: u16, sender: Sender<crate::data_vessel::DataActio
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::listener_started(sender.clone());
+    provision::listener_started(vessel.clone());
 
     let pool = ProxyPool::new(pool_size as usize);
 
@@ -97,7 +96,7 @@ fn start(port: u16, pool_size: u16, sender: Sender<crate::data_vessel::DataActio
 
             connection_count_clone = *connection_count_lock;
         }
-        let cloned_sender = sender.clone();
+        let cloned_vessel = vessel.clone();
         match connection {
             Ok(stream) => {
                 pool.execute(move || {
@@ -109,7 +108,7 @@ fn start(port: u16, pool_size: u16, sender: Sender<crate::data_vessel::DataActio
                         ip: String::new(),
                         port: 0,
                     };
-                    handle_connection(&mut connection, cloned_sender);
+                    handle_connection(&mut connection, cloned_vessel);
                 });
             }
             Err(e) => {
@@ -132,7 +131,7 @@ pub fn stop(port: u16) {
     logger::write_warning("Sending stop signal.".to_string());
 }
 
-fn handle_connection(connection: &mut Connection, sender: Sender<crate::data_vessel::DataAction>) {
+fn handle_connection(connection: &mut Connection, vessel: impl data_vessel::KeyKeeper + Clone) {
     let stream = &connection.stream;
     Connection::write_information(connection.id, "Received connection.".to_string());
 
@@ -291,14 +290,14 @@ fn handle_connection(connection: &mut Connection, sender: Sender<crate::data_ves
         return handle_connection_without_signature(connection, request, &mut server_stream);
     }
 
-    handle_connection_with_signature(connection, request, &mut server_stream, sender.clone());
+    handle_connection_with_signature(connection, request, &mut server_stream, vessel.clone());
 }
 
 fn handle_connection_with_signature(
     connection: &mut Connection,
     mut request: Request,
     server_stream: &mut TcpStream,
-    sender: Sender<crate::data_vessel::DataAction>,
+    vessel: impl data_vessel::KeyKeeper + Clone,
 ) {
     let client_stream = &connection.stream;
     if request.expect_continue_request() {
@@ -306,7 +305,7 @@ fn handle_connection_with_signature(
     }
 
     // Add header x-ms-azure-host-authorization
-    let key = key_keeper::get_current_key_value(sender.clone());
+    let key = vessel.get_current_key_value();
     if !key.is_empty() {
         let input_to_sign = request.as_sig_input();
         match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
@@ -327,7 +326,7 @@ fn handle_connection_with_signature(
                 let authorization_value = format!(
                     "{} {} {}",
                     constants::AUTHORIZATION_SCHEME,
-                    key_keeper::get_current_key_guid(sender.clone()),
+                    vessel.get_current_key_guid(),
                     sig
                 );
                 request.headers.add_header(
@@ -613,7 +612,7 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     _ = client_stream.flush();
 }
 
-pub fn get_status(_sender: Sender<crate::data_vessel::DataAction>) -> ProxyAgentDetailStatus {
+pub fn get_status() -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
 
     let status = if shutdown.load(Ordering::Relaxed) {
@@ -667,8 +666,8 @@ mod tests {
         Connection::init_logger(temp_test_path.to_path_buf());
 
         // start listener, the port must different from the one used in production code
-        let sender = crate::data_vessel::start_receiver_async();
-        let s = sender.clone();
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let s = vessel.clone();
         let port: u16 = 8091;
         let handle = thread::spawn(move || {
             proxy_listener::start(port, 1, s);
@@ -699,7 +698,7 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);
-        _ = sender.send(crate::data_vessel::DataAction::Stop);
+        vessel.stop();
     }
 
     const PROXY_ENDPOINT_ADDRESS: &str = "127.0.0.1:8083";
@@ -855,14 +854,14 @@ mod tests {
             );
         }
 
-        let sender = crate::data_vessel::start_receiver_async();
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
         super::handle_connection_with_signature(
             connection,
             request,
             &mut server_stream,
-            sender.clone(),
+            vessel.clone(),
         );
-        _ = sender.send(crate::data_vessel::DataAction::Stop);
+        vessel.stop();
     }
 
     fn test_get_response() {

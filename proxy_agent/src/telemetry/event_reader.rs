@@ -4,6 +4,7 @@ use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
 use crate::common::logger;
+use crate::data_vessel;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use once_cell::sync::Lazy;
@@ -13,7 +14,6 @@ use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -70,12 +70,12 @@ pub fn start_async(
     dir_path: PathBuf,
     interval: Duration,
     delay_start: bool,
-    sender: Sender<crate::data_vessel::DataAction>,
+    vessel: data_vessel::DataVessel,
 ) {
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
-            start(dir_path, Some(interval), delay_start, sender);
+            start(dir_path, Some(interval), delay_start, vessel);
         });
 }
 
@@ -83,7 +83,7 @@ fn start(
     dir_path: PathBuf,
     interval: Option<Duration>,
     delay_start: bool,
-    sender: Sender<crate::data_vessel::DataAction>,
+    vessel: data_vessel::DataVessel,
 ) {
     logger::write("telemetry event reader thread started.".to_string());
 
@@ -126,7 +126,7 @@ fn start(
             first = false;
         }
 
-        match update_vm_meta_data(sender.clone()) {
+        match update_vm_meta_data(vessel.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -140,7 +140,7 @@ fn start(
                 match misc_helpers::get_files(&dir_path) {
                     Ok(files) => {
                         let file_count = files.len();
-                        let event_count = process_events_and_clean(files, sender.clone());
+                        let event_count = process_events_and_clean(files, vessel.clone());
                         let message =
                             format!("Send {} events from {} files", event_count, file_count);
                         event_logger::write_event(
@@ -169,13 +169,13 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-fn update_vm_meta_data(sender: Sender<crate::data_vessel::DataAction>) -> std::io::Result<()> {
+fn update_vm_meta_data(vessel: data_vessel::DataVessel) -> std::io::Result<()> {
     let wire_server_client =
-        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), sender.clone());
+        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel.clone());
     let goal_state = wire_server_client.get_goalstate()?;
     let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri())?;
 
-    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), sender.clone());
+    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), vessel.clone());
     let instance_info = imds_client.get_imds_instance_info()?;
     let vm_meta_data = VMMetaData {
         container_id: goal_state.get_container_id(),
@@ -204,16 +204,13 @@ pub fn get_vm_meta_data() -> VMMetaData {
     }
 }
 
-fn process_events_and_clean(
-    files: Vec<PathBuf>,
-    sender: Sender<crate::data_vessel::DataAction>,
-) -> usize {
+fn process_events_and_clean(files: Vec<PathBuf>, vessel: data_vessel::DataVessel) -> usize {
     let mut num_events_logged = 0;
     for file in files {
         match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
             Ok(events) => {
                 num_events_logged += events.len();
-                send_events(events, sender.clone());
+                send_events(events, vessel.clone());
                 clean_files(file);
             }
             Err(e) => {
@@ -233,7 +230,7 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 64;
 static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
 static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
-fn send_events(mut events: Vec<Event>, sender: Sender<crate::data_vessel::DataAction>) {
+fn send_events(mut events: Vec<Event>, vessel: data_vessel::DataVessel) {
     while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
@@ -270,7 +267,7 @@ fn send_events(mut events: Vec<Event>, sender: Sender<crate::data_vessel::DataAc
             }
         }
 
-        send_data_to_wire_server(telemetry_data, sender.clone());
+        send_data_to_wire_server(telemetry_data, vessel.clone());
     }
 }
 
@@ -315,16 +312,13 @@ fn get_imds_port() -> u16 {
     val
 }
 
-fn send_data_to_wire_server(
-    telemetry_data: TelemetryData,
-    sender: Sender<crate::data_vessel::DataAction>,
-) {
+fn send_data_to_wire_server(telemetry_data: TelemetryData, vessel: data_vessel::DataVessel) {
     if telemetry_data.event_count() == 0 {
         return;
     }
 
     let wire_server_client =
-        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), sender);
+        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel);
     for _ in [0; 5] {
         match wire_server_client.send_telemetry_data(telemetry_data.to_xml()) {
             Ok(()) => {
@@ -490,14 +484,14 @@ mod tests {
             MOCK_WIRE_SERVER_IP = Some(ip);
             MOCK_WIRE_SERVER_PORT = Some(port);
         }
-        let sender = crate::data_vessel::start_receiver_async();
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
 
         thread::spawn(move || {
             server_mock::start(ip.to_string(), port);
         });
         thread::sleep(Duration::from_millis(100));
 
-        match update_vm_meta_data(sender.clone()) {
+        match update_vm_meta_data(vessel.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -525,13 +519,13 @@ mod tests {
         // Check the events processed
         let files = misc_helpers::get_files(&events_dir).unwrap();
         println!("Get '{}' event files.", files.len());
-        let events_read = process_events_and_clean(files, sender.clone());
+        let events_read = process_events_and_clean(files, vessel.clone());
 
         //Should be 10 events written and read into events Vector
         assert_eq!(events_read, 10);
 
         _ = fs::remove_dir_all(&temp_dir);
-        _ = sender.send(crate::data_vessel::DataAction::Stop);
+        vessel.stop();
         unsafe {
             MOCK_WIRE_SERVER_IP = None;
             MOCK_WIRE_SERVER_PORT = None;
