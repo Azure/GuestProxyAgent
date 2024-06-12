@@ -99,20 +99,17 @@ else
     guestProxyAgentExtensionProcessExist=true
 fi
 
-echo "TEST: Check that detailed status of the extension status to see if the key latch is successful"
+echo "TEST: Check that detailed status of the extension status to see if the Instance View is successful"
 proxyAgentstatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
-guestProxyAgentExtensionKeyLatch=false
-if [[ $proxyAgentstatus == *"ready to use"* ]]; then
-    echo "Key latch is successful" 
-    guestProxyAgentExtensionKeyLatch=true
+guestProxyAgentExtensionInstanceView=false
+if [[ $proxyAgentstatus == *"SUCCESS"* ]]; then
+    echo "Instance View is successful" 
+    guestProxyAgentExtensionInstanceView=true
 else
-    echo "Key latch is not successful"
+    echo "Instance View is not successful"
 fi
 
-echo "Create a json object with the variables guestProxyAgentExtensionStatusObjGenerated,
-guestProxyAgentExtensionProcessExist, and guestProxyAgentExtensionKeyLatchSuccessful"
-
-jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionKeyLatch": "'$guestProxyAgentExtensionKeyLatch'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
+jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionInstanceView": "'$guestProxyAgentExtensionInstanceView'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
 echo "$jsonString"
 
 echo "$jsonString" > $customOutputJsonPath

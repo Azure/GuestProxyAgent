@@ -32,7 +32,7 @@ echo "Status Directory: $statusFolder"
 echo "Delete status file of PIR version" 
 rm -rf $statusFolder/*
 
-echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
+echo "detecting os and installing jq and unzip" #TODO: needs to be revisited if we support other distros
 os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
@@ -57,6 +57,33 @@ else
         echo "install=$install"
         if [[ $install == *"jq"* ]]; then
             echo "jq installed successfully"
+            break
+        fi
+    done
+fi
+
+if [[ $os == *"Ubuntu"* ]]; then
+    for  i in {1..3}; do
+        echo "start installing unzip via apt-get $i"
+        sudo apt update
+        sudo apt-get install unzip
+        sleep 10
+        install=$(apt list --installed unzip)
+        echo "install=$install"
+        if [[ $install == *"unzip"* ]]; then
+            echo "unzip installed successfully"
+            break
+        fi
+    done
+else
+    for  i in {1..3}; do
+        echo "start installing unzip via yum $i"
+        sudo yum -y install unzip
+        sleep 10
+        install=$(yum list --installed unzip)
+        echo "install=$install"
+        if [[ $install == *"unzip"* ]]; then
+            echo "unzip installed successfully"
             break
         fi
     done
@@ -90,11 +117,12 @@ else
 fi
 
 echo "Delete PIR extension folder"
-rm -rf $PIRExtensionFolderPath
+rm -f $PIRExtensionFolderPath
 
 decodedUrl=$(echo $zipFile | base64 -d)
 curl -L -o $PIRExtensionFolderPath "$decodedUrl"
-echo "downloaded the proxyagent extension file to path: $PIRExtensionFolderPath"
+unzip -o $PIRExtensionFolderPath -d $PIRExtensionFolderPath
+ls -l $PIRExtensionFolderPath
 
 echo "Get PID of ProxyAgentExt and kill pidof"
 pidof ProxyAgentExt | xargs kill -9

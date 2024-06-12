@@ -118,13 +118,13 @@ if ($extractedVersion -eq $proxyAgentVersion){
     Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $proxyAgentVersion ]"
 }
 
-Write-Output "TEST: Check detailed status of the extension if key latch is successful" 
-$guestProxyAgentExtensionKeyLatch = $false
-if ($proxyAgentStatus -like "*ready to use*") {
-    Write-Output "The keylatch status is $proxyAgentStatus."
-    $guestProxyAgentExtensionKeyLatch = $true
+Write-Output "TEST: Check detailed status of the extension if InstanceView is successful" 
+$guestProxyAgentExtensionInstanceView = $false
+if ($proxyAgentStatus -like "*SUCCESS*") {
+    Write-Output "The InstanceView status is $proxyAgentStatus."
+    $guestProxyAgentExtensionInstanceView = $true
 } else {
-    Write-Output "Error the keylatch status is not ready: $proxyAgentStatus."
+    Write-Output "Error the InstanceView status is not ready: $proxyAgentStatus."
 }
 
 $jsonString = '{ "guestProxyAgentExtensionServiceExist": ' + $guestProxyAgentExtensionServiceExist.ToString().ToLower() `
@@ -132,7 +132,7 @@ $jsonString = '{ "guestProxyAgentExtensionServiceExist": ' + $guestProxyAgentExt
 + ', "guestProxyAgentExtensionServiceStatus": ' + $guestProxyAgentExtensionServiceStatus.ToString().ToLower() `
 + ', "guestProxyAgentExtensionStatusObjGenerated": ' + $guestProxyAgentExtensionStatusObjGenerated.ToString().ToLower() `
 + ', "guestProxyAgentExtensionVersion": ' + $guestProxyAgentExtensionVersion.ToString().ToLower() `
-+ ', "guestProxyAgentExtensionKeyLatch": ' + $guestProxyAgentExtensionKeyLatch.ToString().ToLower() ` + '}'
++ ', "guestProxyAgentExtensionInstanceView": ' + $guestProxyAgentExtensionInstanceView.ToString().ToLower() ` + '}'
 
 Write-Output $jsonString
 

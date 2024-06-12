@@ -18,7 +18,7 @@ namespace GuestProxyAgentTest.TestCases
         {
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, null!)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
-            {
+            {                
                 var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentExtensionValidationDetails>();
                 if (validationDetails != null
                     && validationDetails.guestProxyAgentExtensionServiceExist
@@ -26,7 +26,7 @@ namespace GuestProxyAgentTest.TestCases
                     && validationDetails.guestProxyAgentExtensionServiceStatus
                     && validationDetails.guestProxyAgentExtensionStatusObjGenerated
                     && validationDetails.guestProxyAgentExtensionVersion
-                    && validationDetails.guestProxyAgentExtensionKeyLatch)
+                    && validationDetails.guestProxyAgentExtensionInstanceView)
                 {
                     context.TestResultDetails.Succeed = true;
                 }
@@ -45,6 +45,6 @@ namespace GuestProxyAgentTest.TestCases
         public bool guestProxyAgentExtensionServiceStatus { get; set; }
         public bool guestProxyAgentExtensionStatusObjGenerated { get; set; }
         public bool guestProxyAgentExtensionVersion { get; set; }
-        public bool guestProxyAgentExtensionKeyLatch { get; set; }
+        public bool guestProxyAgentExtensionInstanceView { get; set; }
     }
 }
