@@ -10,7 +10,6 @@ using Azure.ResourceManager;
 using Azure;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using GuestProxyAgentTest.Settings;
-using System.Security.AccessControl;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -141,7 +140,6 @@ namespace GuestProxyAgentTest.Utilities
                     };
                 }
             }
-
             if (Constants.IS_WINDOWS())
             {
                 vmData.OSProfile.WindowsConfiguration = new WindowsConfiguration()
