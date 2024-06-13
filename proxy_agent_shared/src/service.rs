@@ -7,8 +7,6 @@ mod windows_service;
 
 use std::path::PathBuf;
 
-#[cfg(windows)]
-use crate::logger_manager;
 use std::io;
 
 pub fn install_service(
@@ -108,17 +106,11 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
     {
         match windows_service::query_service_config(_service_name) {
             Ok(service_config) => {
-                logger_manager::write_info(format!(
-                    "Service {} successfully queried",
-                    _service_name
-                ));
+                tracing::info!("Service {} successfully queried", _service_name);
                 service_config.executable_path.to_path_buf()
             }
             Err(e) => {
-                logger_manager::write_info(format!(
-                    "Service {} query failed: {}",
-                    _service_name, e
-                ));
+                tracing::info!("Service {} query failed: {}", _service_name, e);
                 eprintln!("Service {} query failed: {}", _service_name, e);
                 PathBuf::new()
             }

@@ -6,7 +6,7 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
-use crate::common::{self, config, constants, helpers, logger};
+use crate::common::{self, config, constants};
 use crate::key_keeper;
 use crate::provision;
 use crate::redirector::AuditEntry;
@@ -37,7 +37,7 @@ pub fn start(local_port: u16) -> bool {
         set_error_status(format!("Failed to load bpf object with result: {result}"));
         return false;
     } else {
-        logger::write("Success loaded bpf object.".to_string());
+        tracing::info!("Success loaded bpf object.");
     }
 
     let result = bpf_prog::attach_bpf_prog();
@@ -45,7 +45,7 @@ pub fn start(local_port: u16) -> bool {
         set_error_status(format!("Failed to attach bpf prog with result: {result}"));
         return false;
     } else {
-        logger::write("Success attached bpf prog.".to_string());
+        tracing::info!("Success attached bpf prog.");
     }
 
     let pid = std::process::id();
@@ -56,9 +56,7 @@ pub fn start(local_port: u16) -> bool {
         ));
         return false;
     } else {
-        logger::write(format!(
-            "Success updated bpf skip_process map with pid={pid}."
-        ));
+        tracing::info!("Success updated bpf skip_process map with pid={pid}.");
     }
 
     if (key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE)
@@ -75,7 +73,7 @@ pub fn start(local_port: u16) -> bool {
             ));
             return false;
         } else {
-            logger::write("Success updated bpf map for WireServer support.".to_string());
+            tracing::info!("Success updated bpf map for WireServer support.");
         }
     }
     if config::get_host_gaplugin_support() > 0 {
@@ -90,7 +88,7 @@ pub fn start(local_port: u16) -> bool {
             ));
             return false;
         } else {
-            logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
+            tracing::info!("Success updated bpf map for Host GAPlugin support.");
         }
     }
     if (key_keeper::get_secure_channel_state() == key_keeper::MUST_SIG_WIRESERVER_IMDS)
@@ -107,7 +105,7 @@ pub fn start(local_port: u16) -> bool {
             ));
             return false;
         } else {
-            logger::write("Success updated bpf map for IMDS support.".to_string());
+            tracing::info!("Success updated bpf map for IMDS support.");
         }
     }
 
@@ -116,12 +114,8 @@ pub fn start(local_port: u16) -> bool {
         LOCAL_PORT = local_port;
     }
 
-    let message = helpers::write_startup_event(
-        "Started Redirector with eBPF maps",
-        "start",
-        "redirector",
-        logger::AGENT_LOGGER_KEY,
-    );
+    let message = "Started Redirector with eBPF maps";
+    tracing::info!(startup = true, message);
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
@@ -133,7 +127,7 @@ pub fn start(local_port: u16) -> bool {
 fn set_error_status(message: String) {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
-        logger::write_error(message);
+        tracing::error!(message);
     }
 }
 
@@ -144,7 +138,7 @@ pub fn get_status() -> String {
 pub fn close(_local_port: u16) {
     unsafe {
         bpf_prog::close_bpf_object();
-        logger::write("Success closed bpf object.".to_string());
+        tracing::info!("Success closed bpf object.");
         IS_STARTED = false;
     }
 }
@@ -196,7 +190,7 @@ pub fn update_wire_server_redirect_policy(redirect: bool) {
                 "Failed to update bpf map for wireserver redirect policy with result: {result}"
             ));
         } else {
-            logger::write("Success updated bpf map for wireserver redirect policy.".to_string());
+            tracing::info!("Success updated bpf map for wireserver redirect policy.");
         }
     } else {
         let result = bpf_prog::remove_policy_elem_bpf_map(
@@ -208,7 +202,7 @@ pub fn update_wire_server_redirect_policy(redirect: bool) {
                 "Failed to delete bpf map for wireserver redirect policy with result: {result}"
             ));
         } else {
-            logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());
+            tracing::info!("Success deleted bpf map for wireserver redirect policy.");
         }
     }
 }
@@ -227,7 +221,7 @@ pub fn update_imds_redirect_policy(redirect: bool) {
                 "Failed to update bpf map for IMDS redirect policy with result: {result}"
             ));
         } else {
-            logger::write("Success updated bpf map for IMDS redirect policy.".to_string());
+            tracing::info!("Success updated bpf map for IMDS redirect policy.");
         }
     } else {
         let result = bpf_prog::remove_policy_elem_bpf_map(
@@ -239,7 +233,7 @@ pub fn update_imds_redirect_policy(redirect: bool) {
                 "Failed to delete bpf map for IMDS redirect policy with result: {result}"
             ));
         } else {
-            logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
+            tracing::info!("Success deleted bpf map for IMDS redirect policy.");
         }
     }
 }

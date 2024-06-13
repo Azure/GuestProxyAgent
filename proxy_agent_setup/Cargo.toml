@@ -7,6 +7,8 @@ edition = "2021"
 
 [dependencies]
 proxy_agent_shared = { path ="../proxy_agent_shared"}
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"             # Rust Windows resource helper to add file version

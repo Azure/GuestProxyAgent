@@ -4,7 +4,7 @@ use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{proxy_connection::Connection, Claims};
+use super::Claims;
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -110,9 +110,10 @@ impl AuthorizationRules {
         let url = match url::Url::parse(&url) {
             Ok(u) => u,
             Err(_) => {
-                Connection::write_error(
+                tracing::error!(
                     connection_id,
-                    format!("Failed to parse the request url: {}", request_url),
+                    "Failed to parse the request url: {}",
+                    request_url,
                 );
                 return false;
             }
@@ -135,17 +136,17 @@ impl AuthorizationRules {
             }
 
             if role_privilege_matched {
-                Connection::write_information(
+                tracing::info!(
                     connection_id,
-                    "Privilege matched once, but no identity matches.".to_string(),
+                    "Privilege matched once, but no identity matches.",
                 );
                 return false;
             }
         }
 
-        Connection::write_information(
+        tracing::info!(
             connection_id,
-            "No privilege matched, fall back to default access.".to_string(),
+            "No privilege matched, fall back to default access.",
         );
         self.defaultAllowed
     }
@@ -157,15 +158,10 @@ mod tests {
         AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
     };
     use crate::proxy::authorization_rules::AuthorizationRules;
-    use crate::proxy::{proxy_connection::Connection, Claims};
+    use crate::proxy::Claims;
 
     #[test]
     fn test_authorization_rules() {
-        let logger_key = "test_authorization_rules";
-        let mut temp_test_path = std::env::temp_dir();
-        temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
-
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #![cfg(windows)]
 
-use crate::common::logger;
 use proxy_agent_shared::misc_helpers;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
@@ -58,17 +57,17 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         }
     };
 
-    logger::write(format!(
+    tracing::info!(
         "acl_directory: removing all the remaining access rules for folder {}.",
         dir_str
-    ));
+    );
     match acl.all() {
         Ok(entries) => {
-            logger::write(format!(
+            tracing::info!(
                 "acl_directory: get '{}' access rules for folder {}.",
                 entries.len(),
                 dir_str
-            ));
+            );
             for entry in entries {
                 match entry.sid {
                     Some(ref sid) => {
@@ -78,18 +77,18 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
                             Some(entry.flags),
                         ) {
                             Ok(r) => {
-                                logger::write(format!("acl_directory: removed '{}' entry.", r));
+                                tracing::info!("acl_directory: removed '{}' entry.", r);
                             }
                             Err(e) => {
-                                logger::write_warning(format!(
+                                tracing::warn!(
                                     "acl_directory: remove_entry failed with error '{}' entry.",
                                     e
-                                ));
+                                );
                             }
                         }
                     }
                     None => {
-                        logger::write_warning("acl_directory: entry.sid is NONE.".to_string());
+                        tracing::warn!("acl_directory: entry.sid is NONE.");
                     }
                 }
             }
@@ -105,10 +104,10 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         }
     }
 
-    logger::write(format!(
+    tracing::info!(
         "acl_directory: Adding new access rules for the target directory {}.",
         dir_str
-    ));
+    );
     let flags = (CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE) as u8;
     let mask = FULL_CONTROL;
     match acl.add_entry(
@@ -118,10 +117,11 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         mask,
     ) {
         Ok(r) => {
-            logger::write(format!(
+            tracing::info!(
                 "acl_directory: Adding new access rules for sid {} with result {}.",
-                LOCAL_SYSTEM_SID, r
-            ));
+                LOCAL_SYSTEM_SID,
+                r
+            );
         }
         Err(e) => {
             return Err(Error::new(
@@ -140,10 +140,11 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         mask,
     ) {
         Ok(r) => {
-            logger::write(format!(
+            tracing::info!(
                 "acl_directory: Adding new access rules for sid {} with result {}.",
-                BUILDIN_ADMIN_SID, r
-            ));
+                BUILDIN_ADMIN_SID,
+                r
+            );
         }
         Err(e) => {
             return Err(Error::new(
@@ -161,10 +162,6 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::logger;
-    use proxy_agent_shared::logger_manager;
-    use std::env;
-    use std::fs;
     use std::path::PathBuf;
     use winapi::um::winnt::PSID;
     use windows_acl::acl::{AceType, ACL};
@@ -174,18 +171,8 @@ mod tests {
 
     #[test]
     fn acl_directory_test() {
-        let mut temp_test_path = env::temp_dir();
-        let logger_key = "acl_directory_test";
-        temp_test_path.push(logger_key);
-        // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        );
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let temp_test_path = temp_dir.path().to_owned();
 
         // test when dir_to_acl does not exist
         let invalid_path = PathBuf::from("invalid_path");
@@ -228,7 +215,5 @@ mod tests {
             entries.len(),
             "ACL rule entry should be 1 for system_sid"
         );
-
-        _ = fs::remove_dir_all(&temp_test_path);
     }
 }

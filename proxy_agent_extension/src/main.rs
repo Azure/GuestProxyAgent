@@ -5,7 +5,6 @@
 pub mod common;
 pub mod constants;
 pub mod handler_main;
-pub mod logger;
 pub mod service_main;
 pub mod structs;
 
@@ -15,8 +14,9 @@ pub mod linux;
 #[cfg(windows)]
 pub mod windows;
 
-use proxy_agent_shared::misc_helpers;
 use std::env;
+
+use tracing_subscriber::prelude::*;
 
 #[cfg(windows)]
 use std::ffi::OsString;
@@ -26,18 +26,27 @@ use windows_service::{define_windows_service, service_dispatcher};
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
 
 fn main() {
+    // TODO: If Windows doesn't do log management, pull in a tracing rolling logger impl
+    let format = tracing_subscriber::fmt::format()
+        .with_level(true)
+        .with_thread_names(true);
+    // Configurable via environment variable for now
+    // https://docs.rs/tracing-subscriber/0.3.18/tracing_subscriber/filter/struct.EnvFilter.html#directives
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .event_format(format)
+        .with_writer(std::io::stderr)
+        .with_filter(tracing_subscriber::EnvFilter::from_env(
+            "GUEST_PROXY_AGENT_LOG",
+        ));
+    let registry = tracing_subscriber::registry().with(stderr_layer);
+    tracing::subscriber::set_global_default(registry).expect("Unable to configure logging!");
+
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
         let config_seq_no =
             env::var("ConfigSequenceNumber").unwrap_or_else(|_e| "no seq no".to_string());
         handler_main::program_start(args, Some(config_seq_no));
     } else {
-        let exe_path = misc_helpers::get_current_exe_dir();
-        let log_folder = common::get_handler_environment(exe_path)
-            .logFolder
-            .to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
-        common::start_event_logger(constants::SERVICE_LOG_FILE);
         #[cfg(windows)]
         {
             _ = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main);

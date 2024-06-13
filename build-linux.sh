@@ -3,6 +3,7 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 
+export RUST_BACKTRACE=1
 
 echo ======= Get the directory of the script
 root_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"

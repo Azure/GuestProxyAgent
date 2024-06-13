@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::constants;
-use crate::logger;
 use proxy_agent_shared::{misc_helpers, service};
 use std::path::PathBuf;
 use std::process;
@@ -17,17 +16,17 @@ pub fn install_extension_service() {
         service_exe_path,
     ) {
         Ok(_service) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} successfully installed",
                 constants::EXTENSION_SERVICE_NAME
-            ));
+            );
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} install failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
                 e
-            ));
+            );
             eprintln!(
                 "Service {} install failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
@@ -42,17 +41,17 @@ pub fn uninstall_extension_service() {
     // Stop and Delete the service given
     match service::stop_and_delete_service(constants::EXTENSION_SERVICE_NAME) {
         Ok(_service) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} successfully uninstalled",
                 constants::EXTENSION_SERVICE_NAME
-            ));
+            );
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} uninstall failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
                 e
-            ));
+            );
             eprintln!(
                 "Service {} update failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
@@ -74,17 +73,17 @@ pub fn start_extension_service() {
 pub fn stop_extension_service() {
     match service::stop_service(constants::EXTENSION_SERVICE_NAME) {
         Ok(_service) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} successfully stopped",
                 constants::EXTENSION_SERVICE_NAME
-            ));
+            );
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} stop failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
                 e
-            ));
+            );
             eprintln!(
                 "Service {} stop failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
@@ -97,11 +96,11 @@ pub fn stop_extension_service() {
 
 pub fn update_extension_service(exe_root_path: PathBuf) {
     let service_exe_path = exe_root_path.join(constants::EXTENSION_PROCESS_NAME);
-    logger::write(format!(
+    tracing::info!(
         "Updating service {} with exe_path {}",
         constants::EXTENSION_SERVICE_NAME,
         misc_helpers::path_to_string(service_exe_path.to_path_buf())
-    ));
+    );
     match service::update_service(
         constants::EXTENSION_SERVICE_NAME,
         constants::EXTENSION_SERVICE_DISPLAY_NAME,
@@ -109,17 +108,17 @@ pub fn update_extension_service(exe_root_path: PathBuf) {
         service_exe_path,
     ) {
         Ok(_service) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} successfully updated",
                 constants::EXTENSION_SERVICE_NAME
-            ));
+            );
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Service {} update failed: {}",
                 constants::EXTENSION_SERVICE_NAME,
                 e
-            ));
+            );
             eprintln!(
                 "Service {} update failed: {}",
                 constants::EXTENSION_SERVICE_NAME,

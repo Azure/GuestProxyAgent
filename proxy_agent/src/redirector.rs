@@ -6,10 +6,9 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::{config, logger};
+use crate::common::config;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
-use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::thread;
@@ -55,18 +54,12 @@ fn start(local_port: u16) -> bool {
             linux::start(local_port);
         }
 
-        let level = if is_started() {
-            event_logger::INFO_LEVEL
+        let status = get_status_message();
+        if is_started() {
+            tracing::info!(status);
         } else {
-            event_logger::ERROR_LEVEL
-        };
-        event_logger::write_event(
-            level,
-            get_status_message(),
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
+            tracing::error!(status);
+        }
         if is_started() {
             return true;
         }
@@ -101,17 +94,11 @@ fn get_status_message() -> String {
 pub fn get_status() -> ProxyAgentDetailStatus {
     let mut message = get_status_message();
     if message.len() > MAX_STATUS_MESSAGE_LENGTH {
-        event_logger::write_event(
-            event_logger::WARN_LEVEL,
-            format!(
-                "Status message is too long, truncating to {} characters. Message: {}",
-                MAX_STATUS_MESSAGE_LENGTH, message
-            ),
-            "get_status",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
+        tracing::info!(
+            "Status message is too long, truncating to {} characters. Message: {:?}",
+            MAX_STATUS_MESSAGE_LENGTH,
+            message.get(..MAX_STATUS_MESSAGE_LENGTH),
         );
-
         message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);
     }
 
@@ -192,7 +179,7 @@ pub fn ip_to_string(ip: u32) -> String {
 pub fn string_to_ip(ip_str: &str) -> u32 {
     let ip_str_seg: Vec<&str> = ip_str.split('.').collect();
     if ip_str_seg.len() != 4 {
-        logger::write_warning(format!("string_to_ip:: ip_str {} is invalid", ip_str));
+        tracing::info!("string_to_ip:: ip_str {} is invalid", ip_str);
         return 0;
     }
 
@@ -205,10 +192,11 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
                 ip += (n as u32) * seg;
             }
             Err(e) => {
-                logger::write_warning(format!(
+                tracing::info!(
                     "string_to_ip:: error parsing ip segment {} with error: {}",
-                    ip_str, e
-                ));
+                    ip_str,
+                    e
+                );
                 return 0;
             }
         }

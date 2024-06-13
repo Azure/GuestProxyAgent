@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(not(windows))]
 
-use crate::{backup, logger, running};
+use crate::{backup, running};
 use proxy_agent_shared::misc_helpers;
 use std::{fs, path::PathBuf};
 
@@ -32,16 +32,14 @@ fn backup_service_config_file(backup_folder: PathBuf) {
         &backup_service_file,
     ) {
         Ok(_) => {
-            logger::write(format!(
-                "Copied service config file to {:?}",
-                backup_service_file
-            ));
+            tracing::info!("Copied service config file to {:?}", backup_service_file);
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Failed to copy service config file to {:?}, error: {:?}",
-                backup_service_file, e
-            ));
+                backup_service_file,
+                e
+            );
         }
     }
 }
@@ -49,18 +47,20 @@ fn backup_service_config_file(backup_folder: PathBuf) {
 fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
     if let Some(p) = dst_file.parent() {
         if let Err(e) = misc_helpers::try_create_folder(p.to_path_buf()) {
-            logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
+            tracing::info!("Failed to create folder {:?}, error: {:?}", p, e);
         }
     }
     match fs::copy(&src_file, &dst_file) {
         Ok(_) => {
-            logger::write(format!("Copied file {:?} to {:?}", src_file, dst_file));
+            tracing::info!("Copied file {:?} to {:?}", src_file, dst_file);
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Failed to copy file {:?} to {:?}, error: {:?}",
-                src_file, dst_file, e
-            ));
+                src_file,
+                dst_file,
+                e
+            );
         }
     }
 }
@@ -68,13 +68,14 @@ fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
 fn delete_file(file_to_be_delete: PathBuf) {
     match fs::remove_file(&file_to_be_delete) {
         Ok(_) => {
-            logger::write(format!("Deleted file {:?}", file_to_be_delete));
+            tracing::info!("Deleted file {:?}", file_to_be_delete);
         }
         Err(e) => {
-            logger::write(format!(
+            tracing::info!(
                 "Failed to delete file {:?}, error: {:?}",
-                file_to_be_delete, e
-            ));
+                file_to_be_delete,
+                e
+            );
         }
     }
 }

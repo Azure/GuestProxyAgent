@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{config, logger};
+use crate::common::config;
 use crate::key_keeper;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
@@ -37,7 +37,7 @@ fn start(mut interval: Duration) {
             unsafe {
                 *STATUS_MESSAGE = message.to_string();
             }
-            logger::write_warning(message.to_string());
+            tracing::warn!(message);
 
             break;
         }

@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use super::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -64,20 +63,15 @@ impl SimpleSpan {
     pub fn write_event(
         &self,
         message: &str,
-        method_name: &str,
-        module_name: &str,
-        logger_key: &str,
+        _method_name: &str,
+        _module_name: &str,
+        _logger_key: &str,
     ) -> String {
         let elapsed_massage =
-            ElapsedMessage::new(self.get_elapsed_time_in_millisec(), message.to_string());
-        event_logger::write_event(
-            event_logger::INFO_LEVEL,
-            elapsed_massage.to_json_string(),
-            method_name,
-            module_name,
-            logger_key,
-        );
-        elapsed_massage.to_string()
+            ElapsedMessage::new(self.get_elapsed_time_in_millisec(), message.to_string())
+                .to_string();
+        tracing::info!(elapsed_massage,);
+        elapsed_massage
     }
 }
 

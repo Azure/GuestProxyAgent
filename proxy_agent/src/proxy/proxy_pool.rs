@@ -5,8 +5,6 @@ use std::{
     thread,
 };
 
-use crate::common::logger;
-
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub struct ProxyPool {
@@ -46,7 +44,7 @@ impl Drop for ProxyPool {
         drop(self.sender.take());
 
         for worker in &mut self.workers {
-            logger::write(format!("Shutting down worker {}", worker.id));
+            tracing::info!("Shutting down worker {}", worker.id);
             if let Some(thread) = worker.thread.take() {
                 _ = thread.join();
             }
@@ -69,9 +67,7 @@ impl Worker {
                     job();
                 }
                 Err(e) => {
-                    logger::write_warning(format!(
-                        "Worker {id} disconnected with error {e}; shutting down."
-                    ));
+                    tracing::info!("Worker {id} disconnected with error {e}; shutting down.");
                     break;
                 }
             }

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 use crate::common;
 use crate::constants;
-use crate::logger;
 use crate::structs;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -36,16 +35,12 @@ pub fn program_start(args: Vec<String>, config_seq_no: Option<String>) {
         process::exit(constants::INVALID_INPUT_ARGS_LENGTH);
     }
 
-    //Set up Logger instance
-    let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
-    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
-
-    logger::write(format!(
+    tracing::info!(
         "GuestProxyAgentExtension Version: {}, OS Arch: {}, OS Version: {}",
         misc_helpers::get_current_version(),
         misc_helpers::get_processor_arch(),
         misc_helpers::get_long_os_version()
-    ));
+    );
 
     if !check_os_version_supported() {
         report_os_not_supported(config_seq_no);
@@ -59,7 +54,7 @@ pub fn program_start(args: Vec<String>, config_seq_no: Option<String>) {
 fn check_windows_os_version(version: Version) -> bool {
     match version.build {
         Some(build) => {
-            logger::write(format!("OS build version: {}", build));
+            tracing::info!("OS build version: {}", build);
             build >= constants::MIN_SUPPORTED_OS_BUILD
         }
         None => false,
@@ -72,7 +67,7 @@ fn check_os_version_supported() -> bool {
         match windows::get_os_version() {
             Ok(version) => check_windows_os_version(version),
             Err(e) => {
-                logger::write(format!("Error in getting OS version: {e}"));
+                tracing::info!("Error in getting OS version: {e}");
                 false
             }
         }
@@ -82,7 +77,7 @@ fn check_os_version_supported() -> bool {
         match Version::from_string(linux::get_os_version()) {
             Ok(version) => check_linux_os_supported(version),
             Err(e) => {
-                logger::write(format!("Error in getting OS version: {e}"));
+                tracing::info!("Error in getting OS version: {e}");
                 false
             }
         }
@@ -121,7 +116,7 @@ fn report_os_not_supported(config_seq_no: Option<String>) {
         },
         substatus: Default::default(),
     };
-    logger::write(message);
+    tracing::info!(message);
     common::report_status(status_folder_path, &config_seq_no, &status_obj);
 }
 
@@ -134,13 +129,10 @@ fn get_update_tag_file() -> PathBuf {
 fn update_tag_file_exists() -> bool {
     let update_tag_file = get_update_tag_file();
     if update_tag_file.exists() {
-        logger::write(format!("update tag file exists: {:?}", update_tag_file));
+        tracing::info!("update tag file exists: {:?}", update_tag_file);
         true
     } else {
-        logger::write(format!(
-            "update tag file does not exist: {:?}",
-            update_tag_file
-        ));
+        tracing::info!("update tag file does not exist: {:?}", update_tag_file);
         false
     }
 }
@@ -151,16 +143,16 @@ fn get_exe_parent() -> PathBuf {
     let exe_parent = match exe_path.parent() {
         Some(parent) => parent,
         None => {
-            logger::write("exe parent is None".to_string());
+            tracing::info!("exe parent is None");
             Path::new("")
         }
     };
-    logger::write(format!("exe parent: {:?}", exe_parent));
+    tracing::info!("exe parent: {:?}", exe_parent);
     exe_parent.to_path_buf()
 }
 
 fn handle_command(cmd: &str, config_seq_no: &Option<String>) {
-    logger::write(format!("entering handle command: {cmd}"));
+    tracing::info!("entering handle command: {cmd}");
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = Path::new(&status_folder).to_path_buf();
     match cmd {
@@ -175,7 +167,7 @@ fn handle_command(cmd: &str, config_seq_no: &Option<String>) {
 }
 
 fn install_handler() {
-    logger::write("Installing Handler".to_string());
+    tracing::info!("Installing Handler");
     #[cfg(windows)]
     {
         service_ext::install_extension_service();
@@ -183,36 +175,33 @@ fn install_handler() {
 }
 
 fn unistall_handler() {
-    logger::write("Uninstalling Handler".to_string());
+    tracing::info!("Uninstalling Handler");
     if !update_tag_file_exists() {
         let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
         match Command::new(setup_tool).arg("uninstall").output() {
             Ok(output) => {
                 match str::from_utf8(&output.stdout) {
                     Ok(output_string) => {
-                        logger::write(format!(
-                            "uninstalling GuestProxyAgent, output: {}",
-                            output_string
-                        ));
+                        tracing::info!("uninstalling GuestProxyAgent, output: {}", output_string);
                     }
                     Err(e) => {
-                        logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                        tracing::info!("error in uninstalling GuestProxyAgent: {:?}", e);
                     }
                 }
                 match str::from_utf8(&output.stderr) {
                     Ok(output_string) => {
-                        logger::write(format!(
+                        tracing::info!(
                             "output stderr for uninstall GuestProxyAgent: {}",
                             output_string
-                        ));
+                        );
                     }
                     Err(e) => {
-                        logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                        tracing::info!("error in uninstalling GuestProxyAgent: {:?}", e);
                     }
                 }
             }
             Err(e) => {
-                logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                tracing::info!("error in uninstalling GuestProxyAgent: {:?}", e);
             }
         }
     }
@@ -243,7 +232,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
         let mut count = 0;
         loop {
             if process_running {
-                logger::write("ProxyAgentExt process running".to_string());
+                tracing::info!("ProxyAgentExt process running");
                 break;
             }
             if count > constants::SERVICE_START_RETRY_COUNT {
@@ -260,14 +249,14 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
                 match Command::new(service_exe_path).spawn() {
                     Ok(child) => {
                         let pid = child.id();
-                        logger::write(format!(
+                        tracing::info!(
                             "ProxyAgentExt started with pid: {}, do not start new one.",
                             pid
-                        ));
+                        );
                         break;
                     }
                     Err(e) => {
-                        logger::write(format!("error in starting ProxyAgentExt: {:?}", e));
+                        tracing::info!("error in starting ProxyAgentExt: {:?}", e);
                     }
                 }
             }
@@ -278,11 +267,11 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
     if update_tag_file_exists() {
         let update_tag_file = get_update_tag_file();
         match fs::remove_file(&update_tag_file) {
-            Ok(_) => logger::write(format!(
+            Ok(_) => tracing::info!(
                 "update tag file removed: {:?}",
                 update_tag_file.to_path_buf()
-            )),
-            Err(e) => logger::write(format!("error in removing update tag file: {:?}", e)),
+            ),
+            Err(e) => tracing::info!("error in removing update tag file: {:?}", e),
         }
     }
 }
@@ -294,9 +283,9 @@ fn get_linux_extension_long_running_process() -> Option<Pid> {
     system.refresh_processes();
     for p in system.processes_by_name(constants::EXTENSION_PROCESS_NAME) {
         let cmd = p.cmd();
-        logger::write(format!("cmd: {:?}", cmd));
+        tracing::info!("cmd: {:?}", cmd);
         if cmd.len() == 1 {
-            logger::write(format!("ProxyAgentExt running with pid: {}", p.pid()));
+            tracing::info!("ProxyAgentExt running with pid: {}", p.pid());
             return Some(p.pid());
         }
     }
@@ -304,7 +293,7 @@ fn get_linux_extension_long_running_process() -> Option<Pid> {
 }
 
 fn disable_handler() {
-    logger::write("Disabling Handler".to_string());
+    tracing::info!("Disabling Handler");
     #[cfg(windows)]
     {
         service_ext::stop_extension_service();
@@ -315,13 +304,15 @@ fn disable_handler() {
             Some(pid) => {
                 let output =
                     misc_helpers::execute_command("kill", vec!["-9", &pid.to_string()], -1);
-                logger::write(format!(
+                tracing::info!(
                     "kill ProxyAgentExt: result: '{}'-'{}'-'{}'.",
-                    output.0, output.1, output.2
-                ));
+                    output.0,
+                    output.1,
+                    output.2
+                );
             }
             None => {
-                logger::write("ProxyAgentExt not running".to_string());
+                tracing::info!("ProxyAgentExt not running");
             }
         }
     }
@@ -332,18 +323,15 @@ fn reset_handler() {
     let update_tag_file = get_update_tag_file();
     let seq_no_file = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
     match fs::remove_file(&update_tag_file) {
-        Ok(_) => logger::write(format!(
+        Ok(_) => tracing::info!(
             "update tag file removed: {:?}",
             update_tag_file.to_path_buf()
-        )),
-        Err(e) => logger::write(format!("error in removing update tag file: {:?}", e)),
+        ),
+        Err(e) => tracing::info!("error in removing update tag file: {:?}", e),
     }
     match fs::remove_file(&seq_no_file) {
-        Ok(_) => logger::write(format!(
-            "seq no file removed: {:?}",
-            seq_no_file.to_path_buf()
-        )),
-        Err(e) => logger::write(format!("error in removing seq no file: {:?}", e)),
+        Ok(_) => tracing::info!("seq no file removed: {:?}", seq_no_file.to_path_buf()),
+        Err(e) => tracing::info!("error in removing seq no file: {:?}", e),
     }
 }
 
@@ -353,7 +341,7 @@ fn update_handler() {
         let version = match std::env::var("VERSION") {
             Ok(ver) => ver,
             Err(e) => {
-                logger::write(format!("error in getting VERSION from env::var: {:?}", e));
+                tracing::info!("error in getting VERSION from env::var: {:?}", e);
                 process::exit(constants::EXIT_CODE_UPDATE_TO_VERSION_ENV_VAR_NOTFOUND);
             }
         };
@@ -367,22 +355,22 @@ fn update_handler() {
     let mut count = 0;
     loop {
         if count > constants::SERVICE_START_RETRY_COUNT {
-            logger::write(format!(
+            tracing::info!(
                 "service start retry count exceeded: {}",
                 constants::SERVICE_START_RETRY_COUNT
-            ));
+            );
             break;
         } else {
             match fs::write(&update_tag_file, misc_helpers::get_date_time_string()) {
                 Ok(_) => {
-                    logger::write(format!(
+                    tracing::info!(
                         "update tag file created: {:?}",
                         update_tag_file.to_path_buf()
-                    ));
+                    );
                     break;
                 }
                 Err(e) => {
-                    logger::write(format!("error in creating update tag file: {:?}", e));
+                    tracing::info!("error in creating update tag file: {:?}", e);
                 }
             }
         }
@@ -405,9 +393,6 @@ mod tests {
     fn test_check_os_supported() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_check_os_supported");
-
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
 
         #[cfg(windows)]
         {
