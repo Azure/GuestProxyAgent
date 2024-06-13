@@ -4,6 +4,7 @@ mod ebpf_obj;
 mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
 use aya::maps::{HashMap, MapData};
@@ -24,7 +25,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
 static mut LOCAL_PORT: u16 = 0;
 static mut BPF_OBJECT: Option<Bpf> = None;
 
-pub fn start(local_port: u16) -> bool {
+pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(value) => return value,
@@ -121,7 +122,7 @@ pub fn start(local_port: u16) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready();
+    provision::redirector_ready(vessel);
 
     true
 }

@@ -3,6 +3,7 @@
 
 pub mod acl;
 pub mod common;
+pub mod data_vessel;
 pub mod host_clients;
 pub mod key_keeper;
 pub mod monitor;

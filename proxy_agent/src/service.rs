@@ -31,15 +31,17 @@ pub fn start_service() {
     ));
 
     let config_start_redirector = config::get_start_redirector();
+    let vessel = crate::data_vessel::DataVessel::start_new_async();
 
     crate::key_keeper::poll_status_async(
         Url::parse(&format!("http://{}/", constants::WIRE_SERVER_IP)).unwrap(),
         config::get_keys_dir(),
         config::get_poll_key_status_duration(),
         config_start_redirector,
+        vessel.clone(),
     );
 
-    proxy_listener::start_async(constants::PROXY_AGENT_PORT, 20);
+    proxy_listener::start_async(constants::PROXY_AGENT_PORT, 20, vessel.clone());
 
     // TODO:: need start the monitor thread and write proxy agent status to the file
     // monitor::start_async(config::get_monitor_duration());
