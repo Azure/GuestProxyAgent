@@ -10,6 +10,7 @@ using Azure.ResourceManager;
 using Azure;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using GuestProxyAgentTest.Settings;
+using System.Diagnostics;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -67,7 +68,6 @@ namespace GuestProxyAgentTest.Utilities
             var rgData = new ResourceGroupData(TestSetting.Instance.location);
             rgData.Tags.Add(Constants.COULD_CLEANUP_TAG_NAME, "true");
             var rgr = rgs.CreateOrUpdate(WaitUntil.Completed, rgName, rgData).Value;
-
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
             var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, EnableProxyAgent))).Value;
@@ -113,32 +113,13 @@ namespace GuestProxyAgentTest.Utilities
 
             if (EnableProxyAgent)
             {
-                if (!Constants.IS_WINDOWS())
+                vmData.SecurityProfile = new SecurityProfile()
                 {
-                    var vmCollection = rgr.GetVirtualMachines();
-                    var linux = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, vmData)).Value;
-                    var extCollection = linux.GetVirtualMachineExtensions();
-                    var extData = new VirtualMachineExtensionData(TestSetting.Instance.location)
+                    ProxyAgentSettings = new ProxyAgentSettings()
                     {
-                        Publisher = "Microsoft.CPlat.ProxyAgent",
-                        ExtensionType = "ProxyAgentLinuxTest",
-                        TypeHandlerVersion = "1.0",
-                        AutoUpgradeMinorVersion = false,
-                        EnableAutomaticUpgrade = false,
-                        Settings = { 
-                        }
-                    };
-                    await extCollection.CreateOrUpdateAsync(WaitUntil.Completed, "ProxyAgentLinuxTest", extData);
-                } else
-                {
-                    vmData.SecurityProfile = new SecurityProfile()
-                    {
-                        ProxyAgentSettings = new ProxyAgentSettings()
-                        {
-                            Enabled = true
-                        }
-                    };
-                }
+                        Enabled = true
+                    }
+                };
             }
             if (Constants.IS_WINDOWS())
             {

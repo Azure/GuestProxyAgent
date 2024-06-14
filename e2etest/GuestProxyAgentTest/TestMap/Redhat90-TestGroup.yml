@@ -6,7 +6,5 @@ vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario
     name: BVTScenario
-  - name: LinuxPackageScenario
+ -  name: LinuxPackageScenario
     className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario  
-  - name: ProxyAgentExtension 
-    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension

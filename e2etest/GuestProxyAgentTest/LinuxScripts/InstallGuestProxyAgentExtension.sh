@@ -15,6 +15,9 @@ while :; do
         for dir in $directories; do 
             PIRExtensionFolderPath=$dir
             echo "PIR extension folder path" $PIRExtensionFolderPath
+            #maybe check it exists or not 
+            PIRExtensionFolderZip="${PIRExtensionFolderPath//-/__}.zip"
+            echo "PIRExtensionFolderZip:$PIRExtensionFolderZip"
         done 
         break
     fi
@@ -25,14 +28,16 @@ while :; do
     fi
     sleep 5
 done 
-extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
-echo "extensionVersion=$extensionVersion"
+PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
+echo "PIRExtensionVersion=$PIRExtensionVersion"
+proxyAgentVersion="$(eval "$extensionFolder/ProxyAgent/ProxyAgent/GuestProxyAgent.exe --version")"
+echo "proxy agent version: $proxyAgentVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "Status Directory: $statusFolder"
 echo "Delete status file of PIR version" 
 rm -rf $statusFolder/*
 
-echo "detecting os and installing jq and unzip" #TODO: needs to be revisited if we support other distros
+echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
 os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
@@ -62,37 +67,13 @@ else
     done
 fi
 
-if [[ $os == *"Ubuntu"* ]]; then
-    for  i in {1..3}; do
-        echo "start installing unzip via apt-get $i"
-        sudo apt update
-        sudo apt-get install unzip
-        sleep 10
-        install=$(apt list --installed unzip)
-        echo "install=$install"
-        if [[ $install == *"unzip"* ]]; then
-            echo "unzip installed successfully"
-            break
-        fi
-    done
-else
-    for  i in {1..3}; do
-        echo "start installing unzip via yum $i"
-        sudo yum -y install unzip
-        sleep 10
-        install=$(yum list --installed unzip)
-        echo "install=$install"
-        if [[ $install == *"unzip"* ]]; then
-            echo "unzip installed successfully"
-            break
-        fi
-    done
-fi
-
 echo "Check that status file is success with 5 minute timeout"
 statusFile=$(ls $statusFolder/*.status)
+echo "statusFile=$statusFile"
 timeout=300
 elpased=0
+echo "Contents of status file:"
+cat "$statusFile"
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
     if [[ "$extensionStatus" == "success" ]]; then
@@ -116,12 +97,14 @@ else
     echo "Process ProxyAgentExt is running"
 fi
 
+echo "Delete PIR extension zip"
+rm -rf $PIRExtensionFolderZip
 echo "Delete PIR extension folder"
-rm -f $PIRExtensionFolderPath
+rm -rf $PIRExtensionFolder
+
 
 decodedUrl=$(echo $zipFile | base64 -d)
-curl -L -o $PIRExtensionFolderPath "$decodedUrl"
-unzip -o $PIRExtensionFolderPath -d $PIRExtensionFolderPath
+curl -L -o $PIRExtensionFolderPathZip "$decodedUrl"
 ls -l $PIRExtensionFolderPath
 
 echo "Get PID of ProxyAgentExt and kill pidof"

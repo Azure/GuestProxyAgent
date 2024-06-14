@@ -28,9 +28,14 @@ while :; do
     fi
     sleep 5
 done 
-extensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
-echo "extensionVersion=$extensionVersion"
-guestProxyAgentExtensionVersion=true
+PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
+echo "PIRExtensionVersion=$PIRExtensionVersion"
+if [[ $os == *"Ubuntu"* ]]; then 
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent --version")"
+else
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
+fi
+echo "proxy agent version: $proxyAgentVersion"
 
 echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
 os=$(hostnamectl | grep "Operating System")
@@ -66,10 +71,13 @@ echo "TEST: Check that status file is success with 5 minute timeout"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "statusFolder=$statusFolder"
 statusFile=$(ls $statusFolder/*.status)
+echo "statusFile=$statusFile"
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 timeout=300
 elpased=0
+echo "Contents of status file:"
+cat "$statusFile"
 while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
     if [[ "$extensionStatus" == "success" ]]; then
@@ -99,10 +107,26 @@ else
     guestProxyAgentExtensionProcessExist=true
 fi
 
+echo Write-Output "TEST: ProxyAgent version running in VM is the same as expected version" 
+if [[ $os == *"Ubuntu"* ]]; then 
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent --version")"
+else
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
+fi
+echo "proxy agent version from extension folder: $proxyAgentVersion"
+guestProxyAgentExtensionVersion = $false
+proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
+extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
+if [[ $extractedVersion == $proxyAgentVersion ]]; then
+    echo "ProxyAgent version running in VM is the same as expected version"
+    guestProxyAgentExtensionVersion=true
+else
+    echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$extractedVersion]"
+fi
+
 echo "TEST: Check that detailed status of the extension status to see if the Instance View is successful"
-proxyAgentstatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 guestProxyAgentExtensionInstanceView=false
-if [[ $proxyAgentstatus == *"SUCCESS"* ]]; then
+if [[ $proxyAgentStatus == *"SUCCESS"* ]]; then
     echo "Instance View is successful" 
     guestProxyAgentExtensionInstanceView=true
 else
