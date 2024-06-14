@@ -49,7 +49,8 @@ pub fn start_service(vessel: DataVessel) {
 
 #[cfg(not(windows))]
 pub fn start_service_wait() {
-    start_service();
+    let vessel = crate::data_vessel::DataVessel::start_new_async();
+    start_service(vessel);
 
     loop {
         // continue to sleep until the service is stopped
