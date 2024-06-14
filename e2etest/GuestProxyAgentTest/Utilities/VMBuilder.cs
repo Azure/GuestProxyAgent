@@ -10,7 +10,6 @@ using Azure.ResourceManager;
 using Azure;
 using Microsoft.Azure.Management.ResourceManager.Fluent;
 using GuestProxyAgentTest.Settings;
-using System.Diagnostics;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -121,6 +120,7 @@ namespace GuestProxyAgentTest.Utilities
                     }
                 };
             }
+
             if (Constants.IS_WINDOWS())
             {
                 vmData.OSProfile.WindowsConfiguration = new WindowsConfiguration()
@@ -141,6 +141,7 @@ namespace GuestProxyAgentTest.Utilities
                     //IsPasswordAuthenticationDisabled = false,
                 };
             }
+            
             return vmData;
         }
 

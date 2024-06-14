@@ -17,12 +17,12 @@ namespace GuestProxyAgentTest.TestScenarios
             } else {
                 EnableProxyAgent = true;
             }
-            // AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate"));
-            // AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
-            // AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate"));
-            // AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
-            // AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
-            // AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate"));
+            AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
+            AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
         }
     }
 }

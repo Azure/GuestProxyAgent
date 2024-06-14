@@ -15,7 +15,6 @@ while :; do
         for dir in $directories; do 
             PIRExtensionFolderPath=$dir
             echo "PIR extension folder path" $PIRExtensionFolderPath
-            #maybe check it exists or not 
             PIRExtensionFolderZip="${PIRExtensionFolderPath//-/__}.zip"
             echo "PIRExtensionFolderZip:$PIRExtensionFolderZip"
         done 

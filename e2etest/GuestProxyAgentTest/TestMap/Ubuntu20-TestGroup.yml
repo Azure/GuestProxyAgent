@@ -5,6 +5,6 @@ vmImageSku: 20_04-lts
 vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario
-   name: BVTScenario
+    name: BVTScenario
   - name: LinuxPackageScenario
     className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario  

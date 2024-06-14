@@ -23,7 +23,7 @@ namespace GuestProxyAgentTest
             var testConfigFilePath = args[0];
             var testResultFolder = args[1];
             var guestProxyAgentZipFilePath = args[2];
-            
+
             TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder);
 
             VMHelper.Instance.CleanupOldTestResourcesAndForget();
