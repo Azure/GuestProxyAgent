@@ -9,7 +9,7 @@ use crate::common::http;
 use crate::common::http::request::Request;
 use crate::common::http::response::Response;
 use crate::common::logger;
-use crate::key_keeper;
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_connection::Connection;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -34,15 +34,15 @@ static mut CONNECTION_COUNT: Lazy<Mutex<u128>> = Lazy::new(|| Mutex::new(0));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Proxy listner has not started yet."));
 
-pub fn start_async(port: u16, pool_size: u16) {
+pub fn start_async(port: u16, pool_size: u16, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("proxy_listener".to_string())
         .spawn(move || {
-            start(port, pool_size);
+            start(port, pool_size, vessel);
         });
 }
 
-fn start(port: u16, pool_size: u16) {
+fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     Connection::init_logger(config::get_logs_dir());
 
     let shutdown = SHUT_DOWN.clone();
@@ -72,7 +72,7 @@ fn start(port: u16, pool_size: u16) {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::listener_started();
+    provision::listener_started(vessel.clone());
 
     let pool = ProxyPool::new(pool_size as usize);
 
@@ -96,6 +96,7 @@ fn start(port: u16, pool_size: u16) {
 
             connection_count_clone = *connection_count_lock;
         }
+        let cloned_vessel = vessel.clone();
         match connection {
             Ok(stream) => {
                 pool.execute(move || {
@@ -107,7 +108,7 @@ fn start(port: u16, pool_size: u16) {
                         ip: String::new(),
                         port: 0,
                     };
-                    handle_connection(&mut connection);
+                    handle_connection(&mut connection, cloned_vessel);
                 });
             }
             Err(e) => {
@@ -130,7 +131,7 @@ pub fn stop(port: u16) {
     logger::write_warning("Sending stop signal.".to_string());
 }
 
-fn handle_connection(connection: &mut Connection) {
+fn handle_connection(connection: &mut Connection, vessel: DataVessel) {
     let stream = &connection.stream;
     Connection::write_information(connection.id, "Received connection.".to_string());
 
@@ -289,13 +290,14 @@ fn handle_connection(connection: &mut Connection) {
         return handle_connection_without_signature(connection, request, &mut server_stream);
     }
 
-    handle_connection_with_signature(connection, request, &mut server_stream);
+    handle_connection_with_signature(connection, request, &mut server_stream, vessel.clone());
 }
 
 fn handle_connection_with_signature(
     connection: &mut Connection,
     mut request: Request,
     server_stream: &mut TcpStream,
+    vessel: DataVessel,
 ) {
     let client_stream = &connection.stream;
     if request.expect_continue_request() {
@@ -303,7 +305,7 @@ fn handle_connection_with_signature(
     }
 
     // Add header x-ms-azure-host-authorization
-    let key = key_keeper::get_current_key();
+    let key = vessel.get_current_key_value();
     if !key.is_empty() {
         let input_to_sign = request.as_sig_input();
         match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
@@ -324,7 +326,7 @@ fn handle_connection_with_signature(
                 let authorization_value = format!(
                     "{} {} {}",
                     constants::AUTHORIZATION_SCHEME,
-                    key_keeper::get_current_key_guid(),
+                    vessel.get_current_key_guid(),
                     sig
                 );
                 request.headers.add_header(
@@ -664,9 +666,11 @@ mod tests {
         Connection::init_logger(temp_test_path.to_path_buf());
 
         // start listener, the port must different from the one used in production code
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let s = vessel.clone();
         let port: u16 = 8091;
         let handle = thread::spawn(move || {
-            proxy_listener::start(port, 1);
+            proxy_listener::start(port, 1, s);
         });
 
         // give some time to let the listener started
@@ -694,6 +698,7 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);
+        vessel.stop();
     }
 
     const PROXY_ENDPOINT_ADDRESS: &str = "127.0.0.1:8083";
@@ -849,7 +854,14 @@ mod tests {
             );
         }
 
-        super::handle_connection_with_signature(connection, request, &mut server_stream);
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        super::handle_connection_with_signature(
+            connection,
+            request,
+            &mut server_stream,
+            vessel.clone(),
+        );
+        vessel.stop();
     }
 
     fn test_get_response() {

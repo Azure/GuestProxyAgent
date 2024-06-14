@@ -7,6 +7,7 @@ mod windows;
 mod linux;
 
 use crate::common::{config, logger};
+use crate::data_vessel::DataVessel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
@@ -38,21 +39,21 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16) {
+pub fn start_async(local_port: u16, vessel: DataVessel) {
     thread::spawn(move || {
-        start(local_port);
+        start(local_port, vessel);
     });
 }
 
-fn start(local_port: u16) -> bool {
+fn start(local_port: u16, vessel: DataVessel) -> bool {
     for _ in 0..5 {
         #[cfg(windows)]
         {
-            windows::start(local_port);
+            windows::start(local_port, vessel.clone());
         }
         #[cfg(not(windows))]
         {
-            linux::start(local_port);
+            linux::start(local_port, vessel.clone());
         }
 
         let level = if is_started() {
