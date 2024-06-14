@@ -29,20 +29,14 @@ while :; do
 done 
 PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "PIRExtensionVersion=$PIRExtensionVersion"
-os=$(hostnamectl | grep "Operating System")
-echo "os=$os"
-if [[ $os == *"Ubuntu"* ]]; then 
-    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent.exe --version")"
-else
-    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
-fi
+proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 echo "proxy agent version: $proxyAgentVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "Status Directory: $statusFolder"
 echo "Delete status file of PIR version" 
 rm -rf $statusFolder/*
 
-echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
+echo "detecting os and installing jq" 
 os=$(hostnamectl | grep "Operating System")
 echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
