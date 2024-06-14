@@ -16,10 +16,12 @@ use windows_service::service_control_handler::{
 static mut SERVICE_STATUS_HANDLE: Option<ServiceStatusHandle> = None;
 
 pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
+    let vessel = crate::data_vessel::DataVessel::start_new_async();
+    let cloned_vessel = vessel.clone();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
-                service::stop_service();
+                service::stop_service(cloned_vessel.clone());
                 unsafe {
                     match SERVICE_STATUS_HANDLE {
                         Some(status_handle) => {
@@ -51,7 +53,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     };
 
     // start service
-    service::start_service();
+    service::start_service(vessel.clone());
 
     // set the service state to Running
     let status_handle =

@@ -84,7 +84,7 @@ fn start(mut interval: Duration, vessel: DataVessel) {
 pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
     let key_latch_status = key_keeper::get_status(vessel.clone());
     let ebpf_status = redirector::get_status();
-    let proxy_status = proxy_listener::get_status();
+    let proxy_status = proxy_listener::get_status(vessel.clone());
     let mut status = OveralState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
@@ -100,7 +100,7 @@ pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
         telemetryLoggerStatus: event_logger::get_status(),
-        proxyConnectionsCount: proxy_listener::get_proxy_connection_count(),
+        proxyConnectionsCount: vessel.get_connection_count(),
     }
 }
 

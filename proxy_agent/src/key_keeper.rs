@@ -8,13 +8,10 @@ use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::{acl, redirector};
-use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::{path::PathBuf, thread, time::Duration};
 use url::Url;
 
@@ -27,8 +24,6 @@ static FREQUENT_PULL_INTERVAL: Duration = Duration::from_secs(1); // 1 second
 const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
 const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
-
-static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
 pub fn poll_status_async(
     base_url: Url,
@@ -84,9 +79,8 @@ fn poll_secure_channel_status(
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
-    let shutdown = SHUT_DOWN.clone();
     loop {
-        if shutdown.load(Ordering::Relaxed) {
+        if vessel.is_key_keeper_shutdown() {
             let message = "Stop signal received, exiting the poll_secure_channel_status thread.";
             vessel.update_key_keeper_status_message(message.to_string());
             logger::write_warning(message.to_string());
@@ -139,11 +133,6 @@ fn poll_secure_channel_status(
                 continue;
             }
         };
-        let mut guid;
-        match &status.keyGuid {
-            Some(id) => guid = id.to_string(),
-            None => guid = String::new(),
-        }
 
         logger::write_information(format!("Got key status successfully: {}.", status));
 
@@ -169,15 +158,14 @@ fn poll_secure_channel_status(
             proxy_authentication::set_imds_rules(status.get_imds_rules());
         }
 
-        let mut key_file = key_dir.to_path_buf().join(&guid);
-        key_file.set_extension("key");
         let state = status.get_secure_channel_state();
-
         // check if need fetch the key
-        if state != DISABLE_STATE && guid != vessel.get_current_key_guid() {
+        if state != DISABLE_STATE && status.keyGuid != vessel.get_current_key_guid() {
             // search the key locally first
             let mut key_found = false;
-            if !guid.is_empty() {
+            if let Some(guid) = &status.keyGuid {
+                let mut key_file = key_dir.to_path_buf().join(guid);
+                key_file.set_extension("key");
                 // the key already latched before
                 if key_file.exists() {
                     // read the key details locally and update
@@ -235,11 +223,9 @@ fn poll_secure_channel_status(
 
                 // key has not latched before,
                 // set the key_file full path from key details
-                if guid.is_empty() {
-                    guid = key.guid.to_string();
-                    key_file = key_dir.to_path_buf().join(&guid);
-                    key_file.set_extension("key");
-                }
+                let guid = key.guid.to_string();
+                let mut key_file = key_dir.to_path_buf().join(&guid);
+                key_file.set_extension("key");
                 _ = misc_helpers::json_write_to_file(&key, key_file);
                 logger::write_information(format!(
                     "Successfully acquired the key '{}' details from server and saved locally.",
@@ -320,14 +306,12 @@ fn check_local_key(key_dir: PathBuf, key: &Key) -> bool {
     }
 }
 
-pub fn stop() {
-    SHUT_DOWN.store(true, Ordering::Relaxed);
+pub fn stop(vessel: DataVessel) {
+    vessel.shutdown_key_keeper();
 }
 
 pub fn get_status(vessel: DataVessel) -> ProxyAgentDetailStatus {
-    let shutdown = SHUT_DOWN.clone();
-
-    let status = if shutdown.load(Ordering::Relaxed) {
+    let status = if vessel.is_key_keeper_shutdown() {
         ModuleState::STOPPED.to_string()
     } else {
         ModuleState::RUNNING.to_string()
@@ -339,7 +323,9 @@ pub fn get_status(vessel: DataVessel) -> ProxyAgentDetailStatus {
         "secureChannelState".to_string(),
         vessel.get_secure_channel_state(),
     );
-    states.insert("keyGuid".to_string(), vessel.get_current_key_guid());
+    if let Some(key_guid) = vessel.get_current_key_guid() {
+        states.insert("keyGuid".to_string(), key_guid);
+    }
     states.insert(
         "wireServerRuleId".to_string(),
         vessel.get_wireserver_rule_id(),
@@ -475,7 +461,7 @@ mod tests {
         );
 
         // stop poll
-        key_keeper::stop();
+        key_keeper::stop(vessel.clone());
         server_mock::stop(ip.to_string(), port);
 
         // clean up and ignore the clean up errors

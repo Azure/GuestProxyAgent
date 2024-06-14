@@ -129,7 +129,7 @@ fn write_provision_state(
         ));
         status.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
-            proxy_listener::get_status().message
+            proxy_listener::get_status(vessel.clone()).message
         ));
     }
 

@@ -16,23 +16,15 @@ use crate::proxy::proxy_summary::ProxySummary;
 use crate::proxy::Claims;
 use crate::proxy_agent_status;
 use crate::redirector;
-use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-
-static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static mut CONNECTION_COUNT: Lazy<Mutex<u128>> = Lazy::new(|| Mutex::new(0));
-static mut STATUS_MESSAGE: Lazy<String> =
-    Lazy::new(|| String::from("Proxy listner has not started yet."));
 
 pub fn start_async(port: u16, pool_size: u16, vessel: DataVessel) {
     _ = thread::Builder::new()
@@ -45,7 +37,6 @@ pub fn start_async(port: u16, pool_size: u16, vessel: DataVessel) {
 fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     Connection::init_logger(config::get_logs_dir());
 
-    let shutdown = SHUT_DOWN.clone();
     // listen to wildcard ip address to accept request from
     // loopback address and local ip addresses
     let addr = format!("{}:{}", Ipv4Addr::UNSPECIFIED, port);
@@ -55,9 +46,7 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
         Ok(l) => l,
         Err(e) => {
             let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            vessel.update_proxy_listener_status_message(message.to_string());
             logger::write_error(message);
             return;
         }
@@ -69,40 +58,33 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
         "proxy_listener",
         logger::AGENT_LOGGER_KEY,
     );
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
+    vessel.update_proxy_listener_status_message(message.to_string());
     provision::listener_started(vessel.clone());
 
     let pool = ProxyPool::new(pool_size as usize);
 
     for connection in listener.incoming() {
-        if shutdown.load(Ordering::Relaxed) {
+        if vessel.is_proxy_listener_shutdown() {
             let message = "Stop signal received, stop the listener.";
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            vessel.update_proxy_listener_status_message(message.to_string());
             logger::write_warning(message.to_string());
             break;
         }
-        let mut connection_count_clone: u128 = 0;
-
-        if let Ok(mut connection_count_lock) = unsafe { CONNECTION_COUNT.lock() } {
-            if *connection_count_lock == u128::MAX {
-                // reset connection id
-                *connection_count_lock = 0;
-            }
-            *connection_count_lock += 1;
-
-            connection_count_clone = *connection_count_lock;
+        let mut connection_count = vessel.get_connection_count();
+        if connection_count == u128::MAX {
+            // reset connection count
+            connection_count = 0;
         }
+        connection_count += 1;
+        vessel.set_connection_count(connection_count);
+
         let cloned_vessel = vessel.clone();
         match connection {
             Ok(stream) => {
                 pool.execute(move || {
                     let mut connection = Connection {
                         stream,
-                        id: connection_count_clone,
+                        id: connection_count,
                         now: Instant::now(),
                         cliams: None,
                         ip: String::new(),
@@ -121,12 +103,8 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     logger::write("ProxyListener stopped accepting new request.".to_string());
 }
 
-pub fn get_proxy_connection_count() -> u128 {
-    unsafe { *CONNECTION_COUNT.lock().unwrap() }
-}
-
-pub fn stop(port: u16) {
-    SHUT_DOWN.store(true, Ordering::Relaxed);
+pub fn stop(port: u16, vessel: DataVessel) {
+    vessel.shutdown_proxy_listener();
     let _ = TcpStream::connect(format!("127.0.0.1:{}", port));
     logger::write_warning("Sending stop signal.".to_string());
 }
@@ -305,44 +283,41 @@ fn handle_connection_with_signature(
     }
 
     // Add header x-ms-azure-host-authorization
-    let key = vessel.get_current_key_value();
-    if !key.is_empty() {
-        let input_to_sign = request.as_sig_input();
-        match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
-            Ok(sig) => {
-                match String::from_utf8(input_to_sign) {
-                    Ok(data) => Connection::write(
-                        connection.id,
-                        format!("Computed the signature with input: {}", data),
-                    ),
-                    Err(e) => {
-                        Connection::write_warning(
+    if let Some(key) = vessel.get_current_key_value() {
+        if let Some(key_guid) = vessel.get_current_key_guid() {
+            let input_to_sign = request.as_sig_input();
+            match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
+                Ok(sig) => {
+                    match String::from_utf8(input_to_sign) {
+                        Ok(data) => Connection::write(
                             connection.id,
-                            format!("Failed convert the input_to_sign to string, error {}", e),
-                        );
+                            format!("Computed the signature with input: {}", data),
+                        ),
+                        Err(e) => {
+                            Connection::write_warning(
+                                connection.id,
+                                format!("Failed convert the input_to_sign to string, error {}", e),
+                            );
+                        }
                     }
-                }
 
-                let authorization_value = format!(
-                    "{} {} {}",
-                    constants::AUTHORIZATION_SCHEME,
-                    vessel.get_current_key_guid(),
-                    sig
-                );
-                request.headers.add_header(
-                    constants::AUTHORIZATION_HEADER.to_string(),
-                    authorization_value.to_string(),
-                );
-                Connection::write(
-                    connection.id,
-                    format!("Added authorization header {}", authorization_value),
-                )
-            }
-            Err(e) => {
-                Connection::write_error(
-                    connection.id,
-                    format!("compute_signature failed with error: {}", e),
-                );
+                    let authorization_value =
+                        format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
+                    request.headers.add_header(
+                        constants::AUTHORIZATION_HEADER.to_string(),
+                        authorization_value.to_string(),
+                    );
+                    Connection::write(
+                        connection.id,
+                        format!("Added authorization header {}", authorization_value),
+                    )
+                }
+                Err(e) => {
+                    Connection::write_error(
+                        connection.id,
+                        format!("compute_signature failed with error: {}", e),
+                    );
+                }
             }
         }
     } else {
@@ -612,10 +587,8 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     _ = client_stream.flush();
 }
 
-pub fn get_status() -> ProxyAgentDetailStatus {
-    let shutdown = SHUT_DOWN.clone();
-
-    let status = if shutdown.load(Ordering::Relaxed) {
+pub fn get_status(vessel: DataVessel) -> ProxyAgentDetailStatus {
+    let status = if vessel.is_proxy_listener_shutdown() {
         ModuleState::STOPPED.to_string()
     } else {
         ModuleState::RUNNING.to_string()
@@ -623,7 +596,7 @@ pub fn get_status() -> ProxyAgentDetailStatus {
 
     ProxyAgentDetailStatus {
         status,
-        message: unsafe { STATUS_MESSAGE.to_string() },
+        message: vessel.get_proxy_listener_status_message(),
         states: None,
     }
 }
@@ -687,7 +660,7 @@ mod tests {
         let response = http::receive_response_data(&client).unwrap();
 
         // stop listener
-        proxy_listener::stop(port);
+        proxy_listener::stop(port, vessel.clone());
         handle.join().unwrap();
 
         assert_eq!(

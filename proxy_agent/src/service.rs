@@ -4,6 +4,7 @@
 pub mod windows;
 
 use crate::common::{config, constants, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::proxy::proxy_listener;
 use crate::telemetry::event_reader;
 use proxy_agent_shared::logger_manager;
@@ -15,7 +16,7 @@ use std::thread;
 #[cfg(not(windows))]
 use std::time::Duration;
 
-pub fn start_service() {
+pub fn start_service(vessel: DataVessel) {
     logger_manager::init_logger(
         logger::AGENT_LOGGER_KEY.to_string(),
         config::get_logs_dir(),
@@ -31,7 +32,6 @@ pub fn start_service() {
     ));
 
     let config_start_redirector = config::get_start_redirector();
-    let vessel = crate::data_vessel::DataVessel::start_new_async();
 
     crate::key_keeper::poll_status_async(
         Url::parse(&format!("http://{}/", constants::WIRE_SERVER_IP)).unwrap(),
@@ -57,11 +57,15 @@ pub fn start_service_wait() {
     }
 }
 
-pub fn stop_service() {
+pub fn stop_service(vessel: DataVessel) {
     crate::monitor::stop();
     crate::redirector::close(constants::PROXY_AGENT_PORT);
-    crate::key_keeper::stop();
-    proxy_listener::stop(constants::PROXY_AGENT_PORT);
+    crate::key_keeper::stop(vessel.clone());
+    proxy_listener::stop(constants::PROXY_AGENT_PORT, vessel.clone());
     event_logger::stop();
     event_reader::stop();
+
+    // Do not stop verssel receiver here, or other threads will not get the shutdown signals
+    // let the application exits and the receiver will be stopped automatically
+    //vessel.stop();
 }
