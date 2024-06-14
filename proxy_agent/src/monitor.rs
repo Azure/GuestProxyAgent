@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
+use crate::data_vessel::DataVessel;
 use crate::key_keeper;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
@@ -13,15 +14,15 @@ static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Monitor thread has not started yet."));
 
-pub fn start_async(interval: Duration) {
+pub fn start_async(interval: Duration, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("monitor".to_string())
         .spawn(move || {
-            start(interval);
+            start(interval, vessel);
         });
 }
 
-fn start(mut interval: Duration) {
+fn start(mut interval: Duration, vessel: DataVessel) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
         interval = Duration::from_secs(60);
@@ -42,7 +43,7 @@ fn start(mut interval: Duration) {
             break;
         }
 
-        if redirect_should_run() {
+        if redirect_should_run(vessel.clone()) {
             // TODO:: check redirector started or not
         }
 
@@ -50,8 +51,8 @@ fn start(mut interval: Duration) {
     }
 }
 
-fn redirect_should_run() -> bool {
-    if key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE {
+fn redirect_should_run(vessel: DataVessel) -> bool {
+    if vessel.get_secure_channel_state() != key_keeper::DISABLE_STATE {
         true
     } else {
         config::get_start_redirector()

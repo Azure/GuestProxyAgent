@@ -62,7 +62,7 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
         ));
     }
 
-    if (key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE)
+    if (vessel.get_secure_channel_state() != key_keeper::DISABLE_STATE)
         || (config::get_wire_server_support() > 0)
     {
         let result = bpf_prog::update_policy_elem_bpf_map(
@@ -94,7 +94,7 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
             logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
         }
     }
-    if (key_keeper::get_secure_channel_state() == key_keeper::MUST_SIG_WIRESERVER_IMDS)
+    if (vessel.get_secure_channel_state() == key_keeper::MUST_SIG_WIRESERVER_IMDS)
         || (config::get_imds_support() > 0)
     {
         let result = bpf_prog::update_policy_elem_bpf_map(
