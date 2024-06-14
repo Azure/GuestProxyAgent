@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.TestScenarios;
 using Azure.ResourceManager.Compute;
-using Newtonsoft.Json;
 
 namespace GuestProxyAgentTest.TestCases
 {

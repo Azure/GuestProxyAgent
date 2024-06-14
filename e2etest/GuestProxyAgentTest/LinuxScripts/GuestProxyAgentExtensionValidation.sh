@@ -30,16 +30,8 @@ while :; do
 done 
 PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "PIRExtensionVersion=$PIRExtensionVersion"
-if [[ $os == *"Ubuntu"* ]]; then 
-    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent --version")"
-else
-    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
-fi
-echo "proxy agent version: $proxyAgentVersion"
 
 echo "detecting os and installing jq" #TODO: needs to be revisited if we support other distros
-os=$(hostnamectl | grep "Operating System")
-echo "os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
         echo "start installing jq via apt-get $i"
@@ -109,12 +101,12 @@ fi
 
 echo Write-Output "TEST: ProxyAgent version running in VM is the same as expected version" 
 if [[ $os == *"Ubuntu"* ]]; then 
-    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent --version")"
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent.exe --version")"
 else
     proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 fi
 echo "proxy agent version from extension folder: $proxyAgentVersion"
-guestProxyAgentExtensionVersion = $false
+guestProxyAgentExtensionVersion=false
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
 if [[ $extractedVersion == $proxyAgentVersion ]]; then

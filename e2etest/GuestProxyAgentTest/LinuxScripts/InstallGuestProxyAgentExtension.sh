@@ -29,7 +29,13 @@ while :; do
 done 
 PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "PIRExtensionVersion=$PIRExtensionVersion"
-proxyAgentVersion="$(eval "$extensionFolder/ProxyAgent/ProxyAgent/GuestProxyAgent.exe --version")"
+os=$(hostnamectl | grep "Operating System")
+echo "os=$os"
+if [[ $os == *"Ubuntu"* ]]; then 
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/GuestProxyAgent.exe --version")"
+else
+    proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
+fi
 echo "proxy agent version: $proxyAgentVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "Status Directory: $statusFolder"
@@ -100,7 +106,6 @@ echo "Delete PIR extension zip"
 rm -rf $PIRExtensionFolderZip
 echo "Delete PIR extension folder"
 rm -rf $PIRExtensionFolder
-
 
 decodedUrl=$(echo $zipFile | base64 -d)
 curl -L -o $PIRExtensionFolderPathZip "$decodedUrl"
