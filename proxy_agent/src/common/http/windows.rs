@@ -3,7 +3,7 @@
 
 use crate::common;
 use core::ffi::c_void;
-use std::mem::{self, MaybeUninit};  
+use std::mem::{self, MaybeUninit};
 use std::net::TcpStream;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::os::windows::io::AsRawSocket;
