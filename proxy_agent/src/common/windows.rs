@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![cfg(windows)]
 
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;

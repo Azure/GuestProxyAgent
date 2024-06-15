@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![cfg(windows)]
 
 mod bpf_api;
 mod bpf_obj;
