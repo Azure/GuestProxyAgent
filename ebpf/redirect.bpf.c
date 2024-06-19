@@ -32,7 +32,7 @@ struct bpf_map_def audit_map = {
     check the current pid in the skip_process map.
     return 1 if found, otherwise return 0.
 */
-__attribute__((always_inline)) int
+inline __attribute__((always_inline)) int
 check_skip_process_map_entry(uint32_t pid)
 {
     sock_addr_skip_process_entry key = {0};
@@ -48,7 +48,7 @@ check_skip_process_map_entry(uint32_t pid)
     return 0 if the entry is updated, otherwise
     return 1 if pid found in the skip_process_map.
 */
-__attribute__((always_inline)) int
+inline __attribute__((always_inline)) int
 update_audit_map_entry(bpf_sock_addr_t *ctx)
 {
     uint64_t pid_tip = bpf_sock_addr_get_current_pid_tgid(ctx);
@@ -104,7 +104,7 @@ update_audit_map_entry(bpf_sock_addr_t *ctx)
     return 0;
 }
 
-__attribute__((always_inline)) int
+inline __attribute__((always_inline)) int
 authorize_v4(bpf_sock_addr_t *ctx)
 {
     destination_entry_t entry = {0};
