@@ -21,8 +21,8 @@ impl HttpRequest {
     pub fn new_proxy_agent_request(
         uri: Url,
         mut request: Request,
-        key_guid: String,
-        key: String,
+        key_guid: Option<String>,
+        key: Option<String>,
     ) -> std::io::Result<Self> {
         //connection:Close
         request.headers.add_header(
@@ -46,30 +46,32 @@ impl HttpRequest {
             .headers
             .add_header("Host".to_string(), http_request.get_host());
 
-        if !key.is_empty() {
-            let input_to_sign = http_request.request.as_sig_input();
-            let authorization_value = format!(
-                "{} {} {}",
-                constants::AUTHORIZATION_SCHEME,
-                key_guid,
-                helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
-            );
-            match String::from_utf8(input_to_sign) {
-                Ok(data) => logger::write_information(format!(
-                    "Computed the signature with input: {}",
-                    data
-                )),
-                Err(e) => {
-                    logger::write_information(format!(
-                        "Failed convert the input_to_sign to string, error {}",
-                        e
-                    ));
+        if let Some(key) = key {
+            if let Some(key_guid) = key_guid {
+                let input_to_sign = http_request.request.as_sig_input();
+                let authorization_value = format!(
+                    "{} {} {}",
+                    constants::AUTHORIZATION_SCHEME,
+                    key_guid,
+                    helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
+                );
+                match String::from_utf8(input_to_sign) {
+                    Ok(data) => logger::write_information(format!(
+                        "Computed the signature with input: {}",
+                        data
+                    )),
+                    Err(e) => {
+                        logger::write_information(format!(
+                            "Failed convert the input_to_sign to string, error {}",
+                            e
+                        ));
+                    }
                 }
+                http_request.request.headers.add_header(
+                    constants::AUTHORIZATION_HEADER.to_string(),
+                    authorization_value.to_string(),
+                );
             }
-            http_request.request.headers.add_header(
-                constants::AUTHORIZATION_HEADER.to_string(),
-                authorization_value.to_string(),
-            );
         }
 
         Ok(http_request)

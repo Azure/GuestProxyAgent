@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, helpers, logger};
-use crate::data_vessel::DataVessel;
 use crate::proxy::proxy_listener;
+use crate::shared_state::SharedState;
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
 use once_cell::sync::Lazy;
@@ -18,19 +18,23 @@ static mut STATE: Lazy<Arc<Mutex<u8>>> = Lazy::new(|| Arc::new(Mutex::new(0)));
 static mut LOGGER_THREADS_INITIALIZED: Lazy<Arc<Mutex<bool>>> =
     Lazy::new(|| Arc::new(Mutex::new(false)));
 
-pub fn redirector_ready(vessel: DataVessel) {
-    update_provision_state(1, None, vessel);
+pub fn redirector_ready(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(1, None, shared_state);
 }
 
-pub fn key_latched(vessel: DataVessel) {
-    update_provision_state(2, None, vessel);
+pub fn key_latched(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(2, None, shared_state);
 }
 
-pub fn listener_started(vessel: DataVessel) {
-    update_provision_state(4, None, vessel);
+pub fn listener_started(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(4, None, shared_state);
 }
 
-fn update_provision_state(state: u8, provision_dir: Option<PathBuf>, vessel: DataVessel) {
+fn update_provision_state(
+    state: u8,
+    provision_dir: Option<PathBuf>,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
     unsafe {
         let cloned_state: Arc<Mutex<u8>> = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -40,10 +44,10 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>, vessel: Dat
 
                 if *cloned_state == 7 {
                     // write provision success state here
-                    write_provision_state(true, provision_dir, vessel.clone());
+                    write_provision_state(true, provision_dir, shared_state.clone());
 
                     // start event threads right after provision successfully
-                    start_event_threads(vessel.clone());
+                    start_event_threads(shared_state.clone());
                 }
             }
             Err(e) => {
@@ -53,7 +57,7 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>, vessel: Dat
     }
 }
 
-pub fn provision_timeup(provision_dir: Option<PathBuf>, vessel: DataVessel) {
+pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<SharedState>>) {
     unsafe {
         let cloned_state = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -61,7 +65,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>, vessel: DataVessel) {
             Ok(cloned_state) => {
                 if *cloned_state != 7 {
                     // write provision fail state here
-                    write_provision_state(false, provision_dir, vessel);
+                    write_provision_state(false, provision_dir, shared_state.clone());
                 }
             }
             Err(e) => {
@@ -71,7 +75,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>, vessel: DataVessel) {
     }
 }
 
-pub fn start_event_threads(vessel: DataVessel) {
+pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
     unsafe {
         let cloned = Arc::clone(&*LOGGER_THREADS_INITIALIZED);
         let cloned = cloned.lock();
@@ -91,10 +95,10 @@ pub fn start_event_threads(vessel: DataVessel) {
                     config::get_events_dir(),
                     Duration::from_secs(300),
                     true,
-                    vessel.clone(),
+                    shared_state.clone(),
                 );
                 *cloned = true;
-                proxy_agent_status::start_async(Duration::default(), vessel.clone());
+                proxy_agent_status::start_async(Duration::default(), shared_state.clone());
             }
             Err(e) => {
                 logger::write_error(format!("Failed to lock provision state with error: {e}"));
@@ -106,7 +110,7 @@ pub fn start_event_threads(vessel: DataVessel) {
 fn write_provision_state(
     provision_success: bool,
     provision_dir: Option<PathBuf>,
-    vessel: DataVessel,
+    shared_state: Arc<Mutex<SharedState>>,
 ) {
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
@@ -121,7 +125,7 @@ fn write_provision_state(
     if !provision_success {
         status.push_str(&format!(
             "keyLatchStatus - {}\r\n",
-            key_keeper::get_status(vessel.clone()).message
+            key_keeper::get_status(shared_state.clone()).message
         ));
         status.push_str(&format!(
             "ebpfProgramStatus - {}\r\n",
@@ -129,7 +133,7 @@ fn write_provision_state(
         ));
         status.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
-            proxy_listener::get_status().message
+            proxy_listener::get_status(shared_state.clone()).message
         ));
     }
 
@@ -218,13 +222,13 @@ mod tests {
             "provision_status.1 must be empty"
         );
 
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let shared_state = crate::shared_state::new_shared_state();
         let dir1 = temp_test_path.to_path_buf();
         let dir2 = temp_test_path.to_path_buf();
         let dir3 = temp_test_path.to_path_buf();
-        let s1 = vessel.clone();
-        let s2 = vessel.clone();
-        let s3 = vessel.clone();
+        let s1 = shared_state.clone();
+        let s2 = shared_state.clone();
+        let s3 = shared_state.clone();
         let handles = vec![
             thread::spawn(move || super::update_provision_state(1, Some(dir1), s1)),
             thread::spawn(move || super::update_provision_state(2, Some(dir2), s2)),
@@ -272,6 +276,5 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        vessel.stop();
     }
 }

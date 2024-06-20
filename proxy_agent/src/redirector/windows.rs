@@ -6,16 +6,17 @@ mod bpf_obj;
 mod bpf_prog;
 
 use crate::common::{self, config, constants, helpers, logger};
-use crate::data_vessel::DataVessel;
 use crate::key_keeper;
 use crate::provision;
 use crate::redirector::AuditEntry;
+use crate::shared_state::{key_keeper_wrapper, SharedState};
 use core::ffi::c_void;
 use once_cell::unsync::Lazy;
 use std::mem;
 use std::net::TcpStream;
 use std::os::windows::io::AsRawSocket;
 use std::ptr;
+use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Networking::WinSock;
 
 static mut IS_STARTED: bool = false;
@@ -23,7 +24,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
 static mut LOCAL_PORT: u16 = 0;
 
-pub fn start(local_port: u16, vessel: DataVessel) -> bool {
+pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     match bpf_prog::init() {
         Ok(_) => (),
         Err(e) => {
@@ -61,7 +62,8 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
         ));
     }
 
-    if (key_keeper::get_secure_channel_state() != key_keeper::DISABLE_STATE)
+    if (key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
+        != key_keeper::DISABLE_STATE)
         || (config::get_wire_server_support() > 0)
     {
         let result = bpf_prog::update_policy_elem_bpf_map(
@@ -93,7 +95,8 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
             logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
         }
     }
-    if (key_keeper::get_secure_channel_state() == key_keeper::MUST_SIG_WIRESERVER_IMDS)
+    if (key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
+        == key_keeper::MUST_SIG_WIRESERVER_IMDS)
         || (config::get_imds_support() > 0)
     {
         let result = bpf_prog::update_policy_elem_bpf_map(
@@ -125,7 +128,7 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready(vessel);
+    provision::redirector_ready(shared_state.clone());
 
     true
 }

@@ -3,7 +3,6 @@
 
 pub mod acl;
 pub mod common;
-pub mod data_vessel;
 pub mod host_clients;
 pub mod key_keeper;
 pub mod monitor;
@@ -12,6 +11,7 @@ pub mod proxy;
 pub mod proxy_agent_status;
 pub mod redirector;
 pub mod service;
+pub mod shared_state;
 pub mod telemetry;
 pub mod test_mock;
 
@@ -37,11 +37,12 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         if args[1].to_lowercase() == "console" {
-            service::start_service();
+            let shared_state = shared_state::new_shared_state();
+            service::start_service(shared_state.clone());
             println!("Press Enter to end it.");
             let mut temp = String::new();
             _ = std::io::stdin().read_line(&mut temp);
-            service::stop_service();
+            service::stop_service(shared_state.clone());
         } else if args[1].to_lowercase() == "--version" {
             println!("{}", misc_helpers::get_current_version());
         } else if args[1].to_lowercase() == "--status" {

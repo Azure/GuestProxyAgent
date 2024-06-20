@@ -4,9 +4,9 @@ mod ebpf_obj;
 mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
-use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
+use crate::shared_state::SharedState;
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
@@ -18,6 +18,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 static mut IS_STARTED: bool = false;
 static mut STATUS_MESSAGE: Lazy<String> =
@@ -25,7 +26,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
 static mut LOCAL_PORT: u16 = 0;
 static mut BPF_OBJECT: Option<Bpf> = None;
 
-pub fn start(local_port: u16, vessel: DataVessel) -> bool {
+pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(value) => return value,
@@ -122,7 +123,7 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready(vessel);
+    provision::redirector_ready(shared_state);
 
     true
 }

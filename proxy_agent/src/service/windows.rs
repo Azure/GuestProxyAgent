@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::common::{constants, logger};
-use crate::service;
+use crate::{service, shared_state};
 use std::ffi::OsString;
 use std::time::Duration;
 use windows_service::service::{
@@ -15,10 +15,12 @@ use windows_service::service_control_handler::{
 static mut SERVICE_STATUS_HANDLE: Option<ServiceStatusHandle> = None;
 
 pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
+    let shared_state = shared_state::new_shared_state();
+    let cloned_shared_state = shared_state.clone();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
-                service::stop_service();
+                service::stop_service(cloned_shared_state.clone());
                 unsafe {
                     match SERVICE_STATUS_HANDLE {
                         Some(status_handle) => {
@@ -50,7 +52,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     };
 
     // start service
-    service::start_service();
+    service::start_service(shared_state.clone());
 
     // set the service state to Running
     let status_handle =
