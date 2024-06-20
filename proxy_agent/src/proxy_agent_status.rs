@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
-use crate::data_vessel::DataVessel;
 use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::proxy::proxy_summary::ProxySummary;
+use crate::shared_state::{proxy_listener_wrapper, SharedState};
 use crate::{key_keeper, redirector};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -26,15 +26,15 @@ static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
 static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn start_async(interval: Duration, vessel: DataVessel) {
+pub fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     _ = thread::Builder::new()
         .name("guest_proxy_agent_status".to_string())
         .spawn(move || {
-            start(interval, vessel);
+            start(interval, shared_state);
         });
 }
 
-fn start(mut interval: Duration, vessel: DataVessel) {
+fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
@@ -54,7 +54,7 @@ fn start(mut interval: Duration, vessel: DataVessel) {
             break;
         }
 
-        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
             logger::write_error(format!("Error writing aggregate status to file: {}", e));
@@ -81,10 +81,10 @@ fn start(mut interval: Duration, vessel: DataVessel) {
     }
 }
 
-pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
-    let key_latch_status = key_keeper::get_status(vessel.clone());
+pub fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentStatus {
+    let key_latch_status = key_keeper::get_status(shared_state.clone());
     let ebpf_status = redirector::get_status();
-    let proxy_status = proxy_listener::get_status();
+    let proxy_status = proxy_listener::get_status(shared_state.clone());
     let mut status = OveralState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
@@ -100,7 +100,7 @@ pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
         telemetryLoggerStatus: event_logger::get_status(),
-        proxyConnectionsCount: proxy_listener::get_proxy_connection_count(),
+        proxyConnectionsCount: proxy_listener_wrapper::get_connection_count(shared_state),
     }
 }
 
@@ -121,11 +121,11 @@ pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
 }
 
 pub fn guest_proxy_agent_aggregate_status_new(
-    vessel: DataVessel,
+    shared_state: Arc<Mutex<SharedState>>,
 ) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
-        proxyAgentStatus: proxy_agent_status_new(vessel.clone()),
+        proxyAgentStatus: proxy_agent_status_new(shared_state.clone()),
         proxyConnectionSummary: get_all_connection_summary(false),
         failedAuthenticateSummary: get_all_connection_summary(true),
     }
@@ -189,8 +189,8 @@ mod tests {
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
         misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
-        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
+        let shared_state = crate::shared_state::new_shared_state();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
         _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
@@ -217,7 +217,5 @@ mod tests {
                 || !gpa_aggregate_status.proxyConnectionSummary.is_empty(),
             "proxyConnectionSummary does not exist"
         );
-
-        vessel.stop();
     }
 }
