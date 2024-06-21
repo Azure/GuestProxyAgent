@@ -24,7 +24,7 @@ struct bpf_map_def skip_process_map = {
 #pragma clang section data = "maps"
 struct bpf_map_def audit_map = {
     .type = BPF_MAP_TYPE_LRU_HASH,             // retain the latest records automatically
-    .key_size = sizeof(sock_addr_aduit_key_t), // source port and protocol
+    .key_size = sizeof(sock_addr_audit_key_t), // source port and protocol
     .value_size = sizeof(sock_addr_audit_entry_t),
     .max_entries = 1000};
 
@@ -88,7 +88,7 @@ update_audit_map_entry(bpf_sock_addr_t *ctx)
     }
     else
     {
-        sock_addr_aduit_key_t key = {0};
+        sock_addr_audit_key_t key = {0};
         key.protocol = ctx->protocol;
         key.source_port = source_port;
         uint64_t ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
@@ -125,19 +125,16 @@ authorize_v4(bpf_sock_addr_t *ctx)
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
         }
 
-        // if (ctx->msg_src_ip4 == 0)
-        // {
-        //     bpf_printk("Local/source ip is not set, redirect to loopback ip.");
-        //     ctx->user_ip4 = policy->destination_ip.ipv4;
-        // }
-        // else
-        // {
-        //     ctx->user_ip4 = ctx->msg_src_ip4;
-        //     bpf_printk("Local/source ip is set, redirect to source ip:%u.", ctx->user_ip4);
-        // }
-
-        bpf_printk("redirecting to destination loopback ip.");
-        ctx->user_ip4 = policy->destination_ip.ipv4;
+        if (ctx->msg_src_ip4 == 0)
+        {
+            bpf_printk("Local/source ip is not set, redirect to loopback ip.");
+            ctx->user_ip4 = policy->destination_ip.ipv4;
+        }
+        else
+        {
+            ctx->user_ip4 = ctx->msg_src_ip4;
+            bpf_printk("Local/source ip is set, redirect to source ip:%u.", ctx->user_ip4);
+        }
         ctx->user_port = policy->destination_port;
     }
 
