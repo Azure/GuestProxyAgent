@@ -235,10 +235,11 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
         Some(map) => {
             match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
-                    let local_ip = match get_local_ip() {
-                        Some(ip) => ip,
-                        None => constants::PROXY_AGENT_IP.to_string(),
-                    };
+                    // let local_ip = match get_local_ip() {
+                    //     Some(ip) => ip,
+                    //     None => constants::PROXY_AGENT_IP.to_string(),
+                    // };
+                    let local_ip = constants::PROXY_AGENT_IP.to_string();
                     event_logger::write_event(
                         event_logger::WARN_LEVEL,
                         format!("update_policy_map with local ip address: {}", local_ip),
