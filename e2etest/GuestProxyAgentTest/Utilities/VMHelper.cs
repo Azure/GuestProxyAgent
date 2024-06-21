@@ -41,14 +41,14 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="appClientId">application principal id</param>
         /// <param name="defaultSubId">default subscription id, the resources will be created on the default subscription</param>
         /// <param name="cert">certificate that will be used to retrieve the application principal</param>
-        public static void Init(string tenantId, string appClientId, string defaultSubId, X509Certificate2? cert)
+        public static void Init(string tenantId, string appClientId, string defaultSubId)
         {
             if(null != _instance)
             {
                 return;
             }
             _instance = new VMHelper();
-            _instance.client = new ArmClient(new ClientCertificateCredential(tenantId, appClientId, cert), defaultSubId);
+            _instance.client = new ArmClient(new GuestProxyAgentE2ETokenCredential(), defaultSubId);
         }
 
         /// <summary>

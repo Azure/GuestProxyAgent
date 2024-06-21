@@ -1,7 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+using Azure.Core;
 using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.Settings;
+using Newtonsoft.Json;
+using System.Runtime.Serialization;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -16,8 +19,8 @@ namespace GuestProxyAgentTest.Utilities
         public static void TestSetup(string guestProxyAgentZipFilePath, string testConfigFilePath, string testResultFolder)
         {
             TestSetting.Init(YamlUtils.DeserializeYaml<TestConfig>(testConfigFilePath), guestProxyAgentZipFilePath, testResultFolder);
-            StorageHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId, TestSetting.Instance.cert);
-            VMHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId, TestSetting.Instance.subscriptionId, TestSetting.Instance.cert);
+            StorageHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId);
+            VMHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId, TestSetting.Instance.subscriptionId);
 
         }
 
@@ -95,6 +98,30 @@ namespace GuestProxyAgentTest.Utilities
             }
             return false;
 
+        }
+
+        public static AccessToken GetAccessTokenFromEnv(string envName)
+        {
+            var tokenString = Environment.GetEnvironmentVariable(envName);
+            if (string.IsNullOrEmpty(tokenString))
+            {
+                throw new Exception("Failed to get the access token from environment variable: " + envName);
+            }
+            var model = JsonConvert.DeserializeObject<TokenEnvModel>(tokenString);
+            if (model == null)
+            {
+                throw new Exception("Failed to deserialze access token json object: " + tokenString);
+            }
+            return new AccessToken(model.AccessToken, DateTimeOffset.Parse(model.ExpiresOn));
+        }
+
+        [DataContract]
+        public class TokenEnvModel
+        {
+            [DataMember(Name = "accessToken")]
+            public string AccessToken { get; set; }
+            [DataMember(Name = "expiresOn")]
+            public string ExpiresOn { get; set; }
         }
     }
 }

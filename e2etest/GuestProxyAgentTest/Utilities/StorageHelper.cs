@@ -26,11 +26,11 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="tenantId">azure tenant id</param>
         /// <param name="appClientId">application id of the app principal</param>
         /// <param name="cert">certificate that will be used to retrieved the app principal</param>
-        public static void Init(string tenantId, string appClientId, X509Certificate2? cert)
+        public static void Init(string tenantId, string appClientId)
         {
             if(_instance != null) return;
             _instance = new StorageHelper();
-            _instance.tokenCredential = new ClientCertificateCredential(tenantId, appClientId, cert);
+            _instance.tokenCredential = new GuestProxyAgentE2EStorageAccountTokenCredential();
         }
 
         /// <summary>
