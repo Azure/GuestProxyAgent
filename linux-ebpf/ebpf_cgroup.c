@@ -26,7 +26,7 @@ struct
 struct
 {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __type(key, sock_addr_aduit_key);     // source port and protocol
+    __type(key, sock_addr_audit_key);     // source port and protocol
     __type(value, sock_addr_audit_entry); // audit entry
     __uint(max_entries, 200);             // some older kernel version cannot support over 200 entries.
 } audit_map SEC(".maps");
@@ -144,7 +144,7 @@ int connect4(struct bpf_sock_addr *ctx)
 static __always_inline int
 update_audit_map_entry_sk(__u32 local_port, sock_addr_local_entry *local_entry)
 {
-    sock_addr_aduit_key key = {0};
+    sock_addr_audit_key key = {0};
     key.protocol = local_entry->protocol;
     key.source_port = local_port;
 
@@ -220,7 +220,7 @@ trace_v4(struct pt_regs *ctx, struct probe_sock *sk)
     if (policy != NULL)
     {
         __u32 uid = (__u32)(bpf_get_current_uid_gid() >> 32);
-        sock_addr_aduit_key key = {0};
+        sock_addr_audit_key key = {0};
         key.protocol = IPPROTO_TCP;
         key.source_port = skc.skc_num;
 
