@@ -125,16 +125,19 @@ authorize_v4(bpf_sock_addr_t *ctx)
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
         }
 
-        if (ctx->msg_src_ip4 == 0)
-        {
-            bpf_printk("Local/source ip is not set, redirect to loopback ip.");
-            ctx->user_ip4 = policy->destination_ip.ipv4;
-        }
-        else
-        {
-            ctx->user_ip4 = ctx->msg_src_ip4;
-            bpf_printk("Local/source ip is set, redirect to source ip:%u.", ctx->user_ip4);
-        }
+        // if (ctx->msg_src_ip4 == 0)
+        // {
+        //     bpf_printk("Local/source ip is not set, redirect to loopback ip.");
+        //     ctx->user_ip4 = policy->destination_ip.ipv4;
+        // }
+        // else
+        // {
+        //     ctx->user_ip4 = ctx->msg_src_ip4;
+        //     bpf_printk("Local/source ip is set, redirect to source ip:%u.", ctx->user_ip4);
+        // }
+
+        bpf_printk("redirecting to destination loopback ip.");
+        ctx->user_ip4 = policy->destination_ip.ipv4;
         ctx->user_port = policy->destination_port;
     }
 
