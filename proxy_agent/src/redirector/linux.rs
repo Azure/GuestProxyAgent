@@ -11,7 +11,7 @@ use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
-    destination_entry, sock_addr_audit_key, sock_addr_audit_entry, sock_addr_skip_process_entry,
+    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
 use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -594,8 +594,8 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
 mod tests {
     use crate::common::config;
     use crate::common::logger;
-    use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
+    use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use aya::maps::HashMap;
     use proxy_agent_shared::logger_manager;
     use proxy_agent_shared::misc_helpers;
