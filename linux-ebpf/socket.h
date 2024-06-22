@@ -29,7 +29,7 @@ typedef struct _sock_addr_aduit_key
 {
     __u32 protocol;
     __u32 source_port;
-} sock_addr_aduit_key;
+} sock_addr_audit_key;
 
 typedef struct _sock_addr_audit_entry
 {
