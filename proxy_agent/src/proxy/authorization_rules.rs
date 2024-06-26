@@ -168,14 +168,46 @@ mod tests {
     use crate::proxy::{proxy_connection::Connection, Claims};
 
     #[test]
-    fn test_authorization_rules() {
-        let logger_key = "test_authorization_rules";
+    fn test_authorization_rules_default_allow_real_client()
+    {
+        init_test_logger("test_authorization_rules_default_allow_real_client");
+
+        let mut rules = AuthorizationRules::from_authorization_item(AuthorizationItem {
+            defaultAccess: "allow".to_string(),
+            mode: "enforce".to_string(),
+            id: "0".to_string(),
+            rules: Some(sample_rules()),
+        });
+
+        // Taken from a E2E python test client.
+        let claims = Claims {
+            userId: 1216683,
+            userName: "adminTest".to_string(),
+            userGroups: vec!["Administrators".to_string()],
+            processId: 3784,
+            processFullPath: "C:\\Users\\adminTest\\AppData\\Local\\Programs\\Python\\Python312\\python.exe".to_string(),
+            clientIp: "127.0.0.1".to_string(),
+            processName: "python.exe".to_string(),
+            processCmdLine: "\"C:\\Users\\adminTest\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -m unittest msptest.WireServerEnforcedTest".to_string(),
+            runAsElevated: true,
+        };
+
+        let url = "/acms/isoptedinforrootcerts".to_string();
+        assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
+
+        rules.defaultAllowed = false;
+
+        assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
+    }
+
+    fn init_test_logger(logger_key: &str) {
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         Connection::init_logger(temp_test_path.to_path_buf());
+    }
 
-        // Test Enforce Mode
-        let access_control_rules = AccessControlRules {
+    fn sample_rules() -> AccessControlRules {
+        AccessControlRules {
             roles: Some(vec![Role {
                 name: "test".to_string(),
                 privileges: vec!["test".to_string(), "test1".to_string()],
@@ -196,13 +228,22 @@ mod tests {
                 role: "test".to_string(),
                 identities: vec!["test".to_string()],
             }]),
-        };
-        let authorization_item: AuthorizationItem = AuthorizationItem {
+        }
+    }
+
+    #[test]
+    fn test_authorization_rules() {
+        init_test_logger("test_authorization_rules");
+
+        // Test Enforce Mode
+        let access_control_rules = sample_rules();
+        let authorization_item = AuthorizationItem {
             defaultAccess: "deny".to_string(),
             mode: "enforce".to_string(),
             rules: Some(access_control_rules),
             id: "0".to_string(),
         };
+
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         let _clone_rules = rules.clone();
         assert!(!rules.defaultAllowed);
@@ -229,28 +270,7 @@ mod tests {
         assert!(!rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
 
         // Test Audit Mode
-        let access_control_rules = AccessControlRules {
-            roles: Some(vec![Role {
-                name: "test".to_string(),
-                privileges: vec!["test".to_string(), "test1".to_string()],
-            }]),
-            privileges: Some(vec![Privilege {
-                name: "test".to_string(),
-                path: "/test".to_string(),
-                queryParameters: None,
-            }]),
-            identities: Some(vec![Identity {
-                name: "test".to_string(),
-                exePath: Some("test".to_string()),
-                groupName: Some("test".to_string()),
-                processName: Some("test".to_string()),
-                userName: Some("test".to_string()),
-            }]),
-            roleAssignments: Some(vec![RoleAssignment {
-                role: "test".to_string(),
-                identities: vec!["test".to_string()],
-            }]),
-        };
+        let access_control_rules = sample_rules();
         let authorization_item: AuthorizationItem = AuthorizationItem {
             defaultAccess: "deny".to_string(),
             mode: "audit".to_string(),
@@ -263,28 +283,7 @@ mod tests {
         assert!(rules.rules.is_some());
 
         // Test Disabled Mode
-        let access_control_rules = AccessControlRules {
-            roles: Some(vec![Role {
-                name: "test".to_string(),
-                privileges: vec!["test".to_string(), "test1".to_string()],
-            }]),
-            privileges: Some(vec![Privilege {
-                name: "test".to_string(),
-                path: "/test".to_string(),
-                queryParameters: None,
-            }]),
-            identities: Some(vec![Identity {
-                name: "test".to_string(),
-                exePath: Some("test".to_string()),
-                groupName: Some("test".to_string()),
-                processName: Some("test".to_string()),
-                userName: Some("test".to_string()),
-            }]),
-            roleAssignments: Some(vec![RoleAssignment {
-                role: "test".to_string(),
-                identities: vec!["test".to_string()],
-            }]),
-        };
+        let access_control_rules = sample_rules();
         let authorization_item: AuthorizationItem = AuthorizationItem {
             defaultAccess: "deny".to_string(),
             mode: "disabled".to_string(),
