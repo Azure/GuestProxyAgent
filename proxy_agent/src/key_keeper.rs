@@ -4,6 +4,7 @@ pub mod key;
 
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::{acl, redirector};
@@ -28,7 +29,6 @@ const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 static mut CURRENT_SECURE_CHANNEL_STATE: Lazy<String> = Lazy::new(|| String::from(UNKNOWN_STATE)); // state starts from Unknown
-static mut CURRENT_KEY: Lazy<Key> = Lazy::new(|| Key::empty());
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Key latch thread has not started yet."));
@@ -39,26 +39,15 @@ pub fn get_secure_channel_state() -> String {
     unsafe { CURRENT_SECURE_CHANNEL_STATE.to_string() }
 }
 
-pub fn get_current_key_guid() -> String {
-    unsafe { CURRENT_KEY.guid.to_string() }
-}
-
-pub fn get_current_key() -> String {
-    unsafe { CURRENT_KEY.key.to_string() }
-}
-
-fn get_current_key_incarnation() -> Option<u32> {
-    unsafe { CURRENT_KEY.incarnationId.clone() }
-}
-
 pub fn poll_status_async(
     base_url: Url,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
+    vessel: DataVessel,
 ) {
     thread::spawn(move || {
-        poll_secure_channel_status(base_url, key_dir, interval, config_start_redirector);
+        poll_secure_channel_status(base_url, key_dir, interval, config_start_redirector, vessel);
     });
 }
 
@@ -68,6 +57,7 @@ fn poll_secure_channel_status(
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
+    vessel: DataVessel,
 ) {
     let message = "poll secure channel status thread started.";
     unsafe {
@@ -77,7 +67,7 @@ fn poll_secure_channel_status(
 
     // launch redirector initialization when the key keeper thread is running
     if config_start_redirector {
-        redirector::start_async(constants::PROXY_AGENT_PORT);
+        redirector::start_async(constants::PROXY_AGENT_PORT, vessel.clone());
     }
 
     _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
@@ -118,16 +108,16 @@ fn poll_secure_channel_status(
 
         if !first_iteration {
             // skip the sleep for the first loop
-            let sleep;
-            if get_secure_channel_state() == UNKNOWN_STATE
+
+            let sleep = if get_secure_channel_state() == UNKNOWN_STATE
                 && helpers::get_elapsed_time_in_millisec() < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
             {
                 // frequent poll the secure channel status every second for the first 5 minutes
                 // until the secure channel state is known
-                sleep = FREQUENT_PULL_INTERVAL;
+                FREQUENT_PULL_INTERVAL
             } else {
-                sleep = interval;
-            }
+                interval
+            };
             thread::sleep(sleep);
         }
         first_iteration = false;
@@ -135,20 +125,19 @@ fn poll_secure_channel_status(
         if !provision_timeup
             && helpers::get_elapsed_time_in_millisec() > PROVISION_TIMEUP_IN_MILLISECONDS
         {
-            provision::provision_timeup(None);
+            provision::provision_timeup(None, vessel.clone());
             provision_timeup = true;
         }
 
         if !started_event_threads
             && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
         {
-            provision::start_event_threads();
+            provision::start_event_threads(vessel.clone());
             started_event_threads = true;
         }
 
-        let status;
-        match key::get_status(base_url.clone()) {
-            Ok(s) => status = s,
+        let status = match key::get_status(base_url.clone()) {
+            Ok(s) => s,
             Err(e) => {
                 let err_string = format!("{:?}", e);
                 let message: String = format!(
@@ -171,10 +160,7 @@ fn poll_secure_channel_status(
             None => guid = String::new(),
         }
 
-        logger::write_information(format!(
-            "Got key status successfully: {}.",
-            status.to_string()
-        ));
+        logger::write_information(format!("Got key status successfully: {}.", status));
 
         let wireserver_rule_id = status.get_wireserver_rule_id();
         let imds_rule_id = status.get_imds_rule_id();
@@ -199,24 +185,22 @@ fn poll_secure_channel_status(
             }
         }
 
-        let mut key_file = key_dir.to_path_buf().join(guid.to_string());
+        let mut key_file = key_dir.to_path_buf().join(&guid);
         key_file.set_extension("key");
         let state = status.get_secure_channel_state();
 
         // check if need fetch the key
-        if state != DISABLE_STATE && guid != get_current_key_guid() {
+        if state != DISABLE_STATE && guid != vessel.get_current_key_guid() {
             // search the key locally first
             let mut key_found = false;
-            if guid != "" {
+            if !guid.is_empty() {
                 // the key already latched before
                 if key_file.exists() {
                     // read the key details locally and update
-                    match misc_helpers::json_read_from_file(key_file.to_path_buf()) {
+                    match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
                         Ok(key) => {
-                            // update in memory
-                            unsafe {
-                                *CURRENT_KEY = key;
-                            }
+                            vessel.update_current_key(key.clone());
+
                             let message = helpers::write_startup_event(
                                 "Found key details from local and ready to use.",
                                 "poll_secure_channel_status",
@@ -228,7 +212,7 @@ fn poll_secure_channel_status(
                             }
                             key_found = true;
 
-                            provision::key_latched();
+                            provision::key_latched(vessel.clone());
                         }
                         Err(e) => {
                             let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
@@ -259,9 +243,8 @@ fn poll_secure_channel_status(
             // or could not read locally,
             // try fetch from server
             if !key_found {
-                let key;
-                match key::acquire_key(base_url.clone()) {
-                    Ok(k) => key = k,
+                let key = match key::acquire_key(base_url.clone()) {
+                    Ok(k) => k,
                     Err(e) => {
                         logger::write_warning(format!("Failed to acquire key details: {:?}", e));
                         continue;
@@ -270,15 +253,15 @@ fn poll_secure_channel_status(
 
                 // key has not latched before,
                 // set the key_file full path from key details
-                if guid == "" {
+                if guid.is_empty() {
                     guid = key.guid.to_string();
-                    key_file = key_dir.to_path_buf().join(guid.to_string());
+                    key_file = key_dir.to_path_buf().join(&guid);
                     key_file.set_extension("key");
                 }
                 _ = misc_helpers::json_write_to_file(&key, key_file);
                 logger::write_information(format!(
                     "Successfully acquired the key '{}' details from server and saved locally.",
-                    guid.to_string()
+                    guid
                 ));
 
                 // double check the key details saved correctly to local disk
@@ -286,9 +269,8 @@ fn poll_secure_channel_status(
                     match key::attest_key(base_url.clone(), &key) {
                         Ok(()) => {
                             // update in memory
-                            unsafe {
-                                *CURRENT_KEY = key;
-                            }
+                            vessel.update_current_key(key.clone());
+
                             helpers::write_startup_event(
                                 "Successfully attest the key and ready to use.",
                                 "poll_secure_channel_status",
@@ -299,7 +281,7 @@ fn poll_secure_channel_status(
                                 *STATUS_MESSAGE = message.to_string();
                             }
 
-                            provision::key_latched();
+                            provision::key_latched(vessel.clone());
                         }
                         Err(e) => {
                             logger::write_warning(format!("Failed to attest the key: {:?}", e));
@@ -307,10 +289,7 @@ fn poll_secure_channel_status(
                         }
                     }
                 } else {
-                    logger::write_warning(format!(
-                        "Saved key '{}' details lost locally.",
-                        guid.to_string()
-                    ));
+                    logger::write_warning(format!("Saved key '{}' details lost locally.", guid));
                 }
             }
         }
@@ -337,7 +316,7 @@ fn poll_secure_channel_status(
                 unsafe {
                     *STATUS_MESSAGE = message.to_string();
                 }
-                provision::key_latched();
+                provision::key_latched(vessel.clone());
             }
         }
     }
@@ -359,7 +338,7 @@ fn check_local_key(key_dir: PathBuf, key: &Key) -> bool {
         Ok(local_key) => local_key.guid == key.guid && local_key.key == key.key,
         Err(_) => {
             // failed to parse guid.key file
-            return false;
+            false
         }
     }
 }
@@ -368,30 +347,27 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-pub fn get_status() -> ProxyAgentDetailStatus {
+pub fn get_status(vessel: DataVessel) -> ProxyAgentDetailStatus {
     let shutdown = SHUT_DOWN.clone();
-    let status;
-    if shutdown.load(Ordering::Relaxed) {
-        status = ModuleState::STOPPED.to_string();
+
+    let status = if shutdown.load(Ordering::Relaxed) {
+        ModuleState::STOPPED.to_string()
     } else {
-        status = ModuleState::RUNNING.to_string();
-    }
+        ModuleState::RUNNING.to_string()
+    };
 
     let state_message = unsafe { STATUS_MESSAGE.to_string() };
     let mut states = HashMap::new();
     states.insert("secureChannelState".to_string(), get_secure_channel_state());
-    states.insert("keyGuid".to_string(), get_current_key_guid());
+    states.insert("keyGuid".to_string(), vessel.get_current_key_guid());
     states.insert("wireServerRuleId".to_string(), unsafe {
         WIRESERVER_RULE_ID.to_string()
     });
     states.insert("imdsRuleId".to_string(), unsafe {
         IMDS_RULE_ID.to_string()
     });
-    match get_current_key_incarnation() {
-        Some(incarnation) => {
-            states.insert("keyIncarnationId".to_string(), incarnation.to_string());
-        }
-        None => {}
+    if let Some(incarnation) = vessel.get_current_key_incarnation() {
+        states.insert("keyIncarnationId".to_string(), incarnation.to_string());
     }
 
     ProxyAgentDetailStatus {
@@ -437,14 +413,11 @@ mod tests {
             "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"        
         }"#;
         let key: Key = serde_json::from_str(key_str).unwrap();
-        let mut key_file = temp_test_path.to_path_buf().join(key.guid.to_string());
+        let mut key_file = temp_test_path.to_path_buf().join(key.guid.clone());
         key_file.set_extension("key");
         _ = misc_helpers::json_write_to_file(&key, key_file);
 
-        assert_eq!(
-            true,
-            super::check_local_key(temp_test_path.to_path_buf(), &key)
-        );
+        assert!(super::check_local_key(temp_test_path.to_path_buf(), &key));
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -488,11 +461,13 @@ mod tests {
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
         key_keeper::poll_status_async(
             Url::parse("http://127.0.0.1:8081/").unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
+            vessel.clone(),
         );
 
         for _ in [0; 5] {
@@ -505,7 +480,7 @@ mod tests {
 
         let key_files: Vec<std::path::PathBuf> = misc_helpers::get_files(&keys_dir).unwrap();
         assert!(
-            key_files.len() == 0,
+            key_files.is_empty(),
             "Should not write key file at disable secure channel state"
         );
 
@@ -526,5 +501,6 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+        vessel.stop();
     }
 }

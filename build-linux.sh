@@ -38,8 +38,15 @@ rustup component add rust-std-x86_64-unknown-linux-musl
 rustup update stable
 cargo install cargo-deb
 
-echo ======= cargo fmt
+echo ======= cargo fmt & clippy
 cargo fmt --all
+cargo clippy -- -D warnings
+error_code=$?
+if [ $error_code -ne 0 ]
+then 
+    echo "cargo clippy with exit-code: $error_code"
+    exit $error_code
+fi
 
 echo ======= build proxy_agent_shared
 cargo_toml=$root_path/proxy_agent_shared/Cargo.toml

@@ -57,18 +57,18 @@ pub fn get_cgroup2_mount_path() -> std::io::Result<PathBuf> {
     }
 
     let mount: FileMount = serde_json::from_str(&output.1)?;
-    if mount.filesystems.len() > 0 {
+    if !mount.filesystems.is_empty() {
         let cgroup2_path = mount.filesystems[0].target.to_string();
         return Ok(PathBuf::from(cgroup2_path));
     }
 
-    return Err(Error::new(
+    Err(Error::new(
         ErrorKind::Other,
         format!(
             "findmnt command cannot find cgroup2 file mount: {}.",
             output.1
         ),
-    ));
+    ))
 }
 
 #[cfg(test)]

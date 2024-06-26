@@ -51,7 +51,7 @@ struct User {
 static mut CURRENT_SYSTEM: Lazy<Arc<Mutex<System>>> =
     Lazy::new(|| Arc::new(Mutex::new(System::new())));
 
-static mut USERS: Lazy<HashMap<u64, User>> = Lazy::new(|| HashMap::new());
+static mut USERS: Lazy<HashMap<u64, User>> = Lazy::new(HashMap::new);
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
 
@@ -120,8 +120,10 @@ impl Claims {
             clientIp: client_ip.to_string(),
         }
     }
+}
 
-    pub fn clone(&self) -> Self {
+impl Clone for Claims {
+    fn clone(&self) -> Self {
         Claims {
             userId: self.userId,
             userName: self.userName.to_string(),
@@ -141,14 +143,10 @@ impl Process {
         let (process_full_path, cmd);
         #[cfg(windows)]
         {
-            let handler;
-            match windows::get_process_handler(pid) {
-                Ok(h) => handler = h,
-                Err(e) => {
-                    println!("Failed to get process handler: {}", e);
-                    handler = 0;
-                }
-            }
+            let handler = windows::get_process_handler(pid).unwrap_or_else(|e| {
+                println!("Failed to get process handler: {}", e);
+                0
+            });
             let base_info = windows::query_basic_process_info(handler);
             match base_info {
                 Ok(_) => {
@@ -212,13 +210,11 @@ impl User {
                     user_name = u.name().to_string_lossy().to_string();
                     let g: Option<Vec<users::Group>> =
                         users::get_user_groups(&user_name, u.primary_group_id());
-                    match g {
-                        Some(groups) => {
-                            for group in groups {
-                                user_groups.push(group.name().to_string_lossy().to_string());
-                            }
+
+                    if let Some(groups) = g {
+                        for group in groups {
+                            user_groups.push(group.name().to_string_lossy().to_string());
                         }
-                        None => {}
                     }
                 }
                 None => user_name = UNDEFINED.to_string(),
@@ -268,7 +264,7 @@ mod tests {
             #[cfg(not(windows))]
             {
                 assert!(
-                    user.user_groups.len() > 0,
+                    !user.user_groups.is_empty(),
                     "user_groups should not be empty."
                 );
             }

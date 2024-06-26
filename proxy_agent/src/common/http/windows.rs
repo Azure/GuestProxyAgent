@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![cfg(windows)]
 
 use crate::common;
 use core::ffi::c_void;
@@ -45,7 +44,7 @@ pub fn connect_with_redirect_record(
         let socket = WinSock::WSASocketW(
             WinSock::AF_INET as i32,
             WinSock::SOCK_STREAM as i32,
-            WinSock::IPPROTO_TCP as i32,
+            WinSock::IPPROTO_TCP,
             ptr::null_mut(),
             0,
             0,
@@ -65,7 +64,7 @@ pub fn connect_with_redirect_record(
             redirect_record_size,
             &mut redirect_record_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS",
@@ -80,7 +79,7 @@ pub fn connect_with_redirect_record(
             0,
             &mut redirect_record_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_SET_WFP_CONNECTION_REDIRECT_RECORDS",
@@ -114,19 +113,9 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         let client = TcpStream::connect(format!("{}:{}", ip, port)).unwrap();
-        match super::connect_with_redirect_record(ip.to_string(), port, &client) {
-            Ok(_) => {
-                // test failed if no error thrown
-                assert!(false);
-            }
-            Err(e) => {
-                // expected to throw error
-                let error = format!("expected connect_with_redirect_record_test error: {}", e);
-                assert!(
-                    error.contains("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS")
-                );
-            }
-        }
+        let e = super::connect_with_redirect_record(ip.to_string(), port, &client).unwrap_err();
+        let error = format!("expected connect_with_redirect_record_test error: {}", e);
+        assert!(error.contains("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_RECORDS"));
 
         server_mock::stop(ip.to_string(), port);
     }

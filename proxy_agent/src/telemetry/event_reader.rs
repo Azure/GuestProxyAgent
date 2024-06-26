@@ -4,6 +4,7 @@ use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
 use crate::common::logger;
+use crate::data_vessel::DataVessel;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use once_cell::sync::Lazy;
@@ -65,16 +66,16 @@ impl VMMetaData {
     }
 }
 
-pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool) {
+pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
-            start(dir_path, Some(interval), delay_start);
+            start(dir_path, Some(interval), delay_start, vessel);
         });
 }
 
-fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
-    _ = logger::write("telemetry event reader thread started.".to_string());
+fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool, vessel: DataVessel) {
+    logger::write("telemetry event reader thread started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
     let shutdown = SHUT_DOWN.clone();
@@ -115,7 +116,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
             first = false;
         }
 
-        match update_vm_meta_data() {
+        match update_vm_meta_data(vessel.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -125,12 +126,11 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
         }
 
         unsafe {
-            match *VM_META_DATA {
-                // only start to send the telemetry events when the VM_META_DATA has value
-                Some(_) => match misc_helpers::get_files(&dir_path) {
+            if VM_META_DATA.is_some() {
+                match misc_helpers::get_files(&dir_path) {
                     Ok(files) => {
                         let file_count = files.len();
-                        let event_count = process_events_and_clean(files);
+                        let event_count = process_events_and_clean(files, vessel.clone());
                         let message =
                             format!("Send {} events from {} files", event_count, file_count);
                         event_logger::write_event(
@@ -148,8 +148,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool) {
                             e
                         ));
                     }
-                },
-                None => {}
+                }
             }
         }
         thread::sleep(interval);
@@ -160,12 +159,13 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-fn update_vm_meta_data() -> std::io::Result<()> {
-    let wire_server_client = WireServerClient::new(get_wire_server_ip(), get_wire_server_port());
+fn update_vm_meta_data(vessel: DataVessel) -> std::io::Result<()> {
+    let wire_server_client =
+        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel.clone());
     let goal_state = wire_server_client.get_goalstate()?;
     let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri())?;
 
-    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port());
+    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), vessel.clone());
     let instance_info = imds_client.get_imds_instance_info()?;
     let vm_meta_data = VMMetaData {
         container_id: goal_state.get_container_id(),
@@ -194,13 +194,13 @@ pub fn get_vm_meta_data() -> VMMetaData {
     }
 }
 
-fn process_events_and_clean(files: Vec<PathBuf>) -> usize {
+fn process_events_and_clean(files: Vec<PathBuf>, vessel: DataVessel) -> usize {
     let mut num_events_logged = 0;
     for file in files {
         match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
             Ok(events) => {
                 num_events_logged += events.len();
-                send_events(events);
+                send_events(events, vessel.clone());
                 clean_files(file);
             }
             Err(e) => {
@@ -220,11 +220,11 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 64;
 static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
 static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
-fn send_events(mut events: Vec<Event>) {
-    while events.len() > 0 {
+fn send_events(mut events: Vec<Event>, vessel: DataVessel) {
+    while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
-        while events.len() > 0 && add_more_events {
+        while !events.is_empty() && add_more_events {
             match events.pop() {
                 Some(event) => {
                     telemetry_data.add_event(TelemetryEvent::from_event_log(&event));
@@ -257,7 +257,7 @@ fn send_events(mut events: Vec<Event>) {
             }
         }
 
-        send_data_to_wire_server(telemetry_data);
+        send_data_to_wire_server(telemetry_data, vessel.clone());
     }
 }
 
@@ -302,12 +302,13 @@ fn get_imds_port() -> u16 {
     val
 }
 
-fn send_data_to_wire_server(telemetry_data: TelemetryData) {
+fn send_data_to_wire_server(telemetry_data: TelemetryData, vessel: DataVessel) {
     if telemetry_data.event_count() == 0 {
         return;
     }
 
-    let wire_server_client = WireServerClient::new(get_wire_server_ip(), get_wire_server_port());
+    let wire_server_client =
+        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel);
     for _ in [0; 5] {
         match wire_server_client.send_telemetry_data(telemetry_data.to_xml()) {
             Ok(()) => {
@@ -326,7 +327,7 @@ fn send_data_to_wire_server(telemetry_data: TelemetryData) {
 }
 
 fn clean_files(file: PathBuf) {
-    match remove_file(file.to_path_buf()) {
+    match remove_file(&file) {
         Ok(_) => {
             logger::write(format!("Removed File: {}", file.display()));
         }
@@ -418,7 +419,8 @@ mod tests {
         }
 
         let temp_dir = env::temp_dir();
-        _ = start_async(temp_dir, Duration::from_millis(1000), false);
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        start_async(temp_dir, Duration::from_millis(1000), false, vessel.clone());
 
         let mut wait_milli_sec: i32 = 100;
         while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed) {
@@ -442,6 +444,7 @@ mod tests {
             THREAD_PRIORITY_VERIFY_SUCCESS
         );
         assert!(THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed));
+        vessel.stop();
     }
 
     #[test]
@@ -468,21 +471,22 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 7071u16;
         unsafe {
-            super::MOCK_WIRE_SERVER_IP = Some(ip);
-            super::MOCK_WIRE_SERVER_PORT = Some(port);
+            MOCK_WIRE_SERVER_IP = Some(ip);
+            MOCK_WIRE_SERVER_PORT = Some(port);
         }
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
 
         thread::spawn(move || {
             server_mock::start(ip.to_string(), port);
         });
         thread::sleep(Duration::from_millis(100));
 
-        match super::update_vm_meta_data() {
+        match update_vm_meta_data(vessel.clone()) {
             Ok(()) => {
-                _ = logger::write("success updated the vm metadata.".to_string());
+                logger::write("success updated the vm metadata.".to_string());
             }
             Err(e) => {
-                _ = logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
             }
         }
 
@@ -505,15 +509,16 @@ mod tests {
         // Check the events processed
         let files = misc_helpers::get_files(&events_dir).unwrap();
         println!("Get '{}' event files.", files.len());
-        let events_read = process_events_and_clean(files);
+        let events_read = process_events_and_clean(files, vessel.clone());
 
         //Should be 10 events written and read into events Vector
         assert_eq!(events_read, 10);
 
         _ = fs::remove_dir_all(&temp_dir);
+        vessel.stop();
         unsafe {
-            super::MOCK_WIRE_SERVER_IP = None;
-            super::MOCK_WIRE_SERVER_PORT = None;
+            MOCK_WIRE_SERVER_IP = None;
+            MOCK_WIRE_SERVER_PORT = None;
         }
         server_mock::stop(ip.to_string(), port);
     }

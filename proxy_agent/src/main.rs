@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![deny(warnings)]
 
 pub mod acl;
 pub mod common;
+pub mod data_vessel;
 pub mod host_clients;
 pub mod key_keeper;
 pub mod monitor;
@@ -51,12 +51,12 @@ fn main() {
             }
             let status =
                 provision::get_provision_status_wait(None, Some(Duration::from_secs(wait_time)));
-            if status.0 == false {
+            if !status.0 {
                 // exit code 1 means provision not finished yet.
                 process::exit(1);
             } else {
                 // provision finished
-                if status.1.len() > 0 {
+                if !status.1.is_empty() {
                     // exit code 2 means provision finished but failed.
                     println!("{}", status.1);
                     process::exit(2);

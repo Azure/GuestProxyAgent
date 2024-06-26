@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using Azure.Core;
-using Azure.Identity;
 using Azure.ResourceManager.Compute.Models;
 using Azure.ResourceManager.Compute;
 using Azure.ResourceManager.Network;
@@ -53,8 +52,7 @@ namespace GuestProxyAgentTest.Utilities
         public async Task<VirtualMachineResource> Build(bool EnableProxyAgent)
         {
             PreCheck();
-            TokenCredential cred = new ClientCertificateCredential(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId, TestSetting.Instance.cert);
-            ArmClient client = new(cred, defaultSubscriptionId: TestSetting.Instance.subscriptionId);
+            ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
 
             var sub = await client.GetDefaultSubscriptionAsync();
             var rgs = sub.GetResourceGroups();

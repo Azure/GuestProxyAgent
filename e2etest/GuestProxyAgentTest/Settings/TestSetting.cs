@@ -3,15 +3,17 @@
 using Azure.Core;
 using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.Utilities;
+using Newtonsoft.Json;
 using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace GuestProxyAgentTest.Settings
 {
     /// <summary>
     /// E2ETestSetting related azure resource
     /// </summary>
-    class TestSetting
+    public class TestSetting
     {
         private static TestSetting _instance = null!;
         public static TestSetting Instance
@@ -25,7 +27,6 @@ namespace GuestProxyAgentTest.Settings
         internal string tenantId = "";
         internal string appClientId = "";
         internal string certThumbprint = "";
-        internal X509Certificate2? cert = null;
         internal string subscriptionId = "";
         internal AzureLocation location = AzureLocation.WestUS;
         internal string vmSize = "Standard_B4as_v2";
@@ -49,7 +50,7 @@ namespace GuestProxyAgentTest.Settings
         /// <param name="scriptsFolder"></param>
         /// <param name="zipFilePath"></param>
         /// <param name="testResultFolder"></param>
-        public static void Init(string tenantId, string appClientId, X509Certificate2? cert, string subscriptionId, AzureLocation location, string vmSize, string sharedStorageAccountUrl, string scriptsFolder, string resourcesFolder, string zipFilePath, string testResultFolder)
+        public static void Init(string tenantId, string appClientId, string subscriptionId, AzureLocation location, string vmSize, string sharedStorageAccountUrl, string scriptsFolder, string resourcesFolder, string zipFilePath, string testResultFolder)
         {
             if (_instance != null)
             {
@@ -61,7 +62,6 @@ namespace GuestProxyAgentTest.Settings
             _instance.location = location;
             _instance.subscriptionId = subscriptionId;
             _instance.vmSize = vmSize;
-            _instance.cert = cert;
             _instance.zipFilePath = zipFilePath;
             _instance.scriptsFolder = scriptsFolder;
             _instance.resourcesFolder = resourcesFolder;
@@ -71,15 +71,9 @@ namespace GuestProxyAgentTest.Settings
 
         public static void Init(TestConfig testConfig, string zipFilePath, string testResultFolder)
         {
-            var cert = CertificateUtility.GetCertificate(testConfig.CertNameInKV, true);
-            if (cert == null)
-            {
-                cert = CertificateUtility.GetCertificate(testConfig.CertThumbprint, StoreName.My, false);
-            }
             var scriptsFolder = Constants.IS_WINDOWS() ? "Scripts" : "LinuxScripts";
             Init(testConfig.TenantId
                 , testConfig.AppClientId
-                , cert
                 , testConfig.SubscriptionId
                 , new AzureLocation(testConfig.Location)
                 , testConfig.VmSize
@@ -88,6 +82,34 @@ namespace GuestProxyAgentTest.Settings
                 , Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Resources")
                 , zipFilePath
                 , testResultFolder);
+        }
+    }
+
+    public class GuestProxyAgentE2ETokenCredential : TokenCredential
+    {
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            return TestCommonUtilities.GetAccessTokenFromEnv(Constants.GUEST_PROXY_AGENT_E2E_ACCESS_TOKEN_ENV);
+        }
+
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(GetToken(requestContext, cancellationToken));
+        }
+
+        
+    }
+
+    public class GuestProxyAgentE2EStorageAccountTokenCredential : TokenCredential
+    {
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            return TestCommonUtilities.GetAccessTokenFromEnv(Constants.GUEST_PROXY_AGENT_E2E_ACCESS_TOKEN_STORAGE_ACCOUNT_ENV);
+        }
+
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(GetToken(requestContext, cancellationToken));
         }
     }
 }

@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use std::io::{Error, ErrorKind};
@@ -25,10 +26,10 @@ impl Version {
         revision: Option<u32>,
     ) -> Self {
         Version {
-            major: major,
-            minor: minor,
-            build: build,
-            revision: revision,
+            major,
+            minor,
+            build,
+            revision,
         }
     }
 
@@ -87,24 +88,25 @@ impl Version {
             }
         }
 
-        return Ok(Version::from_major_minor_build_revision(
+        Ok(Version::from_major_minor_build_revision(
             major, minor, build, revision,
-        ));
+        ))
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl Display for Version {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         let mut ver = format!("{}.{}", self.major, self.minor);
-        match self.build {
-            Some(b) => {
-                ver = format!("{}.{}", ver, b);
+
+        if let Some(b) = self.build {
+            ver = format!("{}.{}", ver, b);
+
+            if let Some(r) = self.revision {
+                ver = format!("{}.{}", ver, r);
             }
-            None => return ver,
         }
 
-        match self.revision {
-            Some(r) => return format!("{}.{}", ver, r),
-            None => return ver,
-        }
+        write!(f, "{}", ver)
     }
 }
 

@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cargo_fmt:
+  linux_lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,17 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check -l
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+  win_lint:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Clippy
+        run: cargo clippy -- -D warnings
 
   build:
     uses: ./.github/workflows/reusable-build.yml

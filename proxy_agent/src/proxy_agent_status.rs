@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
+use crate::data_vessel::DataVessel;
 use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::proxy::proxy_summary::ProxySummary;
@@ -25,21 +26,21 @@ static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
 static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn start_async(interval: Duration) {
+pub fn start_async(interval: Duration, vessel: DataVessel) {
     _ = thread::Builder::new()
         .name("guest_proxy_agent_status".to_string())
         .spawn(move || {
-            _ = start(interval);
+            start(interval, vessel);
         });
 }
 
-fn start(mut interval: Duration) {
+fn start(mut interval: Duration, vessel: DataVessel) {
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
-        interval = Duration::from_secs(60 * 1); // update status every 1 minute
+        interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    _ = logger::write("proxy_agent_status thread started.".to_string());
+    logger::write("proxy_agent_status thread started.".to_string());
 
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
@@ -53,7 +54,7 @@ fn start(mut interval: Duration) {
             break;
         }
 
-        let aggregate_status = guest_proxy_agent_aggregate_status_new();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
             logger::write_error(format!("Error writing aggregate status to file: {}", e));
@@ -80,8 +81,8 @@ fn start(mut interval: Duration) {
     }
 }
 
-pub fn proxy_agent_status_new() -> ProxyAgentStatus {
-    let key_latch_status = key_keeper::get_status();
+pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
+    let key_latch_status = key_keeper::get_status(vessel.clone());
     let ebpf_status = redirector::get_status();
     let proxy_status = proxy_listener::get_status();
     let mut status = OveralState::SUCCESS.to_string();
@@ -93,7 +94,7 @@ pub fn proxy_agent_status_new() -> ProxyAgentStatus {
     }
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
-        status: status,
+        status,
         monitorStatus: monitor::get_status(),
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,
@@ -119,10 +120,12 @@ pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
     connection_summary.count += 1;
 }
 
-pub fn guest_proxy_agent_aggregate_status_new() -> GuestProxyAgentAggregateStatus {
+pub fn guest_proxy_agent_aggregate_status_new(
+    vessel: DataVessel,
+) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
-        proxyAgentStatus: proxy_agent_status_new(),
+        proxyAgentStatus: proxy_agent_status_new(vessel.clone()),
         proxyConnectionSummary: get_all_connection_summary(false),
         failedAuthenticateSummary: get_all_connection_summary(true),
     }
@@ -136,12 +139,10 @@ pub fn add_connection_summary(summary: ProxySummary, is_failed_authenticate: boo
     };
 
     let summary_key = summary.to_key_string();
-    if !summary_map.contains_key(&summary_key) {
-        summary_map.insert(summary_key, proxy_connection_summary_new(summary));
-    } else {
-        if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
-            increase_count(connection_summary);
-        }
+    if let std::collections::hash_map::Entry::Vacant(e) = summary_map.entry(summary_key.clone()) {
+        e.insert(proxy_connection_summary_new(summary));
+    } else if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
+        increase_count(connection_summary);
     }
 }
 
@@ -188,17 +189,13 @@ mod tests {
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
         misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
-
-        let aggregate_status = guest_proxy_agent_aggregate_status_new();
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let aggregate_status = guest_proxy_agent_aggregate_status_new(vessel.clone());
 
         _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
-        let file_path = temp_test_path.join("status.json".to_string());
-        assert_eq!(
-            file_path.exists(),
-            true,
-            "File does not exist in the directory"
-        );
+        let file_path = temp_test_path.join("status.json");
+        assert!(file_path.exists(), "File does not exist in the directory");
 
         let file_content = misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
             file_path.clone().to_path_buf(),
@@ -217,8 +214,10 @@ mod tests {
         );
         assert!(
             gpa_aggregate_status.proxyConnectionSummary.is_empty()
-                || gpa_aggregate_status.proxyConnectionSummary.len() >= 1,
+                || !gpa_aggregate_status.proxyConnectionSummary.is_empty(),
             "proxyConnectionSummary does not exist"
         );
+
+        vessel.stop();
     }
 }

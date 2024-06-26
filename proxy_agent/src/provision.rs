@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::proxy::proxy_listener;
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
@@ -17,19 +18,19 @@ static mut STATE: Lazy<Arc<Mutex<u8>>> = Lazy::new(|| Arc::new(Mutex::new(0)));
 static mut LOGGER_THREADS_INITIALIZED: Lazy<Arc<Mutex<bool>>> =
     Lazy::new(|| Arc::new(Mutex::new(false)));
 
-pub fn redirector_ready() {
-    update_provision_state(1, None);
+pub fn redirector_ready(vessel: DataVessel) {
+    update_provision_state(1, None, vessel);
 }
 
-pub fn key_latched() {
-    update_provision_state(2, None);
+pub fn key_latched(vessel: DataVessel) {
+    update_provision_state(2, None, vessel);
 }
 
-pub fn listener_started() {
-    update_provision_state(4, None);
+pub fn listener_started(vessel: DataVessel) {
+    update_provision_state(4, None, vessel);
 }
 
-fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
+fn update_provision_state(state: u8, provision_dir: Option<PathBuf>, vessel: DataVessel) {
     unsafe {
         let cloned_state: Arc<Mutex<u8>> = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -39,21 +40,20 @@ fn update_provision_state(state: u8, provision_dir: Option<PathBuf>) {
 
                 if *cloned_state == 7 {
                     // write provision success state here
-                    write_provision_state(true, provision_dir);
+                    write_provision_state(true, provision_dir, vessel.clone());
 
                     // start event threads right after provision successfully
-                    start_event_threads();
+                    start_event_threads(vessel.clone());
                 }
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
 }
 
-pub fn provision_timeup(provision_dir: Option<PathBuf>) {
+pub fn provision_timeup(provision_dir: Option<PathBuf>, vessel: DataVessel) {
     unsafe {
         let cloned_state = Arc::clone(&*STATE);
         let cloned_state = cloned_state.lock();
@@ -61,18 +61,17 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>) {
             Ok(cloned_state) => {
                 if *cloned_state != 7 {
                     // write provision fail state here
-                    write_provision_state(false, provision_dir);
+                    write_provision_state(false, provision_dir, vessel);
                 }
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
 }
 
-pub fn start_event_threads() {
+pub fn start_event_threads(vessel: DataVessel) {
     unsafe {
         let cloned = Arc::clone(&*LOGGER_THREADS_INITIALIZED);
         let cloned = cloned.lock();
@@ -88,23 +87,28 @@ pub fn start_event_threads() {
                     config::get_max_event_file_count(),
                     logger::AGENT_LOGGER_KEY,
                 );
-                event_reader::start_async(config::get_events_dir(), Duration::from_secs(300), true);
+                event_reader::start_async(
+                    config::get_events_dir(),
+                    Duration::from_secs(300),
+                    true,
+                    vessel.clone(),
+                );
                 *cloned = true;
-                proxy_agent_status::start_async(Duration::default());
+                proxy_agent_status::start_async(Duration::default(), vessel.clone());
             }
             Err(e) => {
-                _ = logger::write_error(format!("Failed to lock provision state with error: {e}"));
-                return;
+                logger::write_error(format!("Failed to lock provision state with error: {e}"));
             }
         }
     }
 }
 
-fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+fn write_provision_state(
+    provision_success: bool,
+    provision_dir: Option<PathBuf>,
+    vessel: DataVessel,
+) {
+    let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
     _ = misc_helpers::try_create_folder(provision_dir.to_path_buf());
@@ -117,7 +121,7 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
     if !provision_success {
         status.push_str(&format!(
             "keyLatchStatus - {}\r\n",
-            key_keeper::get_status().message
+            key_keeper::get_status(vessel.clone()).message
         ));
         status.push_str(&format!(
             "ebpfProgramStatus - {}\r\n",
@@ -138,14 +142,12 @@ fn write_provision_state(provision_success: bool, provision_dir: Option<PathBuf>
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    _ = logger::write_error(format!(
-                        "Failed to rename status file with error: {e}"
-                    ));
+                    logger::write_error(format!("Failed to rename status file with error: {e}"));
                 }
             }
         }
         Err(e) => {
-            _ = logger::write_error(format!("Failed to write temp status file with error: {e}"));
+            logger::write_error(format!("Failed to write temp status file with error: {e}"));
         }
     }
 }
@@ -160,14 +162,11 @@ pub fn get_provision_status_wait(
             return provision_status;
         }
 
-        match duration {
-            Some(d) => {
-                if d.as_millis() >= helpers::get_elapsed_time_in_millisec() {
-                    std::thread::sleep(Duration::from_millis(100));
-                    continue;
-                }
+        if let Some(d) = duration {
+            if d.as_millis() >= helpers::get_elapsed_time_in_millisec() {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
             }
-            None => {}
         }
 
         return provision_status;
@@ -179,10 +178,7 @@ pub fn get_provision_status_wait(
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, emtpy means provision success or provision failed.
 fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
-    let provision_dir = match provision_dir {
-        Some(dir) => dir,
-        None => config::get_keys_dir(),
-    };
+    let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_FILE_NAME);
     if !status_file.exists() {
@@ -190,12 +186,10 @@ fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
     }
 
     match std::fs::read_to_string(status_file) {
-        Ok(status) => {
-            return (true, status);
-        }
+        Ok(status) => (true, status),
         Err(e) => {
             println!("Failed to read status.tag file with error: {}", e);
-            return (false, String::new());
+            (false, String::new())
         }
     }
 }
@@ -224,13 +218,17 @@ mod tests {
             "provision_status.1 must be empty"
         );
 
+        let vessel = crate::data_vessel::DataVessel::start_new_async();
         let dir1 = temp_test_path.to_path_buf();
         let dir2 = temp_test_path.to_path_buf();
         let dir3 = temp_test_path.to_path_buf();
+        let s1 = vessel.clone();
+        let s2 = vessel.clone();
+        let s3 = vessel.clone();
         let handles = vec![
-            thread::spawn(move || super::update_provision_state(1, Some(dir1))),
-            thread::spawn(move || super::update_provision_state(2, Some(dir2))),
-            thread::spawn(move || super::update_provision_state(4, Some(dir3))),
+            thread::spawn(move || super::update_provision_state(1, Some(dir1), s1)),
+            thread::spawn(move || super::update_provision_state(2, Some(dir2), s2)),
+            thread::spawn(move || super::update_provision_state(4, Some(dir3), s3)),
         ];
 
         for handle in handles {
@@ -260,7 +258,7 @@ mod tests {
         );
 
         let event_threads_initialized =
-            unsafe { super::LOGGER_THREADS_INITIALIZED.lock().unwrap().clone() };
+            unsafe { *super::LOGGER_THREADS_INITIALIZED.lock().unwrap() };
         assert!(event_threads_initialized);
 
         // write status.tag file
@@ -268,11 +266,12 @@ mod tests {
         let provision_status = super::get_provision_status(Some(temp_test_path.to_path_buf()));
         assert!(provision_status.0, "provision_status.0 must be true");
         assert!(
-            provision_status.1.len() > 0,
+            !provision_status.1.is_empty(),
             "provision_status.1 should not empty"
         );
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+        vessel.stop();
     }
 }

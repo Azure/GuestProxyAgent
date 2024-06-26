@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![cfg(windows)]
 
 mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
 use crate::common::{self, config, constants, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::key_keeper;
 use crate::provision;
 use crate::redirector::AuditEntry;
@@ -23,7 +23,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
     Lazy::new(|| String::from("Redirector has not started yet."));
 static mut LOCAL_PORT: u16 = 0;
 
-pub fn start(local_port: u16) -> bool {
+pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     match bpf_prog::init() {
         Ok(_) => (),
         Err(e) => {
@@ -125,9 +125,9 @@ pub fn start(local_port: u16) -> bool {
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready();
+    provision::redirector_ready(vessel);
 
-    return true;
+    true
 }
 
 fn set_error_status(message: String) {
@@ -172,7 +172,7 @@ pub fn get_audit_from_redirect_context(tcp_stream: &TcpStream) -> std::io::Resul
             redirect_context_size,
             &mut redirect_context_returned,
             ptr::null_mut(),
-            Option::None,
+            None,
         );
         common::windows::check_winsock_last_error(
             "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT",

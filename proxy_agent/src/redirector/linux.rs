@@ -4,13 +4,14 @@ mod ebpf_obj;
 mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
+use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
-    destination_entry, sock_addr_aduit_key, sock_addr_audit_entry, sock_addr_skip_process_entry,
+    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
 use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -24,7 +25,7 @@ static mut STATUS_MESSAGE: Lazy<String> =
 static mut LOCAL_PORT: u16 = 0;
 static mut BPF_OBJECT: Option<Bpf> = None;
 
-pub fn start(local_port: u16) -> bool {
+pub fn start(local_port: u16, vessel: DataVessel) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(value) => return value,
@@ -43,14 +44,14 @@ pub fn start(local_port: u16) -> bool {
     }
 
     // maps
-    if update_skip_process_map(&mut bpf) == false {
+    if !update_skip_process_map(&mut bpf) {
         return false;
     }
-    if update_policy_map(&mut bpf, local_port) == false {
+    if !update_policy_map(&mut bpf, local_port) {
         return false;
     }
 
-    if attach_kprobe_program(&mut bpf) == false {
+    if !attach_kprobe_program(&mut bpf) {
         return false;
     }
 
@@ -76,7 +77,7 @@ pub fn start(local_port: u16) -> bool {
             config::get_cgroup_root()
         }
     };
-    if attach_cgroup_program(&mut bpf, cgroup2_path) == false {
+    if !attach_cgroup_program(&mut bpf, cgroup2_path) {
         let message = "Failed to attach cgroup program for redirection.";
         event_logger::write_event(
             event_logger::WARN_LEVEL,
@@ -86,12 +87,12 @@ pub fn start(local_port: u16) -> bool {
             logger::AGENT_LOGGER_KEY,
         );
 
-        if config::get_fallback_with_iptable_redirect() == false {
+        if !config::get_fallback_with_iptable_redirect() {
             return false;
         }
 
         // setup firewall rules for redirection
-        if iptable_redirect::setup_firewall_redirection(local_port) == false {
+        if !iptable_redirect::setup_firewall_redirection(local_port) {
             return false;
         }
         iptable_redirect = true;
@@ -103,39 +104,37 @@ pub fn start(local_port: u16) -> bool {
         IS_STARTED = true;
     }
 
-    let message;
-    if iptable_redirect {
-        message = helpers::write_startup_event(
+    let message = if iptable_redirect {
+        helpers::write_startup_event(
             "Started Redirector with iptables redirection",
             "start",
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
-        );
+        )
     } else {
-        message = helpers::write_startup_event(
+        helpers::write_startup_event(
             "Started Redirector with cgroup redirection",
             "start",
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
-        );
-    }
+        )
+    };
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
-    provision::redirector_ready();
+    provision::redirector_ready(vessel);
 
-    return true;
+    true
 }
 
 fn open_ebpf_file(bpf_file_path: PathBuf) -> Result<Bpf, bool> {
-    let bpf: Bpf;
-    match BpfLoader::new()
+    let bpf: Bpf = match BpfLoader::new()
         // load the BTF data from /sys/kernel/btf/vmlinux
         .btf(Btf::from_sys_fs().ok().as_ref())
         // finally load the code
-        .load_file(bpf_file_path.to_path_buf())
+        .load_file(&bpf_file_path)
     {
-        Ok(b) => bpf = b,
+        Ok(b) => b,
         Err(err) => {
             set_error_status(format!(
                 "Failed to load eBPF program from file {}: {}",
@@ -144,7 +143,7 @@ fn open_ebpf_file(bpf_file_path: PathBuf) -> Result<Bpf, bool> {
             ));
             return Err(false);
         }
-    }
+    };
     Ok(bpf)
 }
 
@@ -179,7 +178,7 @@ fn update_skip_process_map(bpf: &mut Bpf) -> bool {
             return false;
         }
     }
-    return true;
+    true
 }
 
 fn get_local_ip() -> Option<String> {
@@ -198,42 +197,37 @@ fn get_local_ip() -> Option<String> {
         {
             continue;
         }
-        if nic.flags.contains(nix::net::if_::InterfaceFlags::IFF_UP) == false {
+        if !nic.flags.contains(nix::net::if_::InterfaceFlags::IFF_UP) {
             continue;
         }
-        if nic
+        if !nic
             .flags
             .contains(nix::net::if_::InterfaceFlags::IFF_RUNNING)
-            == false
         {
             continue;
         }
-        if nic
+        if !nic
             .flags
             .contains(nix::net::if_::InterfaceFlags::IFF_BROADCAST)
-            == false
         {
             continue;
         }
         // need to filter out the bridge interface
         let bridge_path = PathBuf::from("/sys/class/net/")
-            .join(nic.interface_name.to_string())
+            .join(&nic.interface_name)
             .join("bridge");
         if bridge_path.exists() {
             continue;
         }
 
-        match nic.address {
-            Some(addr) => {
-                if let Some(socket_addr) = addr.as_sockaddr_in() {
-                    return Some(socket_addr.ip().to_string());
-                }
+        if let Some(addr) = nic.address {
+            if let Some(socket_addr) = addr.as_sockaddr_in() {
+                return Some(socket_addr.ip().to_string());
             }
-            _ => {}
         }
     }
 
-    return None;
+    None
 }
 
 fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
@@ -241,16 +235,14 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
         Some(map) => {
             match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
-                    let local_ip = match get_local_ip() {
-                        Some(ip) => ip,
-                        None => constants::PROXY_AGENT_IP.to_string(),
-                    };
+                    // let local_ip = match get_local_ip() {
+                    //     Some(ip) => ip,
+                    //     None => constants::PROXY_AGENT_IP.to_string(),
+                    // };
+                    let local_ip = constants::PROXY_AGENT_IP.to_string();
                     event_logger::write_event(
                         event_logger::WARN_LEVEL,
-                        format!(
-                            "update_policy_map with local ip address: {}",
-                            local_ip.to_string()
-                        ),
+                        format!("update_policy_map with local ip address: {}", local_ip),
                         "update_policy_map",
                         "redirector/linux",
                         logger::AGENT_LOGGER_KEY,
@@ -313,11 +305,11 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
             }
         }
         None => {
-            set_error_status(format!("Failed to get map 'policy_map'."));
+            set_error_status("Failed to get map 'policy_map'.".to_string());
             return false;
         }
     }
-    return true;
+    true
 }
 
 fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
@@ -372,7 +364,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
         }
     }
 
-    return true;
+    true
 }
 
 fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
@@ -419,7 +411,7 @@ fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
             return false;
         }
     }
-    return true;
+    true
 }
 
 pub fn is_started() -> bool {
@@ -469,7 +461,7 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
     match bpf.map("audit_map") {
         Some(map) => match HashMap::try_from(map) {
             Ok(audit_map) => {
-                let key = sock_addr_aduit_key::from_source_port(source_port);
+                let key = sock_addr_audit_key::from_source_port(source_port);
                 match audit_map.get(&key.to_array(), 0) {
                     Ok(value) => {
                         let audit_value = sock_addr_audit_entry::from_array(value);
@@ -481,12 +473,10 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
                             destination_port: audit_value.destination_port as u16,
                         })
                     }
-                    Err(err) => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to lookup audit entry {}: {}", source_port, err),
-                        ));
-                    }
+                    Err(err) => Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to lookup audit entry {}: {}", source_port, err),
+                    )),
                 }
             }
             Err(err) => {
@@ -557,7 +547,7 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                             event_logger::WARN_LEVEL,
                             format!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
-                                local_ip.to_string(), ip_to_string(dest_ipv4), dest_port, unsafe{LOCAL_PORT}
+                                local_ip, ip_to_string(dest_ipv4), dest_port, unsafe{LOCAL_PORT}
                             ),
                             "update_redirect_policy_internal",
                             "redirector/linux",
@@ -591,11 +581,11 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                 }
             },
             None => {
-                logger::write(format!("Failed to get map 'policy_map'."));
+                logger::write("Failed to get map 'policy_map'.".to_string());
             }
         },
         None => {
-            logger::write(format!("BPF object is not initialized."));
+            logger::write("BPF object is not initialized.".to_string());
         }
     }
 }
@@ -605,8 +595,8 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
 mod tests {
     use crate::common::config;
     use crate::common::logger;
-    use crate::redirector::linux::ebpf_obj::sock_addr_aduit_key;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
+    use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use aya::maps::HashMap;
     use proxy_agent_shared::logger_manager;
     use proxy_agent_shared::misc_helpers;
@@ -664,7 +654,7 @@ mod tests {
         let audit = super::lookup_audit_internal(&bpf, source_port);
         assert!(!audit.is_ok(), "lookup_audit should not return Ok");
         // insert to map an then look up
-        let key = sock_addr_aduit_key::from_source_port(source_port);
+        let key = sock_addr_audit_key::from_source_port(source_port);
         let value = sock_addr_audit_entry {
             logon_id: 999,
             process_id: 888,

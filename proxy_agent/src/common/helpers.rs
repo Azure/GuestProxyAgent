@@ -54,35 +54,33 @@ pub fn get_long_os_version() -> String {
 }
 
 pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> std::io::Result<String> {
-    match hex::decode(hex_encoded_key.to_string()) {
+    match hex::decode(&hex_encoded_key) {
         Ok(key) => {
             let mut mac = hmac_sha256::HMAC::new(key);
             mac.update(input_to_sign);
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!(
-                    "hex_encoded_key '{}' is invalid, error: {}",
-                    hex_encoded_key, e
-                ),
-            ));
-        }
+        Err(e) => Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "hex_encoded_key '{}' is invalid, error: {}",
+                hex_encoded_key, e
+            ),
+        )),
     }
 }
 
 // replace xml escape characters
 pub fn xml_escape(s: String) -> String {
-    s.replace("&", "&amp;")
-        .replace("'", "&apos;")
-        .replace("\"", "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+    s.replace('&', "&amp;")
+        .replace('\'', "&apos;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
-static START: Lazy<SimpleSpan> = Lazy::new(|| SimpleSpan::new());
+static START: Lazy<SimpleSpan> = Lazy::new(SimpleSpan::new);
 
 pub fn get_elapsed_time_in_millisec() -> u128 {
     START.get_elapsed_time_in_millisec()
@@ -121,18 +119,16 @@ mod tests {
         println!("compute_signature: {result}");
         let invalid_hex_encoded_key =
             "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
-        match super::compute_signature(invalid_hex_encoded_key.to_string(), message.as_bytes()) {
-            Ok(_) => {
-                assert!(false, "invalid key should fail.");
-            }
-            Err(e) => {
-                assert_eq!(ErrorKind::InvalidInput, e.kind(), "ErrorKind mismatch");
-                let error = e.to_string();
-                assert!(
-                    error.contains(invalid_hex_encoded_key),
-                    "Error does not contains the invalid key"
-                )
-            }
-        }
+        let result =
+            super::compute_signature(invalid_hex_encoded_key.to_string(), message.as_bytes());
+        assert!(result.is_err(), "invalid key should fail.");
+
+        let e = result.unwrap_err();
+        assert_eq!(ErrorKind::InvalidInput, e.kind(), "ErrorKind mismatch");
+        let error = e.to_string();
+        assert!(
+            error.contains(invalid_hex_encoded_key),
+            "Error does not contains the invalid key"
+        )
     }
 }

@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-#![deny(warnings)]
 
 mod args;
 pub mod backup;
@@ -15,10 +14,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
 use std::process;
 use std::time::Duration;
-use std::{
-    fs,
-    path::{self, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 #[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";
@@ -32,8 +28,8 @@ fn main() {
     let args = args::Args::parse(std::env::args().collect());
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
-        proxy_agent_shared::misc_helpers::get_current_version(),
-        args.to_string()
+        misc_helpers::get_current_version(),
+        args
     ));
 
     match args.action.as_str() {
@@ -56,7 +52,7 @@ fn main() {
         }
         args::Args::RESTORE => {
             if !check_backup_exists() {
-                logger::write(format!("Backup check failed, skip the restore operation."));
+                logger::write("Backup check failed, skip the restore operation.".to_string());
                 return;
             }
             stop_service();
@@ -105,7 +101,7 @@ fn backup_proxy_agent() {
     }
 }
 
-fn restore_proxy_agent() -> path::PathBuf {
+fn restore_proxy_agent() -> PathBuf {
     let src_folder = backup::proxy_agent_backup_package_folder();
     let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_path(
         src_folder.to_path_buf(),
@@ -253,7 +249,7 @@ fn check_backup_exists() -> bool {
         return false;
     }
 
-    return true;
+    true
 }
 
 fn uninstall_service() -> PathBuf {
@@ -287,7 +283,7 @@ fn delete_package(_proxy_agent_running_folder: PathBuf) {
 }
 
 fn delete_folder(folder_to_be_delete: PathBuf) {
-    match fs::remove_dir_all(folder_to_be_delete.to_path_buf()) {
+    match fs::remove_dir_all(&folder_to_be_delete) {
         Ok(_) => {
             logger::write(format!("Deleted folder {:?}", folder_to_be_delete));
         }

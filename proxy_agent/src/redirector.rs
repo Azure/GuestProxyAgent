@@ -7,6 +7,7 @@ mod windows;
 mod linux;
 
 use crate::common::{config, logger};
+use crate::data_vessel::DataVessel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
@@ -38,29 +39,28 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16) {
+pub fn start_async(local_port: u16, vessel: DataVessel) {
     thread::spawn(move || {
-        start(local_port);
+        start(local_port, vessel);
     });
 }
 
-fn start(local_port: u16) -> bool {
+fn start(local_port: u16, vessel: DataVessel) -> bool {
     for _ in 0..5 {
         #[cfg(windows)]
         {
-            windows::start(local_port);
+            windows::start(local_port, vessel.clone());
         }
         #[cfg(not(windows))]
         {
-            linux::start(local_port);
+            linux::start(local_port, vessel.clone());
         }
 
-        let level;
-        if is_started() {
-            level = event_logger::INFO_LEVEL;
+        let level = if is_started() {
+            event_logger::INFO_LEVEL
         } else {
-            level = event_logger::ERROR_LEVEL;
-        }
+            event_logger::ERROR_LEVEL
+        };
         event_logger::write_event(
             level,
             get_status_message(),
@@ -71,10 +71,10 @@ fn start(local_port: u16) -> bool {
         if is_started() {
             return true;
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    return is_started();
+    is_started()
 }
 
 pub fn close(local_port: u16) {
@@ -91,11 +91,11 @@ pub fn close(local_port: u16) {
 fn get_status_message() -> String {
     #[cfg(windows)]
     {
-        return windows::get_status();
+        windows::get_status()
     }
     #[cfg(not(windows))]
     {
-        return linux::get_status();
+        linux::get_status()
     }
 }
 
@@ -106,22 +106,21 @@ pub fn get_status() -> ProxyAgentDetailStatus {
             event_logger::WARN_LEVEL,
             format!(
                 "Status message is too long, truncating to {} characters. Message: {}",
-                MAX_STATUS_MESSAGE_LENGTH,
-                message.to_string()
+                MAX_STATUS_MESSAGE_LENGTH, message
             ),
             "get_status",
             "redirector",
             logger::AGENT_LOGGER_KEY,
         );
 
-        message = format!("{}...", message[0..MAX_STATUS_MESSAGE_LENGTH].to_string());
+        message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);
     }
-    let status;
-    if is_started() {
-        status = ModuleState::RUNNING.to_string();
+
+    let status = if is_started() {
+        ModuleState::RUNNING.to_string()
     } else {
-        status = ModuleState::STOPPED.to_string();
-    }
+        ModuleState::STOPPED.to_string()
+    };
 
     ProxyAgentDetailStatus {
         status,
@@ -133,7 +132,7 @@ pub fn get_status() -> ProxyAgentDetailStatus {
 pub fn is_started() -> bool {
     #[cfg(windows)]
     {
-        return windows::is_started();
+        windows::is_started()
     }
     #[cfg(not(windows))]
     {
@@ -159,10 +158,10 @@ pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Resu
     }
     #[cfg(not(windows))]
     {
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "get_audit_from_redirect_context for linux is not supported",
-        ));
+        ))
     }
 }
 
@@ -215,7 +214,7 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
             }
         }
         if seg < 16777216 {
-            seg = seg * seg_number;
+            seg *= seg_number;
         }
     }
 
@@ -224,10 +223,7 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
 
 pub fn get_ebpf_file_path() -> PathBuf {
     // get ebpf file full path from environment variable
-    let mut bpf_file_path = match config::get_ebpf_file_full_path() {
-        Some(file_path) => file_path,
-        None => PathBuf::new(),
-    };
+    let mut bpf_file_path = config::get_ebpf_file_full_path().unwrap_or_default();
     let ebpf_file_name = config::get_ebpf_program_name();
     #[cfg(not(windows))]
     {

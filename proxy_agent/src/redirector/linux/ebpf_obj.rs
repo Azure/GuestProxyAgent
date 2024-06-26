@@ -21,9 +21,7 @@ impl _ip_address {
     #[allow(dead_code)]
     pub fn from_ipv6(ipv6: [u32; 4]) -> Self {
         let mut ip = Self::empty();
-        for i in 0..4 {
-            ip.ip[i] = ipv6[i];
-        }
+        ip.ip.copy_from_slice(&ipv6);
         ip
     }
 }
@@ -53,9 +51,7 @@ impl _destination_entry {
 
     pub fn to_array(&self) -> [u32; 6] {
         let mut array: [u32; 6] = [0; 6];
-        for i in 0..4 {
-            array[i] = self.destination_ip.ip[i];
-        }
+        array[..4].copy_from_slice(&self.destination_ip.ip);
         array[4] = self.destination_port;
         array[5] = self.protocol;
         array
@@ -87,14 +83,14 @@ impl sock_addr_skip_process_entry {
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct sock_addr_aduit_key {
+pub struct sock_addr_audit_key {
     pub protocol: u32,
     pub source_port: u32,
 }
 #[allow(dead_code)]
-impl sock_addr_aduit_key {
+impl sock_addr_audit_key {
     pub fn from_source_port(port: u16) -> Self {
-        sock_addr_aduit_key {
+        sock_addr_audit_key {
             protocol: IPPROTO_TCP,
             source_port: port as u32,
         }
@@ -108,7 +104,7 @@ impl sock_addr_aduit_key {
     }
 
     pub fn from_array(array: [u32; 2]) -> Self {
-        sock_addr_aduit_key {
+        sock_addr_audit_key {
             protocol: array[0],
             source_port: array[1],
         }
@@ -184,10 +180,10 @@ mod tests {
     #[test]
     fn sock_addr_aduit_key_test() {
         let source_port = 1234;
-        let key = super::sock_addr_aduit_key::from_source_port(source_port);
+        let key = super::sock_addr_audit_key::from_source_port(source_port);
         let array = key.to_array();
         assert_eq!(array[1], source_port as u32, "port is not equal");
-        let key2 = super::sock_addr_aduit_key::from_array(array);
+        let key2 = super::sock_addr_audit_key::from_array(array);
         assert_eq!(
             key2.source_port, source_port as u32,
             "port is not equal from_array"
