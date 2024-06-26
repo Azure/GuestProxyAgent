@@ -296,7 +296,7 @@ fn poll_secure_channel_status(
 
         // update the current secure channel state if different
         if state != get_secure_channel_state() {
-            // update the redirector poicy map
+            // update the redirector policy map
             redirector::update_wire_server_redirect_policy(
                 status.get_wire_server_mode() != DISABLE_STATE,
             );

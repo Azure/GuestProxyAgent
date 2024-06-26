@@ -19,12 +19,12 @@ foreach ($obj in $proxy) {
         Write-Output "Got proxy agent extension registry key path: " $nonRootRegKeyPath
     } 
 }  
-$reigstrykeyPath = $nonRootRegKeyPath -replace '^HKEY_LOCAL_MACHINE', 'HKLM:'
-$PIRversion = ($reigstrykeyPath -split "_")[1]
+$registrykeyPath = $nonRootRegKeyPath -replace '^HKEY_LOCAL_MACHINE', 'HKLM:'
+$PIRversion = ($registrykeyPath -split "_")[1]
 Write-Output "PIR Version: $PIRversion"
-$seqNo = (Get-ItemProperty -Path $reigstrykeyPath).SequenceNumber
+$seqNo = (Get-ItemProperty -Path $registrykeyPath).SequenceNumber
 Write-Output "Seq No: $seqNo"
-$statusFolderPath = (Get-ItemProperty -Path $reigstrykeyPath).StatusFolder
+$statusFolderPath = (Get-ItemProperty -Path $registrykeyPath).StatusFolder
 Write-Output "Status Folder: $statusFolderPath"
 $statusFilePath = [IO.Path]::Combine($statusFolderPath, $seqNo + ".status")
 Write-Output "Status file path: $statusFilePath"
@@ -90,8 +90,8 @@ Write-Output "downloaded the proxyagent extension file to path: " $PIRExtensionF
 TASKKILL /F /IM ProxyAgentExt.exe
 Write-Output "TASKKILL /F /IM ProxyAgentExt.exe"
 
-Write-Output "Delete registry key at $reigstrykeyPath"
-Remove-Item -Path $reigstrykeyPath -Recurse
+Write-Output "Delete registry key at $registrykeyPath"
+Remove-Item -Path $registrykeyPath -Recurse
 
 Write-Output "Delete status file $statusFilePath" 
 Remove-Item -Path $statusFilePath -Force 
