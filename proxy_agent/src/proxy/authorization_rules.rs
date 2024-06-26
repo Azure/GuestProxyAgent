@@ -106,7 +106,7 @@ impl AuthorizationRules {
         if self.mode.to_lowercase() == "disabled" {
             return true;
         }
-  
+
         let url = request_url.to_lowercase();
         let url = match Url::parse(&url) {
             Ok(u) => u,
