@@ -14,7 +14,7 @@ while :; do
     if [ $(echo "$directories" | wc -l) -eq 1 ]; then
         for dir in $directories; do 
             PIRExtensionFolderPath=$dir
-            echo "PIR extension folder path" $PIRExtensionFolderPath
+            echo "PIR extension folder path and contents" $PIRExtensionFolderPath
             PIRExtensionFolderZip="${PIRExtensionFolderPath//-/__}.zip"
             echo "PIRExtensionFolderZip:$PIRExtensionFolderZip"
         done 
@@ -101,9 +101,10 @@ rm -rf $PIRExtensionFolderZip
 echo "Delete PIR extension folder"
 rm -rf $PIRExtensionFolder
 
+echo "Downloading proxy agent extension binaries to PIR extension zip location"
 decodedUrl=$(echo $zipFile | base64 -d)
-curl -L -o $PIRExtensionFolderZip "$decodedUrl"
-ls -l $PIRExtensionFolderPath
+curl -O $PIRExtensionFolderZip "$decodedUrl"
+ls -l $PIRExtensionFolder
 
 echo "Get PID of ProxyAgentExt and kill pidof"
 pidof ProxyAgentExt | xargs kill -9

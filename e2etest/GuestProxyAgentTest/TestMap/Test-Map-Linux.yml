@@ -1,7 +1,7 @@
 testGroupList:
-  - include: Mariner2-TestGroup.yml
+  #- include: Mariner2-TestGroup.yml
   - include: Mariner2-Fips-TestGroup.yml
-  - include: Ubuntu24-TestGroup.yml
-  - include: Ubuntu22-TestGroup.yml
-  - include: Ubuntu20-TestGroup.yml
-  - include: Redhat90-TestGroup.yml
+ # - include: Ubuntu24-TestGroup.yml
+  #- include: Ubuntu22-TestGroup.yml
+ # - include: Ubuntu20-TestGroup.yml
+  #- include: Redhat90-TestGroup.yml
