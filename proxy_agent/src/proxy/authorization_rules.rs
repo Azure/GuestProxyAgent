@@ -168,8 +168,7 @@ mod tests {
     use crate::proxy::{proxy_connection::Connection, Claims};
 
     #[test]
-    fn test_authorization_rules_default_allow_real_client()
-    {
+    fn test_authorization_rules_default_allow_real_client() {
         init_test_logger("test_authorization_rules_default_allow_real_client");
 
         let mut rules = AuthorizationRules::from_authorization_item(AuthorizationItem {
