@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::{common::{constants, http::request}, key_keeper::key::{AuthorizationItem, Identity, Privilege}};
+use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use url::Url;
