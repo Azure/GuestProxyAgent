@@ -203,14 +203,14 @@ pub struct bpf_object {
 }
 
 #[repr(C)]
-pub struct _sock_addr_aduit_key {
+pub struct _sock_addr_audit_key {
     pub protocol: u32,
     pub source_port: [u16; 2],
 }
-pub type sock_addr_aduit_key_t = _sock_addr_aduit_key;
-impl sock_addr_aduit_key_t {
+pub type sock_addr_audit_key_t = _sock_addr_audit_key;
+impl sock_addr_audit_key_t {
     pub fn from_source_port(port: u16) -> Self {
-        sock_addr_aduit_key_t {
+        sock_addr_audit_key_t {
             protocol: IPPROTO_TCP,
             source_port: [port.to_be(), 0],
         }

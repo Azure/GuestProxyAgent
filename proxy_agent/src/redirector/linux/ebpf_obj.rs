@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn sock_addr_aduit_key_test() {
+    fn sock_addr_audit_key_test() {
         let source_port = 1234;
         let key = super::sock_addr_audit_key::from_source_port(source_port);
         let array = key.to_array();
