@@ -99,12 +99,12 @@ fi
 echo "Delete PIR extension zip"
 rm -rf $PIRExtensionFolderZip
 echo "Delete PIR extension folder"
-rm -rf $PIRExtensionFolder
+rm -rf $PIRExtensionFolderPath
 
 echo "Downloading proxy agent extension binaries to PIR extension zip location"
 decodedUrl=$(echo $zipFile | base64 -d)
-curl -O $PIRExtensionFolderZip "$decodedUrl"
-ls -l $PIRExtensionFolder
+curl -L -o $PIRExtensionFolderZip "$decodedUrl"
+ls -l $PIRExtensionFolderPath
 
 echo "Get PID of ProxyAgentExt and kill pidof"
 pidof ProxyAgentExt | xargs kill -9
