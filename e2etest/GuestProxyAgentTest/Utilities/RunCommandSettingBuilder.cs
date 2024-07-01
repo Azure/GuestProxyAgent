@@ -21,7 +21,7 @@ namespace GuestProxyAgentTest.Utilities
         }
 
         /// <summary>
-        /// Specifiy test case setting for the run command setting
+        /// Specify test case setting for the run command setting
         /// </summary>
         /// <param name="testCaseSetting"></param>
         /// <returns></returns>
@@ -66,7 +66,7 @@ namespace GuestProxyAgentTest.Utilities
         }
 
         /// <summary>
-        /// Add paramter for the run command script.
+        /// Add parameter for the run command script.
         /// </summary>
         /// <param name="paramName"></param>
         /// <param name="paramValue"></param>
@@ -102,9 +102,9 @@ namespace GuestProxyAgentTest.Utilities
 
         /// <summary>
         /// Build the run command setting
-        /// Setup run command script, if non of scriptFullPath or runCommandScriptSAS was specified, will throw the paramter error exception
+        /// Setup run command script, if non of scriptFullPath or runCommandScriptSAS was specified, will throw the parameter error exception
         /// if both was set, the runCommandScriptSAS has more priority.
-        /// Setup testcasesetting/output/erroutput for the run command
+        /// Setup testcasesetting/output/error output for the run command
         /// </summary>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>

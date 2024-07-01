@@ -16,7 +16,7 @@ pub fn get_logger_key() -> String {
         match &*LOGGER_KEY {
             Some(logger_key) => logger_key.lock().unwrap().as_str().to_string(),
             None => {
-                eprintln!("Logge has not init, please call 'init' first");
+                eprintln!("Loggerhas not init, please call 'init' first");
                 "".to_string()
             }
         }

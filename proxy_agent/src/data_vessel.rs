@@ -24,8 +24,8 @@ impl DataVessel {
         let (sender, receiver) = std::sync::mpsc::channel::<DataAction>();
 
         std::thread::spawn(move || {
-            // chached data are defined here
-            let mut cached_key: Key = Key::empty(); // start with empyt key
+            // cached data are defined here
+            let mut cached_key: Key = Key::empty(); // start with empty key
 
             while let Ok(action) = receiver.recv() {
                 match action {

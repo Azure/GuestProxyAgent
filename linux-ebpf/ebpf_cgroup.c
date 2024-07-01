@@ -137,7 +137,7 @@ authorize_v4(struct bpf_sock_addr *ctx)
 SEC("cgroup/connect4")
 int connect4(struct bpf_sock_addr *ctx)
 {
-    __u64 cokkie = bpf_get_socket_cookie(ctx);
+    __u64 cookie = bpf_get_socket_cookie(ctx);
     return authorize_v4(ctx);
 }
 

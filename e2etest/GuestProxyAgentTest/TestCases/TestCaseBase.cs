@@ -38,17 +38,17 @@ namespace GuestProxyAgentTest.TestCases
         /// <param name="context"></param>
         /// <param name="scriptFileName"></param>
         /// <param name="parameterList"></param>
-        /// <param name="inCludeCustomJsonOutputSasParam">
-        /// if set to true, it will automcatically add a paramter named <see cref="Utilities.Constants.RUNCOMMAND_CUSTOM_OUTPUT_SAS_PARAMETER_NAME"/>
-        /// the parameter value is base64 econded blob SAS url, the test script can use it to write cutomized output info.
+        /// <param name="includeCustomJsonOutputSasParam">
+        /// if set to true, it will automatically add a parameter named <see cref="Utilities.Constants.RUNCOMMAND_CUSTOM_OUTPUT_SAS_PARAMETER_NAME"/>
+        /// the parameter value is base64 encoded blob SAS url, the test script can use it to write customized output info.
         /// if set to false, it will not add the parameter.
         /// </param>
         /// <returns></returns>
-        protected async Task<RunCommandOutputDetails> RunScriptViaRunCommandV2Async(TestCaseExecutionContext context, string scriptFileName, List<(string, string)> parameterList, bool inCludeCustomJsonOutputSasParam = true)
+        protected async Task<RunCommandOutputDetails> RunScriptViaRunCommandV2Async(TestCaseExecutionContext context, string scriptFileName, List<(string, string)> parameterList, bool includeCustomJsonOutputSasParam = true)
         {
             var testScenarioSetting = context.ScenarioSetting;
             string custJsonSas = null!;
-            if(inCludeCustomJsonOutputSasParam)
+            if(includeCustomJsonOutputSasParam)
             {
                 var custJsonPath = Path.Combine(Path.GetTempPath(), $"{testScenarioSetting.testGroupName}_{testScenarioSetting.testScenarioName}_{TestCaseName}.json");
                 using (File.CreateText(custJsonPath)) ConsoleLog("Created empty test file for customized json output file.");

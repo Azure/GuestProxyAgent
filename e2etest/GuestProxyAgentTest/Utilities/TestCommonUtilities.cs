@@ -26,8 +26,8 @@ namespace GuestProxyAgentTest.Utilities
 
         /// <summary>
         /// download the content as string with retry per 1 second
-        /// in case of download succeed will retrun (true, content string)
-        /// if case of download failed willl return(false, error message)
+        /// in case of download succeed will return (true, content string)
+        /// if case of download failed will return(false, error message)
         /// </summary>
         /// <param name="url">download url</param>
         /// <param name="retryCnt">retry count, default value is 5</param>
@@ -110,7 +110,7 @@ namespace GuestProxyAgentTest.Utilities
             var model = JsonConvert.DeserializeObject<TokenEnvModel>(tokenString);
             if (model == null)
             {
-                throw new Exception("Failed to deserialze access token json object: " + tokenString);
+                throw new Exception("Failed to deserialize access token json object: " + tokenString);
             }
             return new AccessToken(model.AccessToken, DateTimeOffset.Parse(model.ExpiresOn));
         }

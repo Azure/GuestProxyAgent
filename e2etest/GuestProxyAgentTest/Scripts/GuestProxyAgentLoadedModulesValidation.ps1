@@ -8,7 +8,7 @@ param (
     [string]$loadedModulesBaseLineSAS
 )
 
-Write-Output "Start Guest Proxy Agent Loadded Module Validation"
+Write-Output "Start Guest Proxy Agent Loaded Module Validation"
 
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)

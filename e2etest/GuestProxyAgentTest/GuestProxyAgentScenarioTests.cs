@@ -74,10 +74,10 @@ namespace GuestProxyAgentTest
                     }
                 }
             }
-            var stopMontor = new ManualResetEvent(false);
+            var stopMonitor = new ManualResetEvent(false);
             var monitoringTask = Task.Run(() =>
             {
-                while (!stopMontor.WaitOne(5000))
+                while (!stopMonitor.WaitOne(5000))
                 {
                     ConsolePrintTestScenariosStatusSummary(testScenarioStatusList);
                 }
@@ -92,7 +92,7 @@ namespace GuestProxyAgentTest
                 Console.WriteLine($"Test execution exception: {ex.Message}");
             }
             
-            stopMontor.Set();
+            stopMonitor.Set();
 
             foreach (var groupName in groupTestResultBuilderMap.Keys)
             {

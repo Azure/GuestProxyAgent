@@ -35,7 +35,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="stdOut"></param>
         /// <param name="customOut"></param>
         /// <returns></returns>
-        public JunitTestResultBuilder AddSuccessTestResult(string testScenarioName, string testName, string stdOut, string customOut, long durationInMillseconds = 0)
+        public JunitTestResultBuilder AddSuccessTestResult(string testScenarioName, string testName, string stdOut, string customOut, long durationInMilliseconds = 0)
         {
             var stdOutMessage = "Std output:"
                 + Environment.NewLine
@@ -44,7 +44,7 @@ namespace GuestProxyAgentTest.Utilities
                 + "Custom output:"
                 + Environment.NewLine
                 + customOut;
-            return AddSuccessTestResult(testScenarioName, testName, stdOutMessage, durationInMillseconds);
+            return AddSuccessTestResult(testScenarioName, testName, stdOutMessage, durationInMilliseconds);
         }
 
         /// <summary>
@@ -54,7 +54,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="testName"></param>
         /// <param name="stdOutMessage"></param>
         /// <returns></returns>
-        public JunitTestResultBuilder AddSuccessTestResult(string testScenarioName, string testName, string stdOutMessage, long durationInMillseconds = 0)
+        public JunitTestResultBuilder AddSuccessTestResult(string testScenarioName, string testName, string stdOutMessage, long durationInMilliseconds = 0)
         {
             lock (this)
             {
@@ -82,7 +82,7 @@ namespace GuestProxyAgentTest.Utilities
                 XmlElement successTestCaseElement = doc.CreateElement("testcase");
                 successTestCaseElement.SetAttribute("name", testName);
                 successTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
-                successTestCaseElement.SetAttribute("time", ((double)durationInMillseconds / 1000).ToString());
+                successTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds / 1000).ToString());
                 testSuite.AppendChild(successTestCaseElement);
 
                 XmlElement systemOutElement = doc.CreateElement("system-out");
@@ -102,7 +102,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="stdErrMessage"></param>
         /// <param name="customOutput"></param>
         /// <returns></returns>
-        public JunitTestResultBuilder AddFailureTestResult(string testScenarioName, string testName, string stdOutMessage, string stdErrMessage, string customOutput, long durationInMillseconds = 0)
+        public JunitTestResultBuilder AddFailureTestResult(string testScenarioName, string testName, string stdOutMessage, string stdErrMessage, string customOutput, long durationInMilliseconds = 0)
         {
             lock (this)
             {
@@ -131,7 +131,7 @@ namespace GuestProxyAgentTest.Utilities
                 XmlElement failedTestCaseElement = doc.CreateElement("testcase");
                 failedTestCaseElement.SetAttribute("name", testName);
                 failedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
-                failedTestCaseElement.SetAttribute("time", ((double)durationInMillseconds/1000).ToString());
+                failedTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds/1000).ToString());
                 testSuite.AppendChild(failedTestCaseElement);
 
                 XmlElement systemOutElement = doc.CreateElement("system-out");
@@ -143,7 +143,7 @@ namespace GuestProxyAgentTest.Utilities
                 failedTestCaseElement.AppendChild(systemErrElement);
 
                 XmlElement failureElement = doc.CreateElement("failure");
-                failureElement.SetAttribute("message", "Std Error Ouput: "
+                failureElement.SetAttribute("message", "Std Error Output: "
                     + Environment.NewLine
                     + stdErrMessage
                     + Environment.NewLine

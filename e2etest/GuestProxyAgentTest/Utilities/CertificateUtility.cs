@@ -54,7 +54,7 @@ namespace GuestProxyAgentTest.Utilities
             }
             catch (Exception e)
             {
-                Console.WriteLine("GetCerficiate error: " + e.Message);
+                Console.WriteLine("GetCertificate error: " + e.Message);
             }
             finally
             {
@@ -113,7 +113,7 @@ namespace GuestProxyAgentTest.Utilities
             var cert = new X509Certificate2(Convert.FromBase64String(based64EncodedCert));            
             if (cert != null)
             {
-                Console.WriteLine("Found cert on from enviornment variable, " + cert.Thumbprint);
+                Console.WriteLine("Found cert on from environment variable, " + cert.Thumbprint);
             }
 
             return (cert != null && !(requirePrivateKeyAccess && !CanAccessPrivateKey(cert))) ? cert : null;
@@ -137,7 +137,7 @@ namespace GuestProxyAgentTest.Utilities
             }
             catch (CryptographicException ex)
             {
-                //no permission to access the certificate or privary key
+                //no permission to access the certificate or privacy key
                 Console.WriteLine("check cert private key error: " + ex.Message);
                 return false;
             }

@@ -9,7 +9,7 @@ use crate::{key_keeper, redirector};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
-    GuestProxyAgentAggregateStatus, ModuleState, OveralState, ProxyAgentStatus,
+    GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentStatus,
     ProxyConnectionSummary,
 };
 use proxy_agent_shared::telemetry::event_logger;
@@ -85,12 +85,12 @@ pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
     let key_latch_status = key_keeper::get_status(vessel.clone());
     let ebpf_status = redirector::get_status();
     let proxy_status = proxy_listener::get_status();
-    let mut status = OveralState::SUCCESS.to_string();
+    let mut status = OverallState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
         || proxy_status.status != ModuleState::RUNNING
     {
-        status = OveralState::ERROR.to_string();
+        status = OverallState::ERROR.to_string();
     }
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
@@ -124,7 +124,7 @@ pub fn guest_proxy_agent_aggregate_status_new(
     vessel: DataVessel,
 ) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
-        timestamp: misc_helpers::get_date_time_string_with_miliseconds(),
+        timestamp: misc_helpers::get_date_time_string_with_milliseconds(),
         proxyAgentStatus: proxy_agent_status_new(vessel.clone()),
         proxyConnectionSummary: get_all_connection_summary(false),
         failedAuthenticateSummary: get_all_connection_summary(true),

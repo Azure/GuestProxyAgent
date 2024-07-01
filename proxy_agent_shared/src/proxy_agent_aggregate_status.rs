@@ -9,8 +9,8 @@ impl ModuleState {
     pub const STOPPED: &'static str = "STOPPED";
 }
 
-pub struct OveralState;
-impl OveralState {
+pub struct OverallState;
+impl OverallState {
     pub const SUCCESS: &'static str = "SUCCESS"; // All required modules are running
     pub const ERROR: &'static str = "ERROR"; // One or more required modules are not running
 }
@@ -28,7 +28,7 @@ pub struct ProxyAgentDetailStatus {
 #[allow(non_snake_case)]
 pub struct ProxyAgentStatus {
     pub version: String,
-    pub status: String, // OveralState, SUCCESS|FAILED
+    pub status: String, // OverallState, SUCCESS|FAILED
     pub monitorStatus: ProxyAgentDetailStatus,
     pub keyLatchStatus: ProxyAgentDetailStatus,
     pub ebpfProgramStatus: ProxyAgentDetailStatus,

@@ -139,11 +139,11 @@ impl Response {
         Response::new(status, String::new())
     }
 
-    pub fn new_misdirected_request_reponse() -> Self {
+    pub fn new_misdirected_request_response() -> Self {
         Response::from_status(Response::MISDIRECTED.to_string())
     }
 
-    pub fn new_forbidden_request_reponse() -> Self {
+    pub fn new_forbidden_request_response() -> Self {
         Response::from_status(Response::FORBIDDEN.to_string())
     }
 
@@ -218,13 +218,13 @@ mod tests {
 
         // Add body with multiple empty lines
         let mut raw_string = raw_string.to_string();
-        raw_string.push_str("\n\nAother line\n");
+        raw_string.push_str("\n\nAnother line\n");
         let mut request = Response::from_raw_data(raw_string.to_string());
         let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),
-            "to_raw_string len() mismatch when body with multple empty lines"
+            "to_raw_string len() mismatch when body with multiple empty lines"
         );
     }
 }

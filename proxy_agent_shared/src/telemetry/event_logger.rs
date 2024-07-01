@@ -136,7 +136,7 @@ fn start(
             Ok(files) => {
                 if files.len() >= max_event_file_count {
                     logger_manager::write_warning(logger_key,format!(
-                        "Event files excceed the max file count {}, drop and skip the write to disk.",
+                        "Event files exceed the max file count {}, drop and skip the write to disk.",
                         max_event_file_count
                     ));
                     continue;

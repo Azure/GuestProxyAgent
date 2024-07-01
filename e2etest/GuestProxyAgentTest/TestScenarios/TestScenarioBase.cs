@@ -90,7 +90,7 @@ namespace GuestProxyAgentTest.TestScenarios
         /// 2. run the test cases one by one
         /// 3. collect GALogs zip
         /// 4. write the test result to Junit format.
-        /// 5. save Logs incluing each test case run and collect GALogs zip
+        /// 5. save Logs including each test case run and collect GALogs zip
         /// 
         /// </summary>
         /// <param name="testScenarioStatusDetails"></param>
@@ -99,7 +99,7 @@ namespace GuestProxyAgentTest.TestScenarios
         {
             try
             {
-                await DoStartAsync(testScenarioStatusDetails).TimeoutAfter(_testScenarioSetting.testScenarioTimeoutMillseconds);
+                await DoStartAsync(testScenarioStatusDetails).TimeoutAfter(_testScenarioSetting.testScenarioTimeoutMilliseconds);
             }
             catch (Exception ex)
             {
@@ -146,7 +146,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 testScenarioStatusDetails.Result = ScenarioTestResult.Failed;
                 sw.Stop();
                 // exception happened at here is outside of test cases under scenario test
-                // write to the faiulre to JUNIT with a fixed test case named 'ScenarioTestWorkflow'
+                // write to the failure to JUNIT with a fixed test case named 'ScenarioTestWorkflow'
                 _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, "ScenarioTestWorkflow", "", ex.Message + ex.StackTrace?? "", "", sw.ElapsedMilliseconds);
                 ConsoleLog("Exception occurs: " + ex.Message);
             }
@@ -187,7 +187,7 @@ namespace GuestProxyAgentTest.TestScenarios
                     await testCase.StartAsync(context);
                     sw.Stop();
                     context.TestResultDetails
-                        .DownloadConentIfFromBlob()
+                        .DownloadContentIfFromBlob()
                         .WriteJUnitTestResult(_junitTestResultBuilder, _testScenarioSetting.testScenarioName, testCase.TestCaseName, sw.ElapsedMilliseconds);
 
                     if (!context.TestResultDetails.Succeed)
@@ -210,7 +210,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 finally
                 {
-                    ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed? "Succeed": "Falied")} and duration: " + sw.ElapsedMilliseconds + "ms");
+                    ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed? "Succeed": "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
                     SaveResultFile(context.TestResultDetails.CustomOut, $"TestCases/{testCase.TestCaseName}", "customOut.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdErr, $"TestCases/{testCase.TestCaseName}", "stdErr.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdOut, $"TestCases/{testCase.TestCaseName}", "stdOut.txt", context.TestResultDetails.FromBlob);
@@ -255,8 +255,8 @@ namespace GuestProxyAgentTest.TestScenarios
 
     /// <summary>
     /// Test case execution context class
-    /// container VirtualMachineResouce and TestScenarioSetting
-    /// VirtualMachineResouce is the created the Azure VM resource for the test scenario
+    /// container VirtualMachineResource and TestScenarioSetting
+    /// VirtualMachineResource is the created the Azure VM resource for the test scenario
     /// </summary>
     public class TestCaseExecutionContext
     {

@@ -34,7 +34,7 @@ namespace GuestProxyAgentTest.TestCases
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
                 var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentValidationDetails>();
-                // check the validation json output, if the guest proxy agent serice was installed and runing and guest proxy agent process exists and log was generate,
+                // check the validation json output, if the guest proxy agent service was installed and runing and guest proxy agent process exists and log was generate,
                 // then consider it as succeed, otherwise fail the case.
                 if (validationDetails != null
                     && validationDetails.GuestProxyAgentServiceInstalled
