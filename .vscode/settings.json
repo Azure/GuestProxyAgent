@@ -26,5 +26,8 @@
         "./proxy_agent_shared/Cargo.toml",
         "./proxy_agent_extension/Cargo.toml",
         "./proxy_agent_setup/Cargo.toml",
+    ],
+    "rust-analyzer.cargo.features": [
+        "test-with-root"
     ]
 }

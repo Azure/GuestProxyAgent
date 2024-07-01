@@ -3,6 +3,7 @@
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
+use url::Url;
 
 use super::{proxy_connection::Connection, Claims};
 
@@ -107,14 +108,21 @@ impl AuthorizationRules {
         }
 
         let url = request_url.to_lowercase();
-        let url = match url::Url::parse(&url) {
+        let url = match Url::parse(&url) {
             Ok(u) => u,
             Err(_) => {
-                Connection::write_error(
-                    connection_id,
-                    format!("Failed to parse the request url: {}", request_url),
-                );
-                return false;
+                // url in http request usually is relative url, so we need to parse it with ambiguous base url to get the full url for formatting
+                let baseurl = Url::parse("http://127.0.0.1").unwrap();
+                match baseurl.join(&url) {
+                    Ok(u) => u,
+                    Err(_) => {
+                        Connection::write_error(
+                            connection_id,
+                            format!("Failed to parse the request url: {}", request_url),
+                        );
+                        return false;
+                    }
+                }
             }
         };
 
@@ -213,10 +221,12 @@ mod tests {
             runAsElevated: true,
         };
         // assert the claim is allowed given the rules above
-        let url = url::Url::parse("http://localhost/test?").unwrap();
+        let url = url::Url::parse("http://localhost/test/test").unwrap();
         assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
+        let relativeurl = "/test/test".to_string();
+        assert!(rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
         claims.userName = "test1".to_string();
-        assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
+        assert!(!rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
 
         // Test Audit Mode
         let access_control_rules = AccessControlRules {
@@ -286,8 +296,10 @@ mod tests {
         assert_eq!(rules.mode, "disabled");
         assert!(rules.rules.is_some());
 
-        let url = url::Url::parse("http://localhost/test?").unwrap();
+        let url = url::Url::parse("http://localhost/test/test1").unwrap();
         assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
+        let relativeurl = "/test/test1".to_string();
+        assert!(rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
 
         // Test enforce mode, identity not match
         let access_control_rules = AccessControlRules {
@@ -325,5 +337,7 @@ mod tests {
 
         let url = url::Url::parse("http://localhost/test?").unwrap();
         assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
+        let relativeurl = "/test?".to_string();
+        assert!(!rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
     }
 }
