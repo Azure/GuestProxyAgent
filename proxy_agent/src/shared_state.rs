@@ -75,8 +75,23 @@ pub mod key_keeper_wrapper {
         get_key(shared_state).map(|k| k.incarnationId)?
     }
 
-    pub fn set_current_secure_channel_state(shared_state: Arc<Mutex<SharedState>>, state: String) {
-        shared_state.lock().unwrap().current_secure_channel_state = state;
+    /// Update the current secure channel state
+    /// # Arguments
+    /// * `shared_state` - Arc<Mutex<SharedState>>
+    /// * `state` - String
+    /// # Returns
+    /// * `bool` - true if the state is update successfully
+    pub fn update_current_secure_channel_state(
+        shared_state: Arc<Mutex<SharedState>>,
+        state: String,
+    ) -> bool {
+        let mut current_state = shared_state.lock().unwrap();
+        if current_state.current_secure_channel_state == state {
+            false
+        } else {
+            current_state.current_secure_channel_state = state;
+            true
+        }
     }
 
     pub fn get_current_secure_channel_state(shared_state: Arc<Mutex<SharedState>>) -> String {
@@ -170,8 +185,23 @@ pub mod proxy_listener_wrapper {
         shared_state.lock().unwrap().proxy_listner_shutdown
     }
 
-    pub fn set_connection_count(shared_state: Arc<Mutex<SharedState>>, count: u128) {
-        shared_state.lock().unwrap().connection_count = count;
+    /// Increase the connection count
+    /// # Arguments
+    /// * `shared_state` - Arc<Mutex<SharedState>>
+    /// # Returns
+    /// * `u128` - the updated connection count
+    /// # Remarks
+    /// * If the connection count reaches u128::MAX, it will reset to 0
+    pub fn increase_connection_count(shared_state: Arc<Mutex<SharedState>>) -> u128 {
+        let mut state = shared_state.lock().unwrap();
+        let mut connection_count = state.connection_count;
+        if connection_count == u128::MAX {
+            // reset connection count
+            connection_count = 0;
+        }
+        connection_count += 1;
+        state.connection_count = connection_count;
+        connection_count
     }
 
     pub fn get_connection_count(shared_state: Arc<Mutex<SharedState>>) -> u128 {

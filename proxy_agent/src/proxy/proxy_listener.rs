@@ -70,15 +70,9 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
             logger::write_warning(message.to_string());
             break;
         }
-        let mut connection_count: u128 =
-            proxy_listener_wrapper::get_connection_count(shared_state.clone());
-        if connection_count == u128::MAX {
-            // reset connection count
-            connection_count = 0;
-        }
-        connection_count += 1;
-        proxy_listener_wrapper::set_connection_count(shared_state.clone(), connection_count);
 
+        let connection_count =
+            proxy_listener_wrapper::increase_connection_count(shared_state.clone());
         let cloned_shared_state = shared_state.clone();
         match connection {
             Ok(stream) => {
