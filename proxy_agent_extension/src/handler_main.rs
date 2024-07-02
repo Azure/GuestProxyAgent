@@ -165,7 +165,7 @@ fn handle_command(cmd: &str, config_seq_no: &Option<String>) {
     let status_folder_path: PathBuf = Path::new(&status_folder).to_path_buf();
     match cmd {
         "install" => install_handler(),
-        "uninstall" => unistall_handler(),
+        "uninstall" => uninstall_handler(),
         "enable" => enable_handler(status_folder_path, config_seq_no),
         "disable" => disable_handler(),
         "reset" => reset_handler(),
@@ -182,7 +182,7 @@ fn install_handler() {
     }
 }
 
-fn unistall_handler() {
+fn uninstall_handler() {
     logger::write("Uninstalling Handler".to_string());
     if !update_tag_file_exists() {
         let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
