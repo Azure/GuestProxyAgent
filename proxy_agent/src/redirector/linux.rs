@@ -11,7 +11,7 @@ use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
-    destination_entry, sock_addr_aduit_key, sock_addr_audit_entry, sock_addr_skip_process_entry,
+    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
 use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
@@ -236,10 +236,11 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
         Some(map) => {
             match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
-                    let local_ip = match get_local_ip() {
-                        Some(ip) => ip,
-                        None => constants::PROXY_AGENT_IP.to_string(),
-                    };
+                    // let local_ip = match get_local_ip() {
+                    //     Some(ip) => ip,
+                    //     None => constants::PROXY_AGENT_IP.to_string(),
+                    // };
+                    let local_ip = constants::PROXY_AGENT_IP.to_string();
                     event_logger::write_event(
                         event_logger::WARN_LEVEL,
                         format!("update_policy_map with local ip address: {}", local_ip),
@@ -461,7 +462,7 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
     match bpf.map("audit_map") {
         Some(map) => match HashMap::try_from(map) {
             Ok(audit_map) => {
-                let key = sock_addr_aduit_key::from_source_port(source_port);
+                let key = sock_addr_audit_key::from_source_port(source_port);
                 match audit_map.get(&key.to_array(), 0) {
                     Ok(value) => {
                         let audit_value = sock_addr_audit_entry::from_array(value);
@@ -595,8 +596,8 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
 mod tests {
     use crate::common::config;
     use crate::common::logger;
-    use crate::redirector::linux::ebpf_obj::sock_addr_aduit_key;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
+    use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use aya::maps::HashMap;
     use proxy_agent_shared::logger_manager;
     use proxy_agent_shared::misc_helpers;
@@ -654,7 +655,7 @@ mod tests {
         let audit = super::lookup_audit_internal(&bpf, source_port);
         assert!(!audit.is_ok(), "lookup_audit should not return Ok");
         // insert to map an then look up
-        let key = sock_addr_aduit_key::from_source_port(source_port);
+        let key = sock_addr_audit_key::from_source_port(source_port);
         let value = sock_addr_audit_entry {
             logon_id: 999,
             process_id: 888,

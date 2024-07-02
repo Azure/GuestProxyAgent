@@ -11,7 +11,7 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new InstallOrUpdateGuestProxyAgentCase());
             AddTestCase(new GuestProxyAgentValidationCase());
             AddTestCase(new TCPPortScalabilityCase());
-            AddTestCase(new LocalIPBindingCase());
+            //AddTestCase(new LocalIPBindingCase());
         }
     }
 }
