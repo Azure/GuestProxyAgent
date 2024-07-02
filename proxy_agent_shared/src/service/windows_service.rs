@@ -308,9 +308,9 @@ mod tests {
         );
 
         super::start_service_with_retry(TEST_SERVICE_NAME, 2, std::time::Duration::from_millis(15));
-        let service_staus = super::query_service_status(TEST_SERVICE_NAME).unwrap();
+        let service_status = super::query_service_status(TEST_SERVICE_NAME).unwrap();
         assert_ne!(
-            service_staus.current_state,
+            service_status.current_state,
             windows_service::service::ServiceState::Running,
             "Test service should not be able to run"
         );
