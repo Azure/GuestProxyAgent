@@ -53,7 +53,7 @@ impl ImdsClient {
             Err(e) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied instance info is invalid: {}, Error: {}",
+                    "Received instance info is invalid: {}, Error: {}",
                     instance_info_str, e
                 ),
             )),

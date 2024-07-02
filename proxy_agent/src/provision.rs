@@ -118,7 +118,7 @@ fn write_provision_state(
     _ = misc_helpers::try_create_folder(provision_dir.to_path_buf());
     _ = std::fs::write(
         provisioned_file,
-        misc_helpers::get_date_time_string_with_miliseconds(),
+        misc_helpers::get_date_time_string_with_milliseconds(),
     );
 
     let mut status = String::new(); //provision success, write 0 byte to file
@@ -180,7 +180,7 @@ pub fn get_provision_status_wait(
 // Get provision status
 // return value
 //  bool - true provision finished; false provision not finished
-//  String - provision error message, emtpy means provision success or provision failed.
+//  String - provision error message, empty means provision success or provision failed.
 fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 

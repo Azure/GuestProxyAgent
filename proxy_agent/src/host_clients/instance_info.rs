@@ -217,22 +217,22 @@ mod tests {
             }
         }"#;
 
-        let instace_info = serde_json::from_str::<InstanceInfo>(instance_string).unwrap();
+        let instance_info = serde_json::from_str::<InstanceInfo>(instance_string).unwrap();
         assert_eq!(
             "xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
-            instace_info.get_subscription_id(),
+            instance_info.get_subscription_id(),
             "subscription_id mismatch"
         );
         assert_eq!(
             "02aab8a4-74ef-476e-8182-f6d2ba4166a6",
-            instace_info.get_vm_id(),
+            instance_info.get_vm_id(),
             "vm id mismatch"
         );
         assert_eq!(
             "macikgo-test-may-23",
-            instace_info.get_resource_group_name(),
+            instance_info.get_resource_group_name(),
             "resource_group_name mismatch"
         );
-        assert_eq!(1, instace_info.get_image_origin(), "image_origin mismatch");
+        assert_eq!(1, instance_info.get_image_origin(), "image_origin mismatch");
     }
 }

@@ -16,9 +16,9 @@ namespace GuestProxyAgentTest.Utilities
         /// <summary>
         /// Execute/Run a 'RunCommand' on a particular virtual machine
         /// </summary>
-        /// <param name="vmr">virtual machine resource, used to specify the azure virutal mahcine instance</param>
+        /// <param name="vmr">virtual machine resource, used to specify the azure virtual machine instance</param>
         /// <param name="runCommandSettingBuilder">builder for run command setting</param>
-        /// <param name="runCommandParameterSetter">paramter setter for the run command script</param>
+        /// <param name="runCommandParameterSetter">parameter setter for the run command script</param>
         /// <returns></returns>
         public static async Task<RunCommandOutputDetails> ExecuteRunCommandOnVM(VirtualMachineResource vmr
             , RunCommandSettingBuilder runCommandSettingBuilder

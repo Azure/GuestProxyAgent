@@ -37,7 +37,7 @@ guestProxyAgentLogGenerated='false'
 if [ -d "$logdir" ]; then
     echo "logdir '$logdir' exists"
     ls -l $logdir
-    # chck if any log file is generated
+    # check if any log file is generated
     logFileCount=$(ls -l $logdir | grep -v ^l | wc -l)
     echo "logFileCount=$logFileCount"
     if [ $logFileCount -gt 0 ]; then

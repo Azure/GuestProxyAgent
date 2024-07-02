@@ -23,7 +23,7 @@ fn get_log_header(severity: &str) -> String {
     format!(
         "{} {} {}",
         misc_helpers::get_thread_identity(),
-        misc_helpers::get_date_time_string_with_miliseconds(),
+        misc_helpers::get_date_time_string_with_milliseconds(),
         severity
     )
 }
@@ -109,7 +109,7 @@ impl RollingLogger {
     fn archive_file(&mut self) -> std::io::Result<()> {
         let new_file_name = self.get_current_file_full_path(Some(format!(
             "{}-{}",
-            misc_helpers::get_date_time_string_with_miliseconds(),
+            misc_helpers::get_date_time_string_with_milliseconds(),
             misc_helpers::get_date_time_unix_nano()
         )));
 

@@ -96,13 +96,13 @@ impl WireServerClient {
             if response.status != Response::OK {
                 return Err(Error::new(
                     ErrorKind::Other,
-                    format!("Host resposned {}.", &response.status),
+                    format!("Host responsed {}.", &response.status),
                 ));
             }
         } else {
             return Err(Error::new(
                 ErrorKind::ConnectionRefused,
-                "Host does not resposne continue to receive the reqeust body.",
+                "Host does not response continue to receive the request body.",
             ));
         }
 
@@ -131,7 +131,7 @@ impl WireServerClient {
             Err(err) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied goalstate is invalid: {}, Error: {}",
+                    "Received goalstate is invalid: {}, Error: {}",
                     goal_state_str, err
                 ),
             )),
@@ -160,7 +160,7 @@ impl WireServerClient {
             Err(err) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied shared_config is invalid: {}, Error: {}",
+                    "Received shared_config is invalid: {}, Error: {}",
                     shared_config_str, err
                 ),
             )),

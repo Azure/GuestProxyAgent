@@ -1124,8 +1124,8 @@ mod tests {
     }
 
     #[test]
-    fn test_privelege_is_match() {
-        let logger_key = "test_privelege_is_match";
+    fn test_privilege_is_match() {
+        let logger_key = "test_privilege_is_match";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         Connection::init_logger(temp_test_path.to_path_buf());

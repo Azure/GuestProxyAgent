@@ -725,7 +725,7 @@ mod tests {
 
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
-            status: OveralState::SUCCESS.to_string(),
+            status: OverallState::SUCCESS.to_string(),
             monitorStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING.to_string(),
                 message: "test".to_string(),

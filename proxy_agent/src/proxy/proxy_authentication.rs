@@ -376,7 +376,7 @@ mod tests {
         super::set_wireserver_rules(Some(disabled_rules));
         assert!(
             auth.authenticate(1, url.to_string()),
-            "WireServer authentication must be true with diabled rules"
+            "WireServer authentication must be true with disabled rules"
         );
 
         // validate audit rules
@@ -458,7 +458,7 @@ mod tests {
         super::set_imds_rules(Some(disabled_rules));
         assert!(
             auth.authenticate(1, url.to_string()),
-            "IMDS authentication must be true with diabled rules"
+            "IMDS authentication must be true with disabled rules"
         );
 
         // validate audit rules
