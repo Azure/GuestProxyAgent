@@ -280,7 +280,7 @@ fn poll_secure_channel_status(
 
         // update the current secure channel state if different
         if state != key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) {
-            // update the redirector poicy map
+            // update the redirector policy map
             redirector::update_wire_server_redirect_policy(
                 status.get_wire_server_mode() != DISABLE_STATE,
             );

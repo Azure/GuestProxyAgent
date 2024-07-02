@@ -372,7 +372,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_event_reader_thread_priority() {
-        static THREAD_PRIORITY_VERFIY_DONE: AtomicBool = AtomicBool::new(false);
+        static THREAD_PRIORITY_VERIFY_DONE: AtomicBool = AtomicBool::new(false);
         static THREAD_PRIORITY_VERIFY_RESULT: Lazy<Arc<Mutex<String>>> =
             Lazy::new(|| Arc::new(Mutex::new(String::from(""))));
         const THREAD_PRIORITY_VERIFY_SUCCESS: &str =
@@ -431,7 +431,7 @@ mod tests {
                         .as_mut()
                         .unwrap()
                         .push_str(&verify_result_message);
-                    THREAD_PRIORITY_VERFIY_DONE.store(true, Ordering::Relaxed);
+                    THREAD_PRIORITY_VERIFY_DONE.store(true, Ordering::Relaxed);
                 },
             );
         }
@@ -442,7 +442,7 @@ mod tests {
         start_async(temp_dir, Duration::from_millis(1000), false, shared_state);
 
         let mut wait_milli_sec: i32 = 100;
-        while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed) {
+        while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed) {
             println!(
                 "waiting {} milliseconds to verify event reader thread priority.",
                 wait_milli_sec
@@ -462,7 +462,7 @@ mod tests {
                 .to_string(),
             THREAD_PRIORITY_VERIFY_SUCCESS
         );
-        assert!(THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed));
+        assert!(THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed));
     }
 
     #[test]
