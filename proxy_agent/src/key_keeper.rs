@@ -147,27 +147,25 @@ fn poll_secure_channel_status(
 
         let wireserver_rule_id = status.get_wireserver_rule_id();
         let imds_rule_id: String = status.get_imds_rule_id();
-        let current_wire_server_rule_id =
-            key_keeper_wrapper::get_wireserver_rule_id(shared_state.clone());
-        if wireserver_rule_id != current_wire_server_rule_id {
+        let (updated, old_wire_server_rule_id) = key_keeper_wrapper::update_wireserver_rule_id(
+            shared_state.clone(),
+            wireserver_rule_id.to_string(),
+        );
+        if updated {
             logger::write_warning(format!(
                 "Wireserver rule id changed from {} to {}.",
-                current_wire_server_rule_id, wireserver_rule_id
+                old_wire_server_rule_id, wireserver_rule_id
             ));
-            key_keeper_wrapper::set_wireserver_rule_id(
-                shared_state.clone(),
-                wireserver_rule_id.to_string(),
-            );
             proxy_authentication::set_wireserver_rules(status.get_wireserver_rules());
         }
 
-        let current_imds_rule_id = key_keeper_wrapper::get_imds_rule_id(shared_state.clone());
-        if imds_rule_id != current_imds_rule_id {
+        let (updated, old_imds_rule_id) =
+            key_keeper_wrapper::update_imds_rule_id(shared_state.clone(), imds_rule_id.to_string());
+        if updated {
             logger::write_warning(format!(
                 "IMDS rule id changed from {} to {}.",
-                current_imds_rule_id, imds_rule_id
+                old_imds_rule_id, imds_rule_id
             ));
-            key_keeper_wrapper::set_imds_rule_id(shared_state.clone(), imds_rule_id.to_string());
             proxy_authentication::set_imds_rules(status.get_imds_rules());
         }
 
@@ -372,6 +370,7 @@ mod tests {
     use super::key::Key;
     use crate::common::logger;
     use crate::key_keeper;
+    use crate::shared_state::SharedState;
     use crate::test_mock::server_mock;
     use proxy_agent_shared::{logger_manager, misc_helpers};
     use std::env;
@@ -451,7 +450,7 @@ mod tests {
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         key_keeper::poll_status_async(
             Url::parse("http://127.0.0.1:8081/").unwrap(),
             cloned_keys_dir,

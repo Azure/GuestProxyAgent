@@ -17,6 +17,7 @@ pub mod test_mock;
 
 use common::helpers;
 use proxy_agent_shared::misc_helpers;
+use shared_state::SharedState;
 use std::{process, time::Duration};
 
 #[cfg(windows)]
@@ -37,7 +38,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         if args[1].to_lowercase() == "console" {
-            let shared_state = shared_state::new_shared_state();
+            let shared_state = SharedState::new();
             service::start_service(shared_state.clone());
             println!("Press Enter to end it.");
             let mut temp = String::new();

@@ -200,6 +200,7 @@ fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
+    use crate::shared_state::SharedState;
     use std::env;
     use std::fs;
     use std::thread;
@@ -222,7 +223,7 @@ mod tests {
             "provision_status.1 must be empty"
         );
 
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         let dir1 = temp_test_path.to_path_buf();
         let dir2 = temp_test_path.to_path_buf();
         let dir3 = temp_test_path.to_path_buf();

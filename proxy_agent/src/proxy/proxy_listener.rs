@@ -620,6 +620,7 @@ mod tests {
     use crate::proxy::proxy_listener::Connection;
     use crate::proxy::Claims;
     use crate::shared_state::key_keeper_wrapper;
+    use crate::shared_state::SharedState;
     use proxy_agent_shared::logger_manager;
     use std::env;
     use std::fs;
@@ -647,7 +648,7 @@ mod tests {
         Connection::init_logger(temp_test_path.to_path_buf());
 
         // start listener, the port must different from the one used in production code
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         let s = shared_state.clone();
         let port: u16 = 8091;
         let handle = thread::spawn(move || {
@@ -834,7 +835,7 @@ mod tests {
             );
         }
 
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
         super::handle_connection_with_signature(
             connection,

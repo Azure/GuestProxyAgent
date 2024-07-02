@@ -437,7 +437,7 @@ mod tests {
         }
 
         let temp_dir = env::temp_dir();
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
         start_async(temp_dir, Duration::from_millis(1000), false, shared_state);
 
@@ -492,7 +492,7 @@ mod tests {
             MOCK_WIRE_SERVER_IP = Some(ip);
             MOCK_WIRE_SERVER_PORT = Some(port);
         }
-        let shared_state = crate::shared_state::new_shared_state();
+        let shared_state = SharedState::new();
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
 
         thread::spawn(move || {

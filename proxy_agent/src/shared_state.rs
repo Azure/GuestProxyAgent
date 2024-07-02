@@ -25,9 +25,10 @@ pub struct SharedState {
     // use wrapper functions to access the state fields, it does quick release the lock
 }
 
-pub fn new_shared_state() -> Arc<Mutex<SharedState>> {
-    let shared_state = SharedState::default();
-    Arc::new(Mutex::new(shared_state))
+impl SharedState {
+    pub fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(SharedState::default()))
+    }
 }
 
 impl Default for SharedState {
@@ -86,16 +87,50 @@ pub mod key_keeper_wrapper {
             .to_string()
     }
 
-    pub fn set_wireserver_rule_id(shared_state: Arc<Mutex<SharedState>>, rule_id: String) {
-        shared_state.lock().unwrap().wireserver_rule_id = rule_id;
+    /// Update the WireServer rule ID
+    /// # Arguments
+    /// * `shared_state` - Arc<Mutex<SharedState>>
+    /// * `rule_id` - String
+    /// # Returns
+    /// * `bool` - true if the rule ID is update successfully
+    /// * `String` - the rule Id before the update operation
+    pub fn update_wireserver_rule_id(
+        shared_state: Arc<Mutex<SharedState>>,
+        rule_id: String,
+    ) -> (bool, String) {
+        let mut state = shared_state.lock().unwrap();
+        let old_rule_id = state.wireserver_rule_id.clone();
+        if old_rule_id == rule_id {
+            (false, old_rule_id)
+        } else {
+            state.wireserver_rule_id = rule_id;
+            (true, old_rule_id)
+        }
     }
 
     pub fn get_wireserver_rule_id(shared_state: Arc<Mutex<SharedState>>) -> String {
         shared_state.lock().unwrap().wireserver_rule_id.to_string()
     }
 
-    pub fn set_imds_rule_id(shared_state: Arc<Mutex<SharedState>>, rule_id: String) {
-        shared_state.lock().unwrap().imds_rule_id = rule_id;
+    /// Update the IMDS rule ID
+    /// # Arguments
+    /// * `shared_state` - Arc<Mutex<SharedState>>
+    /// * `rule_id` - String
+    /// # Returns
+    /// * `bool` - true if the rule ID is update successfully
+    /// * `String` - the rule Id before the update operation
+    pub fn update_imds_rule_id(
+        shared_state: Arc<Mutex<SharedState>>,
+        rule_id: String,
+    ) -> (bool, String) {
+        let mut state = shared_state.lock().unwrap();
+        let old_rule_id = state.imds_rule_id.clone();
+        if old_rule_id == rule_id {
+            (false, old_rule_id)
+        } else {
+            state.imds_rule_id = rule_id;
+            (true, old_rule_id)
+        }
     }
 
     pub fn get_imds_rule_id(shared_state: Arc<Mutex<SharedState>>) -> String {

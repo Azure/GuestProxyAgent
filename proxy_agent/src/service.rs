@@ -50,7 +50,7 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
 
 #[cfg(not(windows))]
 pub fn start_service_wait() {
-    let shared_state = crate::shared_state::new_shared_state();
+    let shared_state = SharedState::new();
     start_service(shared_state);
 
     loop {
