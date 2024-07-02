@@ -69,7 +69,7 @@ pub fn start(local_port: u16, vessel: DataVessel) -> bool {
         Err(e) => {
             event_logger::write_event(
                 event_logger::WARN_LEVEL,
-                format!("Failed to get the cgroup2 mpunt path {}, fallback to use the cgroup2 path from config file.", e),
+                format!("Failed to get the cgroup2 mount path {}, fallback to use the cgroup2 path from config file.", e),
                 "start",
                 "redirector/linux",
                 logger::AGENT_LOGGER_KEY,
@@ -643,7 +643,7 @@ mod tests {
         let result = super::update_policy_map(&mut bpf, 80);
         assert!(result, "update_policy_map should return true");
 
-        // donot attach the program to real cgroup2 path
+        // Do not attach the program to real cgroup2 path
         // it should fail for both attach
         let result = super::attach_kprobe_program(&mut bpf);
         assert!(result, "attach_kprobe_program should return true");

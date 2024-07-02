@@ -38,6 +38,7 @@ jobs:
       id: spelling
       uses: check-spelling/check-spelling@main
       with:
+        config: .github/actions/spelling/expect.txt
         suppress_push_for_open_pull_request: ${{ github.actor != 'dependabot[bot]' && 1 }}
         checkout: true
         spell_check_this: Azure/GuestProxyAgent@dev
@@ -70,3 +71,6 @@ jobs:
           cspell:typescript/dict/typescript.txt
           cspell:cpp/src/ecosystem.txt
           cspell:powershell/dict/powershell.txt
+          cspell:cpp/src/template-strings.txt
+          cspell:csharp/csharp.txt
+          cspell:cpp/src/stdlib-c.txt

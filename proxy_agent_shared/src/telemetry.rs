@@ -29,7 +29,7 @@ impl Event {
             EventPid: std::process::id().to_string(),
             EventTid: misc_helpers::get_thread_identity(),
             OperationId: operation_id,
-            TimeStamp: misc_helpers::get_date_time_string_with_miliseconds(),
+            TimeStamp: misc_helpers::get_date_time_string_with_milliseconds(),
         }
     }
 }
