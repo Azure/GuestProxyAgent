@@ -46,9 +46,8 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     Connection::init_logger(config::get_logs_dir());
 
     let shutdown = SHUT_DOWN.clone();
-    // listen to wildcard ip address to accept request from
-    // loopback address and local ip addresses
-    let addr = format!("{}:{}", Ipv4Addr::UNSPECIFIED, port);
+    // listen to loopback ip address to accept request from local clients only
+    let addr = format!("{}:{}", Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
     let listener = match TcpListener::bind(&addr) {

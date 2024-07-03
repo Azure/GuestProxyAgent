@@ -29,13 +29,13 @@ do {
         } 
     } 
     if ($nonRootRegKeyPath -ne $null) {
-        $reigstrykeyPath = $nonRootRegKeyPath -replace '^HKEY_LOCAL_MACHINE', 'HKLM:'
-        $PIRversion = ($reigstrykeyPath -split "_")[1]
+        $registrykeyPath = $nonRootRegKeyPath -replace '^HKEY_LOCAL_MACHINE', 'HKLM:'
+        $PIRversion = ($registrykeyPath -split "_")[1]
         Write-Output "PIR Version: $PIRversion"
-        if (((Get-Item -Path $reigstrykeyPath).GetValue("SequenceNumber") -ne $null) -and ((Get-Item -Path $reigstrykeyPath).GetValue("StatusFolder") -ne $null)) {
-            $seqNo = (Get-ItemProperty -Path $reigstrykeyPath).SequenceNumber
+        if (((Get-Item -Path $registrykeyPath).GetValue("SequenceNumber") -ne $null) -and ((Get-Item -Path $registrykeyPath).GetValue("StatusFolder") -ne $null)) {
+            $seqNo = (Get-ItemProperty -Path $registrykeyPath).SequenceNumber
             Write-Output "Seq No: $seqNo"
-            $statusFolderPath = (Get-ItemProperty -Path $reigstrykeyPath).StatusFolder
+            $statusFolderPath = (Get-ItemProperty -Path $registrykeyPath).StatusFolder
             Write-Output "Status Folder: $statusFolderPath"
             $statusFilePath = [IO.Path]::Combine($statusFolderPath, $seqNo + ".status")
             Write-Output "Status file path: $statusFilePath"
@@ -80,7 +80,7 @@ do {
     start-sleep -Seconds 3
 } until ($false)
 
-Write-Output "TEST: ProxyAgentVMExtension Serivce is started and success"  
+Write-Output "TEST: ProxyAgentVMExtension Service is started and success"  
 $serviceName = "GuestProxyAgentVMExtension"
 $guestProxyAgentExtensionServiceExist = $false
 $guestProxyAgentExtensionServiceStatus = $false 
