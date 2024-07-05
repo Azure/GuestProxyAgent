@@ -4,9 +4,9 @@ vmImageOffer: 0001-com-ubuntu-server-jammy
 vmImageSku: 22_04-lts-gen2
 vmImageVersion: latest
 scenarios:
-  # - className: GuestProxyAgentTest.TestScenarios.BVTScenario
-  #   name: BVTScenario
-  # - name: LinuxPackageScenario
-  #   className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario   
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario   
   - name: ProxyAgentExtension
     className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
