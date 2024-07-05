@@ -81,6 +81,7 @@ pub mod key_keeper_wrapper {
     /// * `state` - String
     /// # Returns
     /// * `bool` - true if the state is update successfully
+    /// *        - false if state is the same as the current state  
     pub fn update_current_secure_channel_state(
         shared_state: Arc<Mutex<SharedState>>,
         state: String,
@@ -108,6 +109,7 @@ pub mod key_keeper_wrapper {
     /// * `rule_id` - String
     /// # Returns
     /// * `bool` - true if the rule ID is update successfully
+    /// *        - false if rule ID is the same as the current state  
     /// * `String` - the rule Id before the update operation
     pub fn update_wireserver_rule_id(
         shared_state: Arc<Mutex<SharedState>>,
@@ -194,14 +196,8 @@ pub mod proxy_listener_wrapper {
     /// * If the connection count reaches u128::MAX, it will reset to 0
     pub fn increase_connection_count(shared_state: Arc<Mutex<SharedState>>) -> u128 {
         let mut state = shared_state.lock().unwrap();
-        let mut connection_count = state.connection_count;
-        if connection_count == u128::MAX {
-            // reset connection count
-            connection_count = 0;
-        }
-        connection_count += 1;
-        state.connection_count = connection_count;
-        connection_count
+        (state.connection_count, _) = state.connection_count.overflowing_add(1);
+        state.connection_count
     }
 
     pub fn get_connection_count(shared_state: Arc<Mutex<SharedState>>) -> u128 {
