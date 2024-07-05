@@ -16,7 +16,7 @@ pub fn get_thread_identity() -> String {
     format!("{:0>8}", thread_id::get())
 }
 
-pub fn get_date_time_string_with_miliseconds() -> String {
+pub fn get_date_time_string_with_milliseconds() -> String {
     let date_format =
         format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]")
             .unwrap();
@@ -211,7 +211,7 @@ mod tests {
     #[derive(Serialize, Deserialize)]
     struct TestStruct {
         thread_id: String,
-        date_time_string_with_miliseconds: String,
+        date_time_string_with_milliseconds: String,
         date_time_string: String,
         date_time_rfc1123_string: String,
         date_time_unix_nano: i128,
@@ -232,7 +232,7 @@ mod tests {
 
         let test = TestStruct {
             thread_id: super::get_thread_identity(),
-            date_time_string_with_miliseconds: super::get_date_time_string_with_miliseconds(),
+            date_time_string_with_milliseconds: super::get_date_time_string_with_milliseconds(),
             date_time_string: super::get_date_time_string(),
             date_time_rfc1123_string: super::get_date_time_rfc1123_string(),
             date_time_unix_nano: super::get_date_time_unix_nano(),
@@ -245,8 +245,8 @@ mod tests {
 
         assert_eq!(test.thread_id, json.thread_id);
         assert_eq!(
-            test.date_time_string_with_miliseconds,
-            json.date_time_string_with_miliseconds
+            test.date_time_string_with_milliseconds,
+            json.date_time_string_with_milliseconds
         );
         assert_eq!(test.date_time_string, json.date_time_string);
         assert_eq!(test.date_time_rfc1123_string, json.date_time_rfc1123_string);
@@ -333,7 +333,7 @@ mod tests {
     fn json_clone_test() {
         let test = TestStruct {
             thread_id: super::get_thread_identity(),
-            date_time_string_with_miliseconds: super::get_date_time_string_with_miliseconds(),
+            date_time_string_with_milliseconds: super::get_date_time_string_with_milliseconds(),
             date_time_string: super::get_date_time_string(),
             date_time_rfc1123_string: super::get_date_time_rfc1123_string(),
             date_time_unix_nano: super::get_date_time_unix_nano(),
@@ -345,8 +345,8 @@ mod tests {
 
         assert_eq!(test.thread_id, cloned.thread_id);
         assert_eq!(
-            test.date_time_string_with_miliseconds,
-            cloned.date_time_string_with_miliseconds
+            test.date_time_string_with_milliseconds,
+            cloned.date_time_string_with_milliseconds
         );
         assert_eq!(test.date_time_string, cloned.date_time_string);
         assert_eq!(

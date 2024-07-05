@@ -7,12 +7,13 @@ mod windows;
 mod linux;
 
 use crate::common::{config, logger};
-use crate::data_vessel::DataVessel;
+use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 #[derive(Serialize, Deserialize)]
@@ -39,21 +40,21 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16, vessel: DataVessel) {
+pub fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
     thread::spawn(move || {
-        start(local_port, vessel);
+        start(local_port, shared_state);
     });
 }
 
-fn start(local_port: u16, vessel: DataVessel) -> bool {
+fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     for _ in 0..5 {
         #[cfg(windows)]
         {
-            windows::start(local_port, vessel.clone());
+            windows::start(local_port, shared_state.clone());
         }
         #[cfg(not(windows))]
         {
-            linux::start(local_port, vessel.clone());
+            linux::start(local_port, shared_state.clone());
         }
 
         let level = if is_started() {

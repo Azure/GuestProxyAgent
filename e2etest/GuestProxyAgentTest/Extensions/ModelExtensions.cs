@@ -21,10 +21,10 @@ namespace GuestProxyAgentTest.Extensions
                 Succeed = runCommandOutputDetails.Succeed,
                 CustomOut = runCommandOutputDetails.CustomOut,
                 FromBlob = downloadContentFromBlob
-            }.DownloadConentIfFromBlob(logger);
+            }.DownloadContentIfFromBlob(logger);
         }
 
-        public static TestCaseResultDetails DownloadConentIfFromBlob(this TestCaseResultDetails testCaseResultDetails, Action<string> logger = null!)
+        public static TestCaseResultDetails DownloadContentIfFromBlob(this TestCaseResultDetails testCaseResultDetails, Action<string> logger = null!)
         {
             if(!testCaseResultDetails.FromBlob)
             {
@@ -77,15 +77,15 @@ namespace GuestProxyAgentTest.Extensions
             return testCaseResultDetails;
         }
 
-        public static void WriteJUnitTestResult(this TestCaseResultDetails testCaseResultDetails, JunitTestResultBuilder testResultBuilder, string testScenarioName, string testCaseName, long durationInMillseconds = 0)
+        public static void WriteJUnitTestResult(this TestCaseResultDetails testCaseResultDetails, JunitTestResultBuilder testResultBuilder, string testScenarioName, string testCaseName, long durationInMilliseconds = 0)
         {
             if(testCaseResultDetails.Succeed)
             {
-                testResultBuilder.AddSuccessTestResult(testScenarioName, testCaseName, testCaseResultDetails.StdOut, testCaseResultDetails.CustomOut, durationInMillseconds);
+                testResultBuilder.AddSuccessTestResult(testScenarioName, testCaseName, testCaseResultDetails.StdOut, testCaseResultDetails.CustomOut, durationInMilliseconds);
             }
             else
             {
-                testResultBuilder.AddFailureTestResult(testScenarioName, testCaseName, testCaseResultDetails.StdOut, testCaseResultDetails.StdErr, testCaseResultDetails.CustomOut, durationInMillseconds);
+                testResultBuilder.AddFailureTestResult(testScenarioName, testCaseName, testCaseResultDetails.StdOut, testCaseResultDetails.StdErr, testCaseResultDetails.CustomOut, durationInMilliseconds);
             }
         }
 
@@ -104,7 +104,7 @@ namespace GuestProxyAgentTest.Extensions
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Deserialzied custom out json string failed with exception: " + ex.ToString());
+                Console.WriteLine("Deserialized custom out json string failed with exception: " + ex.ToString());
             }
             return null;
         }

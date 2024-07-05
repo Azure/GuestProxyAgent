@@ -95,7 +95,7 @@ pub fn report_status(
         constants::STATUS_FILE_SUFFIX,
     );
 
-    let current_datetime: String = misc_helpers::get_date_time_string_with_miliseconds();
+    let current_datetime: String = misc_helpers::get_date_time_string_with_milliseconds();
     let root_status_obj = TopLevelStatus {
         version: constants::VERSION.to_string(),
         timestampUTC: current_datetime,

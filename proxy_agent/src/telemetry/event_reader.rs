@@ -4,9 +4,9 @@ use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
 use crate::common::logger;
-use crate::data_vessel::DataVessel;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
+use crate::shared_state::SharedState;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
@@ -14,7 +14,7 @@ use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use thread_priority::ThreadPriority;
@@ -66,15 +66,25 @@ impl VMMetaData {
     }
 }
 
-pub fn start_async(dir_path: PathBuf, interval: Duration, delay_start: bool, vessel: DataVessel) {
+pub fn start_async(
+    dir_path: PathBuf,
+    interval: Duration,
+    delay_start: bool,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
-            start(dir_path, Some(interval), delay_start, vessel);
+            start(dir_path, Some(interval), delay_start, shared_state);
         });
 }
 
-fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool, vessel: DataVessel) {
+fn start(
+    dir_path: PathBuf,
+    interval: Option<Duration>,
+    delay_start: bool,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
     logger::write("telemetry event reader thread started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
@@ -116,7 +126,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool, vesse
             first = false;
         }
 
-        match update_vm_meta_data(vessel.clone()) {
+        match update_vm_meta_data(shared_state.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -130,7 +140,7 @@ fn start(dir_path: PathBuf, interval: Option<Duration>, delay_start: bool, vesse
                 match misc_helpers::get_files(&dir_path) {
                     Ok(files) => {
                         let file_count = files.len();
-                        let event_count = process_events_and_clean(files, vessel.clone());
+                        let event_count = process_events_and_clean(files, shared_state.clone());
                         let message =
                             format!("Send {} events from {} files", event_count, file_count);
                         event_logger::write_event(
@@ -159,13 +169,16 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
-fn update_vm_meta_data(vessel: DataVessel) -> std::io::Result<()> {
-    let wire_server_client =
-        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel.clone());
+fn update_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<()> {
+    let wire_server_client = WireServerClient::new(
+        get_wire_server_ip(),
+        get_wire_server_port(),
+        shared_state.clone(),
+    );
     let goal_state = wire_server_client.get_goalstate()?;
     let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri())?;
 
-    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), vessel.clone());
+    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), shared_state.clone());
     let instance_info = imds_client.get_imds_instance_info()?;
     let vm_meta_data = VMMetaData {
         container_id: goal_state.get_container_id(),
@@ -194,13 +207,13 @@ pub fn get_vm_meta_data() -> VMMetaData {
     }
 }
 
-fn process_events_and_clean(files: Vec<PathBuf>, vessel: DataVessel) -> usize {
+fn process_events_and_clean(files: Vec<PathBuf>, shared_state: Arc<Mutex<SharedState>>) -> usize {
     let mut num_events_logged = 0;
     for file in files {
         match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
             Ok(events) => {
                 num_events_logged += events.len();
-                send_events(events, vessel.clone());
+                send_events(events, shared_state.clone());
                 clean_files(file);
             }
             Err(e) => {
@@ -220,7 +233,7 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 64;
 static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
 static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
-fn send_events(mut events: Vec<Event>, vessel: DataVessel) {
+fn send_events(mut events: Vec<Event>, shared_state: Arc<Mutex<SharedState>>) {
     while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
@@ -257,7 +270,7 @@ fn send_events(mut events: Vec<Event>, vessel: DataVessel) {
             }
         }
 
-        send_data_to_wire_server(telemetry_data, vessel.clone());
+        send_data_to_wire_server(telemetry_data, shared_state.clone());
     }
 }
 
@@ -302,13 +315,16 @@ fn get_imds_port() -> u16 {
     val
 }
 
-fn send_data_to_wire_server(telemetry_data: TelemetryData, vessel: DataVessel) {
+fn send_data_to_wire_server(telemetry_data: TelemetryData, shared_state: Arc<Mutex<SharedState>>) {
     if telemetry_data.event_count() == 0 {
         return;
     }
 
-    let wire_server_client =
-        WireServerClient::new(get_wire_server_ip(), get_wire_server_port(), vessel);
+    let wire_server_client = WireServerClient::new(
+        get_wire_server_ip(),
+        get_wire_server_port(),
+        shared_state.clone(),
+    );
     for _ in [0; 5] {
         match wire_server_client.send_telemetry_data(telemetry_data.to_xml()) {
             Ok(()) => {
@@ -341,6 +357,8 @@ fn clean_files(file: PathBuf) {
 mod tests {
     use super::*;
     use crate::common::logger;
+    use crate::key_keeper::key::Key;
+    use crate::shared_state::key_keeper_wrapper;
     use crate::test_mock::server_mock;
     use proxy_agent_shared::{logger_manager, misc_helpers};
     #[cfg(windows)]
@@ -354,7 +372,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_event_reader_thread_priority() {
-        static THREAD_PRIORITY_VERFIY_DONE: AtomicBool = AtomicBool::new(false);
+        static THREAD_PRIORITY_VERIFY_DONE: AtomicBool = AtomicBool::new(false);
         static THREAD_PRIORITY_VERIFY_RESULT: Lazy<Arc<Mutex<String>>> =
             Lazy::new(|| Arc::new(Mutex::new(String::from(""))));
         const THREAD_PRIORITY_VERIFY_SUCCESS: &str =
@@ -413,17 +431,18 @@ mod tests {
                         .as_mut()
                         .unwrap()
                         .push_str(&verify_result_message);
-                    THREAD_PRIORITY_VERFIY_DONE.store(true, Ordering::Relaxed);
+                    THREAD_PRIORITY_VERIFY_DONE.store(true, Ordering::Relaxed);
                 },
             );
         }
 
         let temp_dir = env::temp_dir();
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
-        start_async(temp_dir, Duration::from_millis(1000), false, vessel.clone());
+        let shared_state = SharedState::new();
+        key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
+        start_async(temp_dir, Duration::from_millis(1000), false, shared_state);
 
         let mut wait_milli_sec: i32 = 100;
-        while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed) {
+        while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed) {
             println!(
                 "waiting {} milliseconds to verify event reader thread priority.",
                 wait_milli_sec
@@ -443,8 +462,7 @@ mod tests {
                 .to_string(),
             THREAD_PRIORITY_VERIFY_SUCCESS
         );
-        assert!(THREAD_PRIORITY_VERFIY_DONE.load(Ordering::Relaxed));
-        vessel.stop();
+        assert!(THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -474,14 +492,15 @@ mod tests {
             MOCK_WIRE_SERVER_IP = Some(ip);
             MOCK_WIRE_SERVER_PORT = Some(port);
         }
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let shared_state = SharedState::new();
+        key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
 
         thread::spawn(move || {
             server_mock::start(ip.to_string(), port);
         });
         thread::sleep(Duration::from_millis(100));
 
-        match update_vm_meta_data(vessel.clone()) {
+        match update_vm_meta_data(shared_state.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -509,13 +528,12 @@ mod tests {
         // Check the events processed
         let files = misc_helpers::get_files(&events_dir).unwrap();
         println!("Get '{}' event files.", files.len());
-        let events_read = process_events_and_clean(files, vessel.clone());
+        let events_read = process_events_and_clean(files, shared_state.clone());
 
         //Should be 10 events written and read into events Vector
         assert_eq!(events_read, 10);
 
         _ = fs::remove_dir_all(&temp_dir);
-        vessel.stop();
         unsafe {
             MOCK_WIRE_SERVER_IP = None;
             MOCK_WIRE_SERVER_PORT = None;
