@@ -147,6 +147,25 @@ pub struct ebpf_program_t {
     log_buffer_size: u32,
 }
 
+#[repr(C)]
+pub struct ebpf_link_t {
+    pin_path: *mut c_char,
+    handle: ebpf_handle_t,
+    fd: fd_t,
+    disconnected: bool,
+}
+
+impl ebpf_link_t {
+    pub fn empty() -> Self {
+        ebpf_link_t {
+            pin_path: std::ptr::null_mut(),
+            handle: 0,
+            fd: 0,
+            disconnected: false,
+        }
+    }
+}
+
 /**
 * @brief eBPF Map Definition as it is stored in memory.
 */

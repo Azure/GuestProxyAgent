@@ -65,13 +65,23 @@ type BpfObjectClose = unsafe extern "C" fn(obj: *mut bpf_object) -> c_void;
 // Program
 type BpfObjectFindProgramByName =
     unsafe extern "C" fn(obj: *const bpf_object, name: *const c_char) -> *mut ebpf_program_t;
-type BpfProgramFd = unsafe extern "C" fn(prog: *const ebpf_program_t) -> c_int;
-type BpfProgAttach = unsafe extern "C" fn(
-    prog_fd: c_int,
-    attachable_fd: c_int,
-    attach_type: bpf_attach_type,
-    flags: c_uint,
+// type BpfProgramFd = unsafe extern "C" fn(prog: *const ebpf_program_t) -> c_int;
+// type BpfProgAttach = unsafe extern "C" fn(
+//     prog_fd: c_int,
+//     attachable_fd: c_int,
+//     attach_type: bpf_attach_type,
+//     flags: c_uint,
+// ) -> c_int;
+type EBpfProgAttach = unsafe extern "C" fn(
+    prog: *const ebpf_program_t,
+    attach_type: *const ebpf_attach_type_t,
+    attach_parameters: *const c_void,
+    attach_params_size: usize,
+    link: *mut *mut ebpf_link_t,
 ) -> c_int;
+type BpfLinkDisconnect = unsafe extern "C" fn(link: *mut ebpf_link_t) -> c_void;
+type BpfLinkDestroy = unsafe extern "C" fn(link: *mut ebpf_link_t) -> c_int;
+
 // Map
 type BpfObjectFindMapByName =
     unsafe extern "C" fn(obj: *const bpf_object, name: *const c_char) -> *mut bpf_map;
@@ -134,24 +144,63 @@ pub fn bpf_object__find_program_by_name(
     }
 }
 
-pub fn bpf_program__fd(prog: *mut ebpf_program_t) -> std::io::Result<c_int> {
-    unsafe {
-        let ebpf_api = get_ebpf_api()?;
-        let program__fd: Symbol<BpfProgramFd> = get_ebpf_api_fun(ebpf_api, "bpf_program__fd\0")?;
-        Ok(program__fd(prog))
-    }
-}
+// pub fn bpf_program__fd(prog: *mut ebpf_program_t) -> std::io::Result<c_int> {
+//     unsafe {
+//         let ebpf_api = get_ebpf_api()?;
+//         let program__fd: Symbol<BpfProgramFd> = get_ebpf_api_fun(ebpf_api, "bpf_program__fd\0")?;
+//         Ok(program__fd(prog))
+//     }
+// }
 
-pub fn bpf_prog_attach(
-    prog_fd: c_int,
-    attachable_fd: c_int,
-    attach_type: bpf_attach_type,
-    flags: c_uint,
+// pub fn bpf_prog_attach(
+//     prog_fd: c_int,
+//     attachable_fd: c_int,
+//     attach_type: bpf_attach_type,
+//     flags: c_uint,
+// ) -> std::io::Result<c_int> {
+//     unsafe {
+//         let ebpf_api = get_ebpf_api()?;
+//         let prog_attach: Symbol<BpfProgAttach> = get_ebpf_api_fun(ebpf_api, "bpf_prog_attach\0")?;
+//         Ok(prog_attach(prog_fd, attachable_fd, attach_type, flags))
+//     }
+// }
+
+pub fn ebpf_prog_attach(
+    prog: *mut ebpf_program_t,
+    attach_type: *const ebpf_attach_type_t,
+    attach_parameters: *const c_void,
+    attach_params_size: usize,
+    link: *mut *mut ebpf_link_t,
 ) -> std::io::Result<c_int> {
     unsafe {
         let ebpf_api = get_ebpf_api()?;
-        let prog_attach: Symbol<BpfProgAttach> = get_ebpf_api_fun(ebpf_api, "bpf_prog_attach\0")?;
-        Ok(prog_attach(prog_fd, attachable_fd, attach_type, flags))
+        let program_attach: Symbol<EBpfProgAttach> =
+            get_ebpf_api_fun(ebpf_api, "ebpf_program_attach\0")?;
+        Ok(program_attach(
+            prog,
+            attach_type,
+            attach_parameters,
+            attach_params_size,
+            link,
+        ))
+    }
+}
+
+pub fn bpf_link_disconnect(link: *mut ebpf_link_t) -> std::io::Result<c_void> {
+    unsafe {
+        let ebpf_api = get_ebpf_api()?;
+        let link_disconnect: Symbol<BpfLinkDisconnect> =
+            get_ebpf_api_fun(ebpf_api, "bpf_link__disconnect\0")?;
+        Ok(link_disconnect(link))
+    }
+}
+
+pub fn bpf_link_destroy(link: *mut ebpf_link_t) -> std::io::Result<c_int> {
+    unsafe {
+        let ebpf_api = get_ebpf_api()?;
+        let link_destroy: Symbol<BpfLinkDestroy> =
+            get_ebpf_api_fun(ebpf_api, "bpf_link__destroy\0")?;
+        Ok(link_destroy(link))
     }
 }
 
