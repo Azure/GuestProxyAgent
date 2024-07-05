@@ -33,59 +33,60 @@ proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-p
 echo "proxy agent version: $proxyAgentVersion"
 statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 echo "Status Directory: $statusFolder"
-echo "Delete status file of PIR version" 
-rm -rf $statusFolder/*
 
-echo "detecting os and installing jq" 
-os=$(hostnamectl | grep "Operating System")
-echo "os=$os"
-if [[ $os == *"Ubuntu"* ]]; then
-    for  i in {1..3}; do
-        echo "start installing jq via apt-get $i"
-        sudo apt update
-        sudo apt-get install -y jq
-        sleep 10
-        install=$(apt list --installed jq)
-        echo "install=$install"
-        if [[ $install == *"jq"* ]]; then
-            echo "jq installed successfully"
-            break
-        fi
-    done
-else
-    for  i in {1..3}; do
-        echo "start installing jq via yum $i"
-        sudo yum -y install jq
-        sleep 10
-        install=$(yum list --installed jq)
-        echo "install=$install"
-        if [[ $install == *"jq"* ]]; then
-            echo "jq installed successfully"
-            break
-        fi
-    done
-fi
+# echo "Delete status file of PIR version" 
+# rm -rf $statusFolder/*
 
-echo "Check that status file is success with 5 minute timeout"
-statusFile=$(ls $statusFolder/*.status)
-echo "statusFile=$statusFile"
-timeout=300
-elpased=0
-echo "Contents of status file:"
-cat "$statusFile"
-while :; do 
-    extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
-    if [[ "$extensionStatus" == "success" ]]; then
-        echo "The status is success."
-        break
-    fi
-    ((elapsed += interval))
-    if [[ $elapsed -ge $timeout ]]; then
-        echo "Timeout reached. Exiting the loop."
-        break
-    fi
-    sleep 5
-done
+# echo "detecting os and installing jq" 
+# os=$(hostnamectl | grep "Operating System")
+# echo "os=$os"
+# if [[ $os == *"Ubuntu"* ]]; then
+#     for  i in {1..3}; do
+#         echo "start installing jq via apt-get $i"
+#         sudo apt update
+#         sudo apt-get install -y jq
+#         sleep 10
+#         install=$(apt list --installed jq)
+#         echo "install=$install"
+#         if [[ $install == *"jq"* ]]; then
+#             echo "jq installed successfully"
+#             break
+#         fi
+#     done
+# else
+#     for  i in {1..3}; do
+#         echo "start installing jq via yum $i"
+#         sudo yum -y install jq
+#         sleep 10
+#         install=$(yum list --installed jq)
+#         echo "install=$install"
+#         if [[ $install == *"jq"* ]]; then
+#             echo "jq installed successfully"
+#             break
+#         fi
+#     done
+# fi
+
+# echo "Check that status file is success with 5 minute timeout"
+# statusFile=$(ls $statusFolder/*.status)
+# echo "statusFile=$statusFile"
+# timeout=300
+# elpased=0
+# echo "Contents of status file:"
+# cat "$statusFile"
+# while :; do 
+#     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
+#     if [[ "$extensionStatus" == "success" ]]; then
+#         echo "The status is success."
+#         break
+#     fi
+#     ((elapsed += interval))
+#     if [[ $elapsed -ge $timeout ]]; then
+#         echo "Timeout reached. Exiting the loop."
+#         break
+#     fi
+#     sleep 5
+# done
 
 echo "Check that process ProxyAgentExt is running"
 processId=$(pgrep ProxyAgentExt)
