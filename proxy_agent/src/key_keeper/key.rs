@@ -724,8 +724,12 @@ pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
         headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
         0.to_string(),
     );
-    let mut http_request =
-        HttpRequest::new_proxy_agent_request(url, req, key.guid.to_string(), key.key.to_string())?;
+    let mut http_request = HttpRequest::new_proxy_agent_request(
+        url,
+        req,
+        Some(key.guid.to_string()),
+        Some(key.key.to_string()),
+    )?;
     let mut response = http::get_response_in_string(&mut http_request)?;
     if response.status != Response::OK {
         return Err(Error::new(

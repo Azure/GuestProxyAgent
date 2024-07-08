@@ -9,43 +9,35 @@ use crate::common::http;
 use crate::common::http::request::Request;
 use crate::common::http::response::Response;
 use crate::common::logger;
-use crate::data_vessel::DataVessel;
 use crate::provision;
 use crate::proxy::proxy_connection::Connection;
 use crate::proxy::proxy_summary::ProxySummary;
 use crate::proxy::Claims;
 use crate::proxy_agent_status;
 use crate::redirector;
-use once_cell::sync::Lazy;
+use crate::shared_state::{key_keeper_wrapper, proxy_listener_wrapper, SharedState};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static mut CONNECTION_COUNT: Lazy<Mutex<u128>> = Lazy::new(|| Mutex::new(0));
-static mut STATUS_MESSAGE: Lazy<String> =
-    Lazy::new(|| String::from("Proxy listner has not started yet."));
-
-pub fn start_async(port: u16, pool_size: u16, vessel: DataVessel) {
+pub fn start_async(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     _ = thread::Builder::new()
         .name("proxy_listener".to_string())
         .spawn(move || {
-            start(port, pool_size, vessel);
+            start(port, pool_size, shared_state);
         });
 }
 
-fn start(port: u16, pool_size: u16, vessel: DataVessel) {
+fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     Connection::init_logger(config::get_logs_dir());
 
-    let shutdown = SHUT_DOWN.clone();
     // listen to loopback ip address to accept request from local clients only
     let addr = format!("{}:{}", Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
@@ -54,9 +46,7 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
         Ok(l) => l,
         Err(e) => {
             let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
             logger::write_error(message);
             return;
         }
@@ -68,46 +58,34 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
         "proxy_listener",
         logger::AGENT_LOGGER_KEY,
     );
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
-    provision::listener_started(vessel.clone());
+    proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
+    provision::listener_started(shared_state.clone());
 
     let pool = ProxyPool::new(pool_size as usize);
 
     for connection in listener.incoming() {
-        if shutdown.load(Ordering::Relaxed) {
+        if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
             let message = "Stop signal received, stop the listener.";
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
             logger::write_warning(message.to_string());
             break;
         }
-        let mut connection_count_clone: u128 = 0;
 
-        if let Ok(mut connection_count_lock) = unsafe { CONNECTION_COUNT.lock() } {
-            if *connection_count_lock == u128::MAX {
-                // reset connection id
-                *connection_count_lock = 0;
-            }
-            *connection_count_lock += 1;
-
-            connection_count_clone = *connection_count_lock;
-        }
-        let cloned_vessel = vessel.clone();
+        let connection_count =
+            proxy_listener_wrapper::increase_connection_count(shared_state.clone());
+        let cloned_shared_state = shared_state.clone();
         match connection {
             Ok(stream) => {
                 pool.execute(move || {
                     let mut connection = Connection {
                         stream,
-                        id: connection_count_clone,
+                        id: connection_count,
                         now: Instant::now(),
                         cliams: None,
                         ip: String::new(),
                         port: 0,
                     };
-                    handle_connection(&mut connection, cloned_vessel);
+                    handle_connection(&mut connection, cloned_shared_state);
                 });
             }
             Err(e) => {
@@ -120,17 +98,13 @@ fn start(port: u16, pool_size: u16, vessel: DataVessel) {
     logger::write("ProxyListener stopped accepting new request.".to_string());
 }
 
-pub fn get_proxy_connection_count() -> u128 {
-    unsafe { *CONNECTION_COUNT.lock().unwrap() }
-}
-
-pub fn stop(port: u16) {
-    SHUT_DOWN.store(true, Ordering::Relaxed);
+pub fn stop(port: u16, shared_state: Arc<Mutex<SharedState>>) {
+    proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
     let _ = TcpStream::connect(format!("127.0.0.1:{}", port));
     logger::write_warning("Sending stop signal.".to_string());
 }
 
-fn handle_connection(connection: &mut Connection, vessel: DataVessel) {
+fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<SharedState>>) {
     let stream = &connection.stream;
     Connection::write_information(connection.id, "Received connection.".to_string());
 
@@ -289,14 +263,19 @@ fn handle_connection(connection: &mut Connection, vessel: DataVessel) {
         return handle_connection_without_signature(connection, request, &mut server_stream);
     }
 
-    handle_connection_with_signature(connection, request, &mut server_stream, vessel.clone());
+    handle_connection_with_signature(
+        connection,
+        request,
+        &mut server_stream,
+        shared_state.clone(),
+    );
 }
 
 fn handle_connection_with_signature(
     connection: &mut Connection,
     mut request: Request,
     server_stream: &mut TcpStream,
-    vessel: DataVessel,
+    shared_state: Arc<Mutex<SharedState>>,
 ) {
     let client_stream = &connection.stream;
     if request.expect_continue_request() {
@@ -304,44 +283,41 @@ fn handle_connection_with_signature(
     }
 
     // Add header x-ms-azure-host-authorization
-    let key = vessel.get_current_key_value();
-    if !key.is_empty() {
-        let input_to_sign = request.as_sig_input();
-        match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
-            Ok(sig) => {
-                match String::from_utf8(input_to_sign) {
-                    Ok(data) => Connection::write(
-                        connection.id,
-                        format!("Computed the signature with input: {}", data),
-                    ),
-                    Err(e) => {
-                        Connection::write_warning(
+    if let Some(key) = key_keeper_wrapper::get_current_key_value(shared_state.clone()) {
+        if let Some(key_guid) = key_keeper_wrapper::get_current_key_guid(shared_state.clone()) {
+            let input_to_sign = request.as_sig_input();
+            match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
+                Ok(sig) => {
+                    match String::from_utf8(input_to_sign) {
+                        Ok(data) => Connection::write(
                             connection.id,
-                            format!("Failed convert the input_to_sign to string, error {}", e),
-                        );
+                            format!("Computed the signature with input: {}", data),
+                        ),
+                        Err(e) => {
+                            Connection::write_warning(
+                                connection.id,
+                                format!("Failed convert the input_to_sign to string, error {}", e),
+                            );
+                        }
                     }
-                }
 
-                let authorization_value = format!(
-                    "{} {} {}",
-                    constants::AUTHORIZATION_SCHEME,
-                    vessel.get_current_key_guid(),
-                    sig
-                );
-                request.headers.add_header(
-                    constants::AUTHORIZATION_HEADER.to_string(),
-                    authorization_value.to_string(),
-                );
-                Connection::write(
-                    connection.id,
-                    format!("Added authorization header {}", authorization_value),
-                )
-            }
-            Err(e) => {
-                Connection::write_error(
-                    connection.id,
-                    format!("compute_signature failed with error: {}", e),
-                );
+                    let authorization_value =
+                        format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
+                    request.headers.add_header(
+                        constants::AUTHORIZATION_HEADER.to_string(),
+                        authorization_value.to_string(),
+                    );
+                    Connection::write(
+                        connection.id,
+                        format!("Added authorization header {}", authorization_value),
+                    )
+                }
+                Err(e) => {
+                    Connection::write_error(
+                        connection.id,
+                        format!("compute_signature failed with error: {}", e),
+                    );
+                }
             }
         }
     } else {
@@ -611,10 +587,8 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     _ = client_stream.flush();
 }
 
-pub fn get_status() -> ProxyAgentDetailStatus {
-    let shutdown = SHUT_DOWN.clone();
-
-    let status = if shutdown.load(Ordering::Relaxed) {
+pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
+    let status = if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
         ModuleState::STOPPED.to_string()
     } else {
         ModuleState::RUNNING.to_string()
@@ -622,7 +596,7 @@ pub fn get_status() -> ProxyAgentDetailStatus {
 
     ProxyAgentDetailStatus {
         status,
-        message: unsafe { STATUS_MESSAGE.to_string() },
+        message: proxy_listener_wrapper::get_status_message(shared_state.clone()),
         states: None,
     }
 }
@@ -635,9 +609,12 @@ mod tests {
     use crate::common::http::request::Request;
     use crate::common::http::response::Response;
     use crate::common::logger;
+    use crate::key_keeper::key::Key;
     use crate::proxy::proxy_listener;
     use crate::proxy::proxy_listener::Connection;
     use crate::proxy::Claims;
+    use crate::shared_state::key_keeper_wrapper;
+    use crate::shared_state::SharedState;
     use proxy_agent_shared::logger_manager;
     use std::env;
     use std::fs;
@@ -665,8 +642,8 @@ mod tests {
         Connection::init_logger(temp_test_path.to_path_buf());
 
         // start listener, the port must different from the one used in production code
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
-        let s = vessel.clone();
+        let shared_state = SharedState::new();
+        let s = shared_state.clone();
         let port: u16 = 8091;
         let handle = thread::spawn(move || {
             proxy_listener::start(port, 1, s);
@@ -686,7 +663,7 @@ mod tests {
         let response = http::receive_response_data(&client).unwrap();
 
         // stop listener
-        proxy_listener::stop(port);
+        proxy_listener::stop(port, shared_state);
         handle.join().unwrap();
 
         assert_eq!(
@@ -697,7 +674,6 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);
-        vessel.stop();
     }
 
     const PROXY_ENDPOINT_ADDRESS: &str = "127.0.0.1:8083";
@@ -853,14 +829,14 @@ mod tests {
             );
         }
 
-        let vessel = crate::data_vessel::DataVessel::start_new_async();
+        let shared_state = SharedState::new();
+        key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
         super::handle_connection_with_signature(
             connection,
             request,
             &mut server_stream,
-            vessel.clone(),
+            shared_state.clone(),
         );
-        vessel.stop();
     }
 
     fn test_get_response() {

@@ -9,6 +9,7 @@ use proxy_agent_shared::misc_helpers;
 use std::env;
 use std::ffi::c_void;
 use std::io::{Error, ErrorKind};
+use std::mem::size_of_val;
 use std::path::PathBuf;
 
 const EBPF_API_FILE_NAME: &str = "EbpfApi.dll";
@@ -111,7 +112,12 @@ pub fn attach_bpf_prog() -> i32 {
             Some(obj) => {
                 let connect4_program =
                     match bpf_object__find_program_by_name(obj, "authorize_connect4") {
-                        Ok(p) => p,
+                        Ok(p) => {
+                            logger::write_information(
+                                "Found authorize_connect4 program.".to_string(),
+                            );
+                            p
+                        }
                         Err(e) => {
                             logger::write_error(format!("{}", e));
                             return EBPF_FIND_PROGRAM_ERROR;
@@ -124,20 +130,78 @@ pub fn attach_bpf_prog() -> i32 {
                     );
                     return EBPF_FIND_PROGRAM_ERROR;
                 }
-                let fd_id = match bpf_program__fd(connect4_program) {
-                    Ok(fd) => fd,
-                    Err(e) => {
-                        logger::write_error(format!("{}", e));
-                        return EBPF_FIND_PROGRAM_ERROR;
+                let compartment_id = 1;
+                let mut link: ebpf_link_t = ebpf_link_t::empty();
+                let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
+                let link: *mut *mut ebpf_link_t = &mut link as *mut *mut ebpf_link_t;
+                match ebpf_prog_attach(
+                    connect4_program,
+                    std::ptr::null(),
+                    &compartment_id as *const i32 as *const c_void,
+                    size_of_val(&compartment_id),
+                    link,
+                ) {
+                    Ok(r) => {
+                        if r != 0 {
+                            logger::write_error(format!(
+                                "Failed to attach authorize_connect4 program with error code: {}.",
+                                r
+                            ));
+                            return EBPF_ATTACH_PROGRAM_ERROR;
+                        }
+                        logger::write_information(
+                            "Success attached authorize_connect4 program.".to_string(),
+                        );
+
+                        match bpf_link_disconnect(*link) {
+                            Ok(_r) => {
+                                logger::write_information("Success disconnected link.".to_string());
+
+                                match bpf_link_destroy(*link) {
+                                    Ok(r) => {
+                                        if r != 0 {
+                                            logger::write_error(format!(
+                                                "Failed to destroy link with error code: {}.",
+                                                r
+                                            ));
+                                            return EBPF_ATTACH_PROGRAM_ERROR;
+                                        }
+                                        logger::write_information(
+                                            "Success destroyed link.".to_string(),
+                                        );
+                                        r
+                                    }
+                                    Err(e) => {
+                                        logger::write_error(format!("{}", e));
+                                        EBPF_ATTACH_PROGRAM_ERROR
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                logger::write_error(format!("{}", e));
+                                EBPF_ATTACH_PROGRAM_ERROR
+                            }
+                        }
                     }
-                };
-                match bpf_prog_attach(fd_id, 0, bpf_attach_type::BPF_CGROUP_INET4_CONNECT, 0) {
-                    Ok(r) => r,
                     Err(e) => {
                         logger::write_error(format!("{}", e));
                         EBPF_ATTACH_PROGRAM_ERROR
                     }
                 }
+                // let fd_id = match bpf_program__fd(connect4_program) {
+                //     Ok(fd) => fd,
+                //     Err(e) => {
+                //         logger::write_error(format!("{}", e));
+                //         return EBPF_FIND_PROGRAM_ERROR;
+                //     }
+                // };
+                // match bpf_prog_attach(fd_id, 0, bpf_attach_type::BPF_CGROUP_INET4_CONNECT, 0) {
+                //     Ok(r) => r,
+                //     Err(e) => {
+                //         logger::write_error(format!("{}", e));
+                //         EBPF_ATTACH_PROGRAM_ERROR
+                //     }
+                // }
             }
             None => EBPF_OBJECT_NULL,
         }

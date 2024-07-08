@@ -12,8 +12,8 @@ echo Configuration=%Configuration%
 echo out_path=%out_path%
 SET out_dir=%out_path%\%Configuration%
 
-SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.11.0\build\native\bin
-SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.11.0\build\native\include
+SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\bin
+SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 SET rustup_version=1.69.0
 

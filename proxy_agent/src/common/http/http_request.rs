@@ -21,8 +21,8 @@ impl HttpRequest {
     pub fn new_proxy_agent_request(
         uri: Url,
         mut request: Request,
-        key_guid: String,
-        key: String,
+        key_guid: Option<String>,
+        key: Option<String>,
     ) -> std::io::Result<Self> {
         //connection:Close
         request.headers.add_header(
@@ -46,7 +46,7 @@ impl HttpRequest {
             .headers
             .add_header("Host".to_string(), http_request.get_host());
 
-        if !key.is_empty() {
+        if let (Some(key), Some(key_guid)) = (key, key_guid) {
             let input_to_sign = http_request.request.as_sig_input();
             let authorization_value = format!(
                 "{} {} {}",
