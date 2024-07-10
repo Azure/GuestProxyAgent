@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
+expectedProxyAgentVersion=$(echo $ExpectProxyAgentVerison)
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
 
@@ -104,6 +105,10 @@ fi
 echo Write-Output "TEST: ProxyAgent version running in VM is the same as expected version" 
 proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 echo "proxy agent version from extension folder: $proxyAgentVersion"
+guestProxyAgentExtensionVersionUpgrade=false
+if [[$expectedProxyAgentVersion != ""]]; then
+    guestProxyAgentExtensionVersionUpgrade=true
+fi
 guestProxyAgentExtensionVersion=false
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
@@ -123,7 +128,7 @@ else
     echo "Instance View is not successful"
 fi
 
-jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionInstanceView": "'$guestProxyAgentExtensionInstanceView'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
+jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionVersionUpgrade": "'$guestProxyAgentExtensionVersionUpgrade'", "guestProxyAgentExtensionInstanceView": "'$guestProxyAgentExtensionInstanceView'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
 echo "$jsonString"
 
 echo "$jsonString" > $customOutputJsonPath

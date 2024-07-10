@@ -108,12 +108,14 @@ $proxyAgentExeCmd = $extensionFolder + "\ProxyAgent\ProxyAgent\GuestProxyAgent.e
 $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
 $guestProxyAgentExtensionVersion = $false
+$guestProxyAgentExtensionVersionUpgrade = $false
 $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
 $jsonObject = $proxyAgentStatus | ConvertFrom-json
 $extractedVersion = $jsonObject.version
 if ($extractedVersion -eq $proxyAgentVersion){ 
     Write-Output "The proxy agent version matches the expected version"
     $guestProxyAgentExtensionVersion = $true
+    $guestProxyAgentExtensionVersionUpgrade = $true
 } else {
     Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $proxyAgentVersion ]"
 }
@@ -132,6 +134,7 @@ $jsonString = '{ "guestProxyAgentExtensionServiceExist": ' + $guestProxyAgentExt
 + ', "guestProxyAgentExtensionServiceStatus": ' + $guestProxyAgentExtensionServiceStatus.ToString().ToLower() `
 + ', "guestProxyAgentExtensionStatusObjGenerated": ' + $guestProxyAgentExtensionStatusObjGenerated.ToString().ToLower() `
 + ', "guestProxyAgentExtensionVersion": ' + $guestProxyAgentExtensionVersion.ToString().ToLower() `
++ ', "guestProxyAgentExtensionVersionUpgrade": ' + $guestProxyAgentExtensionVersionUpgrade.ToString.ToLower() `
 + ', "guestProxyAgentExtensionInstanceView": ' + $guestProxyAgentExtensionInstanceView.ToString().ToLower() ` + '}'
 
 Write-Output $jsonString

@@ -59,7 +59,7 @@ namespace GuestProxyAgentTest.Utilities
 
         public static bool IS_WINDOWS()
         {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+           return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         }
     }
 }
