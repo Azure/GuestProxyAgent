@@ -65,6 +65,7 @@ namespace GuestProxyAgentTest.Utilities
             var rgData = new ResourceGroupData(TestSetting.Instance.location);
             rgData.Tags.Add(Constants.COULD_CLEANUP_TAG_NAME, "true");
             var rgr = rgs.CreateOrUpdate(WaitUntil.Completed, rgName, rgData).Value;
+            
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
             var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, EnableProxyAgent))).Value;

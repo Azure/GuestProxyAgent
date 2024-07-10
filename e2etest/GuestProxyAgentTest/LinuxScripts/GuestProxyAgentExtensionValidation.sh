@@ -106,7 +106,7 @@ echo Write-Output "TEST: ProxyAgent version running in VM is the same as expecte
 proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 echo "proxy agent version from extension folder: $proxyAgentVersion"
 guestProxyAgentExtensionVersionUpgrade=false
-if [[$expectedProxyAgentVersion != ""]]; then
+if [-z "$expectedProxyAgentVersion"]; then
     guestProxyAgentExtensionVersionUpgrade=true
 fi
 guestProxyAgentExtensionVersion=false
