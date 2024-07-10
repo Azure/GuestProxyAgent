@@ -5,20 +5,26 @@ use crate::constants;
 use crate::logger;
 use crate::structs::*;
 use proxy_agent_shared::proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus;
+use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, telemetry};
+use service_state::ServiceState;
 use std::io::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+pub mod service_state;
 #[cfg(windows)]
 pub mod windows_main;
 #[cfg(windows)]
 use proxy_agent_shared::service;
 
-pub fn enable_agent() {
+const MAX_STATE_COUNT: u32 = 120;
+
+pub fn run(service_state: Arc<Mutex<ServiceState>>) {
     let message = format!(
         "GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
         misc_helpers::get_current_version(),
@@ -28,12 +34,13 @@ pub fn enable_agent() {
     telemetry::event_logger::write_event(
         telemetry::event_logger::INFO_LEVEL,
         message,
-        "enable_agent",
+        "run",
         "service_main",
         &logger::get_logger_key(),
     );
+    let service_state_cloned = service_state.clone();
     thread::spawn(|| {
-        monitor_thread();
+        monitor_thread(service_state_cloned);
     });
 
     thread::spawn(|| {
@@ -60,7 +67,7 @@ fn heartbeat_thread() {
     }
 }
 
-fn monitor_thread() {
+fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(exe_path.to_path_buf());
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
@@ -140,6 +147,7 @@ fn monitor_thread() {
             &mut status,
             &mut status_state_obj,
             &mut restored_in_error,
+            service_state.clone(),
         );
 
         // Time taken to report success for proxy agent service after update
@@ -166,6 +174,31 @@ fn monitor_thread() {
         );
 
         thread::sleep(Duration::from_secs(15));
+    }
+}
+
+fn write_state_event(
+    state_key: &str,
+    state_value: &str,
+    message: String,
+    method_name: &str,
+    module_name: &str,
+    logger_key: &str,
+    service_state: Arc<Mutex<ServiceState>>,
+) {
+    if ServiceState::update_service_state_entry(
+        service_state,
+        state_key,
+        state_value,
+        MAX_STATE_COUNT,
+    ) {
+        event_logger::write_event(
+            event_logger::INFO_LEVEL,
+            message,
+            method_name,
+            module_name,
+            logger_key,
+        );
     }
 }
 
@@ -271,6 +304,7 @@ fn report_proxy_agent_aggregate_status(
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     restored_in_error: &mut bool,
+    service_state: Arc<Mutex<ServiceState>>,
 ) {
     let aggregate_status_file_path =
         PathBuf::from(constants::PROXY_AGENT_AGGREGATE_STATUS_FILE.to_string());
@@ -280,14 +314,14 @@ fn report_proxy_agent_aggregate_status(
         aggregate_status_file_path,
     ) {
         Ok(ok) => {
-            telemetry::event_logger::write_state_event(
+            write_state_event(
                 constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
                 constants::SUCCESS_STATUS,
-                telemetry::event_logger::INFO_LEVEL,
                 "Successfully read proxy agent aggregate status file".to_string(),
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
+                service_state.clone(),
             );
             proxy_agent_aggregate_status_top_level = ok;
             extension_substatus(
@@ -295,19 +329,20 @@ fn report_proxy_agent_aggregate_status(
                 proxyagent_file_version_in_extension,
                 status,
                 status_state_obj,
+                service_state.clone(),
             );
         }
         Err(e) => {
             let error_message =
                 format!("Error in reading proxy agent aggregate status file: {}", e);
-            telemetry::event_logger::write_state_event(
+            write_state_event(
                 constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
                 constants::ERROR_STATUS,
-                telemetry::event_logger::INFO_LEVEL,
                 error_message.to_string(),
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
+                service_state.clone(),
             );
             status.status = status_state_obj.update_state(false);
             status.configurationAppliedTime = misc_helpers::get_date_time_string();
@@ -345,6 +380,7 @@ fn extension_substatus(
     proxyagent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
+    service_state: Arc<Mutex<ServiceState>>,
 ) {
     let proxy_agent_aggregate_status_obj = proxy_agent_aggregate_status_top_level.proxyAgentStatus;
 
@@ -353,14 +389,14 @@ fn extension_substatus(
     if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         status.status = status_state_obj.update_state(false);
         let version_mismatch_message = format!("Proxy agent aggregate status file version {} does not match proxy agent file version in extension {}", proxy_agent_aggregate_status_file_version, proxyagent_file_version_in_extension);
-        telemetry::event_logger::write_state_event(
+        write_state_event(
             constants::STATE_KEY_FILE_VERSION,
             constants::ERROR_STATUS,
-            telemetry::event_logger::INFO_LEVEL,
             version_mismatch_message.to_string(),
             "extension_substatus",
             "service_main",
             &logger::get_logger_key(),
+            service_state.clone(),
         );
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
         status.substatus = {
@@ -450,14 +486,14 @@ fn extension_substatus(
         };
         status.status = status_state_obj.update_state(true);
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
-        telemetry::event_logger::write_state_event(
+        write_state_event(
             constants::STATE_KEY_FILE_VERSION,
             constants::SUCCESS_STATUS,
-            telemetry::event_logger::INFO_LEVEL,
             substatus_proxy_agent_connection_message.to_string(),
             "extension_substatus",
             "service_main",
             &logger::get_logger_key(),
+            service_state.clone(),
         );
     }
 }
@@ -788,12 +824,14 @@ mod tests {
         let mut status_state_obj = super::common::StatusState::new();
 
         let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let service_state = super::service_state::ServiceState::new();
 
         super::extension_substatus(
             toplevel_status,
             proxyagent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
+            service_state,
         );
         assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
 

@@ -4,43 +4,78 @@
 #![allow(non_snake_case)]
 
 use super::bpf_obj::*;
+use crate::common::logger;
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
+use std::{env, thread};
 
-static mut EBPF_API: Lazy<Option<Library>> = Lazy::new(|| None);
+static EBPF_API: Lazy<Option<Library>> = Lazy::new(init_ebpf_lib);
+const EBPF_API_FILE_NAME: &str = "EbpfApi.dll";
 
-pub fn load_ebpf_api(bpf_api_file_path: PathBuf) -> std::io::Result<()> {
-    unsafe {
-        match Library::new(bpf_api_file_path.as_path()) {
-            Ok(api) => {
-                *EBPF_API = Some(api);
+pub fn ebpf_api_is_loaded() -> bool {
+    EBPF_API.is_some()
+}
+
+fn init_ebpf_lib() -> Option<Library> {
+    for _ in 0..5 {
+        let program_files_dir = env::var("ProgramFiles").unwrap_or("C:\\Program Files".to_string());
+        let program_files_dir = PathBuf::from(program_files_dir);
+        let ebpf_for_windows_dir = program_files_dir.join("ebpf-for-windows");
+        let bpf_api_file_path = ebpf_for_windows_dir.join(EBPF_API_FILE_NAME);
+        logger::write_information(format!(
+            "Try to load ebpf api file from: {}",
+            misc_helpers::path_to_string(bpf_api_file_path.to_path_buf())
+        ));
+        match load_ebpf_api(bpf_api_file_path) {
+            Ok(ebpf_lib) => {
+                return Some(ebpf_lib);
             }
             Err(e) => {
-                let message = format!(
-                    "Loading ebpf api from file {} failed with error: {}",
-                    misc_helpers::path_to_string(bpf_api_file_path.to_path_buf()),
-                    e
-                );
-                return Err(Error::new(ErrorKind::Other, message));
+                logger::write_warning(format!("{}", e));
             }
         }
+
+        logger::write_warning("Try to load ebpf api file from default system path".to_string());
+        match load_ebpf_api(PathBuf::from(EBPF_API_FILE_NAME)) {
+            Ok(ebpf_lib) => {
+                return Some(ebpf_lib);
+            }
+            Err(e) => {
+                logger::write_warning(format!("{}", e));
+            }
+        }
+
+        thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    Ok(())
+    // after 5 tries, still can't load ebpf api, return None
+    None
+}
+
+fn load_ebpf_api(bpf_api_file_path: PathBuf) -> std::io::Result<Library> {
+    match unsafe { Library::new(bpf_api_file_path.as_path()) } {
+        Ok(api) => Ok(api),
+        Err(e) => {
+            let message = format!(
+                "Loading ebpf api from file {} failed with error: {}",
+                misc_helpers::path_to_string(bpf_api_file_path.to_path_buf()),
+                e
+            );
+            Err(Error::new(ErrorKind::Other, message))
+        }
+    }
 }
 
 fn get_ebpf_api() -> std::io::Result<&'static Library> {
-    unsafe {
-        match EBPF_API.as_ref() {
-            Some(api) => Ok(api),
-            None => {
-                let message = "Ebpf api is not loaded".to_string();
-                Err(Error::new(ErrorKind::Other, message))
-            }
+    match EBPF_API.as_ref() {
+        Some(api) => Ok(api),
+        None => {
+            let message = "Ebpf api is not loaded".to_string();
+            Err(Error::new(ErrorKind::Other, message))
         }
     }
 }

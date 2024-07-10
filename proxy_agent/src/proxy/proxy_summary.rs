@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -32,5 +33,18 @@ impl ProxySummary {
             self.processCmdLine,
             self.responseStatus
         )
+    }
+
+    pub fn to_proxy_connection_summary(&self) -> ProxyConnectionSummary {
+        ProxyConnectionSummary {
+            userName: self.userName.to_string(),
+            userGroups: self.userGroups.clone(),
+            ip: self.ip.to_string(),
+            port: self.port,
+            processFullPath: self.processFullPath.to_string(),
+            processCmdLine: self.processCmdLine.to_string(),
+            responseStatus: self.responseStatus.to_string(),
+            count: 1,
+        }
     }
 }

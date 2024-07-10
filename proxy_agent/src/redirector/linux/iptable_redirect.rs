@@ -1,9 +1,14 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{constants, logger};
+use crate::{
+    common::{constants, logger},
+    shared_state::SharedState,
+};
 use proxy_agent_shared::misc_helpers;
+use std::sync::Arc;
+use std::sync::Mutex;
 
-pub fn setup_firewall_redirection(local_port: u16) -> bool {
+pub fn setup_firewall_redirection(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     unsafe {
         // set our current GuestProxyAgent process to gid 3080
         let ret = libc::setegid(constants::EGID);
@@ -22,6 +27,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
+        shared_state.clone(),
     ) {
         return false;
     }
@@ -31,6 +37,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
+        shared_state.clone(),
     ) {
         return false;
     }
@@ -40,6 +47,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
         &local_port_str,
         true,
         &gid,
+        shared_state.clone(),
     ) {
         return false;
     }
@@ -47,7 +55,7 @@ pub fn setup_firewall_redirection(local_port: u16) -> bool {
     true
 }
 
-pub fn cleanup_firewall_redirection(local_port: u16) {
+pub fn cleanup_firewall_redirection(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
     let gid = constants::EGID.to_string();
     let local_port_str = local_port.to_string();
 
@@ -58,6 +66,7 @@ pub fn cleanup_firewall_redirection(local_port: u16) {
         &local_port_str,
         false,
         &gid,
+        shared_state.clone(),
     ) {}
     while config_one_firewall_redirection(
         constants::IMDS_IP,
@@ -65,6 +74,7 @@ pub fn cleanup_firewall_redirection(local_port: u16) {
         &local_port_str,
         false,
         &gid,
+        shared_state.clone(),
     ) {}
     while config_one_firewall_redirection(
         constants::GA_PLUGIN_IP,
@@ -72,6 +82,7 @@ pub fn cleanup_firewall_redirection(local_port: u16) {
         &local_port_str,
         false,
         &gid,
+        shared_state.clone(),
     ) {}
 }
 
@@ -81,6 +92,7 @@ fn config_one_firewall_redirection(
     local_port: &str,
     enable: bool,
     exclude_gid: &str,
+    shared_state: Arc<Mutex<SharedState>>,
 ) -> bool {
     let iptable_cmd = if enable { "-A" } else { "-D" };
     let local_endpoint = format!("127.0.0.1:{}", local_port);
@@ -114,7 +126,7 @@ fn config_one_firewall_redirection(
     );
     if enable && output.0 != 0 {
         // only set error status when enable is true and the command failed
-        super::set_error_status(message);
+        super::set_error_status(message, shared_state.clone());
         return false;
     }
     logger::write_information(message);

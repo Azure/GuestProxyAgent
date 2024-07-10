@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use super::event_reader;
-use crate::common::helpers;
+use crate::{common::helpers, shared_state::SharedState};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::telemetry::Event;
 use serde_derive::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 pub struct TelemetryData {
     events: Vec<TelemetryEvent>,
@@ -79,8 +80,8 @@ pub struct TelemetryEvent {
 }
 
 impl TelemetryEvent {
-    pub fn from_event_log(event_log: &Event) -> Self {
-        let vm_meta_data = event_reader::get_vm_meta_data();
+    pub fn from_event_log(event_log: &Event, shared_state: Arc<Mutex<SharedState>>) -> Self {
+        let vm_meta_data = event_reader::get_vm_meta_data(shared_state.clone());
         TelemetryEvent {
             event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
             event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
