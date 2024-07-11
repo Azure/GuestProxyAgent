@@ -19,6 +19,7 @@ pub struct SharedState {
     proxy_listner_shutdown: bool,
     connection_count: u128,
     proxy_listner_status_message: String,
+    proxy_pool: Option<Arc<Mutex<crate::proxy::proxy_pool::ProxyPool>>>,
     // Add more state fields as needed,
     // keep the fields related to the same module together
     // keep the fields as private to avoid the direct access from outside via Arc<Mutex<SharedState>>.lock().unwrap()
@@ -45,6 +46,7 @@ impl Default for SharedState {
             proxy_listner_shutdown: false,
             connection_count: 0,
             proxy_listner_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
+            proxy_pool: None,
         }
     }
 }
@@ -214,5 +216,26 @@ pub mod proxy_listener_wrapper {
             .unwrap()
             .proxy_listner_status_message
             .to_string()
+    }
+
+    pub fn set_proxy_pool(
+        shared_state: Arc<Mutex<SharedState>>,
+        proxy_pool: crate::proxy::proxy_pool::ProxyPool,
+    ) {
+        shared_state.lock().unwrap().proxy_pool = Some(Arc::new(Mutex::new(proxy_pool)));
+    }
+
+    pub fn get_proxy_pool(
+        shared_state: Arc<Mutex<SharedState>>,
+    ) -> Option<Arc<Mutex<crate::proxy::proxy_pool::ProxyPool>>> {
+        shared_state.lock().unwrap().proxy_pool.clone()
+    }
+
+    pub fn close_proxy_pool(shared_state: Arc<Mutex<SharedState>>) {
+        let mut shared_state = shared_state.lock().unwrap();
+        if let Some(pool) = shared_state.proxy_pool.clone() {
+            pool.lock().unwrap().close();
+        }
+        shared_state.proxy_pool = None;
     }
 }

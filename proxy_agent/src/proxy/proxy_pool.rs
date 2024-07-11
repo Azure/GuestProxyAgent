@@ -39,16 +39,15 @@ impl ProxyPool {
         let job = Box::new(f);
         _ = self.sender.as_ref().unwrap().send(job);
     }
-}
 
-impl Drop for ProxyPool {
-    fn drop(&mut self) {
+    pub fn close(&mut self) {
         drop(self.sender.take());
 
         for worker in &mut self.workers {
             logger::write(format!("Shutting down worker {}", worker.id));
             if let Some(thread) = worker.thread.take() {
                 _ = thread.join();
+                logger::write(format!("Shutted down worker {}", worker.id));
             }
         }
     }

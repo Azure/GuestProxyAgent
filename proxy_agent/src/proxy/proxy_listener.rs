@@ -37,7 +37,7 @@ pub fn start_async(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedStat
 
 /// start listener at the given address with retry logic
 fn start_listener(addr: &str) -> std::io::Result<TcpListener> {
-    for _ in 0..5 {
+    for _ in 0..1 {
         let listener = TcpListener::bind(addr);
         match listener {
             Ok(l) => {
@@ -46,7 +46,7 @@ fn start_listener(addr: &str) -> std::io::Result<TcpListener> {
             Err(e) => match e.kind() {
                 std::io::ErrorKind::AddrInUse => {
                     let message = format!("Failed bind to '{}' with error 'AddrInUse'.", addr);
-                    logger::write_error(message);
+                    logger::write_warning(message);
                     thread::sleep(Duration::from_millis(100));
                     continue;
                 }
@@ -91,7 +91,7 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     provision::listener_started(shared_state.clone());
 
     let pool = ProxyPool::new(pool_size as usize);
-
+    proxy_listener_wrapper::set_proxy_pool(shared_state.clone(), pool);
     for connection in listener.incoming() {
         if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
             let message = "Stop signal received, stop the listener.";
@@ -105,17 +105,21 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
         let cloned_shared_state = shared_state.clone();
         match connection {
             Ok(stream) => {
-                pool.execute(move || {
-                    let mut connection = Connection {
-                        stream,
-                        id: connection_count,
-                        now: Instant::now(),
-                        cliams: None,
-                        ip: String::new(),
-                        port: 0,
-                    };
-                    handle_connection(&mut connection, cloned_shared_state);
-                });
+                proxy_listener_wrapper::get_proxy_pool(shared_state.clone())
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .execute(move || {
+                        let mut connection = Connection {
+                            stream,
+                            id: connection_count,
+                            now: Instant::now(),
+                            cliams: None,
+                            ip: String::new(),
+                            port: 0,
+                        };
+                        handle_connection(&mut connection, cloned_shared_state);
+                    });
             }
             Err(e) => {
                 logger::write_warning(format!("Incoming connection with error {e}; ignore it."));
@@ -123,14 +127,17 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
             }
         }
     }
-
     logger::write("ProxyListener stopped accepting new request.".to_string());
 }
 
 pub fn stop(port: u16, shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
-    let _ = TcpStream::connect(format!("127.0.0.1:{}", port));
     logger::write_warning("Sending stop signal.".to_string());
+    let _ = TcpStream::connect(format!("127.0.0.1:{}", port));
+
+    // close the proxy pool
+    proxy_listener_wrapper::close_proxy_pool(shared_state.clone());
+    logger::write("ProxyListener thread pools stopped.".to_string());
 }
 
 fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<SharedState>>) {
