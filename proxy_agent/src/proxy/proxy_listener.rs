@@ -47,6 +47,7 @@ fn start_listener(addr: &str) -> std::io::Result<TcpListener> {
                 std::io::ErrorKind::AddrInUse => {
                     let message = format!("Failed bind to '{}' with error 'AddrInUse'.", addr);
                     logger::write_error(message);
+                    thread::sleep(Duration::from_millis(100));
                     continue;
                 }
                 _ => {
