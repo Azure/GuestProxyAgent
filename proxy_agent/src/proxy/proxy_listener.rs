@@ -35,6 +35,34 @@ pub fn start_async(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedStat
         });
 }
 
+/// start listener at the given address with retry logic
+fn start_listener(addr: &str) -> std::io::Result<TcpListener> {
+    for _ in 0..5 {
+        let listener = TcpListener::bind(addr);
+        match listener {
+            Ok(l) => {
+                return Ok(l);
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::AddrInUse => {
+                    let message = format!("Failed bind to '{}' with error 'AddrInUse'.", addr);
+                    logger::write_error(message);
+                    continue;
+                }
+                _ => {
+                    let message = format!("Failed bind to '{}' with error '{}'.", addr, e);
+                    logger::write_error(message);
+                    break;
+                }
+            },
+        }
+    }
+
+    // one more effort try bind to the addr again
+    thread::sleep(Duration::from_millis(100));
+    TcpListener::bind(addr)
+}
+
 fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     Connection::init_logger(config::get_logs_dir());
 
@@ -42,7 +70,7 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     let addr = format!("{}:{}", Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
-    let listener = match TcpListener::bind(&addr) {
+    let listener = match start_listener(&addr) {
         Ok(l) => l,
         Err(e) => {
             let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
