@@ -31,7 +31,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
                 AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
-                string commandPath = extractPath + "\\ProxyAgent\\ProxyAgent\\azure-proxy-agent.exe";
+                string commandPath = extractPath + "\\ProxyAgent\\ProxyAgent\\azure-proxy-agent";
                 var process = new Process()
                 {
                     StartInfo = new ProcessStartInfo
