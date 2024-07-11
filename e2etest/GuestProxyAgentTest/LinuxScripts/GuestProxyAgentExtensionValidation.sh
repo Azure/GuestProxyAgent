@@ -5,6 +5,7 @@
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
 expectedProxyAgentVersion=$(echo $ExpectProxyAgentVerison)
+echo "extractedVersion=$expectedProxyAgentVersion"
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
 
@@ -105,9 +106,9 @@ fi
 echo Write-Output "TEST: ProxyAgent version running in VM is the same as expected version" 
 proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 echo "proxy agent version from extension folder: $proxyAgentVersion"
-guestProxyAgentExtensionVersionUpgrade=false
-if [-z "$expectedProxyAgentVersion"]; then
-    guestProxyAgentExtensionVersionUpgrade=true
+guestProxyAgentExtensionVersionUpgrade=true
+if [ -z "$expectedProxyAgentVersion" ]; then
+    guestProxyAgentExtensionVersionUpgrade=false
 fi
 guestProxyAgentExtensionVersion=false
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')

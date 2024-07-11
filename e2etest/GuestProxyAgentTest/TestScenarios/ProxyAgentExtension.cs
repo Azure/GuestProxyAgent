@@ -66,7 +66,8 @@ namespace GuestProxyAgentTest.TestScenarios
                 proxyAgentVersion = process.StandardOutput.ReadToEnd();
                 process.WaitForExit();
             }
-            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", ""));
+            string proxyAgentVersionBeforeUpdate = "1.0.0";
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
