@@ -31,13 +31,13 @@ namespace GuestProxyAgentTest.TestScenarios
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
                 AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
-                string commandPath = extractPath + "\\ProxyAgent\\ProxyAgent\\azure-proxy-agent";
+                string command = $"eval \"{extractPath}/ProxyAgent/ProxyAgent/azure-proxy-agent --version\"";
                 var process = new Process()
                 {
                     StartInfo = new ProcessStartInfo
                     {
                         FileName = "/bin/bash",
-                        Arguments = $"-c {commandPath} --version",
+                        Arguments = $"-c \"{command}\"",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         UseShellExecute = false,
@@ -47,7 +47,9 @@ namespace GuestProxyAgentTest.TestScenarios
                 process.Start();
                 proxyAgentVersion = process.StandardOutput.ReadToEnd();
                 process.WaitForExit();
-            } else {
+            }
+            else
+            {
                 EnableProxyAgent = true;
                 string commandPath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
                 var process = new Process()
@@ -73,8 +75,6 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
-        
-       
         }
     }
 }
