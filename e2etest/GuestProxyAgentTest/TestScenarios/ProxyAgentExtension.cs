@@ -28,9 +28,9 @@ namespace GuestProxyAgentTest.TestScenarios
             }
             if (!Constants.IS_WINDOWS())
             {
-               /* AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
+                AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
-                AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));*/
+                AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
                 string command = $"eval \"{extractPath}/ProxyAgent/ProxyAgent/azure-proxy-agent --version\"";
                 var process = new Process()
                 {
@@ -69,12 +69,12 @@ namespace GuestProxyAgentTest.TestScenarios
                 process.WaitForExit();
             }
             string proxyAgentVersionBeforeUpdate = "1.0.0";
-          /*  AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
+            AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));*/
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
         }
     }
 }
