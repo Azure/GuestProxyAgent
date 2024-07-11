@@ -59,6 +59,10 @@ pub mod key_keeper_wrapper {
         shared_state.lock().unwrap().key = Some(key);
     }
 
+    pub fn clear_key(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().key = None;
+    }
+
     pub fn get_key(shared_state: Arc<Mutex<SharedState>>) -> Option<Key> {
         shared_state.lock().unwrap().key.clone()
     }
