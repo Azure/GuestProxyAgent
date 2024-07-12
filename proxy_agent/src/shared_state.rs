@@ -39,7 +39,7 @@ pub struct SharedState {
     redirector_is_started: bool,
     redirector_status_message: String,
     redirector_local_port: u16,
-    bpf_object: Option<Arc<Mutex<redirector::RedirectorObject>>>,
+    bpf_object: Option<Arc<Mutex<redirector::BpfObject>>>,
     // monitor
     monitor_shutdown: bool,
     monitor_status_message: String,
@@ -390,9 +390,7 @@ pub mod redirector_wrapper {
         shared_state: Arc<Mutex<SharedState>>,
         bpf_object: redirector::BpfObject,
     ) {
-        shared_state.lock().unwrap().bpf_object = Some(Arc::new(Mutex::new(
-            redirector::RedirectorObject(bpf_object),
-        )));
+        shared_state.lock().unwrap().bpf_object = Some(Arc::new(Mutex::new(bpf_object)));
     }
 
     pub fn clear_bpf_object(shared_state: Arc<Mutex<SharedState>>) {
@@ -401,7 +399,7 @@ pub mod redirector_wrapper {
 
     pub fn get_bpf_object(
         shared_state: Arc<Mutex<SharedState>>,
-    ) -> Option<Arc<Mutex<redirector::RedirectorObject>>> {
+    ) -> Option<Arc<Mutex<redirector::BpfObject>>> {
         shared_state.lock().unwrap().bpf_object.clone()
     }
 }
@@ -468,7 +466,7 @@ pub mod agent_status_wrapper {
         let summary_key = summary.to_key_string();
         if let std::collections::hash_map::Entry::Vacant(e) = summary_map.entry(summary_key.clone())
         {
-            e.insert(summary.to_proxy_connection_summary());
+            e.insert(summary.into());
         } else if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
             //increase_count(connection_summary);
             connection_summary.count += 1;

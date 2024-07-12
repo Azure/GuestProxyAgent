@@ -478,7 +478,7 @@ pub fn lookup_audit(
     shared_state: Arc<Mutex<SharedState>>,
 ) -> std::io::Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap().0, source_port),
+        Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap(), source_port),
         None => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             "BPF object is not initialized",
@@ -551,7 +551,7 @@ fn update_redirect_policy_internal(
     shared_state: Arc<Mutex<SharedState>>,
 ) {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        Some(bpf) => match bpf.lock().unwrap().0.map_mut("policy_map") {
+        Some(bpf) => match bpf.lock().unwrap().map_mut("policy_map") {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);

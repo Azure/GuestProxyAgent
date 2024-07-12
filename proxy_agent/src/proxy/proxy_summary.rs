@@ -34,16 +34,18 @@ impl ProxySummary {
             self.responseStatus
         )
     }
+}
 
-    pub fn to_proxy_connection_summary(&self) -> ProxyConnectionSummary {
+impl From<ProxySummary> for ProxyConnectionSummary {
+    fn from(proxy_summary: ProxySummary) -> ProxyConnectionSummary {
         ProxyConnectionSummary {
-            userName: self.userName.to_string(),
-            userGroups: self.userGroups.clone(),
-            ip: self.ip.to_string(),
-            port: self.port,
-            processFullPath: self.processFullPath.to_string(),
-            processCmdLine: self.processCmdLine.to_string(),
-            responseStatus: self.responseStatus.to_string(),
+            userName: proxy_summary.userName.to_string(),
+            userGroups: proxy_summary.userGroups.clone(),
+            ip: proxy_summary.ip.to_string(),
+            port: proxy_summary.port,
+            processFullPath: proxy_summary.processFullPath.to_string(),
+            processCmdLine: proxy_summary.processCmdLine.to_string(),
+            responseStatus: proxy_summary.responseStatus.to_string(),
             count: 1,
         }
     }

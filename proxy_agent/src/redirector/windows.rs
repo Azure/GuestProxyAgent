@@ -18,7 +18,12 @@ use std::ptr;
 use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Networking::WinSock;
 
-pub type BpfObject = *mut bpf_obj::bpf_object;
+pub struct BpfObject(pub *mut bpf_obj::bpf_object);
+// BpfObject is not Send because it contains a raw pointer.
+// However, it is safe to send BpfObject between threads because
+//  bpf_object is reference to the ebpf object, inlcuding names and handles when load to eBPF services, object itself couldnot be updated.
+//  bpf_object is used to interact with the eBPF program and maps, only the eBPF maps data could be updated at user mode.
+unsafe impl Send for BpfObject {}
 
 pub fn initialized_success(shared_state: Arc<Mutex<SharedState>>) -> bool {
     if !bpf_api::ebpf_api_is_loaded() {

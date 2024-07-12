@@ -20,9 +20,6 @@ use std::thread;
 pub use linux::BpfObject;
 #[cfg(windows)]
 pub use windows::BpfObject;
-/// This is a workaround to allow BpfObject to be sent between threads.
-pub struct RedirectorObject(pub BpfObject);
-unsafe impl Send for RedirectorObject {}
 
 #[derive(Serialize, Deserialize)]
 #[repr(C)]

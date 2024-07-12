@@ -64,7 +64,7 @@ pub fn load_bpf_object(bpf_file_path: PathBuf, shared_state: Arc<Mutex<SharedSta
     };
 
     if result == 0 {
-        redirector_wrapper::set_bpf_object(shared_state.clone(), obj);
+        redirector_wrapper::set_bpf_object(shared_state.clone(), super::BpfObject(obj));
     }
 
     result
