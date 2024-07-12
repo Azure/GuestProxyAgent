@@ -175,11 +175,12 @@ fn poll_secure_channel_status(
         let state = status.get_secure_channel_state();
         // check if need fetch the key
         if state != DISABLE_STATE
-            && status.keyGuid != key_keeper_wrapper::get_current_key_guid(shared_state.clone())
+            && (status.keyGuid.is_none()  // key has not latched yet
+                || status.keyGuid != key_keeper_wrapper::get_current_key_guid(shared_state.clone()))
         {
-            // search the key locally first
             let mut key_found = false;
             if let Some(guid) = &status.keyGuid {
+                // key latched before and search the key locally first
                 let mut key_file = key_dir.to_path_buf().join(guid);
                 key_file.set_extension("key");
                 // the key already latched before
@@ -306,6 +307,8 @@ fn poll_secure_channel_status(
                 );
                 // Update the status message and let the provision to continue
                 key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
+                // clear key in memory for disabled state
+                key_keeper_wrapper::clear_key(shared_state.clone());
                 provision::key_latched(shared_state.clone());
             }
         }
