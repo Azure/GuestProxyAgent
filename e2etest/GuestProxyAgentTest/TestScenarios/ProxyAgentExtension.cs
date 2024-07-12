@@ -17,6 +17,7 @@ namespace GuestProxyAgentTest.TestScenarios
             string withoutExt = Path.GetFileNameWithoutExtension(zipFile);
             string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
             string proxyAgentVersion = "";
+            string exePath = "";
             try
             {
                 ZipFile.ExtractToDirectory(zipFile, extractPath);
@@ -31,43 +32,29 @@ namespace GuestProxyAgentTest.TestScenarios
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
                 AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
-                string command = $"eval \"{extractPath}/ProxyAgent/ProxyAgent/azure-proxy-agent --version\"";
-                var process = new Process()
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "/bin/bash",
-                        Arguments = $"-c \"{command}\"",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                    }
-                };
-                process.Start();
-                proxyAgentVersion = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
+                exePath = extractPath + "/ProxyAgent/ProxyAgent/azure-proxy-agent";
             }
             else
             {
                 EnableProxyAgent = true;
-                string commandPath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
-                var process = new Process()
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments = $"-Command {commandPath} --version",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                    }
-                };
-                process.Start();
-                proxyAgentVersion = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
+                exePath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
             }
+            var process = new Process()
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+            process.Start();
+            proxyAgentVersion = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            // Passing in placeholder version for the first validation case
             string proxyAgentVersionBeforeUpdate = "1.0.0";
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
