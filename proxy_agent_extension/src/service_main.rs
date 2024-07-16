@@ -761,8 +761,8 @@ mod tests {
             processCmdLine: "test".to_string(),
             responseStatus: "test".to_string(),
             count: 1,
-            userGroups: Some(vec!["test".to_string()]),
             processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
         };
 
         let toplevel_status = GuestProxyAgentAggregateStatus {
