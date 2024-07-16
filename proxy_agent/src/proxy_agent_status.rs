@@ -113,7 +113,7 @@ pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSum
         responseStatus: summary.responseStatus.to_string(),
         count: 1,
         userGroups: Some(summary.userGroups.clone()),
-        processFullPath: Some(summary.processFullPath.to_string())
+        processFullPath: Some(summary.processFullPath.to_string()),
     }
 }
 pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
