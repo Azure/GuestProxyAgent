@@ -107,13 +107,13 @@ pub fn proxy_agent_status_new(vessel: DataVessel) -> ProxyAgentStatus {
 pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSummary {
     ProxyConnectionSummary {
         userName: summary.userName.to_string(),
-        userGroups: Some(summary.userGroups.clone()),
         ip: summary.ip.to_string(),
         port: summary.port,
-        processFullPath: Some(summary.processFullPath.to_string()),
         processCmdLine: summary.processCmdLine.to_string(),
         responseStatus: summary.responseStatus.to_string(),
         count: 1,
+        userGroups: Some(summary.userGroups.clone()),
+        processFullPath: Some(summary.processFullPath.to_string())
     }
 }
 pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
