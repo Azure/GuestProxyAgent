@@ -41,10 +41,10 @@ pub struct ProxyAgentStatus {
 #[allow(non_snake_case)]
 pub struct ProxyConnectionSummary {
     pub userName: String,
-    pub userGroups: Vec<String>,
+    pub userGroups: Option<Vec<String>>,
     pub ip: String,
     pub port: u16,
-    pub processFullPath: String,
+    pub processFullPath: Option<String>,
     pub processCmdLine: String,
     pub responseStatus: String,
     pub count: u64,
