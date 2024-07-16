@@ -110,7 +110,7 @@ pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSum
         userGroups: Some(summary.userGroups.clone()),
         ip: summary.ip.to_string(),
         port: summary.port,
-        processFullPath: Aome(summary.processFullPath.to_string()),
+        processFullPath: Some(summary.processFullPath.to_string()),
         processCmdLine: summary.processCmdLine.to_string(),
         responseStatus: summary.responseStatus.to_string(),
         count: 1,
