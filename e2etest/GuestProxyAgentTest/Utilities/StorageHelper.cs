@@ -35,7 +35,7 @@ namespace GuestProxyAgentTest.Utilities
 
         /// <summary>
         /// Instance of StroageHelper, need to call Init before using
-        /// The stroageHelper will operate the pre-created storage account 'e2etestsharedstorage'
+        /// The storageHelper will operate the pre-created storage account 'e2etestsharedstorage'
         /// </summary>
         public static StorageHelper Instance
         {
@@ -115,7 +115,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <summary>
         /// Clean/delete all the folder under a folder of the shared blob
         /// </summary>
-        /// <param name="containerName">contiainer name</param>
+        /// <param name="containerName">container name</param>
         /// <param name="folderPath">folder path in the blob</param>
         public void CleanSharedBlobFolder(string containerName, string folderPath)
         {

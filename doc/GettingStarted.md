@@ -27,7 +27,7 @@ The following must be installed in order to build this project:
 
 4. [Clang for Windows 64-bit](https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.1/LLVM-11.0.1-win64.exe) (version **11.0.1**).
  Note: clang versions 12 and higher are NOT yet supported, as they perform program optimizations that are incompatible with the PREVAIL verifier.
-5. [NuGet Windows x86 Commandline](https://www.nuget.org/downloads) (version **6.31 or higher**), which can be installed to a location such as "C:\Program Files (x86)\NuGet\".
+5. [NuGet Windows x86 Command-line](https://www.nuget.org/downloads) (version **6.31 or higher**), which can be installed to a location such as "C:\Program Files (x86)\NuGet\".
 6. [Installing rustup on Windows](https://www.rust-lang.org/tools/install), to start using Rust, download the installer, then run the program and follow the default onscreen instructions.
 
 You should add the paths to `git.exe` and `nuget.exe` to the Windows PATH environment variable after the software packages

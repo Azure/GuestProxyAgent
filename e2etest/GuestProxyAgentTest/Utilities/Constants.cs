@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 namespace GuestProxyAgentTest.Utilities
 {
     /// <summary>
-    /// Contants used in the project
+    /// Constants used in the project
     /// </summary>
     public static class Constants
     {

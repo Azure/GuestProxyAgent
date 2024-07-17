@@ -328,13 +328,13 @@ mod tests {
 
         // Add body with multiple empty lines
         let mut raw_string = raw_string.to_string();
-        raw_string.push_str("\r\n\r\nAother line\r\n");
+        raw_string.push_str("\r\n\r\nAnother line\r\n");
         let mut request = Request::from_raw_request(raw_string.to_string()).unwrap();
         let to_raw_string = request.as_raw_string();
         assert_eq!(
             raw_string.len(),
             to_raw_string.len(),
-            "to_raw_string len() mismatch when body with multple empty lines"
+            "to_raw_string len() mismatch when body with multiple empty lines"
         );
 
         let path_para = request.get_url_path_and_canonicalized_parameters();

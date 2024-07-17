@@ -378,7 +378,7 @@ mod tests {
                     return;
                 }
             }
-            // Coudn't find any user with group in our internal test environment
+            // Couldn't find any user with group in our internal test environment
             // assert!(
             //     false,
             //     "test failed after enumerated all logon session accounts."
