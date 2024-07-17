@@ -3,24 +3,25 @@
 use crate::common::http::{
     self, headers, http_request::HttpRequest, request::Request, response::Response,
 };
-use crate::data_vessel::DataVessel;
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
+use crate::shared_state::{key_keeper_wrapper, SharedState};
 use std::io::{Error, ErrorKind};
+use std::sync::{Arc, Mutex};
 use std::{io::prelude::*, net::TcpStream};
 use url::{Position, Url};
 
 pub struct WireServerClient {
     ip: String,
     port: u16,
-    vessel: DataVessel,
+    shared_state: Arc<Mutex<SharedState>>,
 }
 
 impl WireServerClient {
-    pub fn new(ip: &str, port: u16, vessel: DataVessel) -> Self {
+    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         WireServerClient {
             ip: ip.to_string(),
             port,
-            vessel,
+            shared_state,
         }
     }
 
@@ -53,8 +54,8 @@ impl WireServerClient {
         let http_request = HttpRequest::new_proxy_agent_request(
             url,
             req,
-            self.vessel.get_current_key_guid(),
-            self.vessel.get_current_key_value(),
+            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
+            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
         )?;
 
         Ok(http_request)
@@ -95,13 +96,13 @@ impl WireServerClient {
             if response.status != Response::OK {
                 return Err(Error::new(
                     ErrorKind::Other,
-                    format!("Host resposned {}.", &response.status),
+                    format!("Host responsed {}.", &response.status),
                 ));
             }
         } else {
             return Err(Error::new(
                 ErrorKind::ConnectionRefused,
-                "Host does not resposne continue to receive the reqeust body.",
+                "Host does not response continue to receive the request body.",
             ));
         }
 
@@ -130,7 +131,7 @@ impl WireServerClient {
             Err(err) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied goalstate is invalid: {}, Error: {}",
+                    "Received goalstate is invalid: {}, Error: {}",
                     goal_state_str, err
                 ),
             )),
@@ -159,7 +160,7 @@ impl WireServerClient {
             Err(err) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied shared_config is invalid: {}, Error: {}",
+                    "Received shared_config is invalid: {}, Error: {}",
                     shared_config_str, err
                 ),
             )),
