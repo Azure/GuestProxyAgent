@@ -107,13 +107,13 @@ pub fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAge
 pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSummary {
     ProxyConnectionSummary {
         userName: summary.userName.to_string(),
-        userGroups: summary.userGroups.clone(),
         ip: summary.ip.to_string(),
         port: summary.port,
-        processFullPath: summary.processFullPath.to_string(),
         processCmdLine: summary.processCmdLine.to_string(),
         responseStatus: summary.responseStatus.to_string(),
         count: 1,
+        userGroups: Some(summary.userGroups.clone()),
+        processFullPath: Some(summary.processFullPath.to_string()),
     }
 }
 pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
