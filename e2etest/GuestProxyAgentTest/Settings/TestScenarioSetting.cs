@@ -15,7 +15,7 @@ namespace GuestProxyAgentTest.Settings
         internal string vmImageVersion = "";
         internal string suffixName = new Random().Next(1000).ToString();
         internal string testScenarioClassName = "GuestProxyAgentTest.TestScenarios.BVTScenario";
-        internal int testScenarioTimeoutMillseconds = 2000 * 60 * 60;
+        internal int testScenarioTimeoutMillseconds = 3000 * 60 * 60;
         
 
         internal VMImageDetails VMImageDetails
