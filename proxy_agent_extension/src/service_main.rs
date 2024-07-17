@@ -762,7 +762,7 @@ mod tests {
             responseStatus: "test".to_string(),
             count: 1,
             processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()])
+            userGroups: Some(vec!["test".to_string()]),
         };
 
         let toplevel_status = GuestProxyAgentAggregateStatus {

@@ -47,7 +47,7 @@ pub struct ProxyConnectionSummary {
     pub responseStatus: String,
     pub count: u64,
     pub userGroups: Option<Vec<String>>,
-    pub processFullPath: Option<String>
+    pub processFullPath: Option<String>,
 }
 
 impl Clone for ProxyConnectionSummary {
