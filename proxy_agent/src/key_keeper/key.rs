@@ -724,8 +724,12 @@ pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
         headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
         0.to_string(),
     );
-    let mut http_request =
-        HttpRequest::new_proxy_agent_request(url, req, key.guid.to_string(), key.key.to_string())?;
+    let mut http_request = HttpRequest::new_proxy_agent_request(
+        url,
+        req,
+        Some(key.guid.to_string()),
+        Some(key.key.to_string()),
+    )?;
     let mut response = http::get_response_in_string(&mut http_request)?;
     if response.status != Response::OK {
         return Err(Error::new(
@@ -1120,8 +1124,8 @@ mod tests {
     }
 
     #[test]
-    fn test_privelege_is_match() {
-        let logger_key = "test_privelege_is_match";
+    fn test_privilege_is_match() {
+        let logger_key = "test_privilege_is_match";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         Connection::init_logger(temp_test_path.to_path_buf());

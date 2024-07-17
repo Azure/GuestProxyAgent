@@ -19,7 +19,7 @@ namespace GuestProxyAgentTest.Utilities
     {
         private TestScenarioSetting testScenarioSetting = null!;
         private string vmName = "";
-        private string vNetNamt = "";
+        private string vNetName = "";
         private string netInfName = "";
         private string pubIpName = "";
         private string rgName = "";
@@ -29,7 +29,7 @@ namespace GuestProxyAgentTest.Utilities
         public VMBuilder() { }
 
         /// <summary>
-        /// Load the test case setting, that set up the virutal machine related resource names, including virutal machine name, virutal network name, network interface name, public ip address name
+        /// Load the test case setting, that set up the virtual machine related resource names, including virtual machine name, virtual network name, network interface name, public ip address name
         /// </summary>
         /// <param name="testScenarioSetting"></param>
         /// <returns></returns>
@@ -39,7 +39,7 @@ namespace GuestProxyAgentTest.Utilities
             this.rgName = this.testScenarioSetting.ResourceGroupName;
             var prefix = "e2e" + new Random().Next(1000);
             this.vmName = prefix + "vm";
-            this.vNetNamt = prefix + "vNet";
+            this.vNetName = prefix + "vNet";
             this.netInfName = prefix + "nInf";
             this.pubIpName = prefix + "pubIp";
             return this;
@@ -148,7 +148,7 @@ namespace GuestProxyAgentTest.Utilities
         {
             Console.WriteLine("Creating network profile");
             var vns = rgr.GetVirtualNetworks();
-            await vns.CreateOrUpdateAsync(WaitUntil.Completed, this.vNetNamt, new VirtualNetworkData
+            await vns.CreateOrUpdateAsync(WaitUntil.Completed, this.vNetName, new VirtualNetworkData
             {
                 AddressPrefixes =
                     {
@@ -185,7 +185,7 @@ namespace GuestProxyAgentTest.Utilities
                         {
                             Subnet = new SubnetData()
                             {
-                              Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/virtualNetworks/{this.vNetNamt}/subnets/default"),
+                              Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/virtualNetworks/{this.vNetName}/subnets/default"),
                             },
                             PublicIPAddress = new PublicIPAddressData()
                             {
@@ -219,7 +219,7 @@ namespace GuestProxyAgentTest.Utilities
 
             if (TestSetting.Instance == null)
             {
-                throw new Exception("TestSeting not init.");
+                throw new Exception("TestSetting not init.");
             }
 
             if (StorageHelper.Instance == null)

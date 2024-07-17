@@ -2,22 +2,23 @@
 // SPDX-License-Identifier: MIT
 use super::instance_info::InstanceInfo;
 use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
-use crate::data_vessel::DataVessel;
+use crate::shared_state::{key_keeper_wrapper, SharedState};
 use std::io::{Error, ErrorKind};
+use std::sync::{Arc, Mutex};
 use url::Url;
 
 pub struct ImdsClient {
     ip: String,
     port: u16,
-    vessel: DataVessel,
+    shared_state: Arc<Mutex<SharedState>>,
 }
 
 impl ImdsClient {
-    pub fn new(ip: &str, port: u16, vessel: DataVessel) -> Self {
+    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         ImdsClient {
             ip: ip.to_string(),
             port,
-            vessel,
+            shared_state,
         }
     }
 
@@ -30,8 +31,8 @@ impl ImdsClient {
         let mut http_request = HttpRequest::new_proxy_agent_request(
             url,
             req,
-            self.vessel.get_current_key_guid(),
-            self.vessel.get_current_key_value(),
+            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
+            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
         )?;
 
         let response = http::get_response_in_string(&mut http_request)?;
@@ -52,7 +53,7 @@ impl ImdsClient {
             Err(e) => Err(Error::new(
                 ErrorKind::Other,
                 format!(
-                    "Recevied instance info is invalid: {}, Error: {}",
+                    "Received instance info is invalid: {}, Error: {}",
                     instance_info_str, e
                 ),
             )),
