@@ -63,18 +63,33 @@ else
     done
 fi
 
+echo "Check that status file is regenerated"
+timeout=900
+elpased=0
+while :; do 
+    statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
+	statusFile=$(ls $statusFolder/*.status)
+	if [ -f "$statusFile" ]; then
+		echo "statusFile=$statusFile"
+        echo "Contents of status file:"
+        cat "$statusFile"
+        statusExists=true
+		break
+	else
+		echo "Timeout reached. Exiting the loop, status file is not regenerated."
+        statusExists=false
+		break
+     fi
+	sleep 5
+done
+
 echo "TEST: Check that status file is success with 5 minute timeout"
-statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
-echo "statusFolder=$statusFolder"
-statusFile=$(ls $statusFolder/*.status)
-echo "statusFile=$statusFile"
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 timeout=300
 elpased=0
-echo "Contents of status file:"
-cat "$statusFile"
-while :; do 
+if [[ "$statusExists" == "true" ]]; then
+	while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')
     if [[ "$extensionStatus" == "success" ]]; then
         guestProxyAgentExtensionStatusObjGenerated=true
@@ -89,6 +104,7 @@ while :; do
     fi
     sleep 5
 done
+fi
 
 echo "TEST: Check that process ProxyAgentExt is running"
 processId=$(pgrep ProxyAgentExt)
