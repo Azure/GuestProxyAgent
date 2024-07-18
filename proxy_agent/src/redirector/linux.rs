@@ -182,6 +182,7 @@ fn update_skip_process_map(bpf: &mut Bpf) -> bool {
     true
 }
 
+/* // This function is not used in the code
 fn get_local_ip() -> Option<String> {
     let network_interfaces = match nix::ifaddrs::getifaddrs() {
         Ok(interfaces) => interfaces,
@@ -230,7 +231,7 @@ fn get_local_ip() -> Option<String> {
 
     None
 }
-
+*/
 fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
     match bpf.map_mut("policy_map") {
         Some(map) => {
@@ -540,10 +541,11 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                             }
                         };
                     } else {
-                        let local_ip = match get_local_ip() {
-                            Some(ip) => ip,
-                            None => constants::PROXY_AGENT_IP.to_string(),
-                        };
+                        // let local_ip = match get_local_ip() {
+                        //     Some(ip) => ip,
+                        //     None => constants::PROXY_AGENT_IP.to_string(),
+                        // };
+                        let local_ip = constants::PROXY_AGENT_IP.to_string();
                         event_logger::write_event(
                             event_logger::WARN_LEVEL,
                             format!(
