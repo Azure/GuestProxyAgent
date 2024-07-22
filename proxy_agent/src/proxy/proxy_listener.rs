@@ -53,7 +53,7 @@ fn start(port: u16, pool_size: u16, shared_state: Arc<Mutex<SharedState>>) {
     };
 
     let message = helpers::write_startup_event(
-        "Started proxy listener, ready to accept request",
+        &format!("Started proxy listener {}, ready to accept request", addr),
         "start",
         "proxy_listener",
         logger::AGENT_LOGGER_KEY,

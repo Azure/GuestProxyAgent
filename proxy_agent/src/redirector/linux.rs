@@ -188,7 +188,8 @@ fn update_skip_process_map(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>)
     true
 }
 
-fn get_local_ip(shared_state: Arc<Mutex<SharedState>>) -> Option<String> {
+/* // This function is not used in the code
+fn get_local_ip() -> Option<String> {
     let network_interfaces = match nix::ifaddrs::getifaddrs() {
         Ok(interfaces) => interfaces,
         Err(err) => {
@@ -239,6 +240,7 @@ fn get_local_ip(shared_state: Arc<Mutex<SharedState>>) -> Option<String> {
 
     None
 }
+*/
 
 fn update_policy_map(
     bpf: &mut Bpf,
@@ -575,10 +577,11 @@ fn update_redirect_policy_internal(
                             }
                         };
                     } else {
-                        let local_ip = match get_local_ip(shared_state.clone()) {
-                            Some(ip) => ip,
-                            None => constants::PROXY_AGENT_IP.to_string(),
-                        };
+                        // let local_ip = match get_local_ip(shared_state.clone()) {
+                        //    Some(ip) => ip,
+                        //    None => constants::PROXY_AGENT_IP.to_string(),
+                        // };
+                        let local_ip = constants::PROXY_AGENT_IP.to_string();
                         let local_port = redirector_wrapper::get_local_port(shared_state.clone());
                         event_logger::write_event(
                             event_logger::WARN_LEVEL,
@@ -628,7 +631,7 @@ fn update_redirect_policy_internal(
 }
 
 #[cfg(test)]
-//#[cfg(feature = "test-with-root")]
+#[cfg(feature = "test-with-root")]
 mod tests {
     use crate::common::config;
     use crate::common::logger;
