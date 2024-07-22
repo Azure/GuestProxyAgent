@@ -415,7 +415,7 @@ pub fn get_status() -> String {
     unsafe { STATUS_MESSAGE.to_string() }
 }
 
-pub fn close(local_port: u16) {
+pub fn close() {
     // reset ebpf object
     unsafe {
         BPF_OBJECT = None;
