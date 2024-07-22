@@ -78,14 +78,14 @@ fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     is_started()
 }
 
-pub fn close(local_port: u16) {
+pub fn close() {
     #[cfg(windows)]
     {
-        windows::close(local_port);
+        windows::close();
     }
     #[cfg(not(windows))]
     {
-        linux::close(local_port);
+        linux::close();
     }
 }
 

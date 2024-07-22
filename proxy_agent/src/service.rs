@@ -61,7 +61,7 @@ pub fn start_service_wait() {
 
 pub fn stop_service(shared_state: Arc<Mutex<SharedState>>) {
     crate::monitor::stop();
-    crate::redirector::close(constants::PROXY_AGENT_PORT);
+    crate::redirector::close();
     crate::key_keeper::stop(shared_state.clone());
     proxy_listener::stop(constants::PROXY_AGENT_PORT, shared_state.clone());
     event_logger::stop();
