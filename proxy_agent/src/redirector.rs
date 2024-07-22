@@ -85,7 +85,7 @@ pub fn close(local_port: u16) {
     }
     #[cfg(not(windows))]
     {
-        linux::close(local_port);
+        linux::close();
     }
 }
 
