@@ -40,10 +40,10 @@ impl From<ProxySummary> for ProxyConnectionSummary {
     fn from(proxy_summary: ProxySummary) -> ProxyConnectionSummary {
         ProxyConnectionSummary {
             userName: proxy_summary.userName.to_string(),
-            userGroups: proxy_summary.userGroups.clone(),
+            userGroups: Some(proxy_summary.userGroups.clone()),
             ip: proxy_summary.ip.to_string(),
             port: proxy_summary.port,
-            processFullPath: proxy_summary.processFullPath.to_string(),
+            processFullPath: Some(proxy_summary.processFullPath.to_string()),
             processCmdLine: proxy_summary.processCmdLine.to_string(),
             responseStatus: proxy_summary.responseStatus.to_string(),
             count: 1,
