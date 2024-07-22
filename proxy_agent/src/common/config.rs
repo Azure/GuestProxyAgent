@@ -57,11 +57,6 @@ pub fn get_ebpf_program_name() -> String {
     SYSTEM_CONFIG.get_ebpf_program_name().to_string()
 }
 
-#[cfg(not(windows))]
-pub fn get_fallback_with_iptable_redirect() -> bool {
-    SYSTEM_CONFIG.get_fallback_with_iptable_redirect()
-}
-
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -83,8 +78,6 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(not(windows))]
     cgroupRoot: Option<String>,
-    #[cfg(not(windows))]
-    fallBackWithIpTableRedirect: Option<bool>, // fallback to iptable redirect if cgroup redirect is not supported, it should only be use for old kernel, some scenario like docker container may not work
 }
 
 impl Default for Config {
@@ -175,11 +168,6 @@ impl Config {
         }
     }
 
-    #[cfg(not(windows))]
-    pub fn get_fallback_with_iptable_redirect(&self) -> bool {
-        self.fallBackWithIpTableRedirect
-            .unwrap_or(constants::DEFAULT_FALLBACK_WITH_IPTABLE_REDIRECT)
-    }
 }
 
 #[cfg(test)]
@@ -275,14 +263,6 @@ mod tests {
             );
         }
 
-        #[cfg(not(windows))]
-        {
-            assert_eq!(
-                constants::DEFAULT_FALLBACK_WITH_IPTABLE_REDIRECT,
-                config.get_fallback_with_iptable_redirect(),
-                "get_fallback_with_iptable_redirect mismatch"
-            );
-        }
 
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 mod ebpf_obj;
-mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::provision;
@@ -56,9 +55,6 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         return false;
     }
 
-    // Try remove the iptable redirection rules before setup Cgroup redirection.
-    iptable_redirect::cleanup_firewall_redirection(local_port);
-    let mut iptable_redirect = false;
     let cgroup2_path = match proxy_agent_shared::linux::get_cgroup2_mount_path() {
         Ok(path) => {
             logger::write(format!(
@@ -87,16 +83,6 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
         );
-
-        if !config::get_fallback_with_iptable_redirect() {
-            return false;
-        }
-
-        // setup firewall rules for redirection
-        if !iptable_redirect::setup_firewall_redirection(local_port) {
-            return false;
-        }
-        iptable_redirect = true;
     }
 
     unsafe {
@@ -105,21 +91,13 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         IS_STARTED = true;
     }
 
-    let message = if iptable_redirect {
-        helpers::write_startup_event(
-            "Started Redirector with iptables redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        )
-    } else {
+    let message = 
         helpers::write_startup_event(
             "Started Redirector with cgroup redirection",
             "start",
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
-        )
-    };
+        );
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }
@@ -439,8 +417,6 @@ pub fn get_status() -> String {
 }
 
 pub fn close(local_port: u16) {
-    // remove the firewall rules for redirection if has
-    iptable_redirect::cleanup_firewall_redirection(local_port);
     // reset ebpf object
     unsafe {
         BPF_OBJECT = None;
