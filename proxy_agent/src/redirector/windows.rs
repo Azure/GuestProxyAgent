@@ -155,7 +155,7 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
     redirector_wrapper::get_status_message(shared_state.clone())
 }
 
-pub fn close(_local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     bpf_prog::close_bpf_object(shared_state.clone());
     logger::write("Success closed bpf object.".to_string());
     redirector_wrapper::set_is_started(shared_state.clone(), false);

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 mod ebpf_obj;
-mod iptable_redirect;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::provision;
@@ -51,9 +50,6 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
         return false;
     }
 
-    // Try remove the iptable redirection rules before setup Cgroup redirection.
-    iptable_redirect::cleanup_firewall_redirection(local_port, shared_state.clone());
-    let mut iptable_redirect = false;
     let cgroup2_path = match proxy_agent_shared::linux::get_cgroup2_mount_path() {
         Ok(path) => {
             logger::write(format!(
@@ -82,37 +78,19 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
         );
-
-        if !config::get_fallback_with_iptable_redirect() {
-            return false;
-        }
-
-        // setup firewall rules for redirection
-        if !iptable_redirect::setup_firewall_redirection(local_port, shared_state.clone()) {
-            return false;
-        }
-        iptable_redirect = true;
+        return false;
     }
 
     redirector_wrapper::set_bpf_object(shared_state.clone(), bpf);
     redirector_wrapper::set_is_started(shared_state.clone(), true);
     redirector_wrapper::set_local_port(shared_state.clone(), local_port);
 
-    let message = if iptable_redirect {
-        helpers::write_startup_event(
-            "Started Redirector with iptables redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        )
-    } else {
-        helpers::write_startup_event(
-            "Started Redirector with cgroup redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        )
-    };
+    let message = helpers::write_startup_event(
+        "Started Redirector with cgroup redirection",
+        "start",
+        "redirector/linux",
+        logger::AGENT_LOGGER_KEY,
+    );
     redirector_wrapper::set_status_message(shared_state.clone(), message.to_string());
     provision::redirector_ready(shared_state);
 
@@ -468,9 +446,7 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
     redirector_wrapper::get_status_message(shared_state)
 }
 
-pub fn close(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    // remove the firewall rules for redirection if has
-    iptable_redirect::cleanup_firewall_redirection(local_port, shared_state.clone());
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     // reset ebpf object
     redirector_wrapper::clear_bpf_object(shared_state);
 }

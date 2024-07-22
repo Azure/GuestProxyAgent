@@ -88,14 +88,14 @@ fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     is_started(shared_state.clone())
 }
 
-pub fn close(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     #[cfg(windows)]
     {
-        windows::close(local_port, shared_state);
+        windows::close(shared_state);
     }
     #[cfg(not(windows))]
     {
-        linux::close(local_port, shared_state);
+        linux::close(shared_state);
     }
 }
 
