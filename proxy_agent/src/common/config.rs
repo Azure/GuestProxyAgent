@@ -167,7 +167,6 @@ impl Config {
             None => PathBuf::from(constants::CGROUP_ROOT),
         }
     }
-
 }
 
 #[cfg(test)]
@@ -262,7 +261,6 @@ mod tests {
                 "get_cgroup_root mismatch"
             );
         }
-
 
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);

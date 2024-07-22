@@ -91,13 +91,12 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         IS_STARTED = true;
     }
 
-    let message = 
-        helpers::write_startup_event(
-            "Started Redirector with cgroup redirection",
-            "start",
-            "redirector/linux",
-            logger::AGENT_LOGGER_KEY,
-        );
+    let message = helpers::write_startup_event(
+        "Started Redirector with cgroup redirection",
+        "start",
+        "redirector/linux",
+        logger::AGENT_LOGGER_KEY,
+    );
     unsafe {
         *STATUS_MESSAGE = message.to_string();
     }

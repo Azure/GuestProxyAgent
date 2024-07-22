@@ -32,7 +32,6 @@ pub const CONNECTION_HEADER: &str = "connection";
 // Default Config Settings
 pub const DEFAULT_START_REDIRECTOR: bool = true;
 pub const DEFAULT_MAX_EVENT_FILE_COUNT: usize = 30;
-pub const DEFAULT_FALLBACK_WITH_IPTABLE_REDIRECT: bool = false;
 
 pub const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 pub const EGID: u32 = 3080;
