@@ -83,6 +83,7 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
             "redirector/linux",
             logger::AGENT_LOGGER_KEY,
         );
+        return false;
     }
 
     unsafe {
