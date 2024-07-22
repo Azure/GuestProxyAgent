@@ -19,7 +19,7 @@ while :; do
     if [ $(echo "$directories" | wc -l) -eq 1 ]; then
         for dir in $directories; do 
             PIRExtensionFolderPath=$dir
-            echo "PIR extension folder path" $PIRExtensionFolderPath
+            echo "PIR extension folder path=" $PIRExtensionFolderPath
         done 
         break
     fi
@@ -75,11 +75,12 @@ while :; do
         cat "$statusFile"
         statusExists=true
 		break
-	else
+    ((elapsed += interval))
+    if [[ $elapsed -ge $timeout ]]; then
 		echo "Timeout reached. Exiting the loop, status file is not regenerated."
         statusExists=false
 		break
-     fi
+    fi
 	sleep 5
 done
 

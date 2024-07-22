@@ -81,11 +81,12 @@ while :; do
         cat "$statusFile"
         statusExists=true
 		break
-	else
+	((elapsed += interval))
+    if [[ $elapsed -ge $timeout ]]; then
 		echo "Timeout reached. Exiting the loop, status file is not regenerated."
         statusExists=false
 		break
-     fi
+    fi
 	sleep 5
 done
 
