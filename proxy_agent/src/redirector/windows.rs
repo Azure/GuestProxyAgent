@@ -20,7 +20,7 @@ use windows_sys::Win32::Networking::WinSock;
 
 pub struct BpfObject(pub *mut bpf_obj::bpf_object);
 // BpfObject is not Send because it contains a raw pointer.
-// However, it is safe to send BpfObject between threads because
+// However, it is safe to send BpfObject between threads because no bpf_object specific state that is saved in TLS.
 //  bpf_object is reference to the ebpf object, inlcuding names and handles when load to eBPF services, object itself couldnot be updated.
 //  bpf_object is used to interact with the eBPF program and maps, only the eBPF maps elemetry data could be updated at centralized eBPF Maps.
 unsafe impl Send for BpfObject {}

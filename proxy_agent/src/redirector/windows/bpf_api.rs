@@ -57,6 +57,11 @@ fn init_ebpf_lib() -> Option<Library> {
 }
 
 fn load_ebpf_api(bpf_api_file_path: PathBuf) -> std::io::Result<Library> {
+    // load ebpf api library dynamically
+    // For thread local init / cleanup -- it only stores and cleans up the device handle to ebpf core. 
+    //      So it should be transparent to the caller, and does not impose any extra conditions.
+    // Considering DllMain (for process attach / detach) will be called only once, 
+    //      there should not be thread safety concerns too.
     match unsafe { Library::new(bpf_api_file_path.as_path()) } {
         Ok(api) => Ok(api),
         Err(e) => {
