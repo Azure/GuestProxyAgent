@@ -144,7 +144,7 @@ pub fn get_status() -> String {
     unsafe { STATUS_MESSAGE.to_string() }
 }
 
-pub fn close(_local_port: u16) {
+pub fn close() {
     unsafe {
         bpf_prog::close_bpf_object();
         logger::write("Success closed bpf object.".to_string());
