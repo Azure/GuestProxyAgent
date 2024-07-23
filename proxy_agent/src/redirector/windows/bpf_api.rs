@@ -57,11 +57,14 @@ fn init_ebpf_lib() -> Option<Library> {
 }
 
 fn load_ebpf_api(bpf_api_file_path: PathBuf) -> std::io::Result<Library> {
-    // load ebpf api library dynamically
-    // For thread local init / cleanup -- it only stores and cleans up the device handle to ebpf core.
-    //      So it should be transparent to the caller, and does not impose any extra conditions.
-    // Considering DllMain (for process attach / detach) will be called only once,
-    //      there should not be thread safety concerns too.
+    // Safety: Loading a library on  Windows has the following safety requirements:
+    // 1. The safety requirements of the library initialization and/or termination routines must be met.
+    // The eBPF for Windows library does not have any safety requirements for its initialization and de-initialization function[0].
+    // [0] https://github.com/microsoft/ebpf-for-windows/blob/Release-v0.17.1/ebpfapi/dllmain.cpp
+    //
+    // 2. Calling this function is not safe in multi-thread scenarios where a library file name is provided and the library
+    //     search path is modified.
+    // We satisfy the this requirement by providing the absolute path to the library.
     match unsafe { Library::new(bpf_api_file_path.as_path()) } {
         Ok(api) => Ok(api),
         Err(e) => {

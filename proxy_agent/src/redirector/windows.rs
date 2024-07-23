@@ -19,10 +19,13 @@ use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Networking::WinSock;
 
 pub struct BpfObject(pub *mut bpf_obj::bpf_object);
-// BpfObject is not Send because it contains a raw pointer.
-// However, it is safe to send BpfObject between threads because no bpf_object specific state that is saved in TLS.
-//  bpf_object is reference to the ebpf object, inlcuding names and handles when load to eBPF services, object itself couldnot be updated.
-//  bpf_object is used to interact with the eBPF program and maps, only the eBPF maps elemetry data could be updated at centralized eBPF Maps.
+// Safety: bpf_object, which is a reference to an eBPF object, has no dependencies on thread-local storage and can
+// safely be sent to another thread. This is not explicitly documented in the Windows eBPF library, but the library does
+// document it aims to be source-compatible with libbpf[0]. Note that synchronization is required to share this object
+// between threads, and care must be taken when using it as libbpf APIs make use of errno[1], which is thread-local.
+//
+// [0] https://github.com/microsoft/ebpf-for-windows/tree/Release-v0.17.1#2-does-this-provide-app-compatibility-with-ebpf-programs-written-for-linux
+// [1] https://libbpf.readthedocs.io/en/v1.4.5/api.html#error-handling
 unsafe impl Send for BpfObject {}
 
 pub fn initialized_success(shared_state: Arc<Mutex<SharedState>>) -> bool {
