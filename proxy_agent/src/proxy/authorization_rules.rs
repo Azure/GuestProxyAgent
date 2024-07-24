@@ -1,13 +1,12 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
-use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use url::Url;
 
 use super::{proxy_connection::Connection, Claims};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct Rule {
     pub roleName: String,
@@ -15,7 +14,7 @@ pub struct Rule {
     pub identities: Vec<Identity>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct AuthorizationRules {
     // The default access: allow -> true, deny-> false
@@ -27,14 +26,6 @@ pub struct AuthorizationRules {
 
 #[allow(dead_code)]
 impl AuthorizationRules {
-    pub fn new() -> AuthorizationRules {
-        AuthorizationRules {
-            defaultAllowed: false,
-            mode: "disabled".to_string(),
-            rules: None,
-        }
-    }
-
     pub fn from_authorization_item(authorization_item: AuthorizationItem) -> AuthorizationRules {
         let rules = match authorization_item.rules {
             Some(access_control_rules) => match access_control_rules.roleAssignments {
@@ -96,10 +87,6 @@ impl AuthorizationRules {
             mode: authorization_item.mode.to_lowercase(),
             rules,
         }
-    }
-
-    pub fn clone(&self) -> AuthorizationRules {
-        misc_helpers::json_clone(self).unwrap_or_else(|_| AuthorizationRules::new())
     }
 
     pub fn is_allowed(&self, connection_id: u128, request_url: String, claims: Claims) -> bool {

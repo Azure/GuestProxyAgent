@@ -156,7 +156,10 @@ fn poll_secure_channel_status(
                 "Wireserver rule id changed from {} to {}.",
                 old_wire_server_rule_id, wireserver_rule_id
             ));
-            proxy_authentication::set_wireserver_rules(status.get_wireserver_rules());
+            proxy_authentication::set_wireserver_rules(
+                shared_state.clone(),
+                status.get_wireserver_rules(),
+            );
         }
 
         let (updated, old_imds_rule_id) =
@@ -166,7 +169,7 @@ fn poll_secure_channel_status(
                 "IMDS rule id changed from {} to {}.",
                 old_imds_rule_id, imds_rule_id
             ));
-            proxy_authentication::set_imds_rules(status.get_imds_rules());
+            proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
         }
 
         let state = status.get_secure_channel_state();
@@ -287,8 +290,12 @@ fn poll_secure_channel_status(
             // update the redirector policy map
             redirector::update_wire_server_redirect_policy(
                 status.get_wire_server_mode() != DISABLE_STATE,
+                shared_state.clone(),
             );
-            redirector::update_imds_redirect_policy(status.get_imds_mode() != DISABLE_STATE);
+            redirector::update_imds_redirect_policy(
+                status.get_imds_mode() != DISABLE_STATE,
+                shared_state.clone(),
+            );
 
             // customer has not enforce the secure channel state
             if state == DISABLE_STATE {
