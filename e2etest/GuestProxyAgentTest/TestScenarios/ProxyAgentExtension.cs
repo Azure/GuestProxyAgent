@@ -54,7 +54,7 @@ namespace GuestProxyAgentTest.TestScenarios
             process.Start();
             proxyAgentVersion = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
-            // Passing in empty space for the first validation case
+            // Passing in 0 version number for the first validation case
             string proxyAgentVersionBeforeUpdate = "0";
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());

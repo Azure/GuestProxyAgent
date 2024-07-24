@@ -14,16 +14,16 @@ namespace GuestProxyAgentTest.TestCases
         public GuestProxyAgentExtensionValidationCase() : base("GuestProxyAgentExtensionValidationCase")
         { }
         public GuestProxyAgentExtensionValidationCase(string testCaseName, string expectedProxyAgentVersion) : base(testCaseName)
-        { 
+        {
             this.expectedProxyAgentVersion = expectedProxyAgentVersion;
         }
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
-            List<(string, string)> parameterList = new List<(string, string)> ();
+            List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("ExpectProxyAgentVerison", expectedProxyAgentVersion));
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
-            { 
+            {
                 var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentExtensionValidationDetails>();
                 if (validationDetails != null
                     && validationDetails.guestProxyAgentExtensionServiceExist
@@ -51,7 +51,7 @@ namespace GuestProxyAgentTest.TestCases
         public bool guestProxyAgentExtensionServiceStatus { get; set; }
         public bool guestProxyAgentExtensionStatusObjGenerated { get; set; }
         public bool guestProxyAgentExtensionVersion { get; set; }
-        public bool guestProxyAgentExtensionVersionUpgrade{get; set;}
+        public bool guestProxyAgentExtensionVersionUpgrade { get; set; }
         public bool guestProxyAgentExtensionInstanceView { get; set; }
     }
 }

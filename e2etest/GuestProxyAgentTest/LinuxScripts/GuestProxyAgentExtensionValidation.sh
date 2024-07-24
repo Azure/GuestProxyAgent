@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
-expectedProxyAgentVersion=$(echo $ExpectProxyAgentVerison)
+expectedProxyAgentVersion=$(echo $expectProxyAgentVerison)
 echo "extractedVersion=$expectedProxyAgentVersion"
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
