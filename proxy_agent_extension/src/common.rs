@@ -236,7 +236,13 @@ pub fn start_event_logger(logger_key: &str) {
             .eventsFolder
             .to_string(),
     );
-    telemetry::event_logger::start_async(event_folder, interval, max_event_file_count, logger_key);
+    telemetry::event_logger::start_async(
+        event_folder,
+        interval,
+        max_event_file_count,
+        logger_key,
+        |_s| {}, // empty fn
+    );
 }
 
 pub fn stop_event_logger() {
