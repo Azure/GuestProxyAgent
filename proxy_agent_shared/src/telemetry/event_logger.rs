@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: MIT
 use crate::logger_manager;
 use crate::misc_helpers;
-use crate::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use crate::telemetry::Event;
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,78 +15,48 @@ pub const INFO_LEVEL: &str = "Informational";
 pub const WARN_LEVEL: &str = "Warning";
 pub const ERROR_LEVEL: &str = "Error";
 pub const CRITICAL_LEVEL: &str = "Critical";
-pub const MAX_STATE_COUNT: u32 = 120;
 pub const MAX_MESSAGE_LENGTH: usize = 1024 * 4; // 4KB
 
 static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static mut STATE_MAP: Lazy<HashMap<String, (String, u32)>> =
-    Lazy::new(HashMap::<String, (String, u32)>::new);
-static mut STATUS_MESSAGE: Lazy<String> =
-    Lazy::new(|| String::from("Telemetry event logger thread has not started yet."));
 
-pub fn start_async(
+pub fn start_async<F>(
     event_dir: PathBuf,
     interval: Duration,
     max_event_file_count: usize,
     logger_key: &str,
-) {
+    set_status_fn: F,
+) where
+    F: Fn(String) + Send + 'static,
+{
     let key = logger_key.to_string();
     _ = thread::Builder::new()
         .name("event_logger".to_string())
         .spawn(move || {
-            _ = start(event_dir, interval, max_event_file_count, &key);
+            _ = start(
+                event_dir,
+                interval,
+                max_event_file_count,
+                &key,
+                set_status_fn,
+            );
         });
 }
 
-pub fn write_state_event(
-    state_key: &str,
-    state_value: &str,
-    level: &str,
-    message: String,
-    method_name: &str,
-    module_name: &str,
-    logger_key: &str,
-) {
-    unsafe {
-        match STATE_MAP.get(state_key) {
-            Some(v) => {
-                let value = v.0.to_string();
-                let count = v.1;
-                // State change or Timer expired
-                if value != state_value || count >= MAX_STATE_COUNT {
-                    // Update the state value and reset the count
-                    STATE_MAP.insert(state_key.to_string(), (state_value.to_string(), 1));
-                    write_event(
-                        level,
-                        message.to_string(),
-                        method_name,
-                        module_name,
-                        logger_key,
-                    );
-                } else {
-                    STATE_MAP.insert(state_key.to_string(), (state_value.to_string(), count + 1));
-                }
-            }
-            None => {
-                STATE_MAP.insert(state_key.to_string(), (state_value.to_string(), 1));
-                write_event(level, message, method_name, module_name, logger_key);
-            }
-        }
-    }
-}
-
-fn start(
+fn start<F>(
     event_dir: PathBuf,
     mut interval: Duration,
     max_event_file_count: usize,
     logger_key: &str,
-) -> std::io::Result<()> {
+    set_status_fn: F,
+) -> std::io::Result<()>
+where
+    F: Fn(String),
+{
     let message = "Telemetry event logger thread started.";
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
+    set_status_fn(message.to_string());
+
     logger_manager::write(logger_key, message.to_string());
 
     misc_helpers::try_create_folder(event_dir.to_path_buf())?;
@@ -97,13 +65,10 @@ fn start(
     if interval == Duration::default() {
         interval = Duration::from_secs(60);
     }
-
     loop {
         if EVENT_QUEUE.is_closed() {
             let message = "Event queue already closed, stop processing events.";
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            set_status_fn(message.to_string());
             logger_manager::write_information(logger_key, message.to_string());
             break;
         }
@@ -111,9 +76,8 @@ fn start(
 
         if shutdown.load(Ordering::Relaxed) {
             let message = "Stop signal received, exiting the event logger thread.";
-            unsafe {
-                *STATUS_MESSAGE = message.to_string();
-            }
+            set_status_fn(message.to_string());
+
             logger_manager::write_information(logger_key, message.to_string());
             EVENT_QUEUE.close();
         }
@@ -220,21 +184,6 @@ pub fn write_event(
     };
 }
 
-pub fn get_status() -> ProxyAgentDetailStatus {
-    let shutdown = SHUT_DOWN.clone();
-    let status = if shutdown.load(Ordering::Relaxed) {
-        ModuleState::STOPPED.to_string()
-    } else {
-        ModuleState::RUNNING.to_string()
-    };
-
-    ProxyAgentDetailStatus {
-        status,
-        message: unsafe { STATUS_MESSAGE.to_string() },
-        states: None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::logger_manager;
@@ -264,7 +213,13 @@ mod tests {
         );
 
         let cloned_events_dir = events_dir.to_path_buf();
-        super::start_async(cloned_events_dir, Duration::from_millis(100), 3, logger_key);
+        super::start_async(
+            cloned_events_dir,
+            Duration::from_millis(100),
+            3,
+            logger_key,
+            |_s| {}, // empty function
+        );
 
         // write some events to the queue and flush to disk
         write_events(logger_key);

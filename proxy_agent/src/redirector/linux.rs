@@ -5,28 +5,23 @@ mod ebpf_obj;
 use crate::common::{config, constants, helpers, logger};
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
-use crate::shared_state::SharedState;
+use crate::shared_state::{redirector_wrapper, SharedState};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
-use once_cell::unsync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-static mut IS_STARTED: bool = false;
-static mut STATUS_MESSAGE: Lazy<String> =
-    Lazy::new(|| String::from("Redirector has not started yet."));
-static mut LOCAL_PORT: u16 = 0;
-static mut BPF_OBJECT: Option<Bpf> = None;
+pub type BpfObject = Bpf;
 
-pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let mut bpf = match open_ebpf_file(super::get_ebpf_file_path()) {
+pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+    let mut bpf = match open_ebpf_file(super::get_ebpf_file_path(), shared_state.clone()) {
         Ok(value) => value,
         Err(value) => return value,
     };
@@ -44,14 +39,14 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     }
 
     // maps
-    if !update_skip_process_map(&mut bpf) {
+    if !update_skip_process_map(&mut bpf, shared_state.clone()) {
         return false;
     }
-    if !update_policy_map(&mut bpf, local_port) {
+    if !update_policy_map(&mut bpf, local_port, shared_state.clone()) {
         return false;
     }
 
-    if !attach_kprobe_program(&mut bpf) {
+    if !attach_kprobe_program(&mut bpf, shared_state.clone()) {
         return false;
     }
 
@@ -74,7 +69,7 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
             config::get_cgroup_root()
         }
     };
-    if !attach_cgroup_program(&mut bpf, cgroup2_path) {
+    if !attach_cgroup_program(&mut bpf, cgroup2_path, shared_state.clone()) {
         let message = "Failed to attach cgroup program for redirection.";
         event_logger::write_event(
             event_logger::WARN_LEVEL,
@@ -86,11 +81,9 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         return false;
     }
 
-    unsafe {
-        BPF_OBJECT = Some(bpf);
-        LOCAL_PORT = local_port;
-        IS_STARTED = true;
-    }
+    redirector_wrapper::set_bpf_object(shared_state.clone(), bpf);
+    redirector_wrapper::set_is_started(shared_state.clone(), true);
+    redirector_wrapper::set_local_port(shared_state.clone(), local_port);
 
     let message = helpers::write_startup_event(
         "Started Redirector with cgroup redirection",
@@ -98,15 +91,16 @@ pub fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         "redirector/linux",
         logger::AGENT_LOGGER_KEY,
     );
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
+    redirector_wrapper::set_status_message(shared_state.clone(), message.to_string());
     provision::redirector_ready(shared_state);
 
     true
 }
 
-fn open_ebpf_file(bpf_file_path: PathBuf) -> Result<Bpf, bool> {
+fn open_ebpf_file(
+    bpf_file_path: PathBuf,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> Result<Bpf, bool> {
     let bpf: Bpf = match BpfLoader::new()
         // load the BTF data from /sys/kernel/btf/vmlinux
         .btf(Btf::from_sys_fs().ok().as_ref())
@@ -115,18 +109,21 @@ fn open_ebpf_file(bpf_file_path: PathBuf) -> Result<Bpf, bool> {
     {
         Ok(b) => b,
         Err(err) => {
-            set_error_status(format!(
-                "Failed to load eBPF program from file {}: {}",
-                misc_helpers::path_to_string(bpf_file_path.to_path_buf()),
-                err
-            ));
+            set_error_status(
+                format!(
+                    "Failed to load eBPF program from file {}: {}",
+                    misc_helpers::path_to_string(bpf_file_path.to_path_buf()),
+                    err
+                ),
+                shared_state.clone(),
+            );
             return Err(false);
         }
     };
     Ok(bpf)
 }
 
-fn update_skip_process_map(bpf: &mut Bpf) -> bool {
+fn update_skip_process_map(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>) -> bool {
     match bpf.map_mut("skip_process_map") {
         Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
             Ok(mut skip_process_map) => {
@@ -136,24 +133,33 @@ fn update_skip_process_map(bpf: &mut Bpf) -> bool {
                 match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
                     Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
                     Err(err) => {
-                        set_error_status(format!(
-                            "Failed to insert pid {} to skip_process_map with error: {}",
-                            pid, err
-                        ));
+                        set_error_status(
+                            format!(
+                                "Failed to insert pid {} to skip_process_map with error: {}",
+                                pid, err
+                            ),
+                            shared_state.clone(),
+                        );
                         return false;
                     }
                 }
             }
             Err(err) => {
-                set_error_status(format!(
-                    "Failed to load HashMap 'skip_process_map' with error: {}",
-                    err
-                ));
+                set_error_status(
+                    format!(
+                        "Failed to load HashMap 'skip_process_map' with error: {}",
+                        err
+                    ),
+                    shared_state.clone(),
+                );
                 return false;
             }
         },
         None => {
-            set_error_status("Failed to get map 'skip_process_map'.".to_string());
+            set_error_status(
+                "Failed to get map 'skip_process_map'.".to_string(),
+                shared_state.clone(),
+            );
             return false;
         }
     }
@@ -165,7 +171,10 @@ fn get_local_ip() -> Option<String> {
     let network_interfaces = match nix::ifaddrs::getifaddrs() {
         Ok(interfaces) => interfaces,
         Err(err) => {
-            set_error_status(format!("Failed to get local ip with error: {}", err));
+            set_error_status(
+                format!("Failed to get local ip with error: {}", err),
+                shared_state.clone(),
+            );
             return None;
         }
     };
@@ -210,7 +219,12 @@ fn get_local_ip() -> Option<String> {
     None
 }
 */
-fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
+
+fn update_policy_map(
+    bpf: &mut Bpf,
+    local_port: u16,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> bool {
     match bpf.map_mut("policy_map") {
         Some(map) => {
             match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
@@ -238,7 +252,7 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                             logger::write("policy_map updated for WireServer endpoints".to_string())
                         }
                         Err(err) => {
-                            set_error_status(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err));
+                            set_error_status(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err), shared_state.clone());
                             return false;
                         }
                     }
@@ -250,10 +264,13 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write("policy_map updated for IMDS endpoints".to_string()),
                         Err(err) => {
-                            set_error_status(format!(
-                                "Failed to insert IMDS endpoints to policy_map with error: {}",
-                                err
-                            ));
+                            set_error_status(
+                                format!(
+                                    "Failed to insert IMDS endpoints to policy_map with error: {}",
+                                    err
+                                ),
+                                shared_state.clone(),
+                            );
                             return false;
                         }
                     }
@@ -270,29 +287,36 @@ fn update_policy_map(bpf: &mut Bpf, local_port: u16) -> bool {
                             set_error_status( format!(
                                 "Failed to insert HostGAPlugin endpoints to policy_map with error: {}",
                                 err
-                            ));
+                            ), shared_state.clone());
                             return false;
                         }
                     }
                 }
                 Err(err) => {
-                    set_error_status(format!(
-                        "Failed to load HashMap 'policy_map' with error: {}",
-                        err
-                    ));
+                    set_error_status(
+                        format!("Failed to load HashMap 'policy_map' with error: {}", err),
+                        shared_state.clone(),
+                    );
                     return false;
                 }
             }
         }
         None => {
-            set_error_status("Failed to get map 'policy_map'.".to_string());
+            set_error_status(
+                "Failed to get map 'policy_map'.".to_string(),
+                shared_state.clone(),
+            );
             return false;
         }
     }
     true
 }
 
-fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
+fn attach_cgroup_program(
+    bpf: &mut Bpf,
+    cgroup2_root_path: PathBuf,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> bool {
     match std::fs::File::open(cgroup2_root_path) {
         Ok(cgroup) => match bpf.program_mut("connect4") {
             Some(program) => match program.try_into() {
@@ -303,7 +327,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
                         Err(err) => {
                             let message =
                                 format!("Failed to load program 'connect4' with error: {}", err);
-                            set_error_status(message.to_string());
+                            set_error_status(message.to_string(), shared_state.clone());
                             return false;
                         }
                     }
@@ -317,7 +341,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
                         Err(err) => {
                             let message =
                                 format!("Failed to attach program 'connect4' with error: {}", err);
-                            set_error_status(message.to_string());
+                            set_error_status(message.to_string(), shared_state.clone());
                             return false;
                         }
                     }
@@ -327,19 +351,19 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
                         "Failed to convert program to CgroupSockAddr with error: {}",
                         err
                     );
-                    set_error_status(message.to_string());
+                    set_error_status(message.to_string(), shared_state.clone());
                     return false;
                 }
             },
             None => {
                 let message = "Failed to get program 'connect4'";
-                set_error_status(message.to_string());
+                set_error_status(message.to_string(), shared_state.clone());
                 return false;
             }
         },
         Err(err) => {
             let message = format!("Failed to open cgroup with error: {}", err);
-            set_error_status(message.to_string());
+            set_error_status(message.to_string(), shared_state.clone());
             return false;
         }
     }
@@ -347,7 +371,7 @@ fn attach_cgroup_program(bpf: &mut Bpf, cgroup2_root_path: PathBuf) -> bool {
     true
 }
 
-fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
+fn attach_kprobe_program(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>) -> bool {
     match bpf.program_mut("tcp_v4_connect") {
         Some(program) => match program.try_into() {
             Ok(p) => {
@@ -355,10 +379,13 @@ fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
                 match program.load() {
                     Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
                     Err(err) => {
-                        set_error_status(format!(
-                            "Failed to load program 'tcp_v4_connect' with error: {}",
-                            err
-                        ));
+                        set_error_status(
+                            format!(
+                                "Failed to load program 'tcp_v4_connect' with error: {}",
+                                err
+                            ),
+                            shared_state.clone(),
+                        );
                         return false;
                     }
                 }
@@ -370,39 +397,42 @@ fn attach_kprobe_program(bpf: &mut Bpf) -> bool {
                         ));
                     }
                     Err(err) => {
-                        set_error_status(format!(
-                            "Failed to attach program 'tcp_v4_connect' with error: {}",
-                            err
-                        ));
+                        set_error_status(
+                            format!(
+                                "Failed to attach program 'tcp_v4_connect' with error: {}",
+                                err
+                            ),
+                            shared_state.clone(),
+                        );
                         return false;
                     }
                 }
             }
             Err(err) => {
-                set_error_status(format!(
-                    "Failed to convert program to KProbe with error: {}",
-                    err
-                ));
+                set_error_status(
+                    format!("Failed to convert program to KProbe with error: {}", err),
+                    shared_state.clone(),
+                );
                 return false;
             }
         },
         None => {
-            set_error_status("Failed to get program 'tcp_v4_connect'".to_string());
+            set_error_status(
+                "Failed to get program 'tcp_v4_connect'".to_string(),
+                shared_state.clone(),
+            );
             return false;
         }
     }
     true
 }
 
-pub fn is_started() -> bool {
-    unsafe { IS_STARTED }
+pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
+    redirector_wrapper::get_is_started(shared_state)
 }
 
-fn set_error_status(message: String) {
-    unsafe {
-        *STATUS_MESSAGE = message.to_string();
-    }
-
+fn set_error_status(message: String, shared_state: Arc<Mutex<SharedState>>) {
+    redirector_wrapper::set_status_message(shared_state, message.to_string());
     event_logger::write_event(
         event_logger::ERROR_LEVEL,
         message,
@@ -412,26 +442,25 @@ fn set_error_status(message: String) {
     );
 }
 
-pub fn get_status() -> String {
-    unsafe { STATUS_MESSAGE.to_string() }
+pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
+    redirector_wrapper::get_status_message(shared_state)
 }
 
-pub fn close() {
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     // reset ebpf object
-    unsafe {
-        BPF_OBJECT = None;
-    }
+    redirector_wrapper::clear_bpf_object(shared_state);
 }
 
-pub fn lookup_audit(source_port: u16) -> std::io::Result<AuditEntry> {
-    unsafe {
-        match BPF_OBJECT {
-            Some(ref bpf) => lookup_audit_internal(bpf, source_port),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "BPF object is not initialized",
-            )),
-        }
+pub fn lookup_audit(
+    source_port: u16,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> std::io::Result<AuditEntry> {
+    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
+        Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap(), source_port),
+        None => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "BPF object is not initialized",
+        )),
     }
 }
 
@@ -475,25 +504,32 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
     }
 }
 
-pub fn update_wire_server_redirect_policy(redirect: bool) {
+pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
     update_redirect_policy_internal(
         constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
         constants::WIRE_SERVER_PORT,
         redirect,
+        shared_state.clone(),
     );
 }
 
-pub fn update_imds_redirect_policy(redirect: bool) {
+pub fn update_imds_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
     update_redirect_policy_internal(
         constants::IMDS_IP_NETWORK_BYTE_ORDER,
         constants::IMDS_PORT,
         redirect,
+        shared_state.clone(),
     );
 }
 
-fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: bool) {
-    match unsafe { BPF_OBJECT.as_mut() } {
-        Some(ref mut bpf) => match bpf.map_mut("policy_map") {
+fn update_redirect_policy_internal(
+    dest_ipv4: u32,
+    dest_port: u16,
+    redirect: bool,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
+    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
+        Some(bpf) => match bpf.lock().unwrap().map_mut("policy_map") {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
@@ -517,23 +553,24 @@ fn update_redirect_policy_internal(dest_ipv4: u32, dest_port: u16, redirect: boo
                             }
                         };
                     } else {
-                        // let local_ip = match get_local_ip() {
-                        //     Some(ip) => ip,
-                        //     None => constants::PROXY_AGENT_IP.to_string(),
+                        // let local_ip = match get_local_ip(shared_state.clone()) {
+                        //    Some(ip) => ip,
+                        //    None => constants::PROXY_AGENT_IP.to_string(),
                         // };
                         let local_ip = constants::PROXY_AGENT_IP.to_string();
+                        let local_port = redirector_wrapper::get_local_port(shared_state.clone());
                         event_logger::write_event(
                             event_logger::WARN_LEVEL,
                             format!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
-                                local_ip, ip_to_string(dest_ipv4), dest_port, unsafe{LOCAL_PORT}
+                                local_ip, ip_to_string(dest_ipv4), dest_port, local_port
                             ),
                             "update_redirect_policy_internal",
                             "redirector/linux",
                             logger::AGENT_LOGGER_KEY,
                         );
                         let local_ip: u32 = super::string_to_ip(&local_ip);
-                        let value = destination_entry::from_ipv4(local_ip, unsafe { LOCAL_PORT });
+                        let value = destination_entry::from_ipv4(local_ip, local_port);
                         match policy_map.insert(key.to_array(), value.to_array(), 0) {
                             Ok(_) => event_logger::write_event(
                                 event_logger::INFO_LEVEL,
@@ -593,15 +630,16 @@ mod tests {
             10 * 1024 * 1024,
             20,
         );
+        let shared_state = crate::shared_state::SharedState::new();
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");
-        let bpf = super::open_ebpf_file(bpf_file_path);
+        let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
         assert!(!bpf.is_ok(), "open_ebpf_file should not return Ok");
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push(config::get_ebpf_program_name());
-        let bpf = super::open_ebpf_file(bpf_file_path);
+        let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
         match bpf {
             Ok(_) => {}
             Err(err) => {
@@ -617,16 +655,17 @@ mod tests {
         assert!(bpf.is_ok(), "open_ebpf_file should return Ok");
         let mut bpf = bpf.unwrap();
 
-        let result = super::update_skip_process_map(&mut bpf);
+        let result = super::update_skip_process_map(&mut bpf, shared_state.clone());
         assert!(result, "update_skip_process_map should return true");
-        let result = super::update_policy_map(&mut bpf, 80);
+        let result = super::update_policy_map(&mut bpf, 80, shared_state.clone());
         assert!(result, "update_policy_map should return true");
 
         // Do not attach the program to real cgroup2 path
         // it should fail for both attach
-        let result = super::attach_kprobe_program(&mut bpf);
+        let result = super::attach_kprobe_program(&mut bpf, shared_state.clone());
         assert!(result, "attach_kprobe_program should return true");
-        let result = super::attach_cgroup_program(&mut bpf, temp_test_path.clone());
+        let result =
+            super::attach_cgroup_program(&mut bpf, temp_test_path.clone(), shared_state.clone());
         assert!(!result, "attach_connect4_program should not return true");
 
         let source_port = 1;

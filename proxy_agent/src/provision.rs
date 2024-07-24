@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 use crate::common::{config, helpers, logger};
 use crate::proxy::proxy_listener;
-use crate::shared_state::SharedState;
+use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
-use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::path::PathBuf;
@@ -14,9 +13,6 @@ use std::time::Duration;
 
 const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
 const STATUS_TAG_FILE_NAME: &str = "status.tag";
-static mut STATE: Lazy<Arc<Mutex<u8>>> = Lazy::new(|| Arc::new(Mutex::new(0)));
-static mut LOGGER_THREADS_INITIALIZED: Lazy<Arc<Mutex<bool>>> =
-    Lazy::new(|| Arc::new(Mutex::new(false)));
 
 pub fn redirector_ready(shared_state: Arc<Mutex<SharedState>>) {
     update_provision_state(1, None, shared_state);
@@ -35,76 +31,50 @@ fn update_provision_state(
     provision_dir: Option<PathBuf>,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
-    unsafe {
-        let cloned_state: Arc<Mutex<u8>> = Arc::clone(&*STATE);
-        let cloned_state = cloned_state.lock();
-        match cloned_state {
-            Ok(mut cloned_state) => {
-                *cloned_state |= state;
+    let provision_state = provision_wrapper::update_state(shared_state.clone(), state);
+    if provision_state == 7 {
+        // write provision success state here
+        write_provision_state(true, provision_dir, shared_state.clone());
 
-                if *cloned_state == 7 {
-                    // write provision success state here
-                    write_provision_state(true, provision_dir, shared_state.clone());
-
-                    // start event threads right after provision successfully
-                    start_event_threads(shared_state.clone());
-                }
-            }
-            Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
-            }
-        }
+        // start event threads right after provision successfully
+        start_event_threads(shared_state.clone());
     }
 }
 
 pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<SharedState>>) {
-    unsafe {
-        let cloned_state = Arc::clone(&*STATE);
-        let cloned_state = cloned_state.lock();
-        match cloned_state {
-            Ok(cloned_state) => {
-                if *cloned_state != 7 {
-                    // write provision fail state here
-                    write_provision_state(false, provision_dir, shared_state.clone());
-                }
-            }
-            Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
-            }
-        }
+    let provision_state = provision_wrapper::get_state(shared_state.clone());
+    if provision_state != 7 {
+        // write provision fail state here
+        write_provision_state(false, provision_dir, shared_state.clone());
     }
 }
 
 pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
-    unsafe {
-        let cloned = Arc::clone(&*LOGGER_THREADS_INITIALIZED);
-        let cloned = cloned.lock();
-        match cloned {
-            Ok(mut cloned) => {
-                if *cloned {
-                    return;
-                }
-
-                event_logger::start_async(
-                    config::get_events_dir(),
-                    Duration::default(),
-                    config::get_max_event_file_count(),
-                    logger::AGENT_LOGGER_KEY,
-                );
-                event_reader::start_async(
-                    config::get_events_dir(),
-                    Duration::from_secs(300),
-                    true,
-                    shared_state.clone(),
-                );
-                *cloned = true;
-                proxy_agent_status::start_async(Duration::default(), shared_state.clone());
-            }
-            Err(e) => {
-                logger::write_error(format!("Failed to lock provision state with error: {e}"));
-            }
-        }
+    let logger_threads_initialized =
+        provision_wrapper::get_event_log_threads_initialized(shared_state.clone());
+    if logger_threads_initialized {
+        return;
     }
+
+    let cloned_state = shared_state.clone();
+    event_logger::start_async(
+        config::get_events_dir(),
+        Duration::default(),
+        config::get_max_event_file_count(),
+        logger::AGENT_LOGGER_KEY,
+        move |status: String| {
+            telemetry_wrapper::set_logger_status_message(cloned_state.clone(), status);
+        },
+    );
+    event_reader::start_async(
+        config::get_events_dir(),
+        Duration::from_secs(300),
+        true,
+        shared_state.clone(),
+        None,
+    );
+    provision_wrapper::set_event_log_threads_initialized(shared_state.clone(), true);
+    proxy_agent_status::start_async(Duration::default(), shared_state.clone());
 }
 
 fn write_provision_state(
@@ -129,7 +99,7 @@ fn write_provision_state(
         ));
         status.push_str(&format!(
             "ebpfProgramStatus - {}\r\n",
-            redirector::get_status().message
+            redirector::get_status(shared_state.clone()).message
         ));
         status.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
@@ -200,6 +170,7 @@ fn get_provision_status(provision_dir: Option<PathBuf>) -> (bool, String) {
 
 #[cfg(test)]
 mod tests {
+    use crate::shared_state::provision_wrapper;
     use crate::shared_state::SharedState;
     use std::env;
     use std::fs;
@@ -263,7 +234,7 @@ mod tests {
         );
 
         let event_threads_initialized =
-            unsafe { *super::LOGGER_THREADS_INITIALIZED.lock().unwrap() };
+            provision_wrapper::get_event_log_threads_initialized(shared_state.clone());
         assert!(event_threads_initialized);
 
         // write status.tag file
