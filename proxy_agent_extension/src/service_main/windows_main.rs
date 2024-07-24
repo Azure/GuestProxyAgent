@@ -13,43 +13,40 @@ use std::time::Duration;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
 };
-use windows_service::service_control_handler::{
-    self, ServiceControlHandlerResult, ServiceStatusHandle,
-};
+use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_sys::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
 };
 
-static mut SERVICE_STATUS_HANDLE: Option<ServiceStatusHandle> = None;
-
 pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
+    let service_state = super::service_state::ServiceState::new();
+    let service_state_cloned = service_state.clone();
+
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
                 common::stop_event_logger();
-                unsafe {
-                    match SERVICE_STATUS_HANDLE {
-                        Some(status_handle) => {
-                            let stop_state = ServiceStatus {
-                                service_type: ServiceType::OWN_PROCESS,
-                                current_state: ServiceState::Stopped,
-                                controls_accepted: ServiceControlAccept::STOP,
-                                exit_code: ServiceExitCode::Win32(0),
-                                checkpoint: 0,
-                                wait_hint: Duration::default(),
-                                process_id: None,
-                            };
-                            _ = status_handle.set_service_status(stop_state);
-                        }
-                        _ => {
-                            // workaround to stop the service by exiting the process
-                            logger::write(
-                                "Force exit the process to stop the service.".to_string(),
-                            );
-                            std::process::exit(0);
-                        }
-                    };
-                }
+                match super::service_state::ServiceState::get_service_status_handle(
+                    service_state_cloned.clone(),
+                ) {
+                    Some(status_handle) => {
+                        let stop_state = ServiceStatus {
+                            service_type: ServiceType::OWN_PROCESS,
+                            current_state: ServiceState::Stopped,
+                            controls_accepted: ServiceControlAccept::STOP,
+                            exit_code: ServiceExitCode::Win32(0),
+                            checkpoint: 0,
+                            wait_hint: Duration::default(),
+                            process_id: None,
+                        };
+                        _ = status_handle.set_service_status(stop_state);
+                    }
+                    _ => {
+                        // workaround to stop the service by exiting the process
+                        logger::write("Force exit the process to stop the service.".to_string());
+                        std::process::exit(0);
+                    }
+                };
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -58,7 +55,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     };
 
     // start service
-    service_main::enable_agent();
+    service_main::run(service_state.clone());
 
     // set the service state to Running
     let status_handle = service_control_handler::register(constants::PLUGIN_NAME, event_handler)?;
@@ -73,9 +70,10 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     };
     status_handle.set_service_status(running_state)?;
 
-    unsafe {
-        SERVICE_STATUS_HANDLE = Some(status_handle);
-    }
+    super::service_state::ServiceState::set_service_status_handle(
+        service_state.clone(),
+        status_handle,
+    );
 
     Ok(())
 }

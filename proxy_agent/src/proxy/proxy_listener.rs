@@ -13,8 +13,8 @@ use crate::provision;
 use crate::proxy::proxy_connection::Connection;
 use crate::proxy::proxy_summary::ProxySummary;
 use crate::proxy::Claims;
-use crate::proxy_agent_status;
 use crate::redirector;
+use crate::shared_state::agent_status_wrapper;
 use crate::shared_state::{key_keeper_wrapper, proxy_listener_wrapper, SharedState};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
@@ -154,7 +154,7 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
         }
     };
     let entry;
-    match redirector::lookup_audit(client_source_port) {
+    match redirector::lookup_audit(client_source_port, shared_state.clone()) {
         Ok(data) => entry = data,
         Err(e) => {
             let err = format!("Failed to get lookup_audit: {}", e);
@@ -184,13 +184,18 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
                         );
                     }
                     send_response(stream, Response::MISDIRECTED);
-                    log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
+                    log_connection_summary(
+                        shared_state.clone(),
+                        connection,
+                        &request,
+                        Response::MISDIRECTED.to_string(),
+                    );
                     return;
                 }
             }
         }
     }
-    let claims = Claims::from_audit_entry(&entry, client_source_ip);
+    let claims = Claims::from_audit_entry(&entry, client_source_ip, shared_state.clone());
 
     let claim_details: String = match serde_json::to_string(&claims) {
         Ok(json) => json,
@@ -200,7 +205,12 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
                 format!("Failed to get claim json string: {}", e),
             );
             send_response(stream, Response::MISDIRECTED);
-            log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                &request,
+                Response::MISDIRECTED.to_string(),
+            );
             return;
         }
     };
@@ -218,13 +228,18 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
     // authenticate the connection
     let auth = proxy_authentication::get_authenticate(ip.to_string(), port, claims.clone());
     Connection::write(connection.id, format!("Got auth: {}", auth.to_string()));
-    if !auth.authenticate(connection.id, request.url.to_string()) {
+    if !auth.authenticate(connection.id, request.url.to_string(), shared_state.clone()) {
         Connection::write_warning(
             connection.id,
             format!("Denied unauthorize request: {}", claim_details),
         );
         send_response(stream, Response::FORBIDDEN);
-        log_connection_summary(connection, &request, Response::FORBIDDEN.to_string());
+        log_connection_summary(
+            shared_state.clone(),
+            connection,
+            &request,
+            Response::FORBIDDEN.to_string(),
+        );
         return;
     }
 
@@ -238,7 +253,12 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
                 format!("Failed to start new request to host: {}", e),
             );
             send_response(stream, Response::MISDIRECTED);
-            log_connection_summary(connection, &request, Response::MISDIRECTED.to_string());
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                &request,
+                Response::MISDIRECTED.to_string(),
+            );
             return;
         }
     }
@@ -260,7 +280,12 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
 
     if request.need_skip_sig() {
         // skip the signature and send the request headers to host now
-        return handle_connection_without_signature(connection, request, &mut server_stream);
+        return handle_connection_without_signature(
+            shared_state.clone(),
+            connection,
+            request,
+            &mut server_stream,
+        );
     }
 
     handle_connection_with_signature(
@@ -279,7 +304,12 @@ fn handle_connection_with_signature(
 ) {
     let client_stream = &connection.stream;
     if request.expect_continue_request() {
-        handle_expect_continue_request(connection, client_stream, &mut request);
+        handle_expect_continue_request(
+            shared_state.clone(),
+            connection,
+            client_stream,
+            &mut request,
+        );
     }
 
     // Add header x-ms-azure-host-authorization
@@ -388,6 +418,7 @@ fn handle_connection_with_signature(
     }
 
     log_connection_summary(
+        shared_state.clone(),
         connection,
         &request,
         response_without_body.status.to_string(),
@@ -395,6 +426,7 @@ fn handle_connection_with_signature(
 }
 
 fn handle_expect_continue_request(
+    shared_state: Arc<Mutex<SharedState>>,
     connection: &Connection,
     client_stream: &TcpStream,
     request: &mut Request,
@@ -407,7 +439,12 @@ fn handle_expect_continue_request(
         Err(e) => {
             Connection::write_warning(connection.id, format!(" {}", e));
             send_response(client_stream, Response::BAD_REQUEST);
-            log_connection_summary(connection, request, Response::BAD_REQUEST.to_string());
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                request,
+                Response::BAD_REQUEST.to_string(),
+            );
             return;
         }
     };
@@ -422,7 +459,12 @@ fn handle_expect_continue_request(
                 format!("Failed to received body from client: {}", e),
             );
             send_response(client_stream, Response::BAD_REQUEST);
-            log_connection_summary(connection, request, Response::BAD_REQUEST.to_string());
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                request,
+                Response::BAD_REQUEST.to_string(),
+            );
             return;
         }
     };
@@ -430,6 +472,7 @@ fn handle_expect_continue_request(
 }
 
 fn handle_connection_without_signature(
+    shared_state: Arc<Mutex<SharedState>>,
     connection: &mut Connection,
     mut request: Request,
     server_stream: &mut TcpStream,
@@ -455,7 +498,12 @@ fn handle_connection_without_signature(
                 format!("Failed to receive data from host: {}", e),
             );
             send_response(client_stream, Response::BAD_GATEWAY);
-            log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                &request,
+                Response::BAD_GATEWAY.to_string(),
+            );
             return;
         }
     };
@@ -470,7 +518,12 @@ fn handle_connection_without_signature(
             Err(e) => {
                 Connection::write_warning(connection.id, format!(" {}", e));
                 send_response(client_stream, Response::BAD_REQUEST);
-                log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
+                log_connection_summary(
+                    shared_state.clone(),
+                    connection,
+                    &request,
+                    Response::BAD_REQUEST.to_string(),
+                );
                 return;
             }
         };
@@ -493,7 +546,12 @@ fn handle_connection_without_signature(
                         ),
                     );
                     send_response(client_stream, Response::BAD_REQUEST);
-                    log_connection_summary(connection, &request, Response::BAD_REQUEST.to_string());
+                    log_connection_summary(
+                        shared_state.clone(),
+                        connection,
+                        &request,
+                        Response::BAD_REQUEST.to_string(),
+                    );
                     return;
                 }
             }
@@ -503,7 +561,12 @@ fn handle_connection_without_signature(
                     format!("Failed streaming the request body, error {}", e),
                 );
                 send_response(client_stream, Response::BAD_GATEWAY);
-                log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
+                log_connection_summary(
+                    shared_state.clone(),
+                    connection,
+                    &request,
+                    Response::BAD_GATEWAY.to_string(),
+                );
                 return;
             }
         };
@@ -516,7 +579,12 @@ fn handle_connection_without_signature(
                     format!("Failed to receive data from host: {}", e),
                 );
                 send_response(client_stream, Response::BAD_GATEWAY);
-                log_connection_summary(connection, &request, Response::BAD_GATEWAY.to_string());
+                log_connection_summary(
+                    shared_state.clone(),
+                    connection,
+                    &request,
+                    Response::BAD_GATEWAY.to_string(),
+                );
                 return;
             }
         };
@@ -536,10 +604,20 @@ fn handle_connection_without_signature(
     _ = client_stream.write_all(&response.to_raw_bytes());
     _ = client_stream.flush();
 
-    log_connection_summary(connection, &request, response.status.to_string());
+    log_connection_summary(
+        shared_state.clone(),
+        connection,
+        &request,
+        response.status.to_string(),
+    );
 }
 
-fn log_connection_summary(connection: &Connection, request: &Request, response_status: String) {
+fn log_connection_summary(
+    shared_state: Arc<Mutex<SharedState>>,
+    connection: &Connection,
+    request: &Request,
+    response_status: String,
+) {
     let elapsed_time = connection.now.elapsed();
     let claims = match &connection.cliams {
         Some(c) => c.clone(),
@@ -570,7 +648,7 @@ fn log_connection_summary(connection: &Connection, request: &Request, response_s
             Connection::CONNECTION_LOGGER_KEY,
         );
     };
-    proxy_agent_status::add_connection_summary(summary, false);
+    agent_status_wrapper::add_one_connection_summary(shared_state, summary, false);
 }
 
 fn send_response(mut client_stream: &TcpStream, status: &str) {
@@ -819,10 +897,12 @@ mod tests {
         connection.ip = "127.0.0.1".to_string();
         connection.port = 8084;
         let mut server_stream = TcpStream::connect(SERVER_ENDPOINT_ADDRESS).unwrap();
+        let shared_state = SharedState::new();
 
         if request.need_skip_sig() {
             // skip the signature and send the request headers to host now
             return super::handle_connection_without_signature(
+                shared_state.clone(),
                 connection,
                 request,
                 &mut server_stream,
