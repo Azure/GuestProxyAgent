@@ -113,11 +113,11 @@ $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
 $jsonObject = $proxyAgentStatus | ConvertFrom-json
 $extractedVersion = $jsonObject.version
 if ($extractedVersion -ne $proxyAgentVersion) {
-    Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match the version [ $proxyAgentVersion ]"
+    Write-Output "Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
     $guestProxyAgentExtensionVersion = $false
 }
 if ($expectedProxyAgentVersion -ne "0") {
-    if ($extractedVersion -eq $proxyAgentVersion -and $extractedVersion -eq $expectedProxyAgentVersion){ 
+    if ($extractedVersion -eq $expectedProxyAgentVersion){ 
         Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
     } else {
         Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
