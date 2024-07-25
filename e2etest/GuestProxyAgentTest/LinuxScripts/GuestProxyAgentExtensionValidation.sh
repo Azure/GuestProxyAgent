@@ -127,8 +127,8 @@ echo "proxy agent version from extension folder: $proxyAgentVersion"
 guestProxyAgentExtensionVersion=true
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
-if [$expectedProxyAgentVersion != "0" ]; then
-    if [[ $proxyAgentVersion == $expectedProxyAgentVersion == $extractedVersion ]]; then
+if [ $expectedProxyAgentVersion != "0" ]; then
+    if [[ $proxyAgentVersion == $expectedProxyAgentVersion && $proxyAgentVersion == $extractedVersion ]]; then
         echo "ProxyAgent version running in VM is the same as expected version"
     else
         echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$expectedProxyAgentVersion]"
