@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: MIT
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
-expectedProxyAgentVersion=$(echo $expectProxyAgentVerison)
-echo "extractedVersion=$expectedProxyAgentVersion"
+expectedProxyAgentVersion=$(echo $expectedProxyAgentVersion)
+echo "expectedProxyAgentVersion=$expectedProxyAgentVersion"
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentextensionvalidation.json
 
@@ -127,11 +127,17 @@ echo "proxy agent version from extension folder: $proxyAgentVersion"
 guestProxyAgentExtensionVersion=true
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
+if [[ $proxyAgentVersion == $extractedVersion ]]; then
+    echo "ProxyAgent version running in VM is the same as expected version"
+else
+    echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$extractedVersion]"
+    guestProxyAgentExtensionVersion=false
+fi
 if [ $expectedProxyAgentVersion != "0" ]; then
     if [[ $proxyAgentVersion == $expectedProxyAgentVersion && $proxyAgentVersion == $extractedVersion ]]; then
-        echo "ProxyAgent version running in VM is the same as expected version"
+        echo "After Update Version check: ProxyAgent version running in VM is the same as expected and extracted version"
     else
-        echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$expectedProxyAgentVersion]"
+        echo "After Update Version check: ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$expectedProxyAgentVersion]"
         guestProxyAgentExtensionVersion=false
     fi
 fi

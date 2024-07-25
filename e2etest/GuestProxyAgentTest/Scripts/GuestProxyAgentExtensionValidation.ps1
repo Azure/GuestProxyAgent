@@ -6,7 +6,7 @@ param (
     [string]$customOutputJsonSAS,    
     [string]$expectedProxyAgentVersion
 )
-
+Write-Ouput "expectedProxyAgentVersion=$expectedProxyAgentVersion"
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
 
@@ -112,11 +112,15 @@ $guestProxyAgentExtensionVersion = $true
 $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
 $jsonObject = $proxyAgentStatus | ConvertFrom-json
 $extractedVersion = $jsonObject.version
+if ($extractedVersion -ne $proxyAgentVersion) {
+    Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match the version [ $proxyAgentVersion ]"
+    $guestProxyAgentExtensionVersion = $false
+}
 if ($expectedProxyAgentVersion -ne "0") {
     if ($extractedVersion -eq $proxyAgentVersion -and $extractedVersion -eq $expectedProxyAgentVersion){ 
-        Write-Output "The proxy agent version matches the expected version"
+        Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
     } else {
-        Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
+        Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
         $guestProxyAgentExtensionVersion = $false
     }
 }
