@@ -34,10 +34,10 @@ namespace GuestProxyAgentTest.TestCases
             var result = await vmr.GetVirtualMachineExtensions().CreateOrUpdateAsync(Azure.WaitUntil.Completed, "ProxyAgentLinuxTest", vmExtData);
             context.TestResultDetails = new GuestProxyAgentTest.Models.TestCaseResultDetails
             {
-                CustomOut = result.Value.Data.ToString(),
-                StdOut = "Add Linux VM Extension case succeed.",
-                StdErr = "",
-                Succeed = true,
+                CustomOut =  result.Value.Data.ToString(),
+                StdOut = result.Value.Data.ToString(),
+                StdErr =  result.Value.Data.ToString(),
+                Succeed =  result.HasValue,
                 FromBlob = false,
             };
         }
