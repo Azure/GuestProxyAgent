@@ -124,18 +124,16 @@ fi
 echo Write-Output "TEST: ProxyAgent version running in VM is the same as expected version" 
 proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
 echo "proxy agent version from extension folder: $proxyAgentVersion"
-guestProxyAgentExtensionVersionUpgrade=true
-if [ -z "$expectedProxyAgentVersion" ]; then
-    guestProxyAgentExtensionVersionUpgrade=false
-fi
-guestProxyAgentExtensionVersion=false
+guestProxyAgentExtensionVersion=true
 proxyAgentStatus=$(cat "$statusFile" | jq -r '.[0].status.substatus[1].formattedMessage.message')
 extractedVersion=$(echo $proxyAgentStatus | jq -r '.version')
-if [[ $extractedVersion == $proxyAgentVersion ]]; then
-    echo "ProxyAgent version running in VM is the same as expected version"
-    guestProxyAgentExtensionVersion=true
-else
-    echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$extractedVersion]"
+if [$expectedProxyAgentVersion != "0" ]; then
+    if [[ $proxyAgentVersion == $expectedProxyAgentVersion == $extractedVersion ]]; then
+        echo "ProxyAgent version running in VM is the same as expected version"
+    else
+        echo "ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$expectedProxyAgentVersion]"
+        guestProxyAgentExtensionVersion=false
+    fi
 fi
 
 echo "TEST: Check that detailed status of the extension status to see if the Instance View is successful"
@@ -147,7 +145,7 @@ else
     echo "Instance View is not successful"
 fi
 
-jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionVersionUpgrade": "'$guestProxyAgentExtensionVersionUpgrade'", "guestProxyAgentExtensionInstanceView": "'$guestProxyAgentExtensionInstanceView'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
+jsonString='{"guestProxyAgentExtensionStatusObjGenerated": "'$guestProxyAgentExtensionStatusObjGenerated'", "guestProxyAgentExtensionProcessExist": "'$guestProxyAgentExtensionProcessExist'", "guestProxyAgentExtensionServiceExist": "'$guestProxyAgentExtensionServiceExist'", "guestProxyAgentExtensionVersion": "'$guestProxyAgentExtensionVersion'", "guestProxyAgentExtensionInstanceView": "'$guestProxyAgentExtensionInstanceView'", "guestProxyAgentExtensionServiceStatus": "'$guestProxyAgentExtensionServiceStatus'"}'
 echo "$jsonString"
 
 echo "$jsonString" > $customOutputJsonPath

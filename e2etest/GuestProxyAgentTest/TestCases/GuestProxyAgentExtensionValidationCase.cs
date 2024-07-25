@@ -31,7 +31,6 @@ namespace GuestProxyAgentTest.TestCases
                     && validationDetails.guestProxyAgentExtensionServiceStatus
                     && validationDetails.guestProxyAgentExtensionStatusObjGenerated
                     && validationDetails.guestProxyAgentExtensionVersion
-                    && validationDetails.guestProxyAgentExtensionVersionUpgrade
                     && validationDetails.guestProxyAgentExtensionInstanceView)
                 {
                     context.TestResultDetails.Succeed = true;
@@ -51,7 +50,6 @@ namespace GuestProxyAgentTest.TestCases
         public bool guestProxyAgentExtensionServiceStatus { get; set; }
         public bool guestProxyAgentExtensionStatusObjGenerated { get; set; }
         public bool guestProxyAgentExtensionVersion { get; set; }
-        public bool guestProxyAgentExtensionVersionUpgrade { get; set; }
         public bool guestProxyAgentExtensionInstanceView { get; set; }
     }
 }

@@ -3,7 +3,8 @@
 
 param (
     [Parameter(Mandatory=$true, Position=0)]
-    [string]$customOutputJsonSAS    
+    [string]$customOutputJsonSAS,    
+    [string]$expectedProxyAgentVersion
 )
 
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
@@ -107,17 +108,17 @@ Write-Output "TEST: ProxyAgent version running in VM is the same as expected ver
 $proxyAgentExeCmd = $extensionFolder + "\ProxyAgent\ProxyAgent\GuestProxyAgent.exe --version"
 $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
-$guestProxyAgentExtensionVersion = $false
-$guestProxyAgentExtensionVersionUpgrade = $false
+$guestProxyAgentExtensionVersion = $true
 $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
 $jsonObject = $proxyAgentStatus | ConvertFrom-json
 $extractedVersion = $jsonObject.version
-if ($extractedVersion -eq $proxyAgentVersion){ 
-    Write-Output "The proxy agent version matches the expected version"
-    $guestProxyAgentExtensionVersion = $true
-    $guestProxyAgentExtensionVersionUpgrade = $true
-} else {
-    Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $proxyAgentVersion ]"
+if ($expectedProxyAgentVersion -ne "0") {
+    if ($extractedVersion -eq $proxyAgentVersion -and $extractedVersion -eq $expectedProxyAgentVersion){ 
+        Write-Output "The proxy agent version matches the expected version"
+    } else {
+        Write-Output "Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
+        $guestProxyAgentExtensionVersion = $false
+    }
 }
 
 Write-Output "TEST: Check detailed status of the extension if InstanceView is successful" 
@@ -134,7 +135,6 @@ $jsonString = '{ "guestProxyAgentExtensionServiceExist": ' + $guestProxyAgentExt
 + ', "guestProxyAgentExtensionServiceStatus": ' + $guestProxyAgentExtensionServiceStatus.ToString().ToLower() `
 + ', "guestProxyAgentExtensionStatusObjGenerated": ' + $guestProxyAgentExtensionStatusObjGenerated.ToString().ToLower() `
 + ', "guestProxyAgentExtensionVersion": ' + $guestProxyAgentExtensionVersion.ToString().ToLower() `
-+ ', "guestProxyAgentExtensionVersionUpgrade": ' + $guestProxyAgentExtensionVersionUpgrade.ToString.ToLower() `
 + ', "guestProxyAgentExtensionInstanceView": ' + $guestProxyAgentExtensionInstanceView.ToString().ToLower() ` + '}'
 
 Write-Output $jsonString
