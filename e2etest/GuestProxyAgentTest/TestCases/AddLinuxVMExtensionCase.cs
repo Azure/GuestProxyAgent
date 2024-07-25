@@ -35,9 +35,9 @@ namespace GuestProxyAgentTest.TestCases
             context.TestResultDetails = new GuestProxyAgentTest.Models.TestCaseResultDetails
             {
                 CustomOut =  result.Value.Data.ToString(),
-                StdOut = result.Value.Data.ToString(),
-                StdErr =  result.Value.Data.ToString(),
-                Succeed =  result.HasValue,
+                StdOut = "",
+                StdErr =  "",
+                Succeed = result.Value.Data.ProvisioningState == "Succeeded",
                 FromBlob = false,
             };
         }
