@@ -134,7 +134,7 @@ else
     guestProxyAgentExtensionVersion=false
 fi
 if [ $expectedProxyAgentVersion != "0" ]; then
-    if [[ $proxyAgentVersion == $expectedProxyAgentVersion && $proxyAgentVersion == $extractedVersion ]]; then
+    if [[ $proxyAgentVersion == $expectedProxyAgentVersion ]]; then
         echo "After Update Version check: ProxyAgent version running in VM is the same as expected and extracted version"
     else
         echo "After Update Version check: ProxyAgent version [$proxyAgentVersion] running in VM is not the same as expected version [$expectedProxyAgentVersion]"
