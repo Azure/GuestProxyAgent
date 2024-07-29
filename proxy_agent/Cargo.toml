@@ -1,6 +1,6 @@
 [package]
 name = "azure-proxy-agent"
-version = "1.0.19"       # always 3-number version
+version = "9.9.9"     # always 3-number version
 edition = "2021"
 build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
