@@ -6,7 +6,7 @@ param (
     [string]$customOutputJsonSAS,    
     [string]$expectedProxyAgentVersion
 )
-Write-Ouput "expectedProxyAgentVersion=$expectedProxyAgentVersion"
+Write-Output "expectedProxyAgentVersion=$expectedProxyAgentVersion"
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
 
