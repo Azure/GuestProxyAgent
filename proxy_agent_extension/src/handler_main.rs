@@ -14,6 +14,8 @@ use std::process::Command;
 use std::str;
 use std::thread;
 use std::time::Duration;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 
 #[cfg(windows)]
 use crate::windows::service_ext;
@@ -313,12 +315,18 @@ fn disable_handler() {
     {
         match get_linux_extension_long_running_process() {
             Some(pid) => {
-                let output =
-                    misc_helpers::execute_command("kill", vec!["-9", &pid.to_string()], -1);
-                logger::write(format!(
-                    "kill ProxyAgentExt: result: '{}'-'{}'-'{}'.",
-                    output.0, output.1, output.2
-                ));
+                // let output =
+                //     misc_helpers::execute_command("kill", vec!["-9", &pid.to_string()], -1);
+                // logger::write(format!(
+                //     "kill ProxyAgentExt: result: '{}'-'{}'-'{}'.",
+                //     output.0, output.1, output.2
+                // ));
+
+                let pid = Pid::from_raw(&pid.to_string());
+                match kill(pid, Signal::SIGKILL) {
+                    Ok(_) => logger::write(format!("successfully kill ProxyAgentExt")),
+                    Err(err) =>  logger::write(format!("failed to kill ProxyAgentExt with error: {:?}", err)),
+                }
             }
             None => {
                 logger::write("ProxyAgentExt not running".to_string());

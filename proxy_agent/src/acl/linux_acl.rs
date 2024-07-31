@@ -3,6 +3,9 @@
 use crate::common::logger;
 use proxy_agent_shared::misc_helpers;
 use std::path::PathBuf;
+use std::os::unix::fs;
+use std::fs as std_fs;
+use std::io;
 
 pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
     let dir_str = misc_helpers::path_to_string(dir_to_acl);
@@ -11,18 +14,24 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
         dir_str
     ));
 
-    let output = misc_helpers::execute_command("chown", vec!["-R", "root:root", &dir_str], -1);
-    logger::write(format!(
-        "acl_directory: set folder {} to owner root, result: '{}'-'{}'-'{}'.",
-        dir_str, output.0, output.1, output.2
-    ));
+    // let output = misc_helpers::execute_command("chown", vec!["-R", "root:root", &dir_str], -1);
+    // logger::write(format!(
+    //     "acl_directory: set folder {} to owner root, result: '{}'-'{}'-'{}'.",
+    //     dir_str, output.0, output.1, output.2
+    // ));
 
-    let output = misc_helpers::execute_command("chmod", vec!["-cR", "700", &dir_str], -1);
-    logger::write(format!(
-        "acl_directory: set root access only permission to folder {} result: '{}'-'{}'-'{}'.",
-        dir_str, output.0, output.1, output.2
-    ));
+    // let output = misc_helpers::execute_command("chmod", vec!["-cR", "700", &dir_str], -1);
+    // logger::write(format!(
+    //     "acl_directory: set root access only permission to folder {} result: '{}'-'{}'-'{}'.",
+    //     dir_str, output.0, output.1, output.2
+    // ));
 
+    // Change the owner and group of "/path/to/directory" to root (UID 0, GID 0)
+    fs::chown("/path/to/directory", Some(0), Some(0))?;
+
+    // Set the permissions to root-only (700)
+    std_fs::set_permissions("/path/to/directory", std_fs::Permissions::from_mode(0o700))?;
+    
     Ok(())
 }
 
