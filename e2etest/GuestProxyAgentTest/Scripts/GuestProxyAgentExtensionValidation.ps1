@@ -6,7 +6,7 @@ param (
     [string]$customOutputJsonSAS,    
     [string]$expectedProxyAgentVersion
 )
-Write-Ouput "expectedProxyAgentVersion=$expectedProxyAgentVersion"
+Write-Output "expectedProxyAgentVersion=$expectedProxyAgentVersion"
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
 
@@ -117,10 +117,11 @@ if ($extractedVersion -ne $proxyAgentVersion) {
     $guestProxyAgentExtensionVersion = $false
 }
 if ($expectedProxyAgentVersion -ne "0") {
-    if ($extractedVersion -eq $expectedProxyAgentVersion){ 
+    $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
+    if ($extractedVersion -eq $cleanExpectedProxyAgentVersion){ 
         Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
     } else {
-        Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
+        Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $cleanExpectedProxyAgentVersion ]"
         $guestProxyAgentExtensionVersion = $false
     }
 }
