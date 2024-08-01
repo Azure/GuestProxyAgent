@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, helpers, logger};
-use crate::proxy::proxy_listener;
+use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
@@ -103,7 +103,7 @@ fn write_provision_state(
         ));
         status.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
-            proxy_listener::get_status(shared_state.clone()).message
+            proxy_server::get_status(shared_state.clone()).message
         ));
     }
 

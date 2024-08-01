@@ -10,6 +10,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 use windows_service::service_control_handler::ServiceStatusHandle;
@@ -18,6 +19,8 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 
 #[derive(Clone)]
 pub struct SharedState {
+    runtime: Option<Arc<Mutex<tokio::runtime::Runtime>>>,
+    cancellation_token: CancellationToken,
     // key_keeper
     key: Option<Key>,
     current_secure_channel_state: String,
@@ -54,6 +57,8 @@ pub struct SharedState {
     telemetry_reader_shutdown: bool,
     telemetry_logger_shutdown: bool,
     telemetry_logger_status_message: String,
+    mock_server_ip: Option<String>, // test only
+    mock_server_port: Option<u16>,  // test only
     // service
     #[cfg(windows)]
     service_status_handle: Option<ServiceStatusHandle>,
@@ -72,6 +77,10 @@ impl SharedState {
 impl Default for SharedState {
     fn default() -> Self {
         SharedState {
+            runtime: Some(Arc::new(Mutex::new(
+                tokio::runtime::Runtime::new().unwrap(),
+            ))),
+            cancellation_token: CancellationToken::new(),
             // key_keeper
             key: None,
             current_secure_channel_state: crate::key_keeper::UNKNOWN_STATE.to_string(),
@@ -108,10 +117,70 @@ impl Default for SharedState {
             telemetry_reader_shutdown: false,
             telemetry_logger_shutdown: false,
             telemetry_logger_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
+            mock_server_ip: None,   // test only
+            mock_server_port: None, // test only
             // service
             #[cfg(windows)]
             service_status_handle: None,
         }
+    }
+}
+
+pub mod shared_state_wrapper {
+    use super::SharedState;
+    use std::sync::{Arc, Mutex};
+    use tokio_util::sync::CancellationToken;
+
+    pub fn get_runtime(
+        shared_state: Arc<Mutex<SharedState>>,
+    ) -> Option<Arc<Mutex<tokio::runtime::Runtime>>> {
+        shared_state.lock().unwrap().runtime.clone()
+    }
+
+    /// Shutdown the runtime and release the lock on runtime and shared_state
+    /// call it when need to stop the async tasks gracefully
+    pub fn shutdown_runtime(shared_state: Arc<Mutex<SharedState>>) {
+        let mut shared_state = shared_state.lock().unwrap();
+        let runtime = shared_state.runtime.clone();
+        shared_state.runtime = None;
+        drop(shared_state); // Release the lock on shared_state
+
+        if let Some(runtime) = runtime {
+            let runtime = runtime.lock().unwrap();
+            drop(runtime); // Release the lock on runtime
+        }
+    }
+
+    pub fn cancel_cancellation_token(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().cancellation_token.cancel();
+    }
+
+    pub fn get_cancellation_token(shared_state: Arc<Mutex<SharedState>>) -> CancellationToken {
+        shared_state.lock().unwrap().cancellation_token.clone()
+    }
+
+    /// Check the cancellation token and return error if it is cancelled
+    pub fn check_cancellation_token(
+        shared_state: Arc<Mutex<SharedState>>,
+        fn_name: &str,
+    ) -> std::io::Result<()> {
+        if shared_state
+            .lock()
+            .unwrap()
+            .cancellation_token
+            .is_cancelled()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                format!(
+                    "Stop signal received, {} is interrupted by cancellation token",
+                    fn_name
+                ),
+            ));
+        }
+
+        // not cancelled
+        Ok(())
     }
 }
 
@@ -569,6 +638,28 @@ pub mod telemetry_wrapper {
             .unwrap()
             .telemetry_logger_status_message
             .to_string()
+    }
+
+    pub fn set_mock_server_ip(shared_state: Arc<Mutex<SharedState>>, ip: String) {
+        shared_state.lock().unwrap().mock_server_ip = Some(ip);
+    }
+
+    pub fn get_mock_server_ip(shared_state: Arc<Mutex<SharedState>>) -> Option<String> {
+        shared_state.lock().unwrap().mock_server_ip.clone()
+    }
+
+    pub fn set_mock_server_port(shared_state: Arc<Mutex<SharedState>>, port: u16) {
+        shared_state.lock().unwrap().mock_server_port = Some(port);
+    }
+
+    pub fn get_mock_server_port(shared_state: Arc<Mutex<SharedState>>) -> Option<u16> {
+        shared_state.lock().unwrap().mock_server_port
+    }
+
+    pub fn reset_mock_server(shared_state: Arc<Mutex<SharedState>>) {
+        let mut state = shared_state.lock().unwrap();
+        state.mock_server_ip = None;
+        state.mock_server_port = None;
     }
 }
 

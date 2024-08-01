@@ -2,19 +2,39 @@
 // SPDX-License-Identifier: MIT
 use crate::proxy::Claims;
 use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
+use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-pub struct Connection {
-    pub stream: TcpStream,
-    pub id: u128,
+pub struct Connection {}
 
+pub struct ConnectionContext {
+    pub id: u128,
+    pub stream: Arc<Mutex<TcpStream>>,
+    pub client_addr: SocketAddr,
     pub now: Instant,
-    pub cliams: Option<Claims>,
+    pub claims: Option<Claims>,
+    pub method: String,
+    pub url: String,
     pub ip: String,
     pub port: u16,
+}
+
+impl ConnectionContext {
+    // try make sure the request could skip the sig
+    // and stream the body to the server directly
+    pub fn need_skip_sig(&self) -> bool {
+        let method = self.method.to_uppercase();
+        let url = self.url.to_lowercase();
+
+        // currently, we agreed to skip the sig for those requests:
+        //      o PUT   /vmAgentLog
+        //      o POST  /machine/?comp=telemetrydata
+        (method == "PUT" || method == "POST")
+            && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
+    }
 }
 
 impl Connection {

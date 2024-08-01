@@ -26,26 +26,27 @@ const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
 const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
-pub fn poll_status_async(
+pub async fn poll_status_async(
     base_url: Url,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
-    thread::spawn(move || {
+    tokio::spawn(async move {
         poll_secure_channel_status(
             base_url,
             key_dir,
             interval,
             config_start_redirector,
             shared_state,
-        );
+        )
+        .await;
     });
 }
 
 // poll secure channel status at interval
-fn poll_secure_channel_status(
+async fn poll_secure_channel_status(
     base_url: Url,
     key_dir: PathBuf,
     interval: Duration,
@@ -97,18 +98,18 @@ fn poll_secure_channel_status(
         if !first_iteration {
             // skip the sleep for the first loop
 
-            let sleep =
-                if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
+            let sleep = if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
                     == UNKNOWN_STATE
+                    && FREQUENT_PULL_INTERVAL < interval        // test internal is less than 1 second
                     && helpers::get_elapsed_time_in_millisec()
                         < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
-                {
-                    // frequent poll the secure channel status every second for the first 5 minutes
-                    // until the secure channel state is known
-                    FREQUENT_PULL_INTERVAL
-                } else {
-                    interval
-                };
+            {
+                // frequent poll the secure channel status every second for the first 5 minutes
+                // until the secure channel state is known
+                FREQUENT_PULL_INTERVAL
+            } else {
+                interval
+            };
             thread::sleep(sleep);
         }
         first_iteration = false;
@@ -127,7 +128,7 @@ fn poll_secure_channel_status(
             started_event_threads = true;
         }
 
-        let status = match key::get_status(base_url.clone()) {
+        let status = match key::get_status(base_url.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 let err_string = format!("{:?}", e);
@@ -233,7 +234,7 @@ fn poll_secure_channel_status(
             // or could not read locally,
             // try fetch from server
             if !key_found {
-                let key = match key::acquire_key(base_url.clone()) {
+                let key = match key::acquire_key(base_url.clone()).await {
                     Ok(k) => k,
                     Err(e) => {
                         logger::write_warning(format!("Failed to acquire key details: {:?}", e));
@@ -254,7 +255,7 @@ fn poll_secure_channel_status(
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {
-                    match key::attest_key(base_url.clone(), &key) {
+                    match key::attest_key(base_url.clone(), &key).await {
                         Ok(()) => {
                             // update in memory
                             key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
@@ -385,7 +386,6 @@ mod tests {
     use proxy_agent_shared::{logger_manager, misc_helpers};
     use std::env;
     use std::fs;
-    use std::thread;
     use std::time::Duration;
     use url::Url;
 
@@ -421,8 +421,10 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn poll_secure_channel_status_tests() {
+    // this test is to test poll_secure_channel_status
+    // it requires more threads to run server and client
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn poll_secure_channel_status_tests() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("poll_secure_channel_status_tests");
         let mut log_dir = temp_test_path.to_path_buf();
@@ -447,31 +449,33 @@ mod tests {
             20,
         );
 
+        let shared_state = SharedState::new();
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-        thread::spawn(move || {
-            server_mock::start(ip.to_string(), port);
+        let cloned_shared_state = shared_state.clone();
+        tokio::spawn(async move {
+            let _ = server_mock::start(ip.to_string(), port, cloned_shared_state.clone()).await;
         });
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state
         server_mock::set_secure_channel_state(false);
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
-        let shared_state = SharedState::new();
         key_keeper::poll_status_async(
             Url::parse("http://127.0.0.1:8081/").unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
             shared_state.clone(),
-        );
+        )
+        .await;
 
         for _ in [0; 5] {
             // wait poll_secure_channel_status run at least one loop
-            thread::sleep(Duration::from_millis(100));
+            tokio::time::sleep(Duration::from_millis(100)).await;
             if keys_dir.exists() {
                 break;
             }
@@ -486,7 +490,7 @@ mod tests {
         // set secure channel state to running
         server_mock::set_secure_channel_state(true);
         // wait poll_secure_channel_status run at least one loop
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let key_files = misc_helpers::get_files(&keys_dir).unwrap();
         assert_eq!(
             1,
@@ -495,8 +499,8 @@ mod tests {
         );
 
         // stop poll
-        key_keeper::stop(shared_state);
-        server_mock::stop(ip.to_string(), port);
+        key_keeper::stop(shared_state.clone());
+        server_mock::stop(ip.to_string(), port, shared_state.clone());
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);

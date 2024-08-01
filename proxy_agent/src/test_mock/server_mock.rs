@@ -1,13 +1,20 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::http::request::Request;
-use crate::common::http::{self, response::Response};
-use crate::common::logger;
+use crate::common::{http, logger};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
+use crate::shared_state::{proxy_listener_wrapper, shared_state_wrapper, SharedState};
+use http_body_util::combinators::BoxBody;
+use hyper::body::Bytes;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::Request;
+use hyper::Response;
+use hyper::StatusCode;
+use hyper_util::rt::TokioIo;
 use once_cell::sync::Lazy;
-use std::io::Write;
-use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
 static EMPTY_GUID: Lazy<String> = Lazy::new(|| "00000000-0000-0000-0000-000000000000".to_string());
@@ -15,40 +22,61 @@ static GUID: Lazy<String> = Lazy::new(|| Uuid::new_v4().to_string());
 static mut CURRENT_STATE: Lazy<String> =
     Lazy::new(|| String::from(key_keeper::MUST_SIG_WIRESERVER));
 
-pub fn start(ip: String, port: u16) {
-    logger::write_information("WireServer starting...".to_string());
-    let listener = TcpListener::bind(format!("{}:{}", ip, port)).unwrap();
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        if !handle_request(stream, ip.to_string(), port) {
-            return;
+pub async fn start(
+    ip: String,
+    port: u16,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    logger::write_information("Mock Server starting...".to_string());
+    let addr = format!("{}:{}", ip, port);
+    let listener = TcpListener::bind(&addr).await.unwrap();
+    println!("Listening on http://{}", addr);
+
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok((stream, client_addr)) => (stream, client_addr),
+            Err(e) => {
+                logger::write_warning(format!("ProxyListener accept error {}", e));
+                continue;
+            }
+        };
+
+        if shared_state_wrapper::get_cancellation_token(shared_state.clone()).is_cancelled() {
+            let message = "Stop signal received, stop the listener.";
+            logger::write_warning(message.to_string());
+            return Ok(());
         }
+        let ip = ip.to_string();
+        tokio::spawn(async move {
+            let io = TokioIo::new(stream);
+            let ip = ip.to_string();
+            let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                println!("Error serving connection: {:?}", err);
+            }
+        });
     }
 }
 
-pub fn stop(ip: String, port: u16) {
-    let stop_request = Request::new("stop".to_string(), "GET".to_string());
-    if let Ok(mut client) = TcpStream::connect(format!("{}:{}", ip, port)) {
-        _ = client.write_all(&stop_request.to_raw_bytes());
-        _ = client.flush();
-    }
+pub fn stop(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) {
+    proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
+    let _ = std::net::TcpStream::connect(format!("{}:{}", ip, port));
 }
 
-fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
+async fn handle_request(
+    ip: String,
+    port: u16,
+    request: Request<hyper::body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     logger::write_information("WireServer processing request.".to_string());
 
-    let request = http::receive_request_data(&stream).unwrap();
-    if request.url == "stop" {
-        return false;
-    }
-    let path: String = match request.get_url() {
-        Some(url) => url.path().to_string().chars().skip(1).collect(),
-        None => request.url.chars().skip(1).collect(),
-    };
+    let path: String = request.uri().path_and_query().unwrap().to_string();
+    let path = path.trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
+    println!("handle_request: {}, {:?}", request.method(), path);
+    println!("segments: {:?}", segments);
 
-    let mut response = Response::from_status(Response::OK.to_string());
-    if request.method == "GET" {
+    if request.method() == "GET" {
         if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "status" {
                 // get key status
@@ -71,7 +99,9 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                             Some(key_keeper::MUST_SIG_WIRESERVER.to_string());
                     }
                 }
-                response.set_body_as_string(serde_json::to_string(&status).unwrap());
+                return Ok(Response::new(http::full_body(
+                    serde_json::to_string(&status).unwrap().as_bytes().to_vec(),
+                )));
             }
         } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -108,7 +138,9 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             </GoalState>"#;
             let goal_state_str = goal_state_str.replace("##ip##", &ip);
             let goal_state_str = goal_state_str.replace("##port##", &port.to_string());
-            response.set_body_as_string(goal_state_str.to_string());
+            return Ok(Response::new(http::full_body(
+                goal_state_str.as_bytes().to_vec(),
+            )));
         } else if path.starts_with("machine/") && path.contains("type=sharedConfig") {
             let shared_config_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <SharedConfig version="1.0.0.0" goalStateIncarnation="16">
@@ -139,7 +171,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 </Instance>
               </Instances>
             </SharedConfig>"#;
-            response.set_body_as_string(shared_config_str.to_string());
+            return Ok(Response::new(http::full_body(shared_config_str.as_bytes())));
         } else if path.starts_with("metadata/instance") {
             let response_data = r#"{
                 "compute": {
@@ -298,9 +330,9 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                     }]
                 }
             }"#;
-            response.set_body_as_string(response_data.to_string());
+            return Ok(Response::new(http::full_body(response_data.as_bytes())));
         }
-    } else if request.method == "POST" {
+    } else if request.method() == "POST" {
         if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "key" {
                 // get key details
@@ -308,7 +340,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                         "authorizationScheme": "Azure-HMAC-SHA256",        
                         "guid": "",        
                         "issued": "2021-05-05T 12:00:00Z",        
-                        "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"        
+                        "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"
                     }"#;
                 let mut key: Key = serde_json::from_str(key_response).unwrap();
                 unsafe {
@@ -318,32 +350,22 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                         key.guid = GUID.to_string();
                     }
                 }
-                response.set_body_as_string(serde_json::to_string(&key).unwrap());
+                return Ok(Response::new(http::full_body(
+                    serde_json::to_string(&key).unwrap().as_bytes().to_vec(),
+                )));
             }
         } else if !segments.is_empty()
             && segments[0] == "machine"
             && segments.len() > 1
             && segments[1] == "?comp=telemetrydata"
         {
-            // post telemetry data
-            // send continue response
-            let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
-            _ = stream.write_all(continue_response.as_raw_string().as_bytes());
-            _ = stream.flush();
-
-            // receive the data
-            let content_length = request.headers.get_content_length().unwrap();
-
-            // receive body content from client
-            http::receive_body(&stream, content_length).unwrap();
+            return Ok(Response::new(http::empty_body()));
         }
     }
 
-    _ = stream.write_all(response.as_raw_string().as_bytes());
-    _ = stream.flush();
-    logger::write_information("WireServer processed request.".to_string());
-
-    true
+    let mut not_found = Response::new(http::empty_body());
+    *not_found.status_mut() = StatusCode::NOT_FOUND;
+    Ok(not_found)
 }
 
 pub fn set_secure_channel_state(enabled: bool) {

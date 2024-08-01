@@ -165,16 +165,22 @@ pub fn lookup_audit(
     }
 }
 
+#[cfg(windows)]
+pub fn get_audit_from_stream_socket(_raw_socket: usize) -> std::io::Result<AuditEntry> {
+    windows::get_audit_from_redirect_context(_raw_socket)
+}
+
 pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {
     #[cfg(windows)]
     {
-        windows::get_audit_from_redirect_context(_tcp_stream)
+        use std::os::windows::io::AsRawSocket;
+        get_audit_from_stream_socket(_tcp_stream.as_raw_socket() as usize)
     }
     #[cfg(not(windows))]
     {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "get_audit_from_redirect_context for linux is not supported",
+            "get_audit_from_stream_socket for linux is not supported",
         ))
     }
 }

@@ -6,6 +6,7 @@ use crate::common::constants;
 use crate::common::logger;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
+use crate::shared_state::shared_state_wrapper;
 use crate::shared_state::telemetry_wrapper;
 use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
@@ -55,17 +56,29 @@ pub fn start_async(
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
-            start(
-                dir_path,
-                Some(interval),
-                delay_start,
-                shared_state,
-                verify_thread_priority_test_only,
-            );
+            let runtime = shared_state_wrapper::get_runtime(shared_state.clone());
+            match runtime {
+                Some(rt) => {
+                    let _ = rt.lock().unwrap().block_on(async move {
+                        tokio::spawn(start(
+                            dir_path,
+                            Some(interval),
+                            delay_start,
+                            shared_state,
+                            verify_thread_priority_test_only,
+                        ))
+                        .await
+                    });
+                }
+                None => {
+                    let message = "Failed to get runtime.".to_string();
+                    logger::write_error(message);
+                }
+            }
         });
 }
 
-fn start(
+async fn start(
     dir_path: PathBuf,
     interval: Option<Duration>,
     delay_start: bool,
@@ -88,7 +101,7 @@ fn start(
         if first {
             if delay_start {
                 // delay start the event_reader thread to give additional CPU cycles to more important threads
-                thread::sleep(Duration::from_secs(60));
+                tokio::time::sleep(Duration::from_secs(60)).await;
             }
 
             match thread_priority::set_current_thread_priority(ThreadPriority::Min) {
@@ -111,7 +124,7 @@ fn start(
         }
 
         // refresh vm metadata
-        match update_vm_meta_data(shared_state.clone()) {
+        match update_vm_meta_data(shared_state.clone()).await {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
             }
@@ -125,7 +138,7 @@ fn start(
             match misc_helpers::get_files(&dir_path) {
                 Ok(files) => {
                     let file_count = files.len();
-                    let event_count = process_events_and_clean(files, shared_state.clone());
+                    let event_count = process_events_and_clean(files, shared_state.clone()).await;
                     let message = format!("Send {} events from {} files", event_count, file_count);
                     event_logger::write_event(
                         event_logger::INFO_LEVEL,
@@ -144,7 +157,7 @@ fn start(
                 }
             }
         }
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
     }
 }
 
@@ -152,17 +165,23 @@ pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     telemetry_wrapper::set_reader_shutdown(shared_state.clone(), true);
 }
 
-fn update_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<()> {
+async fn update_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<()> {
     let wire_server_client = WireServerClient::new(
-        get_wire_server_ip(),
-        get_wire_server_port(),
+        get_wire_server_ip(shared_state.clone()),
+        get_wire_server_port(shared_state.clone()),
         shared_state.clone(),
     );
-    let goal_state = wire_server_client.get_goalstate()?;
-    let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri())?;
+    let goal_state = wire_server_client.get_goalstate().await?;
+    let shared_config = wire_server_client
+        .get_shared_config(goal_state.get_shared_config_uri())
+        .await?;
 
-    let imds_client = ImdsClient::new(get_imds_ip(), get_imds_port(), shared_state.clone());
-    let instance_info = imds_client.get_imds_instance_info()?;
+    let imds_client = ImdsClient::new(
+        get_imds_ip(shared_state.clone()),
+        get_imds_port(shared_state.clone()),
+        shared_state.clone(),
+    );
+    let instance_info = imds_client.get_imds_instance_info().await?;
     let vm_meta_data = VMMetaData {
         container_id: goal_state.get_container_id(),
         role_name: shared_config.get_role_name(),
@@ -183,13 +202,16 @@ pub fn get_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> VMMetaData {
         None => VMMetaData::default(),
     }
 }
-fn process_events_and_clean(files: Vec<PathBuf>, shared_state: Arc<Mutex<SharedState>>) -> usize {
+async fn process_events_and_clean(
+    files: Vec<PathBuf>,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> usize {
     let mut num_events_logged = 0;
     for file in files {
         match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
             Ok(events) => {
                 num_events_logged += events.len();
-                send_events(events, shared_state.clone());
+                send_events(events, shared_state.clone()).await;
                 clean_files(file);
             }
             Err(e) => {
@@ -206,10 +228,8 @@ fn process_events_and_clean(files: Vec<PathBuf>, shared_state: Arc<Mutex<SharedS
 }
 
 const MAX_MESSAGE_SIZE: usize = 1024 * 64;
-static mut MOCK_WIRE_SERVER_IP: Option<&str> = None;
-static mut MOCK_WIRE_SERVER_PORT: Option<u16> = None;
 
-fn send_events(mut events: Vec<Event>, shared_state: Arc<Mutex<SharedState>>) {
+async fn send_events(mut events: Vec<Event>, shared_state: Arc<Mutex<SharedState>>) {
     while !events.is_empty() {
         let mut telemetry_data = TelemetryData::new();
         let mut add_more_events = true;
@@ -247,63 +267,53 @@ fn send_events(mut events: Vec<Event>, shared_state: Arc<Mutex<SharedState>>) {
             }
         }
 
-        send_data_to_wire_server(telemetry_data, shared_state.clone());
+        send_data_to_wire_server(telemetry_data, shared_state.clone()).await;
     }
 }
 
-fn get_wire_server_ip() -> &'static str {
-    let val;
-    unsafe {
-        match MOCK_WIRE_SERVER_IP {
-            Some(ip) => val = ip,
-            None => val = constants::WIRE_SERVER_IP,
-        }
+fn get_wire_server_ip(shared_state: Arc<Mutex<SharedState>>) -> String {
+    match telemetry_wrapper::get_mock_server_ip(shared_state) {
+        Some(ip) => ip,
+        None => constants::WIRE_SERVER_IP.to_string(),
     }
-    val
 }
-fn get_wire_server_port() -> u16 {
-    let val;
-    unsafe {
-        match MOCK_WIRE_SERVER_PORT {
-            Some(port) => val = port,
-            None => val = constants::WIRE_SERVER_PORT,
-        }
+fn get_wire_server_port(shared_state: Arc<Mutex<SharedState>>) -> u16 {
+    match telemetry_wrapper::get_mock_server_port(shared_state) {
+        Some(port) => port,
+        None => constants::WIRE_SERVER_PORT,
     }
-    val
 }
-fn get_imds_ip() -> &'static str {
-    let val;
-    unsafe {
-        match MOCK_WIRE_SERVER_IP {
-            Some(ip) => val = ip,
-            None => val = constants::IMDS_IP,
-        }
+fn get_imds_ip(shared_state: Arc<Mutex<SharedState>>) -> String {
+    match telemetry_wrapper::get_mock_server_ip(shared_state) {
+        Some(ip) => ip,
+        None => constants::IMDS_IP.to_string(),
     }
-    val
 }
-fn get_imds_port() -> u16 {
-    let val;
-    unsafe {
-        match MOCK_WIRE_SERVER_PORT {
-            Some(port) => val = port,
-            None => val = constants::IMDS_PORT,
-        }
+fn get_imds_port(shared_state: Arc<Mutex<SharedState>>) -> u16 {
+    match telemetry_wrapper::get_mock_server_port(shared_state) {
+        Some(port) => port,
+        None => constants::IMDS_PORT,
     }
-    val
 }
 
-fn send_data_to_wire_server(telemetry_data: TelemetryData, shared_state: Arc<Mutex<SharedState>>) {
+async fn send_data_to_wire_server(
+    telemetry_data: TelemetryData,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
     if telemetry_data.event_count() == 0 {
         return;
     }
 
     let wire_server_client = WireServerClient::new(
-        get_wire_server_ip(),
-        get_wire_server_port(),
+        get_wire_server_ip(shared_state.clone()),
+        get_wire_server_port(shared_state.clone()),
         shared_state.clone(),
     );
     for _ in [0; 5] {
-        match wire_server_client.send_telemetry_data(telemetry_data.to_xml()) {
+        match wire_server_client
+            .send_telemetry_data(telemetry_data.to_xml())
+            .await
+        {
             Ok(()) => {
                 break;
             }
@@ -313,7 +323,7 @@ fn send_data_to_wire_server(telemetry_data: TelemetryData, shared_state: Arc<Mut
                     e
                 ));
                 // wait 15 seconds and retry
-                thread::sleep(Duration::from_secs(15));
+                tokio::time::sleep(Duration::from_secs(15)).await;
             }
         }
     }
@@ -447,8 +457,10 @@ mod tests {
         assert!(THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed));
     }
 
-    #[test]
-    fn test_event_reader_thread() {
+    // this test is to test the event reader thread, it reads events from the events folder and send to wire server
+    // it requires more threads to run server and client
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_event_reader_thread() {
         let mut temp_dir = env::temp_dir();
         temp_dir.push("test_event_reader_thread");
 
@@ -466,25 +478,25 @@ mod tests {
             10 * 1024 * 1024,
             20,
         );
+        let shared_state = SharedState::new();
 
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 7071u16;
-        unsafe {
-            MOCK_WIRE_SERVER_IP = Some(ip);
-            MOCK_WIRE_SERVER_PORT = Some(port);
-        }
-        let shared_state = SharedState::new();
+        telemetry_wrapper::set_mock_server_ip(shared_state.clone(), ip.to_string());
+        telemetry_wrapper::set_mock_server_port(shared_state.clone(), port);
+
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
-
-        thread::spawn(move || {
-            server_mock::start(ip.to_string(), port);
+        let cloned_shared_state = shared_state.clone();
+        tokio::spawn(async move {
+            let _ = server_mock::start(ip.to_string(), port, cloned_shared_state.clone()).await;
         });
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        match update_vm_meta_data(shared_state.clone()) {
+        println!("start update_vm_meta_data");
+        match update_vm_meta_data(shared_state.clone()).await {
             Ok(()) => {
-                logger::write("success updated the vm metadata.".to_string());
+                logger::write("Success updated the vm metadata.".to_string());
             }
             Err(e) => {
                 logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
@@ -510,16 +522,13 @@ mod tests {
         // Check the events processed
         let files = misc_helpers::get_files(&events_dir).unwrap();
         println!("Get '{}' event files.", files.len());
-        let events_read = process_events_and_clean(files, shared_state.clone());
+        let events_read = process_events_and_clean(files, shared_state.clone()).await;
 
         //Should be 10 events written and read into events Vector
         assert_eq!(events_read, 10);
 
         _ = fs::remove_dir_all(&temp_dir);
-        unsafe {
-            MOCK_WIRE_SERVER_IP = None;
-            MOCK_WIRE_SERVER_PORT = None;
-        }
-        server_mock::stop(ip.to_string(), port);
+        telemetry_wrapper::reset_mock_server(shared_state.clone());
+        server_mock::stop(ip.to_string(), port, shared_state.clone());
     }
 }

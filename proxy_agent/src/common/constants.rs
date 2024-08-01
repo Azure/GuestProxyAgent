@@ -35,3 +35,5 @@ pub const DEFAULT_MAX_EVENT_FILE_COUNT: usize = 30;
 
 pub const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 pub const EGID: u32 = 3080;
+
+pub const LF: &str = "\n";

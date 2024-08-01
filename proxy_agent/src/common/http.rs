@@ -1,269 +1,22 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-pub mod headers;
-pub mod http_request;
-pub mod request;
-pub mod response;
 
-#[cfg(windows)]
-mod windows;
-
-use crate::common::http::http_request::HttpRequest;
-use request::Request;
-use response::Response;
+use super::{constants, helpers};
+use http::request::Builder;
+use http::request::Parts;
+use http_body_util::combinators::BoxBody;
+use http_body_util::BodyExt;
+use http_body_util::Empty;
+use http_body_util::Full;
+use hyper::body::Bytes;
+use hyper::Request;
+use hyper_util::rt::TokioIo;
+use itertools::Itertools;
+use proxy_agent_shared::misc_helpers;
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
-use std::{
-    io::{prelude::*, BufReader},
-    net::TcpStream,
-};
-
-use self::headers::Headers;
-
-pub const LF: &str = "\n";
-pub const CRLF: &str = "\r\n";
-pub const DOUBLE_CRLF: &str = "\r\n\r\n";
-
-// receive TcpStream in string format
-// the stream len must less than DEFAULT_BUF_SIZE
-pub fn receive_data_in_string(stream: &TcpStream) -> std::io::Result<String> {
-    let mut reader = BufReader::new(stream);
-    let received: Vec<u8> = reader.fill_buf()?.to_vec();
-
-    let rec_data = match String::from_utf8(received) {
-        Ok(data) => data,
-        Err(e) => {
-            let message = format!("Failed convert the received data to string, error {}", e);
-            return Err(Error::new(ErrorKind::InvalidData, message));
-        }
-    };
-    reader.consume(rec_data.len());
-
-    Ok(rec_data)
-}
-
-// send request and receive response body in string
-// use this method only if you are sure
-// both the request and response body are string and small
-pub fn get_response_in_string(http_req: &mut HttpRequest) -> std::io::Result<Response> {
-    let addrs = format!("{}:{}", http_req.get_host(), http_req.get_port());
-    let mut client = TcpStream::connect(addrs)?;
-    _ = client.write_all(http_req.request.as_raw_string().as_bytes());
-    _ = client.flush();
-
-    let data = receive_data_in_string(&client)?;
-    let mut response = Response::from_raw_data(data);
-
-    // check the body is streamed or not
-    if let Ok(len) = response.headers.get_content_length() {
-        let body_len = response.get_body_len();
-        if len != 0 && body_len == 0 {
-            response.set_body_as_string(receive_data_in_string(&client)?);
-        }
-    }
-
-    Ok(response)
-}
-
-pub fn receive_request_data(stream: &TcpStream) -> std::io::Result<Request> {
-    let mut reader = BufReader::new(stream);
-    let mut line = String::new();
-
-    reader.read_line(&mut line)?;
-    let mut request = Request::from_first_line(line)?;
-    request.headers = Headers::from_raw_data(read_header_lines(&mut reader)?);
-
-    // if request contains expects continue header,
-    // the body will send at next socket data
-    if !request.expect_continue_request() {
-        let content_length = request.headers.get_content_length()?;
-        request.set_body(receive_body_internal(&mut reader, content_length)?);
-    }
-
-    Ok(request)
-}
-
-pub fn receive_response_data(stream: &TcpStream) -> std::io::Result<Response> {
-    let mut reader = BufReader::new(stream);
-    let mut response = read_response_without_body(&mut reader)?;
-
-    let content_length = response.headers.get_content_length()?;
-    response.set_body(receive_body_internal(&mut reader, content_length)?);
-
-    Ok(response)
-}
-
-fn read_header_lines(reader: &mut BufReader<&TcpStream>) -> std::io::Result<String> {
-    let mut lines = String::new();
-
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-        lines.push_str(&line);
-
-        let line = line.trim();
-        if line.is_empty() {
-            // empty line means end of the headers section
-            break;
-        }
-    }
-
-    Ok(lines)
-}
-
-fn receive_body_internal(
-    reader: &mut BufReader<&TcpStream>,
-    len: usize,
-) -> std::io::Result<Vec<u8>> {
-    let mut data: Vec<u8> = Vec::new();
-    while data.len() < len {
-        match reader.fill_buf() {
-            Ok(d) => {
-                let received = d.to_vec();
-                let received_len = received.len();
-                reader.consume(received_len);
-                data.extend(received.iter().copied());
-            }
-            Err(_e) => {
-                // read timeout, assume no more incoming data in the TcpStream
-                return Ok(data);
-            }
-        };
-    }
-
-    Ok(data)
-}
-
-pub fn receive_body(stream: &TcpStream, content_length: usize) -> std::io::Result<Vec<u8>> {
-    let mut reader = BufReader::new(stream);
-    receive_body_internal(&mut reader, content_length)
-}
-
-fn stream_body_internal(
-    mut reader: BufReader<&TcpStream>,
-    mut dest_stream: &TcpStream,
-    len: usize,
-) -> std::io::Result<usize> {
-    let mut received: usize = 0;
-
-    while received < len {
-        match reader.fill_buf() {
-            Ok(d) => {
-                let read = d.len();
-                dest_stream.write_all(d)?;
-                reader.consume(read);
-                received += read;
-            }
-            Err(_e) => {
-                // read timeout, assume no more incoming data in the TcpStream
-                break;
-            }
-        };
-    }
-
-    dest_stream.flush()?;
-    Ok(received)
-}
-
-// receive body from source stream and,
-// send to dest stream directly
-pub fn stream_body(
-    source_stream: &TcpStream,
-    dest_stream: &TcpStream,
-    content_length: usize,
-) -> std::io::Result<usize> {
-    let reader = BufReader::new(source_stream);
-    stream_body_internal(reader, dest_stream, content_length)
-}
-
-// forward response from server TcpStream to client TcpStream
-// insert extra headers if have
-pub fn forward_response(
-    server_stream: &TcpStream,
-    mut client_stream: &TcpStream,
-    extra_headers: HashMap<&str, &str>,
-) -> std::io::Result<(Response, usize)> {
-    let mut response_reader = BufReader::new(server_stream);
-
-    let mut response_without_body;
-    match read_response_without_body(&mut response_reader) {
-        Ok(r) => response_without_body = r,
-        Err(e) => {
-            let message = format!("Failed to read response without body from Host - {}", e);
-            return Err(Error::new(e.kind(), message));
-        }
-    }
-
-    if response_without_body.is_continue_response() {
-        return Ok((response_without_body, 0));
-    }
-
-    // insert extra headers
-    for (key, value) in extra_headers {
-        response_without_body
-            .headers
-            .add_header(key.to_string(), value.to_string());
-    }
-    match client_stream.write_all(&response_without_body.to_raw_bytes()) {
-        Ok(_) => {}
-        Err(e) => {
-            let message = format!("Failed to write response without body to Guest - {}", e);
-            return Err(Error::new(e.kind(), message));
-        }
-    }
-
-    // stream body
-
-    let content_length = match response_without_body.headers.get_content_length() {
-        Ok(len) => len,
-        Err(e) => {
-            let message = format!("Failed to get content length {}", e);
-            return Err(Error::new(e.kind(), message));
-        }
-    };
-
-    let forwarded = match stream_body_internal(response_reader, client_stream, content_length) {
-        Ok(len) => len,
-        Err(e) => {
-            let message = format!("Failed to stream body {}", e);
-            return Err(Error::new(e.kind(), message));
-        }
-    };
-
-    Ok((response_without_body, forwarded))
-}
-
-fn read_response_without_body(
-    response_reader: &mut BufReader<&TcpStream>,
-) -> std::io::Result<Response> {
-    let mut line = String::new();
-    response_reader.read_line(&mut line)?;
-    let mut response = Response::from_first_line(line);
-
-    response.headers = Headers::from_raw_data(read_header_lines(response_reader)?);
-
-    Ok(response)
-}
-
-pub fn connect_to_server(
-    ip: String,
-    port: u16,
-    _client_stream: &TcpStream,
-) -> std::io::Result<TcpStream> {
-    let server_stream;
-    #[cfg(windows)]
-    {
-        server_stream = windows::connect_with_redirect_record(ip, port, _client_stream)?;
-    }
-    #[cfg(not(windows))]
-    {
-        // Linux does not have the redirect record feature,
-        // hence it will avoid the redirect by skip_process_map in ebpf program.
-        server_stream = TcpStream::connect(format!("{}:{}", ip, port))?;
-    }
-
-    Ok(server_stream)
-}
+use tokio::net::TcpStream;
+use url::Url;
 
 pub fn htons(u: u16) -> u16 {
     u.to_be()
@@ -273,206 +26,351 @@ pub fn ntohs(u: u16) -> u16 {
     u16::from_be(u)
 }
 
-#[cfg(test)]
-mod tests {
+pub async fn get<T, F>(
+    uri_str: &str,
+    headers: &HashMap<String, String>,
+    key_guid: Option<String>,
+    key: Option<String>,
+    log_fun: F,
+) -> std::io::Result<T>
+where
+    T: DeserializeOwned,
+    F: Fn(String) + Send + 'static,
+{
+    let request = get_request("GET", uri_str, headers, None, key_guid, key)?;
 
-    use super::headers;
-    use crate::common::http;
-    use crate::common::http::http_request::HttpRequest;
-    use crate::common::http::response::Response;
-    use crate::common::http::Request;
-    use std::fs;
-    use std::io::Write;
-    use std::net::TcpListener;
-    use std::net::TcpStream;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::thread;
-    use std::time::Duration;
-    use url::Url;
-
-    const ENDPOINT_ADDRESS: &str = "127.0.0.1:8082";
-    #[test]
-    fn http_binary_body_test() {
-        let shut_down: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-        let cloned_shut_down = shut_down.clone();
-
-        let listener_thread = thread::Builder::new()
-            .name("listener".to_string())
-            .spawn(move || {
-                let listener = TcpListener::bind(ENDPOINT_ADDRESS).unwrap();
-                for stream in listener.incoming() {
-                    if cloned_shut_down.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let stream = stream.unwrap();
-                    handle_binary_body(stream);
-                }
-            })
-            .unwrap();
-        thread::sleep(Duration::from_millis(100));
-
-        //// test GET response with binary data
-        test_get_response_binary();
-
-        // test POST requests
-        test_post_requests();
-
-        // stop listener thread
-        shut_down.store(true, Ordering::Relaxed);
-        _ = TcpStream::connect(ENDPOINT_ADDRESS);
-        listener_thread.join().unwrap();
+    let (host, port) = host_port_from_uri(uri_str)?;
+    let response = match send_request(&host, port, request, log_fun).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to send request to {}: {}", uri_str, e),
+            ))
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!(
+                "Failed to get response from {}, status code: {}",
+                uri_str, status
+            ),
+        ));
     }
 
-    fn handle_binary_body(mut stream: TcpStream) {
-        // set read timeout to handle the case when body content is less than Content-Length in request header
-        _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-        let mut request = http::receive_request_data(&stream).unwrap();
+    read_response_body(response).await
+}
 
-        let mut response = Response::from_status(Response::OK.to_string());
-        if request.method == "GET" {
-            let file = std::env::current_exe().unwrap();
-            let body = fs::read(file).unwrap();
-            response.headers.add_header(
-                headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-                body.len().to_string(),
-            );
-            response.set_body(body);
-            _ = stream.write_all(&response.to_raw_bytes());
-            _ = stream.flush();
-        } else if request.method == "POST" {
-            let content_length = request.headers.get_content_length().unwrap();
-
-            if request.expect_continue_request() {
-                if request.get_body_len() != 0 {
-                    send_response(
-                        &stream,
-                        Response::BAD_REQUEST,
-                        "request body_len must be 0 for expect_continue_request",
-                    );
-                    return;
-                }
-
-                let mut response = Response::from_status(Response::CONTINUE.to_string());
-                _ = stream.write_all(response.as_raw_string().as_bytes());
-                _ = stream.flush();
-
-                request.set_body(http::receive_body(&stream, content_length).unwrap());
+pub async fn read_response_body<T>(
+    mut response: hyper::Response<hyper::body::Incoming>,
+) -> std::io::Result<T>
+where
+    T: DeserializeOwned,
+{
+    let mut body_string = String::new();
+    while let Some(next) = response.frame().await {
+        let frame = match next {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to get next frame from response: {}", e),
+                ))
             }
+        };
+        if let Some(chunk) = frame.data_ref() {
+            body_string.push_str(&String::from_utf8_lossy(chunk));
+        }
+    }
+    match serde_json::from_str(&body_string) {
+        Ok(t) => Ok(t),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to deserialize response body from: {}", e),
+        )),
+    }
+}
 
-            // check actual body length against content-length
-            if request.get_body_len() != content_length {
-                send_response(&stream, Response::BAD_REQUEST, "request body_len mistmatch");
-                return;
-            }
+pub fn get_request(
+    method: &str,
+    uri_str: &str,
+    headers: &HashMap<String, String>,
+    body: Option<&[u8]>,
+    key_guid: Option<String>,
+    key: Option<String>,
+) -> std::io::Result<Request<BoxBody<Bytes, hyper::Error>>> {
+    let (host, _) = host_port_from_uri(uri_str)?;
+    let uri = match uri_str.parse::<hyper::Uri>() {
+        Ok(u) => u,
+        Err(e) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to parse uri {}: {}", uri_str, e),
+            ))
+        }
+    };
+    let mut request_builder = Request::builder()
+        .method(method)
+        .uri(match uri.path_and_query() {
+            Some(pq) => pq.as_str(),
+            None => uri.path(),
+        })
+        .header(
+            constants::DATE_HEADER,
+            misc_helpers::get_date_time_rfc1123_string(),
+        )
+        .header("Host", host)
+        .header(
+            constants::CLAIMS_HEADER,
+            format!("{{ \"{}\": \"{}\"}}", constants::CLAIMS_IS_ROOT, true,),
+        )
+        .header(
+            "Content-Length",
+            match body {
+                Some(b) => b.len().to_string(),
+                None => "0".to_string(),
+            },
+        );
 
-            return send_response(&stream, Response::OK, "");
+    for (key, value) in headers {
+        request_builder = request_builder.header(key, value);
+    }
+
+    if let (Some(key), Some(key_guid)) = (key, key_guid) {
+        let body_vec = body.map(|b| b.to_vec());
+        let input_to_sign = request_to_sign_input(&request_builder, body_vec)?;
+        let authorization_value = format!(
+            "{} {} {}",
+            constants::AUTHORIZATION_SCHEME,
+            key_guid,
+            helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
+        );
+        request_builder = request_builder.header(
+            constants::AUTHORIZATION_HEADER.to_string(),
+            authorization_value.to_string(),
+        );
+    }
+
+    let boxed_body = match body {
+        Some(body) => full_body(body.to_vec()),
+        None => empty_body(),
+    };
+    match request_builder.body(boxed_body) {
+        Ok(r) => Ok(r),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to build request body: {}", e),
+        )),
+    }
+}
+
+pub fn host_port_from_uri(uri_str: &str) -> std::io::Result<(String, u16)> {
+    let uri = parse_uri(uri_str)?;
+    let host = match uri.host() {
+        Some(h) => h.to_string(),
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to get host from uri {}", uri),
+            ))
+        }
+    };
+    let port = match uri.port() {
+        Some(p) => p.as_u16(),
+        None => 80,
+    };
+
+    Ok((host, port))
+}
+
+fn parse_uri(uri_str: &str) -> std::io::Result<hyper::Uri> {
+    match uri_str.parse::<hyper::Uri>() {
+        Ok(u) => Ok(u),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to parse uri {}: {}", uri_str, e),
+        )),
+    }
+}
+
+pub async fn send_request<F>(
+    host: &str,
+    port: u16,
+    request: Request<BoxBody<Bytes, hyper::Error>>,
+    log_fun: F,
+) -> std::io::Result<hyper::Response<hyper::body::Incoming>>
+where
+    F: Fn(String) + Send + 'static,
+{
+    let addr = format!("{}:{}", host, port);
+    let stream = TcpStream::connect(addr.to_string()).await?;
+    let io = TokioIo::new(stream);
+
+    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
+        Ok((s, c)) => (s, c),
+        Err(e) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to establish connection to {}: {}", addr, e),
+            ))
+        }
+    };
+    tokio::task::spawn(async move {
+        if let Err(err) = conn.await {
+            log_fun(format!("Connection failed: {:?}", err));
+        }
+    });
+
+    match sender.send_request(request).await {
+        Ok(r) => Ok(r),
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to send request: {:?}", e),
+        )),
+    }
+}
+/*
+    StringToSign = Method + "\n" +
+           HexEncoded(Body) + "\n" +
+           CanonicalizedHeaders + "\n"
+           UrlEncodedPath + "\n"
+           CanonicalizedParameters;
+*/
+pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
+    let mut data: Vec<u8> = head.method.to_string().as_bytes().to_vec();
+    data.extend(constants::LF.as_bytes());
+    data.extend(body);
+    data.extend(constants::LF.as_bytes());
+
+    data.extend(headers_to_canonicalized_string(&head.headers).as_bytes());
+    let path_para = get_path_and_canonicalized_parameters(into_url(&head.uri));
+    data.extend(path_para.0.as_bytes());
+    data.extend(constants::LF.as_bytes());
+    data.extend(path_para.1.as_bytes());
+
+    data
+}
+
+pub fn request_to_sign_input(
+    request_builder: &Builder,
+    body: Option<Vec<u8>>,
+) -> std::io::Result<Vec<u8>> {
+    let mut data: Vec<u8> = match request_builder.method_ref() {
+        Some(m) => m.as_str().as_bytes().to_vec(),
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to get method from request builder",
+            ))
+        }
+    };
+    data.extend(constants::LF.as_bytes());
+    if let Some(body) = body {
+        data.extend(body);
+    }
+    data.extend(constants::LF.as_bytes());
+
+    match request_builder.headers_ref() {
+        Some(h) => {
+            data.extend(headers_to_canonicalized_string(h).as_bytes());
+        }
+        None => {
+            // no headers
+            data.extend(constants::LF.as_bytes());
+        }
+    }
+    match request_builder.uri_ref() {
+        Some(u) => {
+            let path_para = get_path_and_canonicalized_parameters(into_url(u));
+            data.extend(path_para.0.as_bytes());
+            data.extend(constants::LF.as_bytes());
+            data.extend(path_para.1.as_bytes());
+        }
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to get uri from request builder",
+            ))
         }
     }
 
-    fn send_response(mut stream: &TcpStream, response_status: &str, response_message: &str) {
-        let mut response = Response::from_status(response_status.to_string());
-        let len = response_message.len();
-        if len > 0 {
-            response.set_body_as_string(response_message.to_string());
+    Ok(data)
+}
+
+fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
+    let mut canonicalized_headers = String::new();
+    let separator = String::from(constants::LF);
+    let mut map: HashMap<String, (String, String)> = HashMap::new();
+
+    for (key, value) in headers.iter() {
+        let key = key.to_string();
+        let value = value.to_str().unwrap().to_string();
+        let key_lower_case = key.to_lowercase();
+        map.insert(key_lower_case, (key, value));
+    }
+
+    for key in map.keys().sorted() {
+        // skip the expect header
+        if key.eq_ignore_ascii_case(constants::AUTHORIZATION_HEADER) {
+            continue;
+        }
+        let h = format!("{}:{}{}", key, map[key].1.trim(), separator);
+        canonicalized_headers.push_str(&h);
+    }
+
+    canonicalized_headers
+}
+
+fn into_url(uri: &hyper::Uri) -> Url {
+    let path_query = match uri.path_and_query() {
+        Some(pq) => pq.as_str(),
+        None => uri.path(),
+    };
+    // Url crate does not support parsing relative paths, so we need to add a dummy base url
+    let mut url = Url::parse("http://127.0.0.1").unwrap();
+    if let Ok(u) = url.join(path_query) {
+        url = u
+    }
+    url
+}
+
+fn get_path_and_canonicalized_parameters(url: Url) -> (String, String) {
+    let path = url.path().to_string();
+    let parameters = url.query_pairs();
+    let mut pairs: HashMap<String, String> = HashMap::new();
+    let mut canonicalized_parameters = String::new();
+    if parameters.count() > 0 {
+        for p in parameters {
+            // Convert the parameter name to lowercase
+            pairs.insert(p.0.to_lowercase(), p.1.to_string());
         }
 
-        _ = stream.write_all(&response.to_raw_bytes());
-        _ = stream.flush();
+        // Sort the parameters lexicographically by parameter name, in ascending order.
+        let mut first = true;
+        for key in pairs.keys().sorted() {
+            if !first {
+                canonicalized_parameters.push('&');
+            }
+            first = false;
+            // Join each parameter key value pair with '='
+            let p = format!("{}={}", key, pairs[key]);
+            canonicalized_parameters.push_str(&p);
+        }
     }
 
-    fn test_get_response_binary() {
-        let mut client = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
-        let mut request = Request::new("/file".to_string(), "GET".to_string());
-        client
-            .write_all(request.as_raw_string().as_bytes())
-            .unwrap();
-        client.flush().unwrap();
+    (path, canonicalized_parameters)
+}
 
-        let response = http::receive_response_data(&client).unwrap();
-        assert_eq!(
-            response.headers.get_content_length().unwrap(),
-            response.get_body_len(),
-            "get_body_len and content_length mismatch."
-        );
+pub fn empty_body() -> BoxBody<Bytes, hyper::Error> {
+    Empty::<Bytes>::new()
+        .map_err(|never| match never {})
+        .boxed()
+}
 
-        let file = std::env::current_exe().unwrap();
-        assert_eq!(
-            file.metadata().unwrap().len() as usize,
-            response.get_body_len(),
-            "get_body_len and file length mismatch."
-        );
-    }
-
-    fn test_post_requests() {
-        let file = std::env::current_exe().unwrap();
-        let body = fs::read(file).unwrap();
-        let uri = format!("http://{ENDPOINT_ADDRESS}/file");
-        let mut request = Request::new(uri.to_string(), "POST".to_string());
-        request.headers.add_header(
-            headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-            body.len().to_string(),
-        );
-
-        // send request with incorrect body size
-        request.set_body_as_string("small body".to_string());
-        let mut http_req = HttpRequest::clone_without_body(Url::parse(&uri).unwrap(), &request);
-        let response = http::get_response_in_string(&mut http_req).unwrap();
-        assert_eq!(
-            Response::BAD_REQUEST,
-            response.status,
-            "response.status mismatch"
-        );
-        assert_eq!(
-            "request body_len mistmatch",
-            response.get_body_as_string().unwrap(),
-            "response body mismatch"
-        );
-
-        // send request with full body directly
-        request.set_body(body);
-        let mut client_stream = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
-        _ = client_stream.write_all(&request.to_raw_bytes());
-        _ = client_stream.flush();
-        let response = http::receive_response_data(&client_stream).unwrap();
-        assert_eq!(Response::OK, response.status, "response.status must be OK");
-        assert_eq!(
-            "",
-            response.get_body_as_string().unwrap(),
-            "response body must be empty"
-        );
-
-        // add expect-continue header
-        request.headers.add_header(
-            headers::EXPECT_HEADER_NAME.to_string(),
-            headers::EXPECT_HEADER_VALUE.to_string(),
-        );
-        let mut client_stream = TcpStream::connect(ENDPOINT_ADDRESS).unwrap();
-        client_stream
-            .write_all(request.as_raw_string().as_bytes())
-            .unwrap();
-        client_stream.flush().unwrap();
-        let response = http::receive_response_data(&client_stream).unwrap();
-        assert_eq!(
-            Response::CONTINUE,
-            response.status,
-            "response.status must be CONTINUE"
-        );
-        assert_eq!(
-            "",
-            response.get_body_as_string().unwrap(),
-            "response body must be empty"
-        );
-
-        // Send body only after CONTINUE response
-        client_stream.write_all(request.get_body()).unwrap();
-        client_stream.flush().unwrap();
-        let response = http::receive_response_data(&client_stream).unwrap();
-        assert_eq!(Response::OK, response.status, "response.status must be OK");
-        assert_eq!(
-            "",
-            response.get_body_as_string().unwrap(),
-            "response body must be empty"
-        );
-    }
+pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
 }
