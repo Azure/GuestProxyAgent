@@ -6,27 +6,19 @@ use crate::common::constants;
 use crate::common::logger;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
+use crate::shared_state::telemetry_wrapper;
 use crate::shared_state::SharedState;
-use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use thread_priority::ThreadPriority;
 
-static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static mut VM_META_DATA: Lazy<Option<VMMetaData>> = Lazy::new(|| None);
-
-// used with unit test to verify if the thread priority was lowered.
-static mut VERIFY_THREAD_PRIORITY_OPTION: Option<
-    fn(Result<ThreadPriority, thread_priority::Error>),
-> = None;
-
+#[derive(Clone)]
 pub struct VMMetaData {
     pub container_id: String,
     pub tenant_name: String,
@@ -51,19 +43,6 @@ impl VMMetaData {
             image_origin: 3, // unknown
         }
     }
-
-    fn copy(&self) -> Self {
-        VMMetaData {
-            container_id: self.container_id.to_string(),
-            tenant_name: self.tenant_name.to_string(),
-            role_name: self.role_name.to_string(),
-            role_instance_name: self.role_instance_name.to_string(),
-            subscription_id: self.subscription_id.to_string(),
-            resource_group_name: self.resource_group_name.to_string(),
-            vm_id: self.vm_id.to_string(),
-            image_origin: self.image_origin,
-        }
-    }
 }
 
 pub fn start_async(
@@ -71,11 +50,18 @@ pub fn start_async(
     interval: Duration,
     delay_start: bool,
     shared_state: Arc<Mutex<SharedState>>,
+    verify_thread_priority_test_only: Option<fn(Result<ThreadPriority, thread_priority::Error>)>, // for test only
 ) {
     _ = thread::Builder::new()
         .name("event_reader".to_string())
         .spawn(move || {
-            start(dir_path, Some(interval), delay_start, shared_state);
+            start(
+                dir_path,
+                Some(interval),
+                delay_start,
+                shared_state,
+                verify_thread_priority_test_only,
+            );
         });
 }
 
@@ -84,15 +70,15 @@ fn start(
     interval: Option<Duration>,
     delay_start: bool,
     shared_state: Arc<Mutex<SharedState>>,
+    verify_thread_priority_test_only: Option<fn(Result<ThreadPriority, thread_priority::Error>)>, // for test only
 ) {
     logger::write("telemetry event reader thread started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
-    let shutdown = SHUT_DOWN.clone();
     let mut first = true;
 
     loop {
-        if shutdown.load(Ordering::Relaxed) {
+        if telemetry_wrapper::get_reader_shutdown(shared_state.clone()) {
             logger::write_warning(
                 "Stop signal received, closing event telemetry thread.".to_string(),
             );
@@ -107,10 +93,8 @@ fn start(
 
             match thread_priority::set_current_thread_priority(ThreadPriority::Min) {
                 Ok(_) => {
-                    unsafe {
-                        if let Some(verify_thread_priority) = VERIFY_THREAD_PRIORITY_OPTION {
-                            verify_thread_priority(thread_priority::get_current_thread_priority());
-                        }
+                    if let Some(verify_thread_priority) = verify_thread_priority_test_only {
+                        verify_thread_priority(thread_priority::get_current_thread_priority());
                     }
                     logger::write(
                         "Successfully set the event_reader thread priority to min.".to_string(),
@@ -126,6 +110,7 @@ fn start(
             first = false;
         }
 
+        // refresh vm metadata
         match update_vm_meta_data(shared_state.clone()) {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
@@ -135,29 +120,27 @@ fn start(
             }
         }
 
-        unsafe {
-            if VM_META_DATA.is_some() {
-                match misc_helpers::get_files(&dir_path) {
-                    Ok(files) => {
-                        let file_count = files.len();
-                        let event_count = process_events_and_clean(files, shared_state.clone());
-                        let message =
-                            format!("Send {} events from {} files", event_count, file_count);
-                        event_logger::write_event(
-                            event_logger::INFO_LEVEL,
-                            message,
-                            "start",
-                            "event_reader",
-                            logger::AGENT_LOGGER_KEY,
-                        )
-                    }
-                    Err(e) => {
-                        logger::write_warning(format!(
-                            "Event Files not found in directory {}: {}",
-                            dir_path.display(),
-                            e
-                        ));
-                    }
+        if telemetry_wrapper::get_vm_metadata(shared_state.clone()).is_some() {
+            // vm metadata is updated, process events
+            match misc_helpers::get_files(&dir_path) {
+                Ok(files) => {
+                    let file_count = files.len();
+                    let event_count = process_events_and_clean(files, shared_state.clone());
+                    let message = format!("Send {} events from {} files", event_count, file_count);
+                    event_logger::write_event(
+                        event_logger::INFO_LEVEL,
+                        message,
+                        "start",
+                        "event_reader",
+                        logger::AGENT_LOGGER_KEY,
+                    )
+                }
+                Err(e) => {
+                    logger::write_warning(format!(
+                        "Event Files not found in directory {}: {}",
+                        dir_path.display(),
+                        e
+                    ));
                 }
             }
         }
@@ -165,8 +148,8 @@ fn start(
     }
 }
 
-pub fn stop() {
-    SHUT_DOWN.store(true, Ordering::Relaxed);
+pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
+    telemetry_wrapper::set_reader_shutdown(shared_state.clone(), true);
 }
 
 fn update_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<()> {
@@ -190,23 +173,16 @@ fn update_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> std::io::Result
         vm_id: instance_info.get_vm_id(),
         image_origin: instance_info.get_image_origin(),
     };
-
-    unsafe {
-        *VM_META_DATA = Some(vm_meta_data);
-    }
+    telemetry_wrapper::set_vm_metadata(shared_state, vm_meta_data);
 
     Ok(())
 }
-
-pub fn get_vm_meta_data() -> VMMetaData {
-    unsafe {
-        match &*VM_META_DATA {
-            Some(meta_data) => meta_data.copy(),
-            None => VMMetaData::default(),
-        }
+pub fn get_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> VMMetaData {
+    match telemetry_wrapper::get_vm_metadata(shared_state) {
+        Some(vm_meta_data) => vm_meta_data,
+        None => VMMetaData::default(),
     }
 }
-
 fn process_events_and_clean(files: Vec<PathBuf>, shared_state: Arc<Mutex<SharedState>>) -> usize {
     let mut num_events_logged = 0;
     for file in files {
@@ -240,7 +216,8 @@ fn send_events(mut events: Vec<Event>, shared_state: Arc<Mutex<SharedState>>) {
         while !events.is_empty() && add_more_events {
             match events.pop() {
                 Some(event) => {
-                    telemetry_data.add_event(TelemetryEvent::from_event_log(&event));
+                    telemetry_data
+                        .add_event(TelemetryEvent::from_event_log(&event, shared_state.clone()));
 
                     if telemetry_data.get_size() >= MAX_MESSAGE_SIZE {
                         telemetry_data.remove_last_event();
@@ -372,74 +349,82 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_event_reader_thread_priority() {
+        use once_cell::sync::Lazy;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
         static THREAD_PRIORITY_VERIFY_DONE: AtomicBool = AtomicBool::new(false);
         static THREAD_PRIORITY_VERIFY_RESULT: Lazy<Arc<Mutex<String>>> =
             Lazy::new(|| Arc::new(Mutex::new(String::from(""))));
         const THREAD_PRIORITY_VERIFY_SUCCESS: &str =
             "EVENT READER THREAD PRIORITY VERIFICATION SUCCEED.";
-        unsafe {
-            VERIFY_THREAD_PRIORITY_OPTION = Some(
-                |thread_priority_result: Result<ThreadPriority, thread_priority::Error>| {
-                    let mut verify_result_message = String::from("");
-                    match thread_priority_result {
-                        Ok(priority) => {
-                            match priority {
-                                ThreadPriority::Min => {
-                                    println!("event reader thread priority is min");
-                                    verify_result_message.push_str(THREAD_PRIORITY_VERIFY_SUCCESS);
-                                }
-                                ThreadPriority::Os(priority_os_value) => {
+        let verify_thread_priority_test: Option<
+            fn(Result<ThreadPriority, thread_priority::Error>),
+        > = Some(
+            |thread_priority_result: Result<ThreadPriority, thread_priority::Error>| {
+                let mut verify_result_message = String::from("");
+                match thread_priority_result {
+                    Ok(priority) => {
+                        match priority {
+                            ThreadPriority::Min => {
+                                println!("event reader thread priority is min");
+                                verify_result_message.push_str(THREAD_PRIORITY_VERIFY_SUCCESS);
+                            }
+                            ThreadPriority::Os(priority_os_value) => {
+                                println!(
+                                    "event reader thread priority is Os with value: {:?}",
+                                    priority_os_value
+                                );
+                                #[cfg(windows)]
+                                {
+                                    let win_low_priority =
+                                        ThreadPriorityOsValue::from(WinAPIThreadPriority::Lowest);
                                     println!(
-                                        "event reader thread priority is Os with value: {:?}",
-                                        priority_os_value
+                                        "Windows Thread Lowest priority value: {:?}",
+                                        win_low_priority
                                     );
-                                    #[cfg(windows)]
-                                    {
-                                        let win_low_priority = ThreadPriorityOsValue::from(
-                                            WinAPIThreadPriority::Lowest,
-                                        );
-                                        println!(
-                                            "Windows Thread Lowest priority value: {:?}",
-                                            win_low_priority
-                                        );
-                                        if priority_os_value == win_low_priority {
-                                            verify_result_message
-                                                .push_str(THREAD_PRIORITY_VERIFY_SUCCESS);
-                                        } else {
-                                            verify_result_message.push_str(&format!("Thread priority verify failed, expected value: {:?}, action value: {:?}", win_low_priority, priority_os_value));
-                                        }
-                                    }
-                                    #[cfg(not(windows))]
-                                    {
-                                        // TODO: add check linux thread priority value
+                                    if priority_os_value == win_low_priority {
+                                        verify_result_message
+                                            .push_str(THREAD_PRIORITY_VERIFY_SUCCESS);
+                                    } else {
+                                        verify_result_message.push_str(&format!("Thread priority verify failed, expected value: {:?}, action value: {:?}", win_low_priority, priority_os_value));
                                     }
                                 }
-                                _ => {
-                                    verify_result_message.push_str(
-                                        "event reader thread priority is not check list: min or Os",
-                                    );
+                                #[cfg(not(windows))]
+                                {
+                                    // TODO: add check linux thread priority value
                                 }
                             }
-                        }
-                        Err(_) => {
-                            verify_result_message
-                                .push_str("Failed to get event reader thread priority");
+                            _ => {
+                                verify_result_message.push_str(
+                                    "event reader thread priority is not check list: min or Os",
+                                );
+                            }
                         }
                     }
-                    THREAD_PRIORITY_VERIFY_RESULT
-                        .lock()
-                        .as_mut()
-                        .unwrap()
-                        .push_str(&verify_result_message);
-                    THREAD_PRIORITY_VERIFY_DONE.store(true, Ordering::Relaxed);
-                },
-            );
-        }
+                    Err(_) => {
+                        verify_result_message
+                            .push_str("Failed to get event reader thread priority");
+                    }
+                }
+                THREAD_PRIORITY_VERIFY_RESULT
+                    .lock()
+                    .as_mut()
+                    .unwrap()
+                    .push_str(&verify_result_message);
+                THREAD_PRIORITY_VERIFY_DONE.store(true, Ordering::Relaxed);
+            },
+        );
 
         let temp_dir = env::temp_dir();
         let shared_state = SharedState::new();
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
-        start_async(temp_dir, Duration::from_millis(1000), false, shared_state);
+        start_async(
+            temp_dir,
+            Duration::from_millis(1000),
+            false,
+            shared_state,
+            verify_thread_priority_test,
+        );
 
         let mut wait_milli_sec: i32 = 100;
         while wait_milli_sec <= 500 && !THREAD_PRIORITY_VERIFY_DONE.load(Ordering::Relaxed) {
@@ -451,9 +436,6 @@ mod tests {
             wait_milli_sec += 100;
         }
 
-        unsafe {
-            VERIFY_THREAD_PRIORITY_OPTION = None;
-        }
         assert_eq!(
             THREAD_PRIORITY_VERIFY_RESULT
                 .lock()

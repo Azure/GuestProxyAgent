@@ -52,12 +52,14 @@ namespace GuestProxyAgentTest.Utilities
                 GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME = "GuestProxyAgentValidation.sh";
                 IMDS_PING_TEST_SCRIPT_NAME = "IMDSPingTest.sh";
                 SETUP_CGROUP2_SCRIPT_NAME = "SetupCGroup2.sh";
+                GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME = "GuestProxyAgentExtensionValidation.sh";
+                INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.sh";
             }
         }
 
         public static bool IS_WINDOWS()
         {
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+           return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         }
     }
 }

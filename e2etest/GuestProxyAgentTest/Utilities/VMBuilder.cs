@@ -106,15 +106,17 @@ namespace GuestProxyAgentTest.Utilities
                     AdminUsername = this.adminUsername,
                     AdminPassword = this.adminPassword,
                 },
-                NetworkProfile = await DoCreateVMNetWorkProfile(rgr), 
+                NetworkProfile = await DoCreateVMNetWorkProfile(rgr),
             };
 
             if (EnableProxyAgent)
             {
-                vmData.SecurityProfile = new SecurityProfile() { 
-                    ProxyAgentSettings = new ProxyAgentSettings() { 
-                        Enabled = true 
-                    } 
+                vmData.SecurityProfile = new SecurityProfile()
+                {
+                    ProxyAgentSettings = new ProxyAgentSettings()
+                    {
+                        Enabled = true
+                    }
                 };
             }
 
