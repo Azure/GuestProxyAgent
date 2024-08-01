@@ -20,7 +20,7 @@ namespace GuestProxyAgentTest.TestCases
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
             List<(string, string)> parameterList = new List<(string, string)>();
-            parameterList.Add(("ExpectedProxyAgentVerison", expectedProxyAgentVersion));
+            parameterList.Add(("expectedProxyAgentVersion", expectedProxyAgentVersion));
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
