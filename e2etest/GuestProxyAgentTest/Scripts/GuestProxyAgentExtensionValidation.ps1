@@ -109,7 +109,7 @@ $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
 $guestProxyAgentExtensionVersion = $true
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-$timeoutInSeconds = 3
+$timeoutInSeconds = 300
 do {
     $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
     if ($json.status.substatus[1] -ne $null) {
