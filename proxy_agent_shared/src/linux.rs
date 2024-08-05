@@ -8,7 +8,7 @@ use std::{
     io::{Error, ErrorKind},
     path::PathBuf,
 };
-use sysinfo::{System, SystemExt, DiskExt};
+use sysinfo::{DiskExt, System, SystemExt};
 
 pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
 pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
@@ -48,14 +48,15 @@ pub fn get_processor_arch() -> String {
 pub fn get_cgroup2_mount_path() -> std::io::Result<PathBuf> {
     let sys = System::new_all();
     let mount_points = sys.disks();
-    let cgroup2_exists = mount_points.iter().any(|disk| {
-        disk.mount_point().to_string_lossy().contains("cgroup2")
-    });
+    let cgroup2_exists = mount_points
+        .iter()
+        .any(|disk| disk.mount_point().to_string_lossy().contains("cgroup2"));
 
     if cgroup2_exists {
-        let cgroup_path = mount_points.iter().find(|disk| {
-            disk.mount_point().to_string_lossy().contains("cgroup2")
-        }).unwrap();
+        let cgroup_path = mount_points
+            .iter()
+            .find(|disk| disk.mount_point().to_string_lossy().contains("cgroup2"))
+            .unwrap();
         Ok(PathBuf::from(cgroup_path.mount_point()))
     } else {
         Err(Error::new(

@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::logger;
-use proxy_agent_shared::misc_helpers;
-use std::path::PathBuf;
-use std::os::unix::fs::PermissionsExt;
 use nix::unistd::{chown, Gid, Uid};
+use proxy_agent_shared::misc_helpers;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
     let dir_str = misc_helpers::path_to_string(dir_to_acl.to_path_buf());
@@ -68,14 +68,17 @@ mod tests {
             10 * 1024 * 1024,
             20,
         );
-        
+
         let output = super::acl_directory(temp_test_path.to_path_buf());
-        assert!(output.is_ok(), "failed to set root-only permission to folder");
+        assert!(
+            output.is_ok(),
+            "failed to set root-only permission to folder"
+        );
         match fs::metadata(temp_test_path.to_path_buf()) {
             Ok(metadata) => {
                 let permissions = metadata.permissions().mode();
                 assert_eq!(permissions & 0o700, 0o700, "Permissions are not set to 700");
-            },
+            }
             Err(e) => panic!("Failed to get metadata: {:?}", e),
         }
 

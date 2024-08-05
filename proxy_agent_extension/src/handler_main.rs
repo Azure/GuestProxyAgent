@@ -21,13 +21,13 @@ use crate::windows::service_ext;
 use proxy_agent_shared::windows;
 
 #[cfg(not(windows))]
-use proxy_agent_shared::linux;
-#[cfg(not(windows))]
-use sysinfo::{PidExt, ProcessExt, System, SystemExt};
-#[cfg(not(windows))]
 use nix::sys::signal::{kill, SIGKILL};
 #[cfg(not(windows))]
 use nix::unistd::Pid as NixPid;
+#[cfg(not(windows))]
+use proxy_agent_shared::linux;
+#[cfg(not(windows))]
+use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     let exe_path = misc_helpers::get_current_exe_dir();
@@ -317,7 +317,7 @@ fn disable_handler() {
     {
         match get_linux_extension_long_running_process() {
             Some(pid) => {
-                let p = NixPid::from_raw(pid);    
+                let p = NixPid::from_raw(pid);
                 match kill(p, SIGKILL) {
                     Ok(_) => {
                         logger::write(format!("ProxyAgentExt process with pid: {} killed", pid));
