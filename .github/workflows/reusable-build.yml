@@ -99,7 +99,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent
         run: |
-          cargo llvm-cov --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex proxy_agent_shared
+          cargo llvm-cov --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|bpf_*.rs)" -- --test-threads=1
           type out\codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent
