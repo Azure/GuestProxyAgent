@@ -51,7 +51,6 @@ do {
     start-sleep -Seconds 3
 } until ($false)
 
-
 $extensionFolder = Split-Path -Path $statusFolderPath -Parent
 Write-Output "Extension Folder: $extensionFolder"
 $PIRExePath = [IO.Path]::Combine($extensionFolder, "ProxyAgentExt.exe")
@@ -109,20 +108,36 @@ $proxyAgentExeCmd = $extensionFolder + "\ProxyAgent\ProxyAgent\GuestProxyAgent.e
 $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
 $guestProxyAgentExtensionVersion = $true
-$proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
-$jsonObject = $proxyAgentStatus | ConvertFrom-json
-$extractedVersion = $jsonObject.version
-if ($extractedVersion -ne $proxyAgentVersion) {
-    Write-Output "Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
-    $guestProxyAgentExtensionVersion = $false
-}
-if ($expectedProxyAgentVersion -ne "0") {
-    $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
-    if ($extractedVersion -eq $cleanExpectedProxyAgentVersion){ 
-        Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
-    } else {
-        Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $cleanExpectedProxyAgentVersion ]"
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$timeoutInSeconds = 3
+do {
+    $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
+    if ($json.status.substatus[1] -ne $null) {
+        break
+    }
+    if ($stopwatch.Elapsed.TotalSeconds -ge $timeoutInSeconds) {
+        Write-Output "Timeout reached. Error, The substatus[1] is null."
         $guestProxyAgentExtensionVersion = $false
+    }
+    start-sleep -Seconds 3
+} until ($false)
+
+if ($guestProxyAgentExtensionVersion) {
+    $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
+    $jsonObject = $proxyAgentStatus | ConvertFrom-json
+    $extractedVersion = $jsonObject.version
+    if ($extractedVersion -ne $proxyAgentVersion) {
+        Write-Output "Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
+        $guestProxyAgentExtensionVersion = $false
+    }
+    if ($expectedProxyAgentVersion -ne "0") {
+        $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
+        if ($extractedVersion -eq $cleanExpectedProxyAgentVersion){ 
+            Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
+        } else {
+            Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $cleanExpectedProxyAgentVersion ]"
+            $guestProxyAgentExtensionVersion = $false
+        }
     }
 }
 
