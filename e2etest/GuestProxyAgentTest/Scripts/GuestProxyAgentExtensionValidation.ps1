@@ -109,14 +109,14 @@ $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
 $guestProxyAgentExtensionVersion = $true
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-$timeoutInSeconds = 300
 do {
     $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
-    if ($json.status.substatus[1] -ne $null) {
+    if ($json.status.substatus -is [System.Collections.IEnumerable] -and $json.status.substatus.Count -gt 0) {
+        Write-Output "The 'substatus' array exists and has length greater than 0."
         break
-    }
+    } 
     if ($stopwatch.Elapsed.TotalSeconds -ge $timeoutInSeconds) {
-        Write-Output "Timeout reached. Error, The substatus[1] is null."
+        Write-Output "Timeout reached. Error, The substatus is null."
         $guestProxyAgentExtensionVersion = $false
     }
     start-sleep -Seconds 3
