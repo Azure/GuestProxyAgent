@@ -14,8 +14,6 @@ use std::process::Command;
 use std::str;
 use std::thread;
 use std::time::Duration;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 
 #[cfg(windows)]
 use crate::windows::service_ext;
@@ -25,7 +23,11 @@ use proxy_agent_shared::windows;
 #[cfg(not(windows))]
 use proxy_agent_shared::linux;
 #[cfg(not(windows))]
-use sysinfo::{Pid, ProcessExt, System, SystemExt};
+use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+#[cfg(not(windows))]
+use nix::sys::signal::{kill, SIGKILL};
+#[cfg(not(windows))]
+use nix::unistd::Pid as NixPid;
 
 static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     let exe_path = misc_helpers::get_current_exe_dir();
@@ -290,7 +292,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
 }
 
 #[cfg(not(windows))]
-fn get_linux_extension_long_running_process() -> Option<Pid> {
+fn get_linux_extension_long_running_process() -> Option<i32> {
     // check if the process GuestProxyAgentVMExtension running AND without parameters
     let mut system = System::new();
     system.refresh_processes();
@@ -299,7 +301,7 @@ fn get_linux_extension_long_running_process() -> Option<Pid> {
         logger::write(format!("cmd: {:?}", cmd));
         if cmd.len() == 1 {
             logger::write(format!("ProxyAgentExt running with pid: {}", p.pid()));
-            return Some(p.pid());
+            return Some(p.pid().as_u32() as i32);
         }
     }
     None
@@ -315,17 +317,14 @@ fn disable_handler() {
     {
         match get_linux_extension_long_running_process() {
             Some(pid) => {
-                // let output =
-                //     misc_helpers::execute_command("kill", vec!["-9", &pid.to_string()], -1);
-                // logger::write(format!(
-                //     "kill ProxyAgentExt: result: '{}'-'{}'-'{}'.",
-                //     output.0, output.1, output.2
-                // ));
-
-                let pid = Pid::from_raw(&pid.to_string());
-                match kill(pid, Signal::SIGKILL) {
-                    Ok(_) => logger::write(format!("successfully kill ProxyAgentExt")),
-                    Err(err) =>  logger::write(format!("failed to kill ProxyAgentExt with error: {:?}", err)),
+                let p = NixPid::from_raw(pid);    
+                match kill(p, SIGKILL) {
+                    Ok(_) => {
+                        logger::write(format!("ProxyAgentExt process with pid: {} killed", pid));
+                    }
+                    Err(e) => {
+                        logger::write(format!("error in killing ProxyAgentExt process: {:?}", e));
+                    }
                 }
             }
             None => {

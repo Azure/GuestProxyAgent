@@ -8,6 +8,7 @@ use std::{
     io::{Error, ErrorKind},
     path::PathBuf,
 };
+use sysinfo::{System, SystemExt, DiskExt};
 
 pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
 pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
@@ -45,30 +46,23 @@ pub fn get_processor_arch() -> String {
 }
 
 pub fn get_cgroup2_mount_path() -> std::io::Result<PathBuf> {
-    let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1);
-    if output.0 != 0 {
-        return Err(Error::new(
+    let sys = System::new_all();
+    let mount_points = sys.disks();
+    let cgroup2_exists = mount_points.iter().any(|disk| {
+        disk.mount_point().to_string_lossy().contains("cgroup2")
+    });
+
+    if cgroup2_exists {
+        let cgroup_path = mount_points.iter().find(|disk| {
+            disk.mount_point().to_string_lossy().contains("cgroup2")
+        }).unwrap();
+        Ok(PathBuf::from(cgroup_path.mount_point()))
+    } else {
+        Err(Error::new(
             ErrorKind::Other,
-            format!(
-                "findmnt command failed with exit code '{}', stdout :{}, stderr: {}.",
-                output.0, output.1, output.2
-            ),
-        ));
+            "cgroup2 mount point not found",
+        ))
     }
-
-    let mount: FileMount = serde_json::from_str(&output.1)?;
-    if !mount.filesystems.is_empty() {
-        let cgroup2_path = mount.filesystems[0].target.to_string();
-        return Ok(PathBuf::from(cgroup2_path));
-    }
-
-    Err(Error::new(
-        ErrorKind::Other,
-        format!(
-            "findmnt command cannot find cgroup2 file mount: {}.",
-            output.1
-        ),
-    ))
 }
 
 #[cfg(test)]

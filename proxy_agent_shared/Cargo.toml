@@ -33,3 +33,6 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+
+[target.'cfg(not(windows))'.dependencies.sysinfo]
+sysinfo = "0.29.10"            # read process information for Linux
