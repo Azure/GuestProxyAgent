@@ -1,27 +1,46 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::logger;
+use nix::unistd::{chown, Gid, Uid};
 use proxy_agent_shared::misc_helpers;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
-    let dir_str = misc_helpers::path_to_string(dir_to_acl);
+    let dir_str = misc_helpers::path_to_string(dir_to_acl.to_path_buf());
     logger::write(format!(
         "acl_directory: start to set root-only permission to folder {}.",
         dir_str
     ));
 
-    let output = misc_helpers::execute_command("chown", vec!["-R", "root:root", &dir_str], -1);
-    logger::write(format!(
-        "acl_directory: set folder {} to owner root, result: '{}'-'{}'-'{}'.",
-        dir_str, output.0, output.1, output.2
-    ));
+    match chown(&dir_to_acl, Some(Uid::from_raw(0)), Some(Gid::from_raw(0))) {
+        Ok(_) => logger::write(format!(
+            "acl_directory: successfully set root-only permission to folder {}.",
+            dir_str
+        )),
+        Err(e) => {
+            logger::write(format!(
+                "acl_directory: failed to set root-only permission to folder {}. Error: {:?}",
+                dir_str, e
+            ));
+        }
+    }
 
-    let output = misc_helpers::execute_command("chmod", vec!["-cR", "700", &dir_str], -1);
-    logger::write(format!(
-        "acl_directory: set root access only permission to folder {} result: '{}'-'{}'-'{}'.",
-        dir_str, output.0, output.1, output.2
-    ));
+    // Set permissions to 700
+    let permissions = fs::Permissions::from_mode(0o700);
+    match fs::set_permissions(dir_to_acl, permissions) {
+        Ok(_) => logger::write(format!(
+            "acl_directory: successfully set root-only permission to folder {}.",
+            dir_str
+        )),
+        Err(e) => {
+            logger::write(format!(
+                "acl_directory: failed to set root-only permission to folder {}. Error: {:?}",
+                dir_str, e
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -30,9 +49,10 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::common::logger;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::logger_manager;
     use std::env;
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn acl_directory_test() {
@@ -49,14 +69,18 @@ mod tests {
             20,
         );
 
-        _ = super::acl_directory(temp_test_path.to_path_buf());
-        let out_put =
-            misc_helpers::execute_command("ls", vec!["-ld", &temp_test_path.to_str().unwrap()], -1);
-        assert_eq!(0, out_put.0, "exit code mismatch");
+        let output = super::acl_directory(temp_test_path.to_path_buf());
         assert!(
-            out_put.1.contains("drwx------ 2 root root"),
-            "stdout message mismatch"
+            output.is_ok(),
+            "failed to set root-only permission to folder"
         );
+        match fs::metadata(temp_test_path.to_path_buf()) {
+            Ok(metadata) => {
+                let permissions = metadata.permissions().mode();
+                assert_eq!(permissions & 0o700, 0o700, "Permissions are not set to 700");
+            }
+            Err(e) => panic!("Failed to get metadata: {:?}", e),
+        }
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
