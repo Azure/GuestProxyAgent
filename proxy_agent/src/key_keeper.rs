@@ -452,7 +452,7 @@ mod tests {
         let shared_state = SharedState::new();
         // start wire_server listener
         let ip = "127.0.0.1";
-        let port = 8081u16;
+        let port = 8082u16;
         let cloned_shared_state = shared_state.clone();
         tokio::spawn(async move {
             let _ = server_mock::start(ip.to_string(), port, cloned_shared_state.clone()).await;
@@ -465,7 +465,7 @@ mod tests {
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
         key_keeper::poll_status_async(
-            Url::parse("http://127.0.0.1:8081/").unwrap(),
+            Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
