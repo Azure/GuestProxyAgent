@@ -63,12 +63,12 @@ do {
     if ($boolStatus) {
         $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
         $extensionStatus = $json.status.status
-        if ($extensionStatus -eq "success") {
+        if ($extensionStatus -eq "Success") {
             Write-Output "The extension status is success: $extensionStatus."
             $guestProxyAgentExtensionStatusObjGenerated = $true
             break
         }
-        if ($extensionStatus -eq "error") {
+        if ($extensionStatus -eq "Error") {
             Write-Output "The extension status is error: $extensionStatus."
             break
         }
@@ -107,21 +107,12 @@ Write-Output "TEST: ProxyAgent version running in VM is the same as expected ver
 $proxyAgentExeCmd = $extensionFolder + "\ProxyAgent\ProxyAgent\GuestProxyAgent.exe --version"
 $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
-$guestProxyAgentExtensionVersion = $true
-$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-do {
-    $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
-    if ($json.status.substatus -is [System.Collections.IEnumerable] -and $json.status.substatus.Count -gt 0) {
-        Write-Output "The 'substatus' array exists and has length greater than 0."
-        break
-    } 
-    if ($stopwatch.Elapsed.TotalSeconds -ge $timeoutInSeconds) {
-        Write-Output "Timeout reached. Error, The substatus is null."
-        $guestProxyAgentExtensionVersion = $false
-    }
-    start-sleep -Seconds 3
-} until ($false)
-
+$guestProxyAgentExtensionVersion = $false
+$json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
+if ($json.status.substatus -is [System.Collections.IEnumerable] -and $json.status.substatus.Count -gt 0) {
+    Write-Output "The 'substatus' array exists and has length greater than 0."
+    $guestProxyAgentExtensionVersion = $true
+} 
 if ($guestProxyAgentExtensionVersion) {
     $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
     $jsonObject = $proxyAgentStatus | ConvertFrom-json
