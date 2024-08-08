@@ -45,14 +45,14 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    thread::spawn(move || {
-        start(local_port, shared_state);
+pub async fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
+    tokio::spawn(async move {
+        start(local_port, shared_state).await;
     });
 }
 
-fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let started = start_impl(local_port, shared_state.clone());
+async fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+    let started = start_impl(local_port, shared_state.clone()).await;
 
     let level = if started {
         event_logger::INFO_LEVEL
@@ -70,7 +70,7 @@ fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     started
 }
 
-fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+async fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     #[cfg(windows)]
     {
         if !windows::initialized_success(shared_state.clone()) {
@@ -78,7 +78,7 @@ fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         }
     }
     for _ in 0..5 {
-        start_internal(local_port, shared_state.clone());
+        start_internal(local_port, shared_state.clone()).await;
         if is_started(shared_state.clone()) {
             return true;
         }
@@ -166,8 +166,8 @@ pub fn lookup_audit(
 }
 
 #[cfg(windows)]
-pub fn get_audit_from_stream_socket(_raw_socket: usize) -> std::io::Result<AuditEntry> {
-    windows::get_audit_from_redirect_context(_raw_socket)
+pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
+    windows::get_audit_from_redirect_context(raw_socket_id)
 }
 
 pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {

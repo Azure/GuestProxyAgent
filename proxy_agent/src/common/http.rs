@@ -31,6 +31,7 @@ pub async fn get<T, F>(
     headers: &HashMap<String, String>,
     key_guid: Option<String>,
     key: Option<String>,
+    json_format: bool,
     log_fun: F,
 ) -> std::io::Result<T>
 where
@@ -60,11 +61,12 @@ where
         ));
     }
 
-    read_response_body(response).await
+    read_response_body(response, json_format).await
 }
 
 pub async fn read_response_body<T>(
     mut response: hyper::Response<hyper::body::Incoming>,
+    json_format: bool,
 ) -> std::io::Result<T>
 where
     T: DeserializeOwned,
@@ -84,12 +86,28 @@ where
             body_string.push_str(&String::from_utf8_lossy(chunk));
         }
     }
-    match serde_json::from_str(&body_string) {
-        Ok(t) => Ok(t),
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to deserialize response body from: {}", e),
-        )),
+    if json_format {
+        match serde_json::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Failed to json deserialize response body from: {} with error {}",
+                    body_string, e
+                ),
+            )),
+        }
+    } else {
+        match serde_xml_rs::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Failed to xml deserialize response body from: {} with error {}",
+                    body_string, e
+                ),
+            )),
+        }
     }
 }
 

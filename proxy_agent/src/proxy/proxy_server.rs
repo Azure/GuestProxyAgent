@@ -76,7 +76,7 @@ async fn start(
         logger::AGENT_LOGGER_KEY,
     );
     proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
-    provision::listener_started(shared_state.clone());
+    provision::listener_started(shared_state.clone()).await;
 
     // We start a loop to continuously accept incoming connections
     loop {
@@ -335,7 +335,7 @@ async fn handle_request(
         HeaderValue::from_str(&misc_helpers::get_date_time_rfc1123_string()).unwrap(),
     );
 
-    if connection.need_skip_sig() {
+    if connection.should_skip_sig() {
         Connection::write(
             connection_id,
             format!(
@@ -587,7 +587,6 @@ mod tests {
     use std::collections::HashMap;
     use std::env;
     use std::fs;
-    use std::thread;
     use std::time::Duration;
 
     // this test is to test the direct request to the proxy server
@@ -615,7 +614,7 @@ mod tests {
 
         // give some time to let the listener started
         let sleep_duration = Duration::from_millis(100);
-        thread::sleep(sleep_duration);
+        tokio::time::sleep(sleep_duration).await;
 
         let url = format!("http://{}:{}/", host, port);
         let request = crate::common::http::get_request(

@@ -13,7 +13,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDe
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::{path::PathBuf, thread, time::Duration};
+use std::{path::PathBuf, time::Duration};
 use url::Url;
 
 //pub const RUNNING_STATE: &str = "running";
@@ -59,7 +59,7 @@ async fn poll_secure_channel_status(
 
     // launch redirector initialization when the key keeper thread is running
     if config_start_redirector {
-        redirector::start_async(constants::PROXY_AGENT_PORT, shared_state.clone());
+        redirector::start_async(constants::PROXY_AGENT_PORT, shared_state.clone()).await;
     }
 
     _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
@@ -103,6 +103,7 @@ async fn poll_secure_channel_status(
                     && FREQUENT_PULL_INTERVAL < interval        // test internal is less than 1 second
                     && helpers::get_elapsed_time_in_millisec()
                         < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
+            // has not timed out
             {
                 // frequent poll the secure channel status every second for the first 5 minutes
                 // until the secure channel state is known
@@ -110,7 +111,8 @@ async fn poll_secure_channel_status(
             } else {
                 interval
             };
-            thread::sleep(sleep);
+
+            tokio::time::sleep(sleep).await;
         }
         first_iteration = false;
 
@@ -124,7 +126,7 @@ async fn poll_secure_channel_status(
         if !started_event_threads
             && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
         {
-            provision::start_event_threads(shared_state.clone());
+            provision::start_event_threads(shared_state.clone()).await;
             started_event_threads = true;
         }
 
@@ -203,7 +205,7 @@ async fn poll_secure_channel_status(
                             );
                             key_found = true;
 
-                            provision::key_latched(shared_state.clone());
+                            provision::key_latched(shared_state.clone()).await;
                         }
                         Err(e) => {
                             let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
@@ -270,7 +272,7 @@ async fn poll_secure_channel_status(
                                 shared_state.clone(),
                                 message.to_string(),
                             );
-                            provision::key_latched(shared_state.clone());
+                            provision::key_latched(shared_state.clone()).await;
                         }
                         Err(e) => {
                             logger::write_warning(format!("Failed to attest the key: {:?}", e));
@@ -310,7 +312,7 @@ async fn poll_secure_channel_status(
                 key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
                 // clear key in memory for disabled state
                 key_keeper_wrapper::clear_key(shared_state.clone());
-                provision::key_latched(shared_state.clone());
+                provision::key_latched(shared_state.clone()).await;
             }
         }
     }

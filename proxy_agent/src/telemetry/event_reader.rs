@@ -319,7 +319,7 @@ async fn send_data_to_wire_server(
             }
             Err(e) => {
                 logger::write_warning(format!(
-                    "Failed to send telemetry data to host with error: {}",
+                    "Failed to send telemetry data to host with error: {}. Will retry in 15 seconds.",
                     e
                 ));
                 // wait 15 seconds and retry

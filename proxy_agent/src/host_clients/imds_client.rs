@@ -13,17 +13,18 @@ pub struct ImdsClient {
     shared_state: Arc<Mutex<SharedState>>,
 }
 
+const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
+
 impl ImdsClient {
     pub fn new(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         ImdsClient {
-            ip: ip.to_string(),
+            ip,
             port,
             shared_state,
         }
     }
 
     pub async fn get_imds_instance_info(&self) -> std::io::Result<InstanceInfo> {
-        const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
         let url = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
@@ -33,6 +34,7 @@ impl ImdsClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            true,
             logger::write_warning,
         )
         .await

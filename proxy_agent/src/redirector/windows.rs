@@ -37,7 +37,7 @@ pub fn initialized_success(shared_state: Arc<Mutex<SharedState>>) -> bool {
     true
 }
 
-pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+pub async fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let result = bpf_prog::load_bpf_object(super::get_ebpf_file_path(), shared_state.clone());
     if result != 0 {
         set_error_status(
@@ -142,7 +142,7 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
         logger::AGENT_LOGGER_KEY,
     );
     redirector_wrapper::set_status_message(shared_state.clone(), message.clone());
-    provision::redirector_ready(shared_state.clone());
+    provision::redirector_ready(shared_state.clone()).await;
 
     true
 }
@@ -173,14 +173,14 @@ pub fn lookup_audit(
     bpf_prog::lookup_bpf_audit_map(source_port, shared_state)
 }
 
-pub fn get_audit_from_redirect_context(raw_socket: usize) -> std::io::Result<AuditEntry> {
+pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
     unsafe {
         // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
         let value = AuditEntry::empty();
         let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
         let mut redirect_context_returned: u32 = 0;
         WinSock::WSAIoctl(
-            raw_socket,
+            raw_socket_id,
             WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
             ptr::null(),
             0,

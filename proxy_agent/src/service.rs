@@ -39,31 +39,28 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
 }
 
 fn start_service_async(shared_state: Arc<Mutex<SharedState>>) {
-    _ = std::thread::Builder::new().spawn(move || {
-        let runtime = shared_state_wrapper::get_runtime(shared_state.clone());
-        match runtime {
-            Some(rt) => {
-                rt.lock().unwrap().block_on(async move {
-                    let config_start_redirector = config::get_start_redirector();
+    let runtime = shared_state_wrapper::get_runtime(shared_state.clone());
+    match runtime {
+        Some(rt) => {
+            rt.lock().unwrap().spawn(async move {
+                let config_start_redirector = config::get_start_redirector();
 
-                    crate::key_keeper::poll_status_async(
-                        Url::parse(&format!("http://{}/", constants::WIRE_SERVER_IP)).unwrap(),
-                        config::get_keys_dir(),
-                        config::get_poll_key_status_duration(),
-                        config_start_redirector,
-                        shared_state.clone(),
-                    )
-                    .await;
+                crate::key_keeper::poll_status_async(
+                    Url::parse(&format!("http://{}/", constants::WIRE_SERVER_IP)).unwrap(),
+                    config::get_keys_dir(),
+                    config::get_poll_key_status_duration(),
+                    config_start_redirector,
+                    shared_state.clone(),
+                )
+                .await;
 
-                    proxy_server::start_async(constants::PROXY_AGENT_PORT, shared_state.clone())
-                        .await;
-                });
-            }
-            None => {
-                logger::write_error("Failed to get tokio runtime.".to_string());
-            }
+                proxy_server::start_async(constants::PROXY_AGENT_PORT, shared_state.clone()).await;
+            });
         }
-    });
+        None => {
+            logger::write_error("Failed to get tokio runtime.".to_string());
+        }
+    }
 }
 
 #[cfg(not(windows))]

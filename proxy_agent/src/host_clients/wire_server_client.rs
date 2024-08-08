@@ -12,10 +12,13 @@ pub struct WireServerClient {
     shared_state: Arc<Mutex<SharedState>>,
 }
 
+const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
+const GOALSTATE_URI: &str = "machine?comp=goalstate";
+
 impl WireServerClient {
     pub fn new(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         WireServerClient {
-            ip: ip.to_string(),
+            ip,
             port,
             shared_state,
         }
@@ -26,10 +29,7 @@ impl WireServerClient {
             return Ok(());
         }
 
-        let url = format!(
-            "http://{}:{}/{}",
-            self.ip, self.port, "machine/?comp=telemetrydata"
-        );
+        let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
         headers.insert(
@@ -45,22 +45,16 @@ impl WireServerClient {
             None, // post telemetry data does not require signing
             None,
         )?;
-        let response = match http::send_request(
-            &self.ip.to_string(),
-            self.port,
-            request,
-            logger::write_warning,
-        )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to send telemetry request {}", e),
-                ))
-            }
-        };
+        let response =
+            match http::send_request(&self.ip, self.port, request, logger::write_warning).await {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to send telemetry request {}", e),
+                    ))
+                }
+            };
 
         let status = response.status();
         if !status.is_success() {
@@ -77,7 +71,6 @@ impl WireServerClient {
     }
 
     pub async fn get_goalstate(&self) -> std::io::Result<GoalState> {
-        const GOALSTATE_URI: &str = "machine?comp=goalstate";
         let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
@@ -87,6 +80,7 @@ impl WireServerClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            false,
             logger::write_warning,
         )
         .await
@@ -101,6 +95,7 @@ impl WireServerClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            false,
             logger::write_warning,
         )
         .await

@@ -632,14 +632,26 @@ const KEY_URL: &str = "secure-channel/key";
 
 // base_url must end with '/'
 pub async fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
-    let url = format!("{}{}", base_url, STATUS_URL);
+    let url = match base_url.join(STATUS_URL) {
+        Ok(uri) => uri.to_string(),
+        Err(e) => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "Failed to join {} and {}, error: {}",
+                    base_url, STATUS_URL, e
+                ),
+            ));
+        }
+    };
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     headers.insert(
         constants::DATE_HEADER.to_string(),
         misc_helpers::get_date_time_rfc1123_string(),
     );
-    let status: KeyStatus = http::get(&url, &headers, None, None, logger::write_warning).await?;
+    let status: KeyStatus =
+        http::get(&url, &headers, None, None, true, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
@@ -647,7 +659,15 @@ pub async fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
 
 // base_url must end with '/'
 pub async fn acquire_key(base_url: Url) -> std::io::Result<Key> {
-    let url = format!("{}{}", base_url, KEY_URL);
+    let url = match base_url.join(KEY_URL) {
+        Ok(uri) => uri.to_string(),
+        Err(e) => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
+            ));
+        }
+    };
     let (host, port) = http::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
 
@@ -674,13 +694,22 @@ pub async fn acquire_key(base_url: Url) -> std::io::Result<Key> {
             format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
-    http::read_response_body(response).await
+    http::read_response_body(response, true).await
 }
 
 // base_url must end with '/'
 pub async fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let url = format!("{}{}/{}/key-attestation", base_url, KEY_URL, key.guid);
+    let url_path = format!("{}/{}/key-attestation", KEY_URL, key.guid);
+    let url = match base_url.join(&url_path) {
+        Ok(uri) => uri.to_string(),
+        Err(e) => {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("Failed to join {} and {}, error: {}", base_url, url_path, e),
+            ));
+        }
+    };
     let (host, port) = http::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());

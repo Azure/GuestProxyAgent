@@ -25,7 +25,7 @@ pub struct ConnectionContext {
 impl ConnectionContext {
     // try make sure the request could skip the sig
     // and stream the body to the server directly
-    pub fn need_skip_sig(&self) -> bool {
+    pub fn should_skip_sig(&self) -> bool {
         let method = self.method.to_uppercase();
         let url = self.url.to_lowercase();
 
