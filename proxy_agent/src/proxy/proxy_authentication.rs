@@ -3,11 +3,11 @@
 use super::authorization_rules::AuthorizationRules;
 use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;
-use crate::common::http::response::Response;
 use crate::key_keeper::key::AuthorizationItem;
 use crate::shared_state::SharedState;
 use crate::shared_state::{agent_status_wrapper, proxy_authenticator_wrapper};
 use crate::{common::config, common::constants, proxy::Claims};
+use http::StatusCode;
 use std::sync::{Arc, Mutex};
 
 pub fn set_wireserver_rules(
@@ -123,6 +123,7 @@ impl Authenticate for WireServer {
                     rules.is_allowed(connection_id, request_url.to_string(), self.claims.clone());
                 if !allowed {
                     let summary = ProxySummary {
+                        id: connection_id,
                         userId: self.claims.userId,
                         userName: self.claims.userName.to_string(),
                         userGroups: self.claims.userGroups.clone(),
@@ -134,7 +135,7 @@ impl Authenticate for WireServer {
                         url: request_url.to_string(),
                         ip: constants::WIRE_SERVER_IP.to_string(),
                         port: constants::WIRE_SERVER_PORT,
-                        responseStatus: Response::FORBIDDEN.to_string(),
+                        responseStatus: StatusCode::FORBIDDEN.to_string(),
                         elapsedTime: 0,
                     };
                     agent_status_wrapper::add_one_connection_summary(
@@ -182,6 +183,7 @@ impl Authenticate for Imds {
 
                 if !allowed {
                     let summary = ProxySummary {
+                        id: connection_id,
                         userId: self.claims.userId,
                         userName: self.claims.userName.to_string(),
                         userGroups: self.claims.userGroups.clone(),
@@ -193,7 +195,7 @@ impl Authenticate for Imds {
                         url: request_url.to_string(),
                         ip: constants::IMDS_IP.to_string(),
                         port: constants::IMDS_PORT,
-                        responseStatus: Response::FORBIDDEN.to_string(),
+                        responseStatus: StatusCode::FORBIDDEN.to_string(),
                         elapsedTime: 0,
                     };
                     agent_status_wrapper::add_one_connection_summary(
@@ -294,6 +296,19 @@ pub fn get_authenticate(ip: String, port: u16, claims: Claims) -> Box<dyn Authen
     } else {
         Box::new(Default {})
     }
+}
+
+pub fn authenticate(
+    ip: String,
+    port: u16,
+    connection_id: u128,
+    request_url: String,
+    claims: Claims,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> bool {
+    let auth = get_authenticate(ip, port, claims);
+    Connection::write(connection_id, format!("Got auth: {}", auth.to_string()));
+    auth.authenticate(connection_id, request_url, shared_state)
 }
 
 #[cfg(test)]

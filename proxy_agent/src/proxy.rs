@@ -3,14 +3,13 @@
 pub mod authorization_rules;
 pub mod proxy_authentication;
 pub mod proxy_connection;
-pub mod proxy_listener;
-mod proxy_pool;
+pub mod proxy_server;
 pub mod proxy_summary;
 
 #[cfg(windows)]
 mod windows;
 
-use crate::shared_state::SharedState;
+use crate::shared_state::{shared_state_wrapper, SharedState};
 use crate::{redirector::AuditEntry, shared_state::proxy_wrapper};
 use serde_derive::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -50,14 +49,14 @@ pub struct User {
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
 
-fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> User {
+fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<User> {
     // cache the logon_id -> user_name
     match proxy_wrapper::get_user(shared_state.clone(), logon_id) {
-        Some(user) => user,
+        Some(user) => Ok(user),
         None => {
-            let user = User::from_logon_id(logon_id);
+            let user = User::from_logon_id(shared_state.clone(), logon_id)?;
             proxy_wrapper::add_user(shared_state.clone(), user.clone());
-            user
+            Ok(user)
         }
     }
 }
@@ -100,10 +99,11 @@ impl Claims {
         entry: &AuditEntry,
         client_ip: IpAddr,
         shared_state: Arc<Mutex<SharedState>>,
-    ) -> Self {
-        let p = Process::from_pid(entry.process_id);
-        let u = get_user(entry.logon_id, shared_state);
-        Claims {
+    ) -> std::io::Result<Self> {
+        shared_state_wrapper::check_cancellation_token(shared_state.clone(), "from_audit_entry")?;
+        let p = Process::from_pid(entry.process_id)?;
+        let u = get_user(entry.logon_id, shared_state)?;
+        Ok(Claims {
             userId: entry.logon_id,
             userName: u.user_name.to_string(),
             userGroups: u.user_groups.clone(),
@@ -113,7 +113,7 @@ impl Claims {
             processCmdLine: p.command_line.to_string(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
-        }
+        })
     }
 }
 
@@ -134,27 +134,15 @@ impl Clone for Claims {
 }
 
 impl Process {
-    pub fn from_pid(pid: u32) -> Self {
+    pub fn from_pid(pid: u32) -> std::io::Result<Self> {
         let (process_full_path, cmd);
         #[cfg(windows)]
         {
-            let handler = windows::get_process_handler(pid).unwrap_or_else(|e| {
-                println!("Failed to get process handler: {}", e);
-                0
-            });
-            let base_info = windows::query_basic_process_info(handler);
-            match base_info {
-                Ok(_) => {
-                    process_full_path =
-                        windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
-                    cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
-                }
-                Err(e) => {
-                    process_full_path = UNDEFINED.to_string();
-                    cmd = UNDEFINED.to_string();
-                    println!("Failed to query basic process info: {}", e);
-                }
-            }
+            let handler = windows::get_process_handler(pid)?;
+            _ = windows::query_basic_process_info(handler)?;
+            process_full_path =
+                windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
+            cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
         }
         #[cfg(not(windows))]
         {
@@ -164,7 +152,7 @@ impl Process {
         }
 
         let exe_path = PathBuf::from(process_full_path.to_string());
-        Process {
+        Ok(Process {
             command_line: cmd,
             name: exe_path
                 .file_name()
@@ -173,18 +161,22 @@ impl Process {
                 .to_string(),
             exe_full_name: process_full_path,
             pid,
-        }
+        })
     }
 }
 
 impl User {
-    pub fn from_logon_id(logon_id: u64) -> Self {
+    pub fn from_logon_id(
+        shared_state: Arc<Mutex<SharedState>>,
+        logon_id: u64,
+    ) -> std::io::Result<Self> {
+        shared_state_wrapper::check_cancellation_token(shared_state.clone(), "from_logon_id")?;
         let user_name;
         let mut user_groups: Vec<String> = Vec::new();
 
         #[cfg(windows)]
         {
-            let user = windows::get_user(logon_id);
+            let user = windows::get_user(shared_state.clone(), logon_id)?;
             user_name = user.0;
             for g in user.1 {
                 user_groups.push(g.to_string());
@@ -208,11 +200,11 @@ impl User {
             }
         }
 
-        User {
+        Ok(User {
             logon_id,
             user_name: user_name.to_string(),
             user_groups: user_groups.clone(),
-        }
+        })
     }
 }
 
@@ -241,7 +233,7 @@ mod tests {
         }
         let shared_state = shared_state::SharedState::new();
 
-        let user = super::get_user(logon_id, shared_state.clone());
+        let user = super::get_user(logon_id, shared_state.clone()).unwrap();
         println!("UserName: {}", user.user_name);
         println!("UserGroups: {}", user.user_groups.join(", "));
         assert_eq!(expected_user_name, user.user_name, "user name mismatch.");
@@ -281,7 +273,8 @@ mod tests {
         let shared_state = shared_state::SharedState::new();
 
         let claims =
-            Claims::from_audit_entry(&entry, IpAddr::from([127, 0, 0, 1]), shared_state.clone());
+            Claims::from_audit_entry(&entry, IpAddr::from([127, 0, 0, 1]), shared_state.clone())
+                .unwrap();
         println!("{}", serde_json::to_string(&claims).unwrap());
 
         assert!(claims.runAsElevated, "runAsElevated must be true");
