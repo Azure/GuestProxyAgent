@@ -20,9 +20,9 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 AddTestCase(new GuestProxyAgentLoadedModulesValidationCase());
             }
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", false));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterInstallOrUpdateGuestProxyAgent"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", false));
         }
     }
 }
