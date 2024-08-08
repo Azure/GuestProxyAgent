@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: MIT
 
 param (
-    [Parameter(Mandatory=$true, Position=0)]
+    [Parameter(Mandatory = $true, Position = 0)]
     [string]$imdsSecureChannelEnabled
 )
 Write-Output "imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
 
-$i=0
+$i = 0
 # make 10 requests if any failed, will failed the test for tcp port scalability config
-while($i -lt 10){
+while ($i -lt 10) {
     try {
         $url = "http://169.254.169.254/metadata/instance?api-version=2020-06-01"
         $webRequest = [System.Net.HttpWebRequest]::Create($url)	
@@ -25,10 +25,10 @@ while($i -lt 10){
 
         if ($imdsSecureChannelEnabled -eq "true") {
             $responseHeaders = $response.Headers
-			if ($responseHeaders["x-ms-azure-host-authorization"] -eq $null) {
-				Write-Error "Ping test failed. Response does not contain x-ms-azure-host-authorization header"
-				exit -1
-			}
+            if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
+                Write-Error "Ping test failed. Response does not contain x-ms-azure-host-authorization header"
+                exit -1
+            }
             else {
                 Write-Output "Ping test passed. Response contains x-ms-azure-host-authorization header"
             }

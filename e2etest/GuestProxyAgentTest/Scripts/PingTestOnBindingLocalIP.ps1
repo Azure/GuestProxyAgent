@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 param (
-    [Parameter(Mandatory=$true, Position=0)]
+    [Parameter(Mandatory = $true, Position = 0)]
     [string]$imdsSecureChannelEnabled
 )
 Write-Output "imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
@@ -26,10 +26,10 @@ try {
 
     if ($imdsSecureChannelEnabled -eq "true") {
         $responseHeaders = $response.Headers
-		if ($responseHeaders["x-ms-azure-host-authorization"] -eq $null) {
-			Write-Error "Ping test failed. Response does not contain x-ms-azure-host-authorization header"
-			exit -1
-		}
+        if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
+            Write-Error "Ping test failed. Response does not contain x-ms-azure-host-authorization header"
+            exit -1
+        }
         else {
             Write-Output "Ping test passed. Response contains x-ms-azure-host-authorization header"
         }
