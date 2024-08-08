@@ -7,9 +7,12 @@ namespace GuestProxyAgentTest.TestCases
 {
     public class TCPPortScalabilityCase : TestCaseBase
     {
-        public TCPPortScalabilityCase() : base("TCPPortScalabilityCase")
+        public TCPPortScalabilityCase(bool imdsSecureChannelEnabled) : base("TCPPortScalabilityCase")
         {
+            ImdsSecureChannelEnabled = imdsSecureChannelEnabled;
         }
+
+        private bool ImdsSecureChannelEnabled { get; set; }
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
@@ -21,7 +24,9 @@ namespace GuestProxyAgentTest.TestCases
             // reboot 
             var vmr = context.VirtualMachineResource;
             await vmr.RestartAsync(Azure.WaitUntil.Completed);
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "IMDSPingTest.ps1", null!, false)).ToTestResultDetails(ConsoleLog);
+            List<(string, string)> parameterList = new List<(string, string)>();
+            parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "IMDSPingTest.ps1", parameterList, false)).ToTestResultDetails(ConsoleLog);
         }
     }
 }

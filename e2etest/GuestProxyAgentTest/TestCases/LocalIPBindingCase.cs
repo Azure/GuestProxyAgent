@@ -7,13 +7,18 @@ namespace GuestProxyAgentTest.TestCases
 {
     public class LocalIPBindingCase : TestCaseBase
     {
-        public LocalIPBindingCase() : base("LocalIPBindingCase")
+        public LocalIPBindingCase(bool imdsSecureChannelEnabled) : base("LocalIPBindingCase")
         {
+            ImdsSecureChannelEnabled = imdsSecureChannelEnabled;
         }
+
+        private bool ImdsSecureChannelEnabled { get; set; }
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "PingTestOnBindingLocalIP.ps1", null!, false)).ToTestResultDetails(ConsoleLog);
+            List<(string, string)> parameterList = new List<(string, string)>();
+            parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "PingTestOnBindingLocalIP.ps1", parameterList, false)).ToTestResultDetails(ConsoleLog);
         }
     }
 }

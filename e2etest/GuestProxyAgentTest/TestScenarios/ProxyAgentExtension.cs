@@ -18,6 +18,7 @@ namespace GuestProxyAgentTest.TestScenarios
             string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
             string proxyAgentVersion = "";
             string exePath = "";
+            bool imdsSecureChannelEnabled = false;
             try
             {
                 ZipFile.ExtractToDirectory(zipFile, extractPath);
@@ -38,6 +39,9 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 EnableProxyAgent = true;
                 exePath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
+                // currently when enable msp, it only enforce WS "secureChannelState: WireServer Enforce -  IMDS Disabled, version: 2.0."
+                // TODO: when the preview SDK is available, we need change the code to enforce both WS and IMDS and set the imdsSecureChannelEnabled to true
+                imdsSecureChannelEnabled = false;
             }
             var process = new Process()
             {
@@ -59,9 +63,9 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", imdsSecureChannelEnabled));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot"));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", imdsSecureChannelEnabled));
         }
     }
 }
