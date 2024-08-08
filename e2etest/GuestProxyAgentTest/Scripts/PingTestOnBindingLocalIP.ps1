@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 param (
     [Parameter(Mandatory=$true, Position=0)]
-    [string]$imdsSecureChannelEnabled,    
+    [string]$imdsSecureChannelEnabled
 )
 Write-Output "imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
 
