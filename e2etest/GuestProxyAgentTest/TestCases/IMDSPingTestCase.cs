@@ -8,14 +8,18 @@ namespace GuestProxyAgentTest.TestCases
 {
     public class IMDSPingTestCase : TestCaseBase
     {
-        public IMDSPingTestCase(string testCaseName) : base(testCaseName)
+        public IMDSPingTestCase(string testCaseName, bool imdsSecureChannelEnabled) : base(testCaseName)
         {
-
+            ImdsSecureChannelEnabled = imdsSecureChannelEnabled;
         }
+
+        private bool ImdsSecureChannelEnabled { get; set; }
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.IMDS_PING_TEST_SCRIPT_NAME, null!, false)).ToTestResultDetails(ConsoleLog);
+            List<(string, string)> parameterList = new List<(string, string)>();
+            parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.IMDS_PING_TEST_SCRIPT_NAME, parameterList, false)).ToTestResultDetails(ConsoleLog);
         }
     }
 }
