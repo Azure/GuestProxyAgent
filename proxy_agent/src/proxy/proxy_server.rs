@@ -10,7 +10,7 @@ use crate::shared_state::{
 use crate::{provision, redirector};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
-use hyper::body::{Bytes, Frame};
+use hyper::body::{Bytes, Frame, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
 use hyper::StatusCode;
@@ -349,18 +349,33 @@ async fn handle_request(
 
     // start new request to the Host endpoint
     let server_addr = format!("{}:{}", ip, port);
-    let proxy_stream = TcpStream::connect(server_addr).await.unwrap();
+    let proxy_stream = match TcpStream::connect(server_addr.to_string()).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            Connection::write_warning(
+                connection.id,
+                format!("Failed to connect to host {}: {}", server_addr, e),
+            );
+            log_connection_summary(
+                &connection,
+                StatusCode::SERVICE_UNAVAILABLE,
+                shared_state.clone(),
+            );
+            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
+        }
+    };
     let io = TokioIo::new(proxy_stream);
+    let connection_id = connection.id;
     let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
         Ok((sender, conn)) => (sender, conn),
         Err(e) => {
             Connection::write_warning(connection_id, format!("Failed to connect to host: {}", e));
             log_connection_summary(
                 &connection,
-                StatusCode::MISDIRECTED_REQUEST,
+                StatusCode::SERVICE_UNAVAILABLE,
                 shared_state.clone(),
             );
-            return Ok(empty_response(StatusCode::MISDIRECTED_REQUEST));
+            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
         }
     };
     tokio::task::spawn(async move {
@@ -372,24 +387,62 @@ async fn handle_request(
         }
     });
 
-    //  send to remote server
-    let proxy_response = sender.send_request(proxy_request).await.unwrap();
-    let frame_stream = proxy_response.into_body().map_frame(|frame| {
-        let frame = if let Ok(data) = frame.into_data() {
-            // streaming the data
-            data.iter().map(|byte| byte.to_be()).collect::<Bytes>()
-        } else {
-            Bytes::new()
+    let proxy_response = sender.send_request(proxy_request).await;
+    forward_response(proxy_response, connection, shared_state).await
+}
+
+async fn forward_response(
+    proxy_response: hyper::Result<Response<Incoming>>,
+    connection: ConnectionContext,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let connection_id = connection.id;
+    let proxy_response = match proxy_response {
+        Ok(response) => response,
+        Err(e) => {
+            Connection::write_warning(
+                connection_id,
+                format!("Failed to send request to host: {}", e),
+            );
+            log_connection_summary(
+                &connection,
+                StatusCode::SERVICE_UNAVAILABLE,
+                shared_state.clone(),
+            );
+            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
+        }
+    };
+
+    let (head, body) = proxy_response.into_parts();
+    let frame_stream = body.map_frame(move |frame| {
+        let frame = match frame.into_data() {
+            Ok(data) => data.iter().map(|byte| byte.to_be()).collect::<Bytes>(),
+            Err(e) => {
+                Connection::write_error(
+                    connection_id,
+                    format!("Failed to get frame data: {:?}", e),
+                );
+                Bytes::new()
+            }
         };
 
         Frame::data(frame)
     });
+    let mut response = Response::from_parts(head, frame_stream.boxed());
 
-    let mut response = Response::new(frame_stream.boxed());
     // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
     response.headers_mut().insert(
         HeaderName::from_static(constants::AUTHORIZATION_HEADER),
         HeaderValue::from_static("value"),
+    );
+
+    // print the response headers
+    Connection::write(
+        connection.id,
+        format!(
+            "Response headers: {:?}",
+            response.headers().iter().collect::<Vec<_>>()
+        ),
     );
 
     log_connection_summary(&connection, response.status(), shared_state.clone());
@@ -453,38 +506,12 @@ async fn handle_request_with_signature(
     request: Request<hyper::body::Incoming>,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    // start new request to the Host endpoint
-    let server_addr = format!("{}:{}", connection.ip, connection.port);
-    let proxy_stream = TcpStream::connect(server_addr).await.unwrap();
-    let io = TokioIo::new(proxy_stream);
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-        Ok((sender, conn)) => (sender, conn),
-        Err(e) => {
-            Connection::write_warning(connection.id, format!("Failed to connect to host: {}", e));
-            log_connection_summary(
-                &connection,
-                StatusCode::MISDIRECTED_REQUEST,
-                shared_state.clone(),
-            );
-            return Ok(empty_response(StatusCode::MISDIRECTED_REQUEST));
-        }
-    };
-    let connection_id = connection.id;
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            Connection::write(
-                connection_id,
-                format!("Connection to host failed: {:?}", err),
-            );
-        }
-    });
-
     let (head, body) = request.into_parts();
     let whole_body = match body.collect().await {
         Ok(data) => data.to_bytes(),
         Err(e) => {
             Connection::write_error(
-                connection_id,
+                connection.id,
                 format!("Failed to receive the request body: {}", e),
             );
             return Ok(empty_response(StatusCode::BAD_REQUEST));
@@ -492,7 +519,7 @@ async fn handle_request_with_signature(
     };
 
     Connection::write(
-        connection_id,
+        connection.id,
         format!(
             "Received the client request body (len={}) for {} {}",
             whole_body.len(),
@@ -502,7 +529,8 @@ async fn handle_request_with_signature(
     );
 
     // create a new request to the Host endpoint
-    let mut proxy_request = Request::from_parts(head.clone(), Full::new(whole_body.clone()));
+    let mut proxy_request: Request<Full<Bytes>> =
+        Request::from_parts(head.clone(), Full::new(whole_body.clone()));
 
     // sign the request
     // Add header x-ms-azure-host-authorization
@@ -552,28 +580,48 @@ async fn handle_request_with_signature(
         );
     }
 
-    //  send to remote server
-    let proxy_response = sender.send_request(proxy_request).await.unwrap();
-    let frame_stream = proxy_response.into_body().map_frame(|frame| {
-        let frame = if let Ok(data) = frame.into_data() {
-            // streaming the data
-            data.iter().map(|byte| byte.to_be()).collect::<Bytes>()
-        } else {
-            Bytes::new()
-        };
-
-        Frame::data(frame)
+    // start new request to the Host endpoint
+    let server_addr = format!("{}:{}", connection.ip, connection.port);
+    let proxy_stream = match TcpStream::connect(server_addr.to_string()).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            Connection::write_warning(
+                connection.id,
+                format!("Failed to connect to host {}: {}", server_addr, e),
+            );
+            log_connection_summary(
+                &connection,
+                StatusCode::SERVICE_UNAVAILABLE,
+                shared_state.clone(),
+            );
+            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
+        }
+    };
+    let io = TokioIo::new(proxy_stream);
+    let connection_id = connection.id;
+    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
+        Ok((sender, conn)) => (sender, conn),
+        Err(e) => {
+            Connection::write_warning(connection_id, format!("Failed to connect to host: {}", e));
+            log_connection_summary(
+                &connection,
+                StatusCode::MISDIRECTED_REQUEST,
+                shared_state.clone(),
+            );
+            return Ok(empty_response(StatusCode::MISDIRECTED_REQUEST));
+        }
+    };
+    tokio::task::spawn(async move {
+        if let Err(err) = conn.await {
+            Connection::write(
+                connection_id,
+                format!("Connection to host failed: {:?}", err),
+            );
+        }
     });
 
-    let mut response = Response::new(frame_stream.boxed());
-    // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
-    response.headers_mut().insert(
-        HeaderName::from_static(constants::AUTHORIZATION_HEADER),
-        HeaderValue::from_static("value"),
-    );
-
-    log_connection_summary(&connection, response.status(), shared_state.clone());
-    Ok(response)
+    let proxy_response = sender.send_request(proxy_request).await;
+    forward_response(proxy_response, connection, shared_state).await
 }
 
 #[cfg(test)]
