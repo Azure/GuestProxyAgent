@@ -37,7 +37,7 @@ impl WireServerClient {
             "text/xml; charset=utf-8".to_string(),
         );
 
-        let request = http::get_request(
+        let request = http::build_request(
             "POST",
             &url,
             &headers,

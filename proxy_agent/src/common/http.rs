@@ -38,7 +38,7 @@ where
     T: DeserializeOwned,
     F: Fn(String) + Send + 'static,
 {
-    let request = get_request("GET", uri_str, headers, None, key_guid, key)?;
+    let request = build_request("GET", uri_str, headers, None, key_guid, key)?;
 
     let (host, port) = host_port_from_uri(uri_str)?;
     let response = match send_request(&host, port, request, log_fun).await {
@@ -111,7 +111,7 @@ where
     }
 }
 
-pub fn get_request(
+pub fn build_request(
     method: &str,
     uri_str: &str,
     headers: &HashMap<String, String>,

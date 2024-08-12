@@ -617,7 +617,7 @@ mod tests {
         tokio::time::sleep(sleep_duration).await;
 
         let url = format!("http://{}:{}/", host, port);
-        let request = crate::common::http::get_request(
+        let request = crate::common::http::build_request(
             "GET",
             &url,
             &HashMap::new(),

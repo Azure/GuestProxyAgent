@@ -678,7 +678,7 @@ pub async fn acquire_key(base_url: Url) -> std::io::Result<Key> {
     );
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
-    let request = http::get_request("POST", &url, &headers, Some(body.as_bytes()), None, None)?;
+    let request = http::build_request("POST", &url, &headers, Some(body.as_bytes()), None, None)?;
     let response = match http::send_request(&host, port, request, logger::write_warning).await {
         Ok(r) => r,
         Err(e) => {
@@ -717,7 +717,7 @@ pub async fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
         constants::DATE_HEADER.to_string(),
         misc_helpers::get_date_time_rfc1123_string(),
     );
-    let request = http::get_request(
+    let request = http::build_request(
         "POST",
         &url,
         &headers,
