@@ -8,5 +8,6 @@ scenarios:
     name: BVTScenario
   - name: LinuxPackageScenario
     className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
-  - name: ProxyAgentExtension 
-    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
+ # need enable this test case when the extension supports AzureLinux3
+ # - name: ProxyAgentExtension 
+ #   className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
