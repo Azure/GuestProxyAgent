@@ -57,10 +57,10 @@ if [[ $os == *"Ubuntu"* ]]; then
     done
 else
     for  i in {1..3}; do
-        echo "start installing jq via yum $i"
-        sudo yum -y install jq
+        echo "start installing jq via dnf $i"
+        sudo dnf -y install jq
         sleep 10
-        install=$(yum list --installed jq)
+        install=$(dnf list --installed jq)
         echo "install=$install"
         if [[ $install == *"jq"* ]]; then
             echo "jq installed successfully"
