@@ -14,7 +14,7 @@ guestProxyAgentServiceExist=$(systemctl list-unit-files | grep $serviceName | wc
 guestProxyAgentServiceStatus="unknown"
 if [ $guestProxyAgentServiceExist -eq 0 ]; then
     guestProxyAgentServiceExist='false'
-    guestProxyAgentServiceStatus = "service not exists"
+    guestProxyAgentServiceStatus="service not exists"
 else
     guestProxyAgentServiceExist='true'
     guestProxyAgentServiceStatus=$(systemctl is-enabled $serviceName)
