@@ -26,10 +26,10 @@ if [[ $os == *"Ubuntu"* ]]; then
     done
 else
     for  i in {1..3}; do
-        echo "start installing unzip via yum $i"
-        sudo yum -y install unzip
+        echo "start installing unzip via dnf $i"
+        sudo dnf -y install unzip
         sleep 10
-        install=$(yum list --installed unzip)
+        install=$(dnf list --installed unzip)
         echo "install=$install"
         if [[ $install == *"unzip"* ]]; then
             echo "unzip installed successfully"
@@ -64,7 +64,7 @@ for i in {1..3}; do
     else
         sudo rpm -i $currentDir/ProxyAgent/packages/*.rpm
         sleep 10
-        install=$(yum list --installed guest-proxy-agent)
+        install=$(dnf list --installed guest-proxy-agent)
         echo "install=$install"
         if [[ $install == *"guest-proxy-agent"* ]]; then
             echo "guest-proxy-agent installed successfully"
