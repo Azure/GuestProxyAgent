@@ -31,15 +31,26 @@ use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
 
-fn main() {
+#[cfg(windows)]
+static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
+    tokio::sync::OnceCell::const_new();
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
     // start the Instant to calculate the elapsed time
     _ = helpers::get_elapsed_time_in_millisec();
+
+    // set the tokio runtime handle
+    #[cfg(windows)]
+    ASYNC_RUNTIME_HANDLE
+        .set(tokio::runtime::Handle::current())
+        .unwrap();
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         if args[1].to_lowercase() == "console" {
             let shared_state = SharedState::new();
-            service::start_service(shared_state.clone());
+            service::start_service(shared_state.clone()).await;
             println!("Press Enter to end it.");
             let mut temp = String::new();
             _ = std::io::stdin().read_line(&mut temp);
@@ -52,7 +63,8 @@ fn main() {
                 wait_time = args[3].parse::<u64>().unwrap_or(0);
             }
             let status =
-                provision::get_provision_status_wait(None, Some(Duration::from_secs(wait_time)));
+                provision::get_provision_status_wait(None, Some(Duration::from_secs(wait_time)))
+                    .await;
             if !status.0 {
                 // exit code 1 means provision not finished yet.
                 process::exit(1);
@@ -72,22 +84,47 @@ fn main() {
     } else {
         #[cfg(windows)]
         {
-            _ = service_dispatcher::start(constants::PROXY_AGENT_SERVICE_NAME, ffi_service_main);
+            //
+            let main = std::thread::spawn(|| {
+                _ = service_dispatcher::start(
+                    constants::PROXY_AGENT_SERVICE_NAME,
+                    ffi_service_main,
+                );
+            });
+
+            main.join().unwrap();
         }
 
         #[cfg(not(windows))]
         {
-            service::start_service_wait();
+            service::start_service_wait().await;
         }
     }
 }
 
 #[cfg(windows)]
-fn proxy_agent_windows_service_main(args: Vec<OsString>) {
+fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
     // start the Instant to calculate the elapsed time
     _ = helpers::get_elapsed_time_in_millisec();
 
-    if let Err(e) = windows::run_service(args) {
-        logger::write_error(format!("{e}"));
+    match ASYNC_RUNTIME_HANDLE.get() {
+        Some(handle) => {
+            handle.spawn(windows::run_service());
+        }
+        None => {
+            logger::write_error("Failed to get the tokio runtime handle.".to_string());
+        }
     }
+
+    // // windows_service crate does not support async funcation,
+    // // hence we have to start with normal fn and create a runtime to start async functions
+    // let rt = tokio::runtime::Builder::new_multi_thread()
+    //     .enable_all()
+    //     .build()
+    //     .unwrap();
+    // rt.block_on(async {
+    //     if let Err(e) = windows::run_service().await {
+    //         logger::write_error(format!("{e}"));
+    //     }
+    // });
 }

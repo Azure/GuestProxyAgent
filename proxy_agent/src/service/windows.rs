@@ -4,14 +4,13 @@
 use crate::common::{constants, logger};
 use crate::shared_state::service_wrapper;
 use crate::{service, shared_state::SharedState};
-use std::ffi::OsString;
 use std::time::Duration;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 
-pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
+pub async fn run_service() -> windows_service::Result<()> {
     let shared_state = SharedState::new();
     let cloned_shared_state = shared_state.clone();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
@@ -47,7 +46,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
     };
 
     // start service
-    service::start_service(shared_state.clone());
+    service::start_service(shared_state.clone()).await;
 
     // set the service state to Running
     let status_handle =

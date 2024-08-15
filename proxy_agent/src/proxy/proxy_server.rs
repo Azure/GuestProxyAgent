@@ -10,7 +10,7 @@ use crate::shared_state::{
 use crate::{provision, redirector};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
-use hyper::body::{Bytes, Frame, Incoming};
+use hyper::body::{Body, Bytes, Frame, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
 use hyper::StatusCode;
@@ -25,6 +25,7 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
 const INITIAL_CONNECTION_ID: u128 = 0;
+const MAX_REQUEST_BODY_SIZE: u64 = 1024 * 100; // 100KB
 
 pub fn stop(port: u16, shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
@@ -46,11 +47,7 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
     }
 }
 
-pub async fn start_async(port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    tokio::spawn(async move { start(port, shared_state).await });
-}
-
-async fn start(
+pub async fn start(
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -88,7 +85,7 @@ async fn start(
             }
         };
 
-        if shared_state_wrapper::get_cancellation_token(shared_state.clone()).is_cancelled() {
+        if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
             let message = "Stop signal received, stop the listener.";
             proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
             logger::write_warning(message.to_string());
@@ -181,7 +178,7 @@ async fn handle_request(
     connection.id = connection_id;
     connection.method = request.method().to_string();
     connection.url = request.uri().to_string();
-    Connection::write_warning(
+    Connection::write_information(
         connection_id,
         format!(
             "Got request from {} for {} {}",
@@ -295,7 +292,7 @@ async fn handle_request(
     // Get the dst ip and port to remote server
     let (ip, port);
     ip = redirector::ip_to_string(entry.destination_ipv4);
-    port = http::ntohs(entry.destination_port);
+    port = u16::from_be(entry.destination_port); // convert a 16-bit number from network byte order to host byte order
     Connection::write(connection_id, format!("Use lookup value:{ip}:{port}."));
     connection.ip = ip.to_string();
     connection.port = port;
@@ -436,15 +433,6 @@ async fn forward_response(
         HeaderValue::from_static("value"),
     );
 
-    // print the response headers
-    Connection::write(
-        connection.id,
-        format!(
-            "Response headers: {:?}",
-            response.headers().iter().collect::<Vec<_>>()
-        ),
-    );
-
     log_connection_summary(&connection, response.status(), shared_state.clone());
     Ok(response)
 }
@@ -507,6 +495,28 @@ async fn handle_request_with_signature(
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let (head, body) = request.into_parts();
+    let size = match body.size_hint().upper() {
+        Some(size) => size,
+        None => {
+            Connection::write_warning(
+                connection.id,
+                "Failed to get the imcoming request body size".to_string(),
+            );
+            return Ok(empty_response(StatusCode::LENGTH_REQUIRED));
+        }
+    };
+
+    if size > MAX_REQUEST_BODY_SIZE {
+        Connection::write_warning(
+            connection.id,
+            format!(
+                "The imcoming request body size {} exceeds the limit {}",
+                size, MAX_REQUEST_BODY_SIZE
+            ),
+        );
+        return Ok(empty_response(StatusCode::PAYLOAD_TOO_LARGE));
+    }
+
     let whole_body = match body.collect().await {
         Ok(data) => data.to_bytes(),
         Err(e) => {
@@ -541,19 +551,6 @@ async fn handle_request_with_signature(
         let input_to_sign = http::as_sig_input(head, whole_body);
         match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
             Ok(sig) => {
-                match String::from_utf8(input_to_sign) {
-                    Ok(data) => Connection::write(
-                        connection.id,
-                        format!("Computed the signature with input: {}", data),
-                    ),
-                    Err(e) => {
-                        Connection::write_warning(
-                            connection.id,
-                            format!("Failed convert the input_to_sign to string, error {}", e),
-                        );
-                    }
-                }
-
                 let authorization_value =
                     format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
                 proxy_request.headers_mut().insert(
@@ -576,7 +573,7 @@ async fn handle_request_with_signature(
     } else {
         Connection::write(
             connection.id,
-            "current key is empty, skip compute signature for testing.".to_string(),
+            "current key is empty, skip computing the signature.".to_string(),
         );
     }
 
@@ -637,9 +634,7 @@ mod tests {
     use std::fs;
     use std::time::Duration;
 
-    // this test is to test the direct request to the proxy server
-    // it requires more threads to run server and client
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn direct_request_test() {
         let logger_key = "direct_request_test";
         let mut temp_test_path = env::temp_dir();
@@ -658,7 +653,7 @@ mod tests {
         let s = shared_state.clone();
         let host = "127.0.0.1";
         let port: u16 = 8091;
-        proxy_server::start_async(port, s.clone()).await;
+        tokio::spawn(proxy_server::start(port, s.clone()));
 
         // give some time to let the listener started
         let sleep_duration = Duration::from_millis(100);

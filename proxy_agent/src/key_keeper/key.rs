@@ -650,8 +650,7 @@ pub async fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
         constants::DATE_HEADER.to_string(),
         misc_helpers::get_date_time_rfc1123_string(),
     );
-    let status: KeyStatus =
-        http::get(&url, &headers, None, None, true, logger::write_warning).await?;
+    let status: KeyStatus = http::get(&url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
@@ -694,7 +693,7 @@ pub async fn acquire_key(base_url: Url) -> std::io::Result<Key> {
             format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
-    http::read_response_body(response, true).await
+    http::read_response_body(response).await
 }
 
 // base_url must end with '/'

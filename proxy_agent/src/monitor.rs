@@ -8,26 +8,23 @@ use crate::{
 };
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
-pub fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    _ = thread::Builder::new()
-        .name("monitor".to_string())
-        .spawn(move || {
-            start(interval, shared_state);
-        });
+pub async fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
+    tokio::spawn(async move {
+        start(interval, shared_state).await;
+    });
 }
 
-fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
+async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     if interval == Duration::default() {
         interval = Duration::from_secs(60);
     }
 
-    monitor_wrapper::set_status_message(shared_state.clone(), "Monitor thread started".to_string());
+    monitor_wrapper::set_status_message(shared_state.clone(), "Monitor task started".to_string());
     loop {
         if monitor_wrapper::get_shutdown(shared_state.clone()) {
-            let message = "Stop signal received, exiting the monitor thread.";
+            let message = "Stop signal received, exiting the monitor task.";
             monitor_wrapper::set_status_message(shared_state.clone(), message.to_string());
             logger::write_warning(message.to_string());
 
@@ -38,7 +35,7 @@ fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
             // TODO:: check redirector started or not
         }
 
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
     }
 }
 

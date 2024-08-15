@@ -16,9 +16,9 @@ const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
 const GOALSTATE_URI: &str = "machine?comp=goalstate";
 
 impl WireServerClient {
-    pub fn new(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
+    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         WireServerClient {
-            ip,
+            ip: ip.to_string(),
             port,
             shared_state,
         }
@@ -80,7 +80,6 @@ impl WireServerClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
-            false,
             logger::write_warning,
         )
         .await
@@ -95,7 +94,6 @@ impl WireServerClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
-            false,
             logger::write_warning,
         )
         .await

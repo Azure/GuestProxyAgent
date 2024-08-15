@@ -16,9 +16,9 @@ pub struct ImdsClient {
 const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
 
 impl ImdsClient {
-    pub fn new(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
+    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
         ImdsClient {
-            ip,
+            ip: ip.to_string(),
             port,
             shared_state,
         }
@@ -34,7 +34,6 @@ impl ImdsClient {
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
-            true,
             logger::write_warning,
         )
         .await

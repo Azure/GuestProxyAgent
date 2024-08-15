@@ -14,7 +14,6 @@ use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 #[cfg(not(windows))]
 pub use linux::BpfObject;
@@ -45,13 +44,7 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub async fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    tokio::spawn(async move {
-        start(local_port, shared_state).await;
-    });
-}
-
-async fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+pub async fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let started = start_impl(local_port, shared_state.clone()).await;
 
     let level = if started {
@@ -82,7 +75,7 @@ async fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> b
         if is_started(shared_state.clone()) {
             return true;
         }
-        thread::sleep(std::time::Duration::from_millis(10));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
     is_started(shared_state.clone())

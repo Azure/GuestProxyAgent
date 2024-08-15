@@ -26,40 +26,24 @@ const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
 const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
-pub async fn poll_status_async(
-    base_url: Url,
-    key_dir: PathBuf,
-    interval: Duration,
-    config_start_redirector: bool,
-    shared_state: Arc<Mutex<SharedState>>,
-) {
-    tokio::spawn(async move {
-        poll_secure_channel_status(
-            base_url,
-            key_dir,
-            interval,
-            config_start_redirector,
-            shared_state,
-        )
-        .await;
-    });
-}
-
 // poll secure channel status at interval
-async fn poll_secure_channel_status(
+pub async fn poll_secure_channel_status(
     base_url: Url,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
-    let message = "poll secure channel status thread started.";
+    let message = "poll secure channel status task started.";
     key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
     logger::write(message.to_string());
 
-    // launch redirector initialization when the key keeper thread is running
+    // launch redirector initialization when the key keeper task is running
     if config_start_redirector {
-        redirector::start_async(constants::PROXY_AGENT_PORT, shared_state.clone()).await;
+        tokio::spawn(redirector::start(
+            constants::PROXY_AGENT_PORT,
+            shared_state.clone(),
+        ));
     }
 
     _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
@@ -89,7 +73,7 @@ async fn poll_secure_channel_status(
     let mut provision_timeup: bool = false;
     loop {
         if key_keeper_wrapper::get_shutdown(shared_state.clone()) {
-            let message = "Stop signal received, exiting the poll_secure_channel_status thread.";
+            let message = "Stop signal received, exiting the poll_secure_channel_status task.";
             key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
             logger::write_warning(message.to_string());
             break;
@@ -423,9 +407,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    // this test is to test poll_secure_channel_status
-    // it requires more threads to run server and client
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn poll_secure_channel_status_tests() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("poll_secure_channel_status_tests");
@@ -456,9 +438,11 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 8082u16;
         let cloned_shared_state = shared_state.clone();
-        tokio::spawn(async move {
-            let _ = server_mock::start(ip.to_string(), port, cloned_shared_state.clone()).await;
-        });
+        tokio::spawn(server_mock::start(
+            ip.to_string(),
+            port,
+            cloned_shared_state.clone(),
+        ));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state
@@ -466,15 +450,13 @@ mod tests {
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
-        key_keeper::poll_status_async(
+        tokio::spawn(key_keeper::poll_secure_channel_status(
             Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
             shared_state.clone(),
-        )
-        .await;
-
+        ));
         for _ in [0; 5] {
             // wait poll_secure_channel_status run at least one loop
             tokio::time::sleep(Duration::from_millis(100)).await;

@@ -18,20 +18,11 @@ use std::collections::HashMap;
 use tokio::net::TcpStream;
 use url::Url;
 
-pub fn htons(u: u16) -> u16 {
-    u.to_be()
-}
-
-pub fn ntohs(u: u16) -> u16 {
-    u16::from_be(u)
-}
-
 pub async fn get<T, F>(
     uri_str: &str,
     headers: &HashMap<String, String>,
     key_guid: Option<String>,
     key: Option<String>,
-    json_format: bool,
     log_fun: F,
 ) -> std::io::Result<T>
 where
@@ -61,16 +52,49 @@ where
         ));
     }
 
-    read_response_body(response, json_format).await
+    read_response_body(response).await
 }
 
 pub async fn read_response_body<T>(
     mut response: hyper::Response<hyper::body::Incoming>,
-    json_format: bool,
 ) -> std::io::Result<T>
 where
     T: DeserializeOwned,
 {
+    let (content_type, charset_type) =
+        if let Some(content_type) = response.headers().get(hyper::header::CONTENT_TYPE) {
+            if let Ok(content_type_str) = content_type.to_str() {
+                let content_type_str = content_type_str.to_lowercase();
+                let content_type;
+                if content_type_str.contains("xml") {
+                    content_type = "xml";
+                } else if content_type_str.contains("json") {
+                    content_type = "json";
+                } else if content_type_str.contains("text") {
+                    content_type = "text";
+                } else {
+                    content_type = "unknown";
+                }
+
+                let charset_type;
+                if content_type_str.contains("utf-8") {
+                    charset_type = "utf-8";
+                } else if content_type_str.contains("utf-16") {
+                    charset_type = "utf-16";
+                } else if content_type_str.contains("utf-32") {
+                    charset_type = "utf-32";
+                } else {
+                    charset_type = "unknown";
+                }
+
+                (content_type, charset_type)
+            } else {
+                ("unknown", "unknown")
+            }
+        } else {
+            ("unknown", "unknown")
+        };
+
     let mut body_string = String::new();
     while let Some(next) = response.frame().await {
         let frame = match next {
@@ -83,31 +107,54 @@ where
             }
         };
         if let Some(chunk) = frame.data_ref() {
-            body_string.push_str(&String::from_utf8_lossy(chunk));
+            match charset_type {
+                "utf-16" => {
+                    // Convert Bytes to Vec<u8>
+                    let byte_vec: Vec<u8> = chunk.to_vec();
+                    // Convert Vec<u8> to Vec<u16>
+                    let u16_vec: Vec<u16> = byte_vec
+                        .chunks(2)
+                        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                        .collect();
+
+                    body_string.push_str(&String::from_utf16_lossy(&u16_vec));
+                }
+                "utf-32" => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "utf-32 charset is not supported",
+                    ))
+                }
+                _ => {
+                    // default to utf-8
+                    body_string.push_str(&String::from_utf8_lossy(chunk));
+                }
+            };
         }
     }
-    if json_format {
-        match serde_json::from_str(&body_string) {
+
+    match content_type {
+        "xml" => match serde_xml_rs::from_str(&body_string) {
             Ok(t) => Ok(t),
             Err(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!(
-                    "Failed to json deserialize response body from: {} with error {}",
-                    body_string, e
+                    "Failed to xml deserialize response body with content_type {} from: {} with error {}",
+               content_type,     body_string, e
                 ),
             )),
-        }
-    } else {
-        match serde_xml_rs::from_str(&body_string) {
+        },
+        // default to json
+        _ => match serde_json::from_str(&body_string) {
             Ok(t) => Ok(t),
             Err(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!(
-                    "Failed to xml deserialize response body from: {} with error {}",
-                    body_string, e
+                    "Failed to json deserialize response body with {} from: {} with error {}",
+                  content_type,  body_string, e
                 ),
             )),
-        }
+        },
     }
 }
 
@@ -226,28 +273,27 @@ where
     let stream = TcpStream::connect(addr.to_string()).await?;
     let io = TokioIo::new(stream);
 
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-        Ok((s, c)) => (s, c),
-        Err(e) => {
-            return Err(std::io::Error::new(
+    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+        .await
+        .map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to establish connection to {}: {}", addr, e),
-            ))
-        }
-    };
+            )
+        })?;
+
     tokio::task::spawn(async move {
         if let Err(err) = conn.await {
             log_fun(format!("Connection failed: {:?}", err));
         }
     });
 
-    match sender.send_request(request).await {
-        Ok(r) => Ok(r),
-        Err(e) => Err(std::io::Error::new(
+    sender.send_request(request).await.map_err(|e| {
+        std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("Failed to send request: {:?}", e),
-        )),
-    }
+        )
+    })
 }
 /*
     StringToSign = Method + "\n" +

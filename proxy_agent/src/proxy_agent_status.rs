@@ -14,23 +14,14 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
-pub fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    _ = thread::Builder::new()
-        .name("guest_proxy_agent_status".to_string())
-        .spawn(move || {
-            start(interval, shared_state);
-        });
-}
-
-fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
+pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    logger::write("proxy_agent_status thread started.".to_string());
+    logger::write("proxy_agent_status task started.".to_string());
 
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
@@ -39,7 +30,7 @@ fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     loop {
         if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
             logger::write_warning(
-                "Stop signal received, exiting the guest_proxy_agent_status thread.".to_string(),
+                "Stop signal received, exiting the guest_proxy_agent_status task.".to_string(),
             );
             break;
         }
@@ -62,7 +53,7 @@ fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
             start_time = Instant::now();
         }
 
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
     }
 }
 
