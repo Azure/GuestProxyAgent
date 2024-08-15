@@ -30,7 +30,9 @@ use std::ffi::OsString;
 use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
-
+// define_windows_service does not accept async function in fffi_service_main,
+// also it does not allow to pass tokio runtime or handle as arguments to the function.
+// we have to use the global variable to set the tokio runtime handle.
 #[cfg(windows)]
 static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
     tokio::sync::OnceCell::const_new();
