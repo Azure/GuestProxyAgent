@@ -21,7 +21,7 @@ use shared_state::SharedState;
 use std::{process, time::Duration};
 
 #[cfg(windows)]
-use common::{constants, logger};
+use common::constants;
 #[cfg(windows)]
 use service::windows;
 #[cfg(windows)]
@@ -52,7 +52,7 @@ async fn main() {
     if args.len() > 1 {
         if args[1].to_lowercase() == "console" {
             let shared_state = SharedState::new();
-            service::start_service(shared_state.clone()).await;
+            service::start_service(shared_state.clone());
             println!("Press Enter to end it.");
             let mut temp = String::new();
             _ = std::io::stdin().read_line(&mut temp);
@@ -109,24 +109,8 @@ fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
     // start the Instant to calculate the elapsed time
     _ = helpers::get_elapsed_time_in_millisec();
 
-    match ASYNC_RUNTIME_HANDLE.get() {
-        Some(handle) => {
-            handle.spawn(windows::run_service());
-        }
-        None => {
-            logger::write_error("Failed to get the tokio runtime handle.".to_string());
-        }
-    }
-
-    // // windows_service crate does not support async funcation,
-    // // hence we have to start with normal fn and create a runtime to start async functions
-    // let rt = tokio::runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .build()
-    //     .unwrap();
-    // rt.block_on(async {
-    //     if let Err(e) = windows::run_service().await {
-    //         logger::write_error(format!("{e}"));
-    //     }
-    // });
+    let handle = ASYNC_RUNTIME_HANDLE
+        .get()
+        .expect("You must provide the Tokio runtime handle before this function is called");
+    _ = handle.block_on(windows::run_service());
 }

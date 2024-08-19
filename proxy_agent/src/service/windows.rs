@@ -46,7 +46,7 @@ pub async fn run_service() -> windows_service::Result<()> {
     };
 
     // start service
-    service::start_service(shared_state.clone()).await;
+    service::start_service(shared_state.clone());
 
     // set the service state to Running
     let status_handle =

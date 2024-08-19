@@ -15,7 +15,7 @@ use url::Url;
 #[cfg(not(windows))]
 use std::time::Duration;
 
-pub async fn start_service(shared_state: Arc<Mutex<SharedState>>) {
+pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
     logger_manager::init_logger(
         logger::AGENT_LOGGER_KEY.to_string(),
         config::get_logs_dir(),

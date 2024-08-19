@@ -110,7 +110,7 @@ pub async fn poll_secure_channel_status(
                 if !started_event_threads
                     && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
                 {
-                    provision::start_event_threads(shared_state.clone()).await;
+                    provision::start_event_threads(shared_state.clone());
                     started_event_threads = true;
                 }
 
@@ -189,7 +189,7 @@ pub async fn poll_secure_channel_status(
                                     );
                                     key_found = true;
 
-                                    provision::key_latched(shared_state.clone()).await;
+                                    provision::key_latched(shared_state.clone());
                                 }
                                 Err(e) => {
                                     let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
@@ -256,7 +256,7 @@ pub async fn poll_secure_channel_status(
                                         shared_state.clone(),
                                         message.to_string(),
                                     );
-                                    provision::key_latched(shared_state.clone()).await;
+                                    provision::key_latched(shared_state.clone());
                                 }
                                 Err(e) => {
                                     logger::write_warning(format!("Failed to attest the key: {:?}", e));
@@ -296,7 +296,7 @@ pub async fn poll_secure_channel_status(
                         key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
                         // clear key in memory for disabled state
                         key_keeper_wrapper::clear_key(shared_state.clone());
-                        provision::key_latched(shared_state.clone()).await;
+                        provision::key_latched(shared_state.clone());
                     }
                 }
             }

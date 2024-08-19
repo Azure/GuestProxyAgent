@@ -10,13 +10,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDe
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub async fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    tokio::spawn(async move {
-        start(interval, shared_state).await;
-    });
-}
-
-async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
+pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     if interval == Duration::default() {
         interval = Duration::from_secs(60);
     }

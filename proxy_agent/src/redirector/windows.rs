@@ -37,7 +37,7 @@ pub fn initialized_success(shared_state: Arc<Mutex<SharedState>>) -> bool {
     true
 }
 
-pub async fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let result = bpf_prog::load_bpf_object(super::get_ebpf_file_path(), shared_state.clone());
     if result != 0 {
         set_error_status(
@@ -142,7 +142,7 @@ pub async fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState
         logger::AGENT_LOGGER_KEY,
     );
     redirector_wrapper::set_status_message(shared_state.clone(), message.clone());
-    provision::redirector_ready(shared_state.clone()).await;
+    provision::redirector_ready(shared_state.clone());
 
     true
 }

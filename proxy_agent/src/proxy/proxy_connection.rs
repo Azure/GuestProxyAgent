@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 use crate::proxy::Claims;
 use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -16,9 +17,9 @@ pub struct ConnectionContext {
     pub client_addr: SocketAddr,
     pub now: Instant,
     pub claims: Option<Claims>,
-    pub method: String,
+    pub method: Option<hyper::Method>,
     pub url: String,
-    pub ip: String,
+    pub ip: Option<Ipv4Addr>, // currently, we only support IPv4
     pub port: u16,
 }
 
@@ -26,14 +27,32 @@ impl ConnectionContext {
     // try make sure the request could skip the sig
     // and stream the body to the server directly
     pub fn should_skip_sig(&self) -> bool {
-        let method = self.method.to_uppercase();
         let url = self.url.to_lowercase();
 
         // currently, we agreed to skip the sig for those requests:
         //      o PUT   /vmAgentLog
         //      o POST  /machine/?comp=telemetrydata
-        (method == "PUT" || method == "POST")
-            && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
+
+        if let Some(method) = &self.method {
+            return (method == hyper::Method::PUT || method == hyper::Method::POST)
+                && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog");
+        }
+
+        false
+    }
+
+    pub fn request_method(&self) -> String {
+        if let Some(method) = &self.method {
+            return method.to_string();
+        }
+        "None".to_string()
+    }
+
+    pub fn request_ip(&self) -> String {
+        if let Some(ip) = &self.ip {
+            return ip.to_string();
+        }
+        "None".to_string()
     }
 }
 

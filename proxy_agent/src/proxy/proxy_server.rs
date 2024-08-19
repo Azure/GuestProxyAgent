@@ -71,7 +71,7 @@ pub async fn start(
         logger::AGENT_LOGGER_KEY,
     );
     proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
-    provision::listener_started(shared_state.clone()).await;
+    provision::listener_started(shared_state.clone());
 
     let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
     // We start a loop to continuously accept incoming connections
@@ -153,9 +153,9 @@ async fn accept_one_reqeust(
                 client_addr,
                 id: INITIAL_CONNECTION_ID,
                 now: std::time::Instant::now(),
-                method: String::new(),
+                method: None,
                 url: String::new(),
-                ip: String::new(),
+                ip: None,
                 port: 0,
                 claims: None,
             };
@@ -183,13 +183,15 @@ async fn handle_request(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let connection_id = proxy_listener_wrapper::increase_connection_count(shared_state.clone());
     connection.id = connection_id;
-    connection.method = request.method().to_string();
+    connection.method = Some(request.method().clone());
     connection.url = request.uri().to_string();
     Connection::write_information(
         connection_id,
         format!(
             "Got request from {} for {} {}",
-            connection.client_addr, &connection.method, &connection.url
+            connection.client_addr,
+            connection.request_method(),
+            &connection.url
         ),
     );
 
@@ -298,10 +300,10 @@ async fn handle_request(
 
     // Get the dst ip and port to remote server
     let (ip, port);
-    ip = redirector::ip_to_string(entry.destination_ipv4);
-    port = u16::from_be(entry.destination_port); // convert a 16-bit number from network byte order to host byte order
+    ip = entry.destination_ipv4_addr();
+    port = entry.destination_port_in_host_byte_order();
     Connection::write(connection_id, format!("Use lookup value:{ip}:{port}."));
-    connection.ip = ip.to_string();
+    connection.ip = Some(ip);
     connection.port = port;
 
     // authenticate the connection
@@ -309,7 +311,7 @@ async fn handle_request(
         ip.to_string(),
         port,
         connection_id,
-        request.uri().to_string(),
+        request.uri().clone(),
         claims.clone(),
         shared_state.clone(),
     ) {
@@ -332,11 +334,32 @@ async fn handle_request(
     );
     proxy_request.headers_mut().insert(
         HeaderName::from_static(constants::CLAIMS_HEADER),
-        HeaderValue::from_str(&host_claims).unwrap(),
+        match HeaderValue::from_str(&host_claims) {
+            Ok(value) => value,
+            Err(e) => {
+                Connection::write_error(
+                    connection_id,
+                    format!(
+                        "Failed to add claims header: {} with error: {}",
+                        host_claims, e
+                    ),
+                );
+                return Ok(empty_response(StatusCode::BAD_GATEWAY));
+            }
+        },
     );
     proxy_request.headers_mut().insert(
         HeaderName::from_static(constants::DATE_HEADER),
-        HeaderValue::from_str(&misc_helpers::get_date_time_rfc1123_string()).unwrap(),
+        match HeaderValue::from_str(&misc_helpers::get_date_time_rfc1123_string()) {
+            Ok(value) => value,
+            Err(e) => {
+                Connection::write_error(
+                    connection_id,
+                    format!("Failed to add date header with error: {}", e),
+                );
+                return Ok(empty_response(StatusCode::BAD_GATEWAY));
+            }
+        },
     );
 
     if connection.should_skip_sig() {
@@ -344,7 +367,8 @@ async fn handle_request(
             connection_id,
             format!(
                 "Skip compute signature for the request for {} {}",
-                &connection.method, &connection.url
+                connection.request_method(),
+                &connection.url
             ),
         );
     } else {
@@ -464,9 +488,9 @@ fn log_connection_summary(
         processFullPath: claims.processFullPath.to_string(),
         processCmdLine: claims.processCmdLine.to_string(),
         runAsElevated: claims.runAsElevated,
-        method: connection.method.to_string(),
+        method: connection.request_method(),
         url: connection.url.to_string(),
-        ip: connection.ip.to_string(),
+        ip: connection.request_ip(),
         port: connection.port,
         responseStatus: response_status.to_string(),
         elapsedTime: elapsed_time.as_millis(),
@@ -540,7 +564,7 @@ async fn handle_request_with_signature(
         format!(
             "Received the client request body (len={}) for {} {}",
             whole_body.len(),
-            &connection.method,
+            connection.request_method(),
             &connection.url,
         ),
     );
@@ -562,7 +586,19 @@ async fn handle_request_with_signature(
                     format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
                 proxy_request.headers_mut().insert(
                     HeaderName::from_static(constants::AUTHORIZATION_HEADER),
-                    HeaderValue::from_str(&authorization_value).unwrap(),
+                    match HeaderValue::from_str(&authorization_value) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            Connection::write_error(
+                                connection.id,
+                                format!(
+                                    "Failed to add authorization header: {} with error: {}",
+                                    authorization_value, e
+                                ),
+                            );
+                            return Ok(empty_response(StatusCode::BAD_GATEWAY));
+                        }
+                    },
                 );
 
                 Connection::write(
@@ -585,7 +621,7 @@ async fn handle_request_with_signature(
     }
 
     // start new request to the Host endpoint
-    let server_addr = format!("{}:{}", connection.ip, connection.port);
+    let server_addr = format!("{}:{}", connection.request_ip(), connection.port);
     let proxy_stream = match TcpStream::connect(server_addr.to_string()).await {
         Ok(stream) => stream,
         Err(e) => {

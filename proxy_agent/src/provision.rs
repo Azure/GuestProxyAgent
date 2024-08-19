@@ -14,19 +14,19 @@ use std::time::Duration;
 const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
 const STATUS_TAG_FILE_NAME: &str = "status.tag";
 
-pub async fn redirector_ready(shared_state: Arc<Mutex<SharedState>>) {
-    update_provision_state(1, None, shared_state).await;
+pub fn redirector_ready(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(1, None, shared_state);
 }
 
-pub async fn key_latched(shared_state: Arc<Mutex<SharedState>>) {
-    update_provision_state(2, None, shared_state).await;
+pub fn key_latched(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(2, None, shared_state);
 }
 
-pub async fn listener_started(shared_state: Arc<Mutex<SharedState>>) {
-    update_provision_state(4, None, shared_state).await;
+pub fn listener_started(shared_state: Arc<Mutex<SharedState>>) {
+    update_provision_state(4, None, shared_state);
 }
 
-async fn update_provision_state(
+fn update_provision_state(
     state: u8,
     provision_dir: Option<PathBuf>,
     shared_state: Arc<Mutex<SharedState>>,
@@ -37,7 +37,7 @@ async fn update_provision_state(
         write_provision_state(true, provision_dir, shared_state.clone());
 
         // start event threads right after provision successfully
-        start_event_threads(shared_state.clone()).await;
+        start_event_threads(shared_state.clone());
     }
 }
 
@@ -49,7 +49,7 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<
     }
 }
 
-pub async fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
+pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
     let logger_threads_initialized =
         provision_wrapper::get_event_log_threads_initialized(shared_state.clone());
     if logger_threads_initialized {
@@ -207,9 +207,15 @@ mod tests {
         let s2 = shared_state.clone();
         let s3 = shared_state.clone();
         let handles = vec![
-            tokio::spawn(super::update_provision_state(1, Some(dir1), s1)),
-            tokio::spawn(super::update_provision_state(2, Some(dir2), s2)),
-            tokio::spawn(super::update_provision_state(4, Some(dir3), s3)),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(1, Some(dir1), s1);
+            }),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(2, Some(dir2), s2);
+            }),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(4, Some(dir3), s3);
+            }),
         ];
 
         for handle in handles {

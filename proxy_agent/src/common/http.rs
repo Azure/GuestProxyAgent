@@ -309,7 +309,7 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data.extend(constants::LF.as_bytes());
 
     data.extend(headers_to_canonicalized_string(&head.headers).as_bytes());
-    let path_para = get_path_and_canonicalized_parameters(into_url(&head.uri));
+    let path_para = get_path_and_canonicalized_parameters(relative_uri_into_url(&head.uri));
     data.extend(path_para.0.as_bytes());
     data.extend(constants::LF.as_bytes());
     data.extend(path_para.1.as_bytes());
@@ -347,7 +347,7 @@ pub fn request_to_sign_input(
     }
     match request_builder.uri_ref() {
         Some(u) => {
-            let path_para = get_path_and_canonicalized_parameters(into_url(u));
+            let path_para = get_path_and_canonicalized_parameters(relative_uri_into_url(u));
             data.extend(path_para.0.as_bytes());
             data.extend(constants::LF.as_bytes());
             data.extend(path_para.1.as_bytes());
@@ -387,7 +387,10 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
     canonicalized_headers
 }
 
-fn into_url(uri: &hyper::Uri) -> Url {
+/// Convert a relative URI to a full URL
+/// uri - The relative URI in hyper::Uri format
+/// Returns a full URL in url::Url format
+pub fn relative_uri_into_url(uri: &hyper::Uri) -> Url {
     let path_query = match uri.path_and_query() {
         Some(pq) => pq.as_str(),
         None => uri.path(),

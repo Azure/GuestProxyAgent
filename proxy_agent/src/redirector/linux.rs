@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 pub type BpfObject = Bpf;
 
-pub async fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path(), shared_state.clone()) {
         Ok(value) => value,
         Err(value) => return value,
@@ -92,7 +92,7 @@ pub async fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState
         logger::AGENT_LOGGER_KEY,
     );
     redirector_wrapper::set_status_message(shared_state.clone(), message.to_string());
-    provision::redirector_ready(shared_state).await;
+    provision::redirector_ready(shared_state);
 
     true
 }
