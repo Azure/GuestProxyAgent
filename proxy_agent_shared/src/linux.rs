@@ -57,7 +57,8 @@ pub fn get_long_os_version() -> String {
 }
 
 pub fn get_os_type() -> String {
-    if (OS_INFO.os_type().contains("Linux")) {
+    let linux_type = OS_INFO.os_type().to_lowercase();
+    if (linux_type.contains("Linux")) {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
