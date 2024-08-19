@@ -105,6 +105,7 @@ fn check_linux_os_supported(version: Version) -> bool {
     } else {
         return false;
     }
+}
 
 #[cfg(not(windows))]
 fn check_azurelinux_os_supported() -> u32 {

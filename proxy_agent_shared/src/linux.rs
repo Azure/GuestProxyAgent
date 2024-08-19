@@ -28,17 +28,19 @@ struct FileSystem {
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
     if (OS_INFO.os_type.contains("Linux")) {
-        match Command::new("cat")
-        .arg("/etc/os-release")
-        .output() {
+        match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
-                let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
+                let output_str =
+                    str::from_utf8(&output.stdout).expect("Failed to convert output to string");
                 let mut version = "Unknown".to_string();
                 for line in output_str.lines() {
                     if line.starts_with("VERSION_ID=") {
-                        version = line.trim_start_matches("VERSION_ID=").trim_matches('"').to_string();
+                        version = line
+                            .trim_start_matches("VERSION_ID=")
+                            .trim_matches('"')
+                            .to_string();
                         return version.to_string();
-                    } 
+                    }
                 }
             }
             Err(e) => {
@@ -54,17 +56,19 @@ pub fn get_long_os_version() -> String {
 
 pub fn get_os_type() -> String {
     if (OS_INFO.os_type.contains("Linux")) {
-        match Command::new("cat")
-        .arg("/etc/os-release")
-        .output() {
+        match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
-                let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
+                let output_str =
+                    str::from_utf8(&output.stdout).expect("Failed to convert output to string");
                 let mut name = "Unknown".to_string();
                 for line in output_str.lines() {
                     if line.starts_with("NAME=") {
-                        name = line.trim_start_matches("NAME=").trim_matches('"').to_string();
+                        name = line
+                            .trim_start_matches("NAME=")
+                            .trim_matches('"')
+                            .to_string();
                         return name.to_string();
-                    } 
+                    }
                 }
             }
             Err(e) => {
