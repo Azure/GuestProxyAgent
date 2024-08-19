@@ -128,31 +128,6 @@ fn check_azurelinux_os_supported() -> u32 {
     return 0;        
 }
 
-
-match Command::new("cat")
-.arg("/etc/os-release")
-.output() {
-    Ok(output) => {
-        let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-
-        let mut name = "Unknown".to_string();
-        let mut version = "Unknown".to_string();
-
-        for line in output_str.lines() {
-            if line.starts_with("NAME=") {
-                name = line.trim_start_matches("NAME=").trim_matches('"').to_string();
-            } else if line.starts_with("VERSION=") {
-                version = line.trim_start_matches("VERSION=").trim_matches('"').to_string();
-            }
-        }
-        println!("version before u32: {}", version);
-
-    }
-    Err(e) => {
-        println!("Unknown");
-    }
-}
-
 fn report_os_not_supported(config_seq_no: Option<String>) {
     // report to status folder if the os version is not supported
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
