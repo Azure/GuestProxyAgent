@@ -101,9 +101,54 @@ fn check_linux_os_supported(version: Version) -> bool {
     } else if linux_type.contains("mariner") {
         return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
     } else if linux_type.contains("Linux") {
-        return version.major >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
+        return check_azurelinux_os_supported() >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
     } else {
         return false;
+    }
+
+#[cfg(not(windows))]
+fn check_azurelinux_os_supported() -> u32 {
+    let version = linux::get_os_version();
+    match version.split('.').next() {
+        Some(major_str) => {
+            match major_str.parse::<u32>() {
+                Ok(v) => {
+                    return v;
+                },
+                Err(_) => {
+                    logger::write(format!("Failed to parse major version: {}", major_str));
+                }
+            }
+        }
+        None => {
+            logger::write(format!("Version string is empty or malformed: {}", version));
+        }
+    }
+    return 0;        
+}
+
+
+match Command::new("cat")
+.arg("/etc/os-release")
+.output() {
+    Ok(output) => {
+        let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
+
+        let mut name = "Unknown".to_string();
+        let mut version = "Unknown".to_string();
+
+        for line in output_str.lines() {
+            if line.starts_with("NAME=") {
+                name = line.trim_start_matches("NAME=").trim_matches('"').to_string();
+            } else if line.starts_with("VERSION=") {
+                version = line.trim_start_matches("VERSION=").trim_matches('"').to_string();
+            }
+        }
+        println!("version before u32: {}", version);
+
+    }
+    Err(e) => {
+        println!("Unknown");
     }
 }
 

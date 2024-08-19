@@ -27,14 +27,52 @@ struct FileSystem {
 
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
-    OS_INFO.version().to_string()
+    if (OS_INFO.os_type.contains("Linux")) {
+        match Command::new("cat")
+        .arg("/etc/os-release")
+        .output() {
+            Ok(output) => {
+                let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
+                let mut version = "Unknown".to_string();
+                for line in output_str.lines() {
+                    if line.starts_with("VERSION_ID=") {
+                        version = line.trim_start_matches("VERSION_ID=").trim_matches('"').to_string();
+                        return version.to_string();
+                    } 
+                }
+            }
+            Err(e) => {
+                logger::write(format!("Error in getting OS version: {e}"));
+            }
+        }
+    }
+    OS_INFO.version().to_string();
 }
 pub fn get_long_os_version() -> String {
-    format!("Linux:{}-{}", OS_INFO.os_type(), OS_INFO.version())
+    format!("Linux:{}-{}", get_os_type(), get_os_version())
 }
 
 pub fn get_os_type() -> String {
-    OS_INFO.os_type().to_string()
+    if (OS_INFO.os_type.contains("Linux")) {
+        match Command::new("cat")
+        .arg("/etc/os-release")
+        .output() {
+            Ok(output) => {
+                let output_str = str::from_utf8(&output.stdout).expect("Failed to convert output to string");
+                let mut name = "Unknown".to_string();
+                for line in output_str.lines() {
+                    if line.starts_with("NAME=") {
+                        name = line.trim_start_matches("NAME=").trim_matches('"').to_string();
+                        return name.to_string();
+                    } 
+                }
+            }
+            Err(e) => {
+                logger::write(format!("Error in getting OS name: {e}"));
+            }
+        }
+    }
+    OS_INFO.os_type().to_string();
 }
 
 pub fn get_processor_arch() -> String {
