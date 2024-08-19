@@ -75,7 +75,7 @@ where
         thread::sleep(interval);
 
         if shutdown.load(Ordering::Relaxed) {
-            let message = "Stop signal received, exiting the event logger thread.";
+            let message = "cancellation token signal received, stop the event logger thread.";
             set_status_fn(message.to_string());
 
             logger_manager::write_information(logger_key, message.to_string());

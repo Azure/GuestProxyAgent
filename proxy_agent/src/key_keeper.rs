@@ -6,7 +6,7 @@ use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::proxy_authentication;
-use crate::shared_state::{key_keeper_wrapper, SharedState};
+use crate::shared_state::{key_keeper_wrapper, shared_state_wrapper, SharedState};
 use crate::{acl, redirector};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
@@ -71,129 +71,140 @@ pub async fn poll_secure_channel_status(
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
     loop {
-        if key_keeper_wrapper::get_shutdown(shared_state.clone()) {
-            let message = "Stop signal received, exiting the poll_secure_channel_status task.";
-            key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
-            logger::write_warning(message.to_string());
-            break;
-        }
-
-        if !first_iteration {
+        let sleep_duration = if first_iteration {
+            // no sleep for the first loop
+            Duration::from_micros(0)
+        } else {
             // skip the sleep for the first loop
-
-            let sleep = if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
+            if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
                     == UNKNOWN_STATE
                     && FREQUENT_PULL_INTERVAL < interval        // test internal is less than 1 second
-                    && helpers::get_elapsed_time_in_millisec()
+                    && helpers::get_elapsed_time_in_millisec()  // has not timed out
                         < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
-            // has not timed out
             {
                 // frequent poll the secure channel status every second for the first 5 minutes
                 // until the secure channel state is known
                 FREQUENT_PULL_INTERVAL
             } else {
                 interval
-            };
-
-            tokio::time::sleep(sleep).await;
-        }
-        first_iteration = false;
-
-        if !provision_timeup
-            && helpers::get_elapsed_time_in_millisec() > PROVISION_TIMEUP_IN_MILLISECONDS
-        {
-            provision::provision_timeup(None, shared_state.clone());
-            provision_timeup = true;
-        }
-
-        if !started_event_threads
-            && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
-        {
-            provision::start_event_threads(shared_state.clone()).await;
-            started_event_threads = true;
-        }
-
-        let status = match key::get_status(base_url.clone()).await {
-            Ok(s) => s,
-            Err(e) => {
-                let err_string = format!("{:?}", e);
-                let message: String = format!(
-                    "Failed to get key status - {}",
-                    match e.into_inner() {
-                        Some(err) => err.to_string(),
-                        None => err_string,
-                    }
-                );
-                key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
-                logger::write_warning(message);
-                continue;
             }
         };
-        logger::write_information(format!("Got key status successfully: {}.", status));
 
-        let wireserver_rule_id = status.get_wireserver_rule_id();
-        let imds_rule_id: String = status.get_imds_rule_id();
-        let (updated, old_wire_server_rule_id) = key_keeper_wrapper::update_wireserver_rule_id(
-            shared_state.clone(),
-            wireserver_rule_id.to_string(),
-        );
-        if updated {
-            logger::write_warning(format!(
-                "Wireserver rule id changed from {} to {}.",
-                old_wire_server_rule_id, wireserver_rule_id
-            ));
-            proxy_authentication::set_wireserver_rules(
-                shared_state.clone(),
-                status.get_wireserver_rules(),
-            );
-        }
+        first_iteration = false;
 
-        let (updated, old_imds_rule_id) =
-            key_keeper_wrapper::update_imds_rule_id(shared_state.clone(), imds_rule_id.to_string());
-        if updated {
-            logger::write_warning(format!(
-                "IMDS rule id changed from {} to {}.",
-                old_imds_rule_id, imds_rule_id
-            ));
-            proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
-        }
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                logger::write_warning("cancellation token signal received, stop the poll_secure_channel_status task.".to_string());
+                break;
+            }
+            _ = tokio::time::sleep(sleep_duration) => {
+                if !provision_timeup
+                && helpers::get_elapsed_time_in_millisec() > PROVISION_TIMEUP_IN_MILLISECONDS
+                {
+                    provision::provision_timeup(None, shared_state.clone());
+                    provision_timeup = true;
+                }
 
-        let state = status.get_secure_channel_state();
-        // check if need fetch the key
-        if state != DISABLE_STATE
-            && (status.keyGuid.is_none()  // key has not latched yet
-                || status.keyGuid != key_keeper_wrapper::get_current_key_guid(shared_state.clone()))
-        {
-            let mut key_found = false;
-            if let Some(guid) = &status.keyGuid {
-                // key latched before and search the key locally first
-                let mut key_file = key_dir.to_path_buf().join(guid);
-                key_file.set_extension("key");
-                // the key already latched before
-                if key_file.exists() {
-                    // read the key details locally and update
-                    match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
-                        Ok(key) => {
-                            key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
+                if !started_event_threads
+                    && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
+                {
+                    provision::start_event_threads(shared_state.clone()).await;
+                    started_event_threads = true;
+                }
 
-                            let message = helpers::write_startup_event(
-                                "Found key details from local and ready to use.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
-                            key_keeper_wrapper::set_status_message(
-                                shared_state.clone(),
-                                message.to_string(),
-                            );
-                            key_found = true;
+                let status = match key::get_status(base_url.clone()).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_string = format!("{:?}", e);
+                        let message: String = format!(
+                            "Failed to get key status - {}",
+                            match e.into_inner() {
+                                Some(err) => err.to_string(),
+                                None => err_string,
+                            }
+                        );
+                        key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
+                        logger::write_warning(message);
+                        continue;
+                    }
+                };
+                logger::write_information(format!("Got key status successfully: {}.", status));
 
-                            provision::key_latched(shared_state.clone()).await;
-                        }
-                        Err(e) => {
-                            let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
-                                e);
+                let wireserver_rule_id = status.get_wireserver_rule_id();
+                let imds_rule_id: String = status.get_imds_rule_id();
+                let (updated, old_wire_server_rule_id) = key_keeper_wrapper::update_wireserver_rule_id(
+                    shared_state.clone(),
+                    wireserver_rule_id.to_string(),
+                );
+                if updated {
+                    logger::write_warning(format!(
+                        "Wireserver rule id changed from {} to {}.",
+                        old_wire_server_rule_id, wireserver_rule_id
+                    ));
+                    proxy_authentication::set_wireserver_rules(
+                        shared_state.clone(),
+                        status.get_wireserver_rules(),
+                    );
+                }
+
+                let (updated, old_imds_rule_id) =
+                    key_keeper_wrapper::update_imds_rule_id(shared_state.clone(), imds_rule_id.to_string());
+                if updated {
+                    logger::write_warning(format!(
+                        "IMDS rule id changed from {} to {}.",
+                        old_imds_rule_id, imds_rule_id
+                    ));
+                    proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
+                }
+
+                let state = status.get_secure_channel_state();
+                // check if need fetch the key
+                if state != DISABLE_STATE
+                    && (status.keyGuid.is_none()  // key has not latched yet
+                        || status.keyGuid != key_keeper_wrapper::get_current_key_guid(shared_state.clone()))
+                {
+                    let mut key_found = false;
+                    if let Some(guid) = &status.keyGuid {
+                        // key latched before and search the key locally first
+                        let mut key_file = key_dir.to_path_buf().join(guid);
+                        key_file.set_extension("key");
+                        // the key already latched before
+                        if key_file.exists() {
+                            // read the key details locally and update
+                            match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
+                                Ok(key) => {
+                                    key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
+
+                                    let message = helpers::write_startup_event(
+                                        "Found key details from local and ready to use.",
+                                        "poll_secure_channel_status",
+                                        "key_keeper",
+                                        logger::AGENT_LOGGER_KEY,
+                                    );
+                                    key_keeper_wrapper::set_status_message(
+                                        shared_state.clone(),
+                                        message.to_string(),
+                                    );
+                                    key_found = true;
+
+                                    provision::key_latched(shared_state.clone()).await;
+                                }
+                                Err(e) => {
+                                    let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
+                                        e);
+                                    event_logger::write_event(
+                                        event_logger::WARN_LEVEL,
+                                        message.to_string(),
+                                        "poll_secure_channel_status",
+                                        "key_keeper",
+                                        logger::AGENT_LOGGER_KEY,
+                                    );
+                                }
+                            };
+                        } else {
+                            let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
                             event_logger::write_event(
                                 event_logger::WARN_LEVEL,
                                 message.to_string(),
@@ -202,101 +213,92 @@ pub async fn poll_secure_channel_status(
                                 logger::AGENT_LOGGER_KEY,
                             );
                         }
-                    };
-                } else {
-                    let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
-                    event_logger::write_event(
-                        event_logger::WARN_LEVEL,
-                        message.to_string(),
-                        "poll_secure_channel_status",
-                        "key_keeper",
-                        logger::AGENT_LOGGER_KEY,
+                    }
+
+                    // if key has not latched before,
+                    // or not found
+                    // or could not read locally,
+                    // try fetch from server
+                    if !key_found {
+                        let key = match key::acquire_key(base_url.clone()).await {
+                            Ok(k) => k,
+                            Err(e) => {
+                                logger::write_warning(format!("Failed to acquire key details: {:?}", e));
+                                continue;
+                            }
+                        };
+
+                        // key has not latched before,
+                        // set the key_file full path from key details
+                        let guid = key.guid.to_string();
+                        let mut key_file = key_dir.to_path_buf().join(&guid);
+                        key_file.set_extension("key");
+                        _ = misc_helpers::json_write_to_file(&key, key_file);
+                        logger::write_information(format!(
+                            "Successfully acquired the key '{}' details from server and saved locally.",
+                            guid
+                        ));
+
+                        // double check the key details saved correctly to local disk
+                        if check_local_key(key_dir.to_path_buf(), &key) {
+                            match key::attest_key(base_url.clone(), &key).await {
+                                Ok(()) => {
+                                    // update in memory
+                                    key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
+
+                                    let message = helpers::write_startup_event(
+                                        "Successfully attest the key and ready to use.",
+                                        "poll_secure_channel_status",
+                                        "key_keeper",
+                                        logger::AGENT_LOGGER_KEY,
+                                    );
+                                    key_keeper_wrapper::set_status_message(
+                                        shared_state.clone(),
+                                        message.to_string(),
+                                    );
+                                    provision::key_latched(shared_state.clone()).await;
+                                }
+                                Err(e) => {
+                                    logger::write_warning(format!("Failed to attest the key: {:?}", e));
+                                    continue;
+                                }
+                            }
+                        } else {
+                            logger::write_warning(format!("Saved key '{}' details lost locally.", guid));
+                        }
+                    }
+                }
+
+                // update the current secure channel state if different
+                if key_keeper_wrapper::update_current_secure_channel_state(
+                    shared_state.clone(),
+                    state.to_string(),
+                ) {
+                    // update the redirector policy map
+                    redirector::update_wire_server_redirect_policy(
+                        status.get_wire_server_mode() != DISABLE_STATE,
+                        shared_state.clone(),
                     );
-                }
-            }
+                    redirector::update_imds_redirect_policy(
+                        status.get_imds_mode() != DISABLE_STATE,
+                        shared_state.clone(),
+                    );
 
-            // if key has not latched before,
-            // or not found
-            // or could not read locally,
-            // try fetch from server
-            if !key_found {
-                let key = match key::acquire_key(base_url.clone()).await {
-                    Ok(k) => k,
-                    Err(e) => {
-                        logger::write_warning(format!("Failed to acquire key details: {:?}", e));
-                        continue;
+                    // customer has not enforce the secure channel state
+                    if state == DISABLE_STATE {
+                        let message = helpers::write_startup_event(
+                            "Customer has not enforce the secure channel state.",
+                            "poll_secure_channel_status",
+                            "key_keeper",
+                            logger::AGENT_LOGGER_KEY,
+                        );
+                        // Update the status message and let the provision to continue
+                        key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
+                        // clear key in memory for disabled state
+                        key_keeper_wrapper::clear_key(shared_state.clone());
+                        provision::key_latched(shared_state.clone()).await;
                     }
-                };
-
-                // key has not latched before,
-                // set the key_file full path from key details
-                let guid = key.guid.to_string();
-                let mut key_file = key_dir.to_path_buf().join(&guid);
-                key_file.set_extension("key");
-                _ = misc_helpers::json_write_to_file(&key, key_file);
-                logger::write_information(format!(
-                    "Successfully acquired the key '{}' details from server and saved locally.",
-                    guid
-                ));
-
-                // double check the key details saved correctly to local disk
-                if check_local_key(key_dir.to_path_buf(), &key) {
-                    match key::attest_key(base_url.clone(), &key).await {
-                        Ok(()) => {
-                            // update in memory
-                            key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
-
-                            let message = helpers::write_startup_event(
-                                "Successfully attest the key and ready to use.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
-                            key_keeper_wrapper::set_status_message(
-                                shared_state.clone(),
-                                message.to_string(),
-                            );
-                            provision::key_latched(shared_state.clone()).await;
-                        }
-                        Err(e) => {
-                            logger::write_warning(format!("Failed to attest the key: {:?}", e));
-                            continue;
-                        }
-                    }
-                } else {
-                    logger::write_warning(format!("Saved key '{}' details lost locally.", guid));
                 }
-            }
-        }
-
-        // update the current secure channel state if different
-        if key_keeper_wrapper::update_current_secure_channel_state(
-            shared_state.clone(),
-            state.to_string(),
-        ) {
-            // update the redirector policy map
-            redirector::update_wire_server_redirect_policy(
-                status.get_wire_server_mode() != DISABLE_STATE,
-                shared_state.clone(),
-            );
-            redirector::update_imds_redirect_policy(
-                status.get_imds_mode() != DISABLE_STATE,
-                shared_state.clone(),
-            );
-
-            // customer has not enforce the secure channel state
-            if state == DISABLE_STATE {
-                let message = helpers::write_startup_event(
-                    "Customer has not enforce the secure channel state.",
-                    "poll_secure_channel_status",
-                    "key_keeper",
-                    logger::AGENT_LOGGER_KEY,
-                );
-                // Update the status message and let the provision to continue
-                key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
-                // clear key in memory for disabled state
-                key_keeper_wrapper::clear_key(shared_state.clone());
-                provision::key_latched(shared_state.clone()).await;
             }
         }
     }
@@ -484,7 +486,7 @@ mod tests {
 
         // stop poll
         key_keeper::stop(shared_state.clone());
-        server_mock::stop(ip.to_string(), port, shared_state.clone());
+        server_mock::stop(shared_state.clone());
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);

@@ -27,10 +27,8 @@ use tokio::net::TcpStream;
 const INITIAL_CONNECTION_ID: u128 = 0;
 const MAX_REQUEST_BODY_SIZE: u64 = 1024 * 100; // 100KB
 
-pub fn stop(port: u16, shared_state: Arc<Mutex<SharedState>>) {
+pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
-    let _ = std::net::TcpStream::connect(format!("127.0.0.1:{}", port));
-    logger::write_warning("Sending stop signal.".to_string());
 }
 
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
@@ -75,98 +73,107 @@ pub async fn start(
     proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
     provision::listener_started(shared_state.clone()).await;
 
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
     // We start a loop to continuously accept incoming connections
     loop {
-        let (stream, client_addr) = match listener.accept().await {
-            Ok((stream, client_addr)) => (stream, client_addr),
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                logger::write_warning("cancellation token signal received, stop the listener.".to_string());
+                return Ok(());
+            }
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, client_addr)) =>{
+                        accept_one_reqeust(stream, client_addr, shared_state.clone()).await;
+                    },
+                    Err(e) => {
+                        logger::write_error(format!("Failed to accept connection: {}", e));
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn accept_one_reqeust(
+    stream: TcpStream,
+    client_addr: std::net::SocketAddr,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
+    Connection::write(
+        INITIAL_CONNECTION_ID,
+        "Accepted new connection.".to_string(),
+    );
+    let shared_state = shared_state.clone();
+    tokio::spawn(async move {
+        // Convert the stream to a std stream
+        let std_stream = match stream.into_std() {
+            Ok(std_stream) => std_stream,
             Err(e) => {
-                logger::write_warning(format!("ProxyListener accept error {}", e));
-                continue;
+                Connection::write_warning(
+                    INITIAL_CONNECTION_ID,
+                    format!("ProxyListener stream error {}", e),
+                );
+                return;
+            }
+        };
+        // Set the read timeout
+        _ = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+
+        // Clone the stream for the service_fn
+        let cloned_std_stream = match std_stream.try_clone() {
+            Ok(cloned_stream) => cloned_stream,
+            Err(e) => {
+                Connection::write_warning(
+                    INITIAL_CONNECTION_ID,
+                    format!("ProxyListener stream clone error {}", e),
+                );
+                return;
             }
         };
 
-        if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
-            let message = "Stop signal received, stop the listener.";
-            proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
-            logger::write_warning(message.to_string());
-            return Ok(());
-        }
-
-        Connection::write(
-            INITIAL_CONNECTION_ID,
-            "Accepted new connection.".to_string(),
-        );
-        let shared_state = shared_state.clone();
-        tokio::spawn(async move {
-            // Convert the stream to a std stream
-            let std_stream = match stream.into_std() {
-                Ok(std_stream) => std_stream,
-                Err(e) => {
-                    Connection::write_warning(
-                        INITIAL_CONNECTION_ID,
-                        format!("ProxyListener stream error {}", e),
-                    );
-                    return;
-                }
-            };
-            // Set the read timeout
-            _ = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-
-            // Clone the stream for the service_fn
-            let cloned_std_stream = match std_stream.try_clone() {
-                Ok(cloned_stream) => cloned_stream,
-                Err(e) => {
-                    Connection::write_warning(
-                        INITIAL_CONNECTION_ID,
-                        format!("ProxyListener stream clone error {}", e),
-                    );
-                    return;
-                }
-            };
-
-            // Convert the std stream back to a tokio stream
-            let stream = match TcpStream::from_std(std_stream) {
-                Ok(stream) => stream,
-                Err(e) => {
-                    Connection::write_warning(
-                        INITIAL_CONNECTION_ID,
-                        format!("ProxyListener: TcpStream::from_std error {}", e),
-                    );
-                    return;
-                }
-            };
-
-            let cloned_std_stream = Arc::new(Mutex::new(cloned_std_stream));
-            // move client addr, cloned std stream and shared_state to the service_fn
-            let service = service_fn(move |req| {
-                let shared_state = shared_state.clone();
-                let connection = ConnectionContext {
-                    stream: cloned_std_stream.clone(),
-                    client_addr,
-                    id: INITIAL_CONNECTION_ID,
-                    now: std::time::Instant::now(),
-                    method: String::new(),
-                    url: String::new(),
-                    ip: String::new(),
-                    port: 0,
-                    claims: None,
-                };
-
-                handle_request(req, connection, shared_state)
-            });
-
-            // Use an adapter to access something implementing `tokio::io` traits as if they implement
-            let io = TokioIo::new(stream);
-            // We use the `hyper::server::conn::Http` to serve the connection
-            let http = hyper::server::conn::http1::Builder::new();
-            if let Err(e) = http.serve_connection(io, service).await {
+        // Convert the std stream back to a tokio stream
+        let stream = match TcpStream::from_std(std_stream) {
+            Ok(stream) => stream,
+            Err(e) => {
                 Connection::write_warning(
                     INITIAL_CONNECTION_ID,
-                    format!("ProxyListener serve_connection error: {}", e),
+                    format!("ProxyListener: TcpStream::from_std error {}", e),
                 );
+                return;
             }
+        };
+
+        let cloned_std_stream = Arc::new(Mutex::new(cloned_std_stream));
+        // move client addr, cloned std stream and shared_state to the service_fn
+        let service = service_fn(move |req| {
+            let shared_state = shared_state.clone();
+            let connection = ConnectionContext {
+                stream: cloned_std_stream.clone(),
+                client_addr,
+                id: INITIAL_CONNECTION_ID,
+                now: std::time::Instant::now(),
+                method: String::new(),
+                url: String::new(),
+                ip: String::new(),
+                port: 0,
+                claims: None,
+            };
+
+            handle_request(req, connection, shared_state)
         });
-    }
+
+        // Use an adapter to access something implementing `tokio::io` traits as if they implement
+        let io = TokioIo::new(stream);
+        // We use the `hyper::server::conn::Http` to serve the connection
+        let http = hyper::server::conn::http1::Builder::new();
+        if let Err(e) = http.serve_connection(io, service).await {
+            Connection::write_warning(
+                INITIAL_CONNECTION_ID,
+                format!("ProxyListener serve_connection error: {}", e),
+            );
+        }
+    });
 }
 
 async fn handle_request(
@@ -675,7 +682,7 @@ mod tests {
                 .unwrap();
 
         // stop listener
-        proxy_server::stop(port, shared_state);
+        proxy_server::stop(shared_state);
 
         assert_eq!(
             http::StatusCode::MISDIRECTED_REQUEST,

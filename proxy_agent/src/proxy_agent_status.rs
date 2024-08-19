@@ -4,7 +4,8 @@ use crate::common::{config, logger};
 use crate::monitor;
 use crate::proxy::proxy_server;
 use crate::shared_state::{
-    agent_status_wrapper, proxy_listener_wrapper, telemetry_wrapper, SharedState,
+    agent_status_wrapper, proxy_listener_wrapper, shared_state_wrapper, telemetry_wrapper,
+    SharedState,
 };
 use crate::{key_keeper, redirector};
 use proxy_agent_shared::misc_helpers;
@@ -26,34 +27,41 @@ pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
     let dir_path = config::get_logs_dir();
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    let mut first_iteration: bool = true;
 
     loop {
-        if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
-            logger::write_warning(
-                "Stop signal received, exiting the guest_proxy_agent_status task.".to_string(),
-            );
-            break;
-        }
+        let sleep_duration = if first_iteration {
+            // no sleep for the first loop
+            Duration::from_micros(0)
+        } else {
+            interval
+        };
+        first_iteration = false;
 
-        let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                logger::write_warning("cancellation token signal received, stop the guest_proxy_agent_status task.".to_string());
+                break;
+            }
+            _ = tokio::time::sleep(sleep_duration) => {
+                let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
+                if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
+                    logger::write_error(format!("Error writing aggregate status to file: {}", e));
+                }
 
-        if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
-            logger::write_error(format!("Error writing aggregate status to file: {}", e));
-        }
-
-        let elapsed_time = start_time.elapsed();
-
-        //Clear the connection map and reset start_time after 24 hours
-        if elapsed_time >= map_clear_duration {
-            logger::write_information(
-                "Clearing the connection summary map and failed authenticate summary map."
-                    .to_string(),
-            );
-            agent_status_wrapper::clear_all_summary(shared_state.clone());
-            start_time = Instant::now();
-        }
-
-        tokio::time::sleep(interval).await;
+                let elapsed_time = start_time.elapsed();
+                //Clear the connection map and reset start_time after 24 hours
+                if elapsed_time >= map_clear_duration {
+                    logger::write_information(
+                        "Clearing the connection summary map and failed authenticate summary map."
+                            .to_string(),
+                    );
+                    agent_status_wrapper::clear_all_summary(shared_state.clone());
+                    start_time = Instant::now();
+                }
+            }
+        };
     }
 }
 

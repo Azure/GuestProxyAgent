@@ -3,7 +3,7 @@
 use crate::common::{http, logger};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
-use crate::shared_state::{proxy_listener_wrapper, shared_state_wrapper, SharedState};
+use crate::shared_state::{shared_state_wrapper, SharedState};
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
@@ -31,36 +31,38 @@ pub async fn start(
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();
     println!("Listening on http://{}", addr);
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
 
     loop {
-        let (stream, _) = match listener.accept().await {
-            Ok((stream, client_addr)) => (stream, client_addr),
-            Err(e) => {
-                logger::write_warning(format!("ProxyListener accept error {}", e));
-                continue;
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                logger::write_warning("cancellation token signal received, stop the listener.".to_string());
+                return Ok(());
             }
-        };
-
-        if shared_state_wrapper::get_cancellation_token(shared_state.clone()).is_cancelled() {
-            let message = "Stop signal received, stop the listener.";
-            logger::write_warning(message.to_string());
-            return Ok(());
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, _)) =>{
+                        let ip = ip.to_string();
+                        tokio::spawn(async move {
+                            let io = TokioIo::new(stream);
+                            let ip = ip.to_string();
+                            let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
+                            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                                println!("Error serving connection: {:?}", err);
+                            }
+                        });
+                    },
+                    Err(e) => {
+                        logger::write_error(format!("Failed to accept connection: {}", e));
+                    }
+                }
+            }
         }
-        let ip = ip.to_string();
-        tokio::spawn(async move {
-            let io = TokioIo::new(stream);
-            let ip = ip.to_string();
-            let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                println!("Error serving connection: {:?}", err);
-            }
-        });
     }
 }
 
-pub fn stop(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
-    let _ = std::net::TcpStream::connect(format!("{}:{}", ip, port));
+pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
+    shared_state_wrapper::cancel_cancellation_token(shared_state.clone());
 }
 
 async fn handle_request(

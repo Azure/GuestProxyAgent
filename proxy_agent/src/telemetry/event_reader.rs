@@ -6,6 +6,7 @@ use crate::common::constants;
 use crate::common::logger;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
+use crate::shared_state::shared_state_wrapper;
 use crate::shared_state::telemetry_wrapper;
 use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
@@ -54,7 +55,7 @@ pub async fn start(
     logger::write("telemetry event reader task started.".to_string());
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
-    let mut first = true;
+    let mut first_iteration: bool = true;
 
     let wire_server_client = WireServerClient::new(
         server_ip.unwrap_or(constants::WIRE_SERVER_IP),
@@ -66,59 +67,66 @@ pub async fn start(
         server_port.unwrap_or(constants::IMDS_PORT),
         shared_state.clone(),
     );
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
     loop {
-        if telemetry_wrapper::get_reader_shutdown(shared_state.clone()) {
-            logger::write_warning(
-                "Stop signal received, closing event telemetry task.".to_string(),
-            );
-            break;
-        }
-
-        if first {
+        let sleep_duration = if first_iteration {
             if delay_start {
                 // delay start the event_reader task to give additional CPU cycles to more important threads
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                Duration::from_secs(60)
+            } else {
+                // no sleep for the first loop
+                Duration::from_micros(0)
             }
+        } else {
+            interval
+        };
+        first_iteration = false;
 
-            first = false;
-        }
-
-        // refresh vm metadata
-        match update_vm_meta_data(shared_state.clone(), &wire_server_client, &imds_client).await {
-            Ok(()) => {
-                logger::write("success updated the vm metadata.".to_string());
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                logger::write_warning("Stop signal received, closing event telemetry task.".to_string());
+                break;
             }
-            Err(e) => {
-                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
-            }
-        }
-
-        if telemetry_wrapper::get_vm_metadata(shared_state.clone()).is_some() {
-            // vm metadata is updated, process events
-            match misc_helpers::get_files(&dir_path) {
-                Ok(files) => {
-                    let file_count = files.len();
-                    let event_count =
-                        process_events_and_clean(files, &wire_server_client, shared_state.clone())
-                            .await;
-                    let message = format!("Send {} events from {} files", event_count, file_count);
-                    event_logger::write_event(
-                        event_logger::INFO_LEVEL,
-                        message,
-                        "start",
-                        "event_reader",
-                        logger::AGENT_LOGGER_KEY,
-                    )
+            _ = tokio::time::sleep(sleep_duration) => {
+                // refresh vm metadata
+                match update_vm_meta_data(shared_state.clone(), &wire_server_client, &imds_client).await {
+                    Ok(()) => {
+                        logger::write("success updated the vm metadata.".to_string());
+                    }
+                    Err(e) => {
+                        logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                    }
                 }
-                Err(e) => {
-                    logger::write_warning(format!(
-                        "Event Files not found in directory {}: {}",
-                        dir_path.display(),
-                        e
-                    ));
+
+                if telemetry_wrapper::get_vm_metadata(shared_state.clone()).is_some() {
+                    // vm metadata is updated, process events
+                    match misc_helpers::get_files(&dir_path) {
+                        Ok(files) => {
+                            let file_count = files.len();
+                            let event_count =
+                                process_events_and_clean(files, &wire_server_client, shared_state.clone())
+                                    .await;
+                            let message = format!("Send {} events from {} files", event_count, file_count);
+                            event_logger::write_event(
+                                event_logger::INFO_LEVEL,
+                                message,
+                                "start",
+                                "event_reader",
+                                logger::AGENT_LOGGER_KEY,
+                            )
+                        }
+                        Err(e) => {
+                            logger::write_warning(format!(
+                                "Event Files not found in directory {}: {}",
+                                dir_path.display(),
+                                e
+                            ));
+                        }
+                    }
                 }
             }
-        }
+        };
+
         tokio::time::sleep(interval).await;
     }
 }
@@ -353,6 +361,6 @@ mod tests {
         assert_eq!(events_read, 10);
 
         _ = fs::remove_dir_all(&temp_dir);
-        server_mock::stop(ip.to_string(), port, shared_state.clone());
+        server_mock::stop(shared_state.clone());
     }
 }
