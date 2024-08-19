@@ -111,21 +111,19 @@ fn check_linux_os_supported(version: Version) -> bool {
 fn check_azurelinux_os_supported() -> u32 {
     let version = linux::get_os_version();
     match version.split('.').next() {
-        Some(major_str) => {
-            match major_str.parse::<u32>() {
-                Ok(v) => {
-                    return v;
-                },
-                Err(_) => {
-                    logger::write(format!("Failed to parse major version: {}", major_str));
-                }
+        Some(major_str) => match major_str.parse::<u32>() {
+            Ok(v) => {
+                return v;
             }
-        }
+            Err(_) => {
+                logger::write(format!("Failed to parse major version: {}", major_str));
+            }
+        },
         None => {
             logger::write(format!("Version string is empty or malformed: {}", version));
         }
     }
-    return 0;        
+    return 0;
 }
 
 fn report_os_not_supported(config_seq_no: Option<String>) {
