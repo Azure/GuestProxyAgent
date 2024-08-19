@@ -179,27 +179,6 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         {
             delete_folder(proxy_agent_running_folder);
         }
-
-        // check if eBPF setup script exists, if exist then try launch the eBPF setup scripts
-        let ebpf_setup_script_file = setup::ebpf_setup_script_file();
-        if ebpf_setup_script_file.exists() && ebpf_setup_script_file.is_file() {
-            let setup_script_file_str =
-                misc_helpers::path_to_string(ebpf_setup_script_file.to_path_buf());
-            let output = misc_helpers::execute_command(
-                "powershell.exe",
-                vec![
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    &setup_script_file_str,
-                ],
-                1,
-            );
-            logger::write(format!(
-                "ebpf_setup: invoked script file '{}' with result: '{}'-'{}'-'{}'.",
-                setup_script_file_str, output.0, output.1, output.2
-            ));
-        }
     }
     #[cfg(not(windows))]
     {
@@ -232,6 +211,30 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
                 SERVICE_NAME, e
             ));
             process::exit(1);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // check if eBPF setup script exists, if exist then try launch the eBPF setup scripts
+        let ebpf_setup_script_file = setup::ebpf_setup_script_file();
+        if ebpf_setup_script_file.exists() && ebpf_setup_script_file.is_file() {
+            let setup_script_file_str =
+                misc_helpers::path_to_string(ebpf_setup_script_file.to_path_buf());
+            let output = misc_helpers::execute_command(
+                "powershell.exe",
+                vec![
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    &setup_script_file_str,
+                ],
+                1,
+            );
+            logger::write(format!(
+                "ebpf_setup: invoked script file '{}' with result: '{}'-'{}'-'{}'.",
+                setup_script_file_str, output.0, output.1, output.2
+            ));
         }
     }
 
