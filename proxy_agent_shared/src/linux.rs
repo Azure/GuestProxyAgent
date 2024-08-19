@@ -4,6 +4,8 @@ use crate::misc_helpers;
 use once_cell::sync::Lazy;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
+use std::process::Command;
+use std::str;
 use std::{
     io::{Error, ErrorKind},
     path::PathBuf,
@@ -27,7 +29,7 @@ struct FileSystem {
 
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
-    if (OS_INFO.os_type.contains("Linux")) {
+    if (OS_INFO.os_type().contains("Linux")) {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
@@ -44,18 +46,18 @@ pub fn get_os_version() -> String {
                 }
             }
             Err(e) => {
-                logger::write(format!("Error in getting OS version: {e}"));
+                return "Unknown".to_string();
             }
         }
     }
-    OS_INFO.version().to_string();
+    OS_INFO.version().to_string()
 }
 pub fn get_long_os_version() -> String {
     format!("Linux:{}-{}", get_os_type(), get_os_version())
 }
 
 pub fn get_os_type() -> String {
-    if (OS_INFO.os_type.contains("Linux")) {
+    if (OS_INFO.os_type().contains("Linux")) {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
@@ -72,11 +74,11 @@ pub fn get_os_type() -> String {
                 }
             }
             Err(e) => {
-                logger::write(format!("Error in getting OS name: {e}"));
+                return "Unknown".to_string();
             }
         }
     }
-    OS_INFO.os_type().to_string();
+    OS_INFO.os_type().to_string()
 }
 
 pub fn get_processor_arch() -> String {

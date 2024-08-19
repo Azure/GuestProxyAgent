@@ -17,6 +17,7 @@ use std::time::Duration;
 
 #[cfg(windows)]
 use crate::windows::service_ext;
+use proxy_agent_shared::version;
 #[cfg(windows)]
 use proxy_agent_shared::windows;
 
@@ -93,7 +94,7 @@ fn check_os_version_supported() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+//#[cfg(not(windows))]
 fn check_linux_os_supported(version: Version) -> bool {
     let linux_type = linux::get_os_type().to_lowercase();
     if linux_type.contains("ubuntu") {
@@ -101,29 +102,19 @@ fn check_linux_os_supported(version: Version) -> bool {
     } else if linux_type.contains("mariner") {
         return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
     } else if linux_type.contains("Linux") {
-        return check_azurelinux_os_supported() >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
+        match version::from_string(linux::get_os_version()) {
+            Ok(version) => {
+                return check_azurelinux_os_supported()
+                    >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
+            }
+            Err(e) => {
+                logger::write(format!("Error in getting OS version: {e}"));
+                return false;
+            }
+        }
     } else {
         return false;
     }
-}
-
-#[cfg(not(windows))]
-fn check_azurelinux_os_supported() -> u32 {
-    let version = linux::get_os_version();
-    match version.split('.').next() {
-        Some(major_str) => match major_str.parse::<u32>() {
-            Ok(v) => {
-                return v;
-            }
-            Err(_) => {
-                logger::write(format!("Failed to parse major version: {}", major_str));
-            }
-        },
-        None => {
-            logger::write(format!("Version string is empty or malformed: {}", version));
-        }
-    }
-    return 0;
 }
 
 fn report_os_not_supported(config_seq_no: Option<String>) {
