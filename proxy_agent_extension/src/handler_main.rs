@@ -17,7 +17,6 @@ use std::time::Duration;
 
 #[cfg(windows)]
 use crate::windows::service_ext;
-use proxy_agent_shared::version;
 #[cfg(windows)]
 use proxy_agent_shared::windows;
 
@@ -94,7 +93,7 @@ fn check_os_version_supported() -> bool {
     }
 }
 
-//#[cfg(not(windows))]
+#[cfg(not(windows))]
 fn check_linux_os_supported(version: Version) -> bool {
     let linux_type = linux::get_os_type().to_lowercase();
     if linux_type.contains("ubuntu") {

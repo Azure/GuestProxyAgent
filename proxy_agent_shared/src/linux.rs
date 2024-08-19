@@ -35,10 +35,9 @@ pub fn get_os_version() -> String {
             Ok(output) => {
                 let output_str =
                     str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-                let mut version = "Unknown".to_string();
                 for line in output_str.lines() {
                     if line.starts_with("VERSION_ID=") {
-                        version = line
+                        let version = line
                             .trim_start_matches("VERSION_ID=")
                             .trim_matches('"')
                             .to_string();
@@ -46,7 +45,7 @@ pub fn get_os_version() -> String {
                     }
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 return "Unknown".to_string();
             }
         }
@@ -64,10 +63,9 @@ pub fn get_os_type() -> String {
             Ok(output) => {
                 let output_str =
                     str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-                let mut name = "Unknown".to_string();
                 for line in output_str.lines() {
                     if line.starts_with("NAME=") {
-                        name = line
+                        let name = line
                             .trim_start_matches("NAME=")
                             .trim_matches('"')
                             .to_string();
@@ -75,7 +73,7 @@ pub fn get_os_type() -> String {
                     }
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 return "Unknown".to_string();
             }
         }
