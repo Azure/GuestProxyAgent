@@ -4,7 +4,7 @@ mod ebpf_obj;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::provision;
-use crate::redirector::{ip_to_string, AuditEntry};
+use crate::redirector::AuditEntry;
 use crate::shared_state::{redirector_wrapper, SharedState};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
@@ -15,6 +15,7 @@ use ebpf_obj::{
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -241,7 +242,7 @@ fn update_policy_map(
                         "redirector/linux",
                         logger::AGENT_LOGGER_KEY,
                     );
-                    let local_ip = super::string_to_ip(&local_ip);
+                    let local_ip = constants::PROXY_AGENT_IP_NETWORK_BYTE_ORDER;
                     let key = destination_entry::from_ipv4(
                         constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
                         constants::WIRE_SERVER_PORT,
@@ -532,6 +533,7 @@ fn update_redirect_policy_internal(
         Some(bpf) => match bpf.lock().unwrap().map_mut("policy_map") {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
+                    let dest_ipv4_str = &Ipv4Addr::from_bits(dest_ipv4.to_be()).to_string();
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
                     if !redirect {
                         match policy_map.remove(&key.to_array()) {
@@ -540,8 +542,7 @@ fn update_redirect_policy_internal(
                                     event_logger::INFO_LEVEL,
                                     format!(
                                         "policy_map removed for destination: {}:{}",
-                                        ip_to_string(dest_ipv4),
-                                        dest_port
+                                        dest_ipv4_str, dest_port
                                     ),
                                     "update_redirect_policy_internal",
                                     "redirector/linux",
@@ -549,7 +550,7 @@ fn update_redirect_policy_internal(
                                 );
                             }
                             Err(err) => {
-                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", dest_ipv4_str, dest_port, err));
                             }
                         };
                     } else {
@@ -563,28 +564,27 @@ fn update_redirect_policy_internal(
                             event_logger::WARN_LEVEL,
                             format!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
-                                local_ip, ip_to_string(dest_ipv4), dest_port, local_port
+                                local_ip, dest_ipv4_str, dest_port, local_port
                             ),
                             "update_redirect_policy_internal",
                             "redirector/linux",
                             logger::AGENT_LOGGER_KEY,
                         );
-                        let local_ip: u32 = super::string_to_ip(&local_ip);
+                        let local_ip: u32 = constants::PROXY_AGENT_IP_NETWORK_BYTE_ORDER;
                         let value = destination_entry::from_ipv4(local_ip, local_port);
                         match policy_map.insert(key.to_array(), value.to_array(), 0) {
                             Ok(_) => event_logger::write_event(
                                 event_logger::INFO_LEVEL,
                                 format!(
                                     "policy_map updated for destination: {}:{}",
-                                    ip_to_string(dest_ipv4),
-                                    dest_port
+                                    dest_ipv4_str, dest_port
                                 ),
                                 "update_redirect_policy_internal",
                                 "redirector/linux",
                                 logger::AGENT_LOGGER_KEY,
                             ),
                             Err(err) => {
-                                logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", dest_ipv4_str, dest_port, err));
                             }
                         }
                     }

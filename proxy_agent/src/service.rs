@@ -48,7 +48,7 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
 #[cfg(not(windows))]
 pub async fn start_service_wait() {
     let shared_state = SharedState::new();
-    start_service(shared_state).await;
+    start_service(shared_state);
 
     loop {
         // continue to sleep until the service is stopped
