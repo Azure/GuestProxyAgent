@@ -30,7 +30,7 @@ struct FileSystem {
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
-    if linux_type.contains("Linux") {
+    if linux_type.contains("linux") {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
@@ -58,7 +58,7 @@ pub fn get_long_os_version() -> String {
 
 pub fn get_os_type() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
-    if linux_type.contains("Linux") {
+    if linux_type.contains("linux") {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
