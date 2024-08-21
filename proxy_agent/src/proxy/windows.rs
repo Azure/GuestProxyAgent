@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 use crate::common::logger;
-use crate::shared_state::{shared_state_wrapper, SharedState};
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
-use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::SECURITY_LOGON_SESSION_DATA;
@@ -103,12 +101,7 @@ fn load_users() -> HashMap<u64, &'static str> {
 /*
     Get user name and user group names
 */
-pub fn get_user(
-    shared_state: Arc<Mutex<SharedState>>,
-    logon_id: u64,
-) -> std::io::Result<(String, Vec<String>)> {
-    shared_state_wrapper::check_cancellation_token(shared_state.clone(), "windows::get_user")?;
-
+pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
     let mut user_name;
     let luid = LUID {
         LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
@@ -116,8 +109,14 @@ pub fn get_user(
     };
 
     let mut data = MaybeUninit::<*mut SECURITY_LOGON_SESSION_DATA>::uninit();
-    let _status = unsafe { Identity::LsaGetLogonSessionData(&luid, data.as_mut_ptr()) };
-
+    let status = unsafe { Identity::LsaGetLogonSessionData(&luid, data.as_mut_ptr()) };
+    if status != 0 {
+        let e = Error::from_raw_os_error(status as i32);
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!("LsaGetLogonSessionData failed with error: {}", e),
+        ));
+    }
     let session_data = unsafe { *data.assume_init() };
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
@@ -361,7 +360,6 @@ mod tests {
 
     #[test]
     fn get_user_test() {
-        let shared_state = crate::shared_state::SharedState::new();
         unsafe {
             let mut data = MaybeUninit::<*mut LUID>::uninit();
             let mut count: u32 = 10;
@@ -375,7 +373,7 @@ mod tests {
                 println!("LUID: {:?} - {:?}", uid.HighPart, uid.LowPart);
                 let logon_id: u64 = (uid.HighPart as u64) << 32 | uid.LowPart as u64;
                 println!("LogonId: {}", logon_id);
-                let user = super::get_user(shared_state.clone(), logon_id).unwrap();
+                let user = super::get_user(logon_id).unwrap();
                 let user_name = user.0;
                 let user_groups = user.1;
                 println!("UserName: {}", user_name);

@@ -11,14 +11,15 @@ use std::time::Instant;
 
 pub struct Connection {}
 
+#[derive(Clone)]
 pub struct ConnectionContext {
     pub id: u128,
     pub stream: Arc<Mutex<TcpStream>>,
     pub client_addr: SocketAddr,
     pub now: Instant,
     pub claims: Option<Claims>,
-    pub method: Option<hyper::Method>,
-    pub url: String,
+    pub method: hyper::Method,
+    pub url: hyper::Uri,
     pub ip: Option<Ipv4Addr>, // currently, we only support IPv4
     pub port: u16,
 }
@@ -27,25 +28,13 @@ impl ConnectionContext {
     // try make sure the request could skip the sig
     // and stream the body to the server directly
     pub fn should_skip_sig(&self) -> bool {
-        let url = self.url.to_lowercase();
+        let url = self.url.to_string().to_lowercase();
 
         // currently, we agreed to skip the sig for those requests:
         //      o PUT   /vmAgentLog
         //      o POST  /machine/?comp=telemetrydata
-
-        if let Some(method) = &self.method {
-            return (method == hyper::Method::PUT || method == hyper::Method::POST)
-                && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog");
-        }
-
-        false
-    }
-
-    pub fn request_method(&self) -> String {
-        if let Some(method) = &self.method {
-            return method.to_string();
-        }
-        "None".to_string()
+        (self.method == hyper::Method::PUT || self.method == hyper::Method::POST)
+            && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
     }
 
     pub fn request_ip(&self) -> String {

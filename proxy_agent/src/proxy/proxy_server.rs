@@ -10,7 +10,7 @@ use crate::shared_state::{
 use crate::{provision, redirector};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
-use hyper::body::{Body, Bytes, Frame, Incoming};
+use hyper::body::{Bytes, Frame, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
 use hyper::StatusCode;
@@ -23,9 +23,12 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tower::Service;
+use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
 
 const INITIAL_CONNECTION_ID: u128 = 0;
-const MAX_REQUEST_BODY_SIZE: u64 = 1024 * 100; // 100KB
+const REQUEST_BODY_LOW_LIMIT_SIZE: usize = 1024 * 100; // 100KB
+const REQUEST_BODY_LARGE_LIMIT_SIZE: usize = 1024 * REQUEST_BODY_LOW_LIMIT_SIZE; // 100MB
 
 pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
@@ -153,14 +156,31 @@ async fn accept_one_reqeust(
                 client_addr,
                 id: INITIAL_CONNECTION_ID,
                 now: std::time::Instant::now(),
-                method: None,
-                url: String::new(),
+                method: req.method().clone(),
+                url: req.uri().clone(),
                 ip: None,
                 port: 0,
                 claims: None,
             };
 
-            handle_request(req, connection, shared_state)
+            // use tower service as middleware to limit the request body size
+            let low_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LOW_LIMIT_SIZE);
+            let large_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LARGE_LIMIT_SIZE);
+            let low_limited_tower_service = tower::ServiceBuilder::new().layer(low_limit_layer);
+            let large_limited_tower_service = tower::ServiceBuilder::new().layer(large_limit_layer);
+            let tower_service_layer = if connection.should_skip_sig() {
+                // skip signature check for large request
+                large_limited_tower_service.clone()
+            } else {
+                // use low limit for normal request
+                low_limited_tower_service.clone()
+            };
+
+            let connection = Arc::new(Mutex::new(connection));
+            let mut tower_service = tower_service_layer.service_fn(move |req: Request<_>| {
+                handle_request(req, connection.clone(), shared_state.clone())
+            });
+            tower_service.call(req)
         });
 
         // Use an adapter to access something implementing `tokio::io` traits as if they implement
@@ -177,30 +197,41 @@ async fn accept_one_reqeust(
 }
 
 async fn handle_request(
-    request: Request<hyper::body::Incoming>,
-    mut connection: ConnectionContext,
+    request: Request<Limited<hyper::body::Incoming>>,
+    connection: Arc<Mutex<ConnectionContext>>,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let connection_id = proxy_listener_wrapper::increase_connection_count(shared_state.clone());
+
+    // re-create the connection context
+    let mut connection = match connection.lock() {
+        Ok(connection) => ConnectionContext {
+            id: connection_id,
+            stream: connection.stream.clone(),
+            client_addr: connection.client_addr,
+            now: connection.now,
+            claims: connection.claims.clone(),
+            method: connection.method.clone(),
+            url: connection.url.clone(),
+            ip: connection.ip,
+            port: connection.port,
+        },
+        Err(e) => {
+            Connection::write_error(
+                connection_id,
+                format!("Failed to get connection lock: {}", e),
+            );
+            return Ok(empty_response(StatusCode::BAD_GATEWAY));
+        }
+    };
     connection.id = connection_id;
-    connection.method = Some(request.method().clone());
-    connection.url = request.uri().to_string();
     Connection::write_information(
         connection_id,
         format!(
             "Got request from {} for {} {}",
-            connection.client_addr,
-            connection.request_method(),
-            &connection.url
+            connection.client_addr, connection.method, connection.url
         ),
     );
-
-    if let Err(e) =
-        shared_state_wrapper::check_cancellation_token(shared_state.clone(), "handle_request")
-    {
-        Connection::write_information(connection_id, format!("{}", e));
-        return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
-    }
 
     let client_source_ip = connection.client_addr.ip();
     let client_source_port = connection.client_addr.port();
@@ -259,14 +290,6 @@ async fn handle_request(
     let claims = match Claims::from_audit_entry(&entry, client_source_ip, shared_state.clone()) {
         Ok(claims) => claims,
         Err(e) => {
-            if let Err(e) = shared_state_wrapper::check_cancellation_token(
-                shared_state.clone(),
-                "handle_request",
-            ) {
-                Connection::write_information(connection_id, format!("{}", e));
-                return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
-            }
-
             Connection::write_warning(
                 connection_id,
                 format!("Failed to get claims from audit entry: {}", e),
@@ -367,8 +390,7 @@ async fn handle_request(
             connection_id,
             format!(
                 "Skip compute signature for the request for {} {}",
-                connection.request_method(),
-                &connection.url
+                connection.method, connection.url
             ),
         );
     } else {
@@ -488,7 +510,7 @@ fn log_connection_summary(
         processFullPath: claims.processFullPath.to_string(),
         processCmdLine: claims.processCmdLine.to_string(),
         runAsElevated: claims.runAsElevated,
-        method: connection.request_method(),
+        method: connection.method.to_string(),
         url: connection.url.to_string(),
         ip: connection.request_ip(),
         port: connection.port,
@@ -522,32 +544,10 @@ fn empty_response(status_code: StatusCode) -> Response<BoxBody<Bytes, hyper::Err
 
 async fn handle_request_with_signature(
     connection: ConnectionContext,
-    request: Request<hyper::body::Incoming>,
+    request: Request<Limited<Incoming>>,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let (head, body) = request.into_parts();
-    let size = match body.size_hint().upper() {
-        Some(size) => size,
-        None => {
-            Connection::write_warning(
-                connection.id,
-                "Failed to get the imcoming request body size".to_string(),
-            );
-            return Ok(empty_response(StatusCode::LENGTH_REQUIRED));
-        }
-    };
-
-    if size > MAX_REQUEST_BODY_SIZE {
-        Connection::write_warning(
-            connection.id,
-            format!(
-                "The imcoming request body size {} exceeds the limit {}",
-                size, MAX_REQUEST_BODY_SIZE
-            ),
-        );
-        return Ok(empty_response(StatusCode::PAYLOAD_TOO_LARGE));
-    }
-
     let whole_body = match body.collect().await {
         Ok(data) => data.to_bytes(),
         Err(e) => {
@@ -564,8 +564,8 @@ async fn handle_request_with_signature(
         format!(
             "Received the client request body (len={}) for {} {}",
             whole_body.len(),
-            connection.request_method(),
-            &connection.url,
+            connection.method,
+            connection.url,
         ),
     );
 
@@ -716,15 +716,35 @@ mod tests {
             crate::common::http::send_request(host, port, request, logger::write_warning)
                 .await
                 .unwrap();
-
-        // stop listener
-        proxy_server::stop(shared_state);
-
         assert_eq!(
             http::StatusCode::MISDIRECTED_REQUEST,
             response.status(),
-            "response.status mismatched."
+            "response.status must be MISDIRECTED_REQUEST."
         );
+
+        // test large request body
+        let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
+        let request = crate::common::http::build_request(
+            "POST",
+            &url,
+            &HashMap::new(),
+            Some(body.as_slice()),
+            key_keeper_wrapper::get_current_key_guid(shared_state.clone()),
+            key_keeper_wrapper::get_current_key_value(shared_state.clone()),
+        )
+        .unwrap();
+        let response =
+            crate::common::http::send_request(host, port, request, logger::write_warning)
+                .await
+                .unwrap();
+        assert_eq!(
+            http::StatusCode::PAYLOAD_TOO_LARGE,
+            response.status(),
+            "response.status must be PAYLOAD_TOO_LARGE."
+        );
+
+        // stop listener
+        proxy_server::stop(shared_state);
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);

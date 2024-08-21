@@ -9,7 +9,7 @@ pub mod proxy_summary;
 #[cfg(windows)]
 mod windows;
 
-use crate::shared_state::{shared_state_wrapper, SharedState};
+use crate::shared_state::SharedState;
 use crate::{redirector::AuditEntry, shared_state::proxy_wrapper};
 use serde_derive::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -54,7 +54,7 @@ fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> std::io::Re
     match proxy_wrapper::get_user(shared_state.clone(), logon_id) {
         Some(user) => Ok(user),
         None => {
-            let user = User::from_logon_id(shared_state.clone(), logon_id)?;
+            let user = User::from_logon_id(logon_id)?;
             proxy_wrapper::add_user(shared_state.clone(), user.clone());
             Ok(user)
         }
@@ -100,7 +100,6 @@ impl Claims {
         client_ip: IpAddr,
         shared_state: Arc<Mutex<SharedState>>,
     ) -> std::io::Result<Self> {
-        shared_state_wrapper::check_cancellation_token(shared_state.clone(), "from_audit_entry")?;
         let p = Process::from_pid(entry.process_id)?;
         let u = get_user(entry.logon_id, shared_state)?;
         Ok(Claims {
@@ -166,17 +165,13 @@ impl Process {
 }
 
 impl User {
-    pub fn from_logon_id(
-        shared_state: Arc<Mutex<SharedState>>,
-        logon_id: u64,
-    ) -> std::io::Result<Self> {
-        shared_state_wrapper::check_cancellation_token(shared_state.clone(), "from_logon_id")?;
+    pub fn from_logon_id(logon_id: u64) -> std::io::Result<Self> {
         let user_name;
         let mut user_groups: Vec<String> = Vec::new();
 
         #[cfg(windows)]
         {
-            let user = windows::get_user(shared_state.clone(), logon_id)?;
+            let user = windows::get_user(logon_id)?;
             user_name = user.0;
             for g in user.1 {
                 user_groups.push(g.to_string());

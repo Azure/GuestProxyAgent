@@ -130,30 +130,6 @@ pub mod shared_state_wrapper {
     pub fn get_cancellation_token(shared_state: Arc<Mutex<SharedState>>) -> CancellationToken {
         shared_state.lock().unwrap().cancellation_token.clone()
     }
-
-    /// Check the cancellation token and return error if it is cancelled
-    pub fn check_cancellation_token(
-        shared_state: Arc<Mutex<SharedState>>,
-        fn_name: &str,
-    ) -> std::io::Result<()> {
-        if shared_state
-            .lock()
-            .unwrap()
-            .cancellation_token
-            .is_cancelled()
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                format!(
-                    "Stop signal received, {} is interrupted by cancellation token",
-                    fn_name
-                ),
-            ));
-        }
-
-        // not cancelled
-        Ok(())
-    }
 }
 
 /// wrapper functions for KeyKeeper related state fields
