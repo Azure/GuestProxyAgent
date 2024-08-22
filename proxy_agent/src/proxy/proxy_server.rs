@@ -109,76 +109,49 @@ async fn accept_one_reqeust(
     );
     let shared_state = shared_state.clone();
     tokio::spawn(async move {
-        // Convert the stream to a std stream
-        let std_stream = match stream.into_std() {
-            Ok(std_stream) => std_stream,
+        let (stream, cloned_std_stream) = match set_stream_read_time_out(stream) {
+            Ok((stream, cloned_std_stream)) => (stream, cloned_std_stream),
             Err(e) => {
-                Connection::write_warning(
+                Connection::write_error(
                     INITIAL_CONNECTION_ID,
-                    format!("ProxyListener stream error {}", e),
+                    format!("Failed to set read timeout: {}", e),
                 );
                 return;
             }
         };
-        // Set the read timeout
-        _ = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-
-        // Clone the stream for the service_fn
-        let cloned_std_stream = match std_stream.try_clone() {
-            Ok(cloned_stream) => cloned_stream,
-            Err(e) => {
-                Connection::write_warning(
-                    INITIAL_CONNECTION_ID,
-                    format!("ProxyListener stream clone error {}", e),
-                );
-                return;
-            }
-        };
-
-        // Convert the std stream back to a tokio stream
-        let stream = match TcpStream::from_std(std_stream) {
-            Ok(stream) => stream,
-            Err(e) => {
-                Connection::write_warning(
-                    INITIAL_CONNECTION_ID,
-                    format!("ProxyListener: TcpStream::from_std error {}", e),
-                );
-                return;
-            }
-        };
-
         let cloned_std_stream = Arc::new(Mutex::new(cloned_std_stream));
         // move client addr, cloned std stream and shared_state to the service_fn
         let service = service_fn(move |req| {
-            let shared_state = shared_state.clone();
-            let connection = ConnectionContext {
-                stream: cloned_std_stream.clone(),
-                client_addr,
-                id: INITIAL_CONNECTION_ID,
-                now: std::time::Instant::now(),
-                method: req.method().clone(),
-                url: req.uri().clone(),
-                ip: None,
-                port: 0,
-                claims: None,
-            };
-
             // use tower service as middleware to limit the request body size
             let low_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LOW_LIMIT_SIZE);
             let large_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LARGE_LIMIT_SIZE);
             let low_limited_tower_service = tower::ServiceBuilder::new().layer(low_limit_layer);
             let large_limited_tower_service = tower::ServiceBuilder::new().layer(large_limit_layer);
-            let tower_service_layer = if connection.should_skip_sig() {
-                // skip signature check for large request
-                large_limited_tower_service.clone()
-            } else {
-                // use low limit for normal request
-                low_limited_tower_service.clone()
-            };
+            let tower_service_layer =
+                if crate::common::http::should_skip_sig(req.method().clone(), req.uri().clone()) {
+                    // skip signature check for large request
+                    large_limited_tower_service.clone()
+                } else {
+                    // use low limit for normal request
+                    low_limited_tower_service.clone()
+                };
 
-            let connection = Arc::new(Mutex::new(connection));
+            let shared_state = shared_state.clone();
+            let cloned_std_stream = cloned_std_stream.clone();
             let mut tower_service = tower_service_layer.service_fn(move |req: Request<_>| {
-                handle_request(req, connection.clone(), shared_state.clone())
+                let connection = ConnectionContext {
+                    stream: cloned_std_stream.clone(),
+                    client_addr,
+                    id: INITIAL_CONNECTION_ID,
+                    now: std::time::Instant::now(),
+                    method: req.method().clone(),
+                    url: req.uri().clone(),
+                    ip: None,
+                    port: 0,
+                    claims: None,
+                };
+
+                handle_request(req, connection, shared_state.clone())
             });
             tower_service.call(req)
         });
@@ -196,34 +169,30 @@ async fn accept_one_reqeust(
     });
 }
 
+// Set the read timeout for the stream
+fn set_stream_read_time_out(
+    stream: TcpStream,
+) -> std::io::Result<(TcpStream, std::net::TcpStream)> {
+    // Convert the stream to a std stream
+    let std_stream = stream.into_std()?;
+    // Set the read timeout
+    _ = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+
+    // Clone the stream for the service_fn
+    let cloned_std_stream = std_stream.try_clone()?;
+
+    // Convert the std stream back
+    let streamd = TcpStream::from_std(std_stream)?;
+
+    Ok((streamd, cloned_std_stream))
+}
+
 async fn handle_request(
     request: Request<Limited<hyper::body::Incoming>>,
-    connection: Arc<Mutex<ConnectionContext>>,
+    mut connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let connection_id = proxy_listener_wrapper::increase_connection_count(shared_state.clone());
-
-    // re-create the connection context
-    let mut connection = match connection.lock() {
-        Ok(connection) => ConnectionContext {
-            id: connection_id,
-            stream: connection.stream.clone(),
-            client_addr: connection.client_addr,
-            now: connection.now,
-            claims: connection.claims.clone(),
-            method: connection.method.clone(),
-            url: connection.url.clone(),
-            ip: connection.ip,
-            port: connection.port,
-        },
-        Err(e) => {
-            Connection::write_error(
-                connection_id,
-                format!("Failed to get connection lock: {}", e),
-            );
-            return Ok(empty_response(StatusCode::BAD_GATEWAY));
-        }
-    };
     connection.id = connection_id;
     Connection::write_information(
         connection_id,

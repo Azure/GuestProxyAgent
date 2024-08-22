@@ -295,6 +295,19 @@ where
         )
     })
 }
+
+// try make sure the request could skip the sig
+// and stream the body to the server directly
+pub fn should_skip_sig(method: hyper::Method, relative_uri: hyper::Uri) -> bool {
+    let url = relative_uri.to_string().to_lowercase();
+
+    // currently, we agreed to skip the sig for those requests:
+    //      o PUT   /vmAgentLog
+    //      o POST  /machine/?comp=telemetrydata
+    (method == hyper::Method::PUT || method == hyper::Method::POST)
+        && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
+}
+
 /*
     StringToSign = Method + "\n" +
            HexEncoded(Body) + "\n" +

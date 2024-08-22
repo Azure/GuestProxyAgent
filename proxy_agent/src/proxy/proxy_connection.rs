@@ -25,16 +25,8 @@ pub struct ConnectionContext {
 }
 
 impl ConnectionContext {
-    // try make sure the request could skip the sig
-    // and stream the body to the server directly
     pub fn should_skip_sig(&self) -> bool {
-        let url = self.url.to_string().to_lowercase();
-
-        // currently, we agreed to skip the sig for those requests:
-        //      o PUT   /vmAgentLog
-        //      o POST  /machine/?comp=telemetrydata
-        (self.method == hyper::Method::PUT || self.method == hyper::Method::POST)
-            && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
+        crate::common::http::should_skip_sig(self.method.clone(), self.url.clone())
     }
 
     pub fn request_ip(&self) -> String {
