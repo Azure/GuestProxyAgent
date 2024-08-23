@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
-use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::shared_state::{
     agent_status_wrapper, proxy_listener_wrapper, telemetry_wrapper, SharedState,
@@ -95,7 +94,12 @@ fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentSt
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status,
-        monitorStatus: monitor::get_status(shared_state.clone()),
+        // monitorStatus is proxy_agent_status itself status
+        monitorStatus: ProxyAgentDetailStatus {
+            status: ModuleState::RUNNING.to_string(),
+            message: "proxy_agent_status thread started.".to_string(),
+            states: None,
+        },
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
