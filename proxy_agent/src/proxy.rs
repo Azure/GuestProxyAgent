@@ -50,14 +50,14 @@ pub struct User {
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
 
-fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> User {
+fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<User> {
     // cache the logon_id -> user_name
     match proxy_wrapper::get_user(shared_state.clone(), logon_id) {
-        Some(user) => user,
+        Some(user) => Ok(user),
         None => {
-            let user = User::from_logon_id(logon_id);
+            let user = User::from_logon_id(logon_id)?;
             proxy_wrapper::add_user(shared_state.clone(), user.clone());
-            user
+            Ok(user)
         }
     }
 }
@@ -100,10 +100,10 @@ impl Claims {
         entry: &AuditEntry,
         client_ip: IpAddr,
         shared_state: Arc<Mutex<SharedState>>,
-    ) -> Self {
+    ) -> std::io::Result<Self> {
         let p = Process::from_pid(entry.process_id);
-        let u = get_user(entry.logon_id, shared_state);
-        Claims {
+        let u = get_user(entry.logon_id, shared_state)?;
+        Ok(Claims {
             userId: entry.logon_id,
             userName: u.user_name.to_string(),
             userGroups: u.user_groups.clone(),
@@ -113,7 +113,7 @@ impl Claims {
             processCmdLine: p.command_line.to_string(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
-        }
+        })
     }
 }
 
@@ -178,13 +178,13 @@ impl Process {
 }
 
 impl User {
-    pub fn from_logon_id(logon_id: u64) -> Self {
+    pub fn from_logon_id(logon_id: u64) -> std::io::Result<Self> {
         let user_name;
         let mut user_groups: Vec<String> = Vec::new();
 
         #[cfg(windows)]
         {
-            let user = windows::get_user(logon_id);
+            let user = windows::get_user(logon_id)?;
             user_name = user.0;
             for g in user.1 {
                 user_groups.push(g.to_string());
@@ -208,11 +208,11 @@ impl User {
             }
         }
 
-        User {
+        Ok(User {
             logon_id,
             user_name: user_name.to_string(),
             user_groups: user_groups.clone(),
-        }
+        })
     }
 }
 
@@ -241,7 +241,7 @@ mod tests {
         }
         let shared_state = shared_state::SharedState::new();
 
-        let user = super::get_user(logon_id, shared_state.clone());
+        let user = super::get_user(logon_id, shared_state.clone()).unwrap();
         println!("UserName: {}", user.user_name);
         println!("UserGroups: {}", user.user_groups.join(", "));
         assert_eq!(expected_user_name, user.user_name, "user name mismatch.");
@@ -281,7 +281,8 @@ mod tests {
         let shared_state = shared_state::SharedState::new();
 
         let claims =
-            Claims::from_audit_entry(&entry, IpAddr::from([127, 0, 0, 1]), shared_state.clone());
+            Claims::from_audit_entry(&entry, IpAddr::from([127, 0, 0, 1]), shared_state.clone())
+                .unwrap();
         println!("{}", serde_json::to_string(&claims).unwrap());
 
         assert!(claims.runAsElevated, "runAsElevated must be true");
