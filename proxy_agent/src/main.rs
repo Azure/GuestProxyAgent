@@ -5,7 +5,6 @@ pub mod acl;
 pub mod common;
 pub mod host_clients;
 pub mod key_keeper;
-pub mod monitor;
 pub mod provision;
 pub mod proxy;
 pub mod proxy_agent_status;
