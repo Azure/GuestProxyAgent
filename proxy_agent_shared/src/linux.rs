@@ -36,9 +36,7 @@ pub fn get_os_version() -> String {
     if linux_type == "linux" {
         match fs::read_to_string(OS_RELEASE_PATH) {
             Ok(output) => {
-                let output_str =
-                    str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-                for line in output_str.lines() {
+                for line in output() {
                     if line.starts_with(OS_VERSION) {
                         let version = line
                             .trim_start_matches(OS_VERSION)
@@ -62,11 +60,9 @@ pub fn get_long_os_version() -> String {
 pub fn get_os_type() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
     if linux_type == "linux" {
-        match Command::new("cat").arg("/etc/os-release").output() {
+        match fs::read_to_string(OS_RELEASE_PATH)  {
             Ok(output) => {
-                let output_str =
-                    str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-                for line in output_str.lines() {
+                for line in output {
                     if line.starts_with(OS_NAME) {
                         let name = line
                             .trim_start_matches(OS_NAME)
