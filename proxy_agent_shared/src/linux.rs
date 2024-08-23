@@ -4,7 +4,6 @@ use crate::misc_helpers;
 use once_cell::sync::Lazy;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
-use std::process::Command;
 use std::{fs, str};
 use std::{
     io::{Error, ErrorKind},
