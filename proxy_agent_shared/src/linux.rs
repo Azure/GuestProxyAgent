@@ -36,7 +36,7 @@ pub fn get_os_version() -> String {
     if linux_type == "linux" {
         match fs::read_to_string(OS_RELEASE_PATH) {
             Ok(output) => {
-                for line in output() {
+                for line in output.lines() {
                     if line.starts_with(OS_VERSION) {
                         let version = line
                             .trim_start_matches(OS_VERSION)
@@ -62,7 +62,7 @@ pub fn get_os_type() -> String {
     if linux_type == "linux" {
         match fs::read_to_string(OS_RELEASE_PATH) {
             Ok(output) => {
-                for line in output {
+                for line in output.lines() {
                     if line.starts_with(OS_NAME) {
                         let name = line
                             .trim_start_matches(OS_NAME)
