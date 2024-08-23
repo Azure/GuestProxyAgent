@@ -13,6 +13,9 @@ use std::{
 
 pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
 pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
+pub const OS_RELEASE_PATH: &str = "/etc/os-release";
+pub const OS_VERSION: &str = "VERSION_ID=";
+pub const OS_NAME: &str = "NAME=";
 
 #[derive(Serialize, Deserialize)]
 struct FileMount {
@@ -30,15 +33,15 @@ struct FileSystem {
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
-    if linux_type.contains("linux") {
-        match Command::new("cat").arg("/etc/os-release").output() {
+    if linux_type == "linux" {
+        match fs::read_to_string(OS_RELEASE_PATH) {
             Ok(output) => {
                 let output_str =
                     str::from_utf8(&output.stdout).expect("Failed to convert output to string");
                 for line in output_str.lines() {
-                    if line.starts_with("VERSION_ID=") {
+                    if line.starts_with(OS_VERSION) {
                         let version = line
-                            .trim_start_matches("VERSION_ID=")
+                            .trim_start_matches(OS_VERSION)
                             .trim_matches('"')
                             .to_string();
                         return version;
@@ -58,15 +61,15 @@ pub fn get_long_os_version() -> String {
 
 pub fn get_os_type() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
-    if linux_type.contains("linux") {
+    if linux_type == "linux" {
         match Command::new("cat").arg("/etc/os-release").output() {
             Ok(output) => {
                 let output_str =
                     str::from_utf8(&output.stdout).expect("Failed to convert output to string");
                 for line in output_str.lines() {
-                    if line.starts_with("NAME=") {
+                    if line.starts_with(OS_NAME) {
                         let name = line
-                            .trim_start_matches("NAME=")
+                            .trim_start_matches(OS_NAME)
                             .trim_matches('"')
                             .to_string();
                         return name;
