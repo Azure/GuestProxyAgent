@@ -60,7 +60,7 @@ pub fn get_long_os_version() -> String {
 pub fn get_os_type() -> String {
     let linux_type = OS_INFO.os_type().to_string().to_lowercase();
     if linux_type == "linux" {
-        match fs::read_to_string(OS_RELEASE_PATH)  {
+        match fs::read_to_string(OS_RELEASE_PATH) {
             Ok(output) => {
                 for line in output {
                     if line.starts_with(OS_NAME) {
