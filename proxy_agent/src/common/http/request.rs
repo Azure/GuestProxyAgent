@@ -200,15 +200,22 @@ impl Request {
 
         let path = String::from(url.path());
 
-        let parameters = url.query_pairs();
+        // The query_pairs method from the Url struct returns an iterator over the query pairs, which are automatically percent-decoded
+        // To get the raw percent-encoded values, we need to manually parse the query string
+        let query = url.query().unwrap_or("");
         let mut pairs: HashMap<String, String> = HashMap::new();
-        let mut canonicalized_parameters = String::new();
-        if parameters.count() > 0 {
-            for p in parameters {
-                // Convert the parameter name to lowercase
-                pairs.insert(p.0.to_lowercase(), p.1.to_string());
+        for pair in query.split('&') {
+            let mut split = pair.splitn(2, '=');
+            let key = split.next().unwrap_or("");
+            let value = split.next().unwrap_or("");
+            if key.is_empty() || value.is_empty() {
+                continue;
             }
+            pairs.insert(key.to_lowercase(), value.to_string());
+        }
 
+        let mut canonicalized_parameters = String::new();
+        if !pairs.is_empty() {
             // Sort the parameters lexicographically by parameter name, in ascending order.
             let mut first = true;
             for key in pairs.keys().sorted() {
@@ -345,7 +352,7 @@ mod tests {
 
     #[test]
     fn get_url_path_and_canonicalized_parameters_test() {
-        let mut raw_string = "GET /machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&type=hostingEnvironmentConfig&incarnation=1 HTTP/1.1\r\n".to_string();
+        let mut raw_string = "GET /machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f HTTP/1.1\r\n".to_string();
         raw_string.push_str("Connection: Keep-Alive\r\n");
         raw_string.push_str("Accept: */*\r\n");
         raw_string.push_str(super::super::CRLF);
@@ -355,7 +362,7 @@ mod tests {
         assert_eq!("/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2",
          path_para.0, "path mismatch");
         assert_eq!(
-            "comp=config&incarnation=1&type=hostingEnvironmentConfig", path_para.1,
+            "comp=config&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
             "query parameters mismatch"
         );
     }
