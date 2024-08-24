@@ -203,15 +203,22 @@ impl Request {
         // The query_pairs method from the Url struct returns an iterator over the query pairs, which are automatically percent-decoded
         // To get the raw percent-encoded values, we need to manually parse the query string
         let query = url.query().unwrap_or("");
-        let mut pairs: HashMap<String, String> = HashMap::new();
+        let mut pairs: HashMap<String, (String, String)> = HashMap::new();
         for pair in query.split('&') {
             let mut split = pair.splitn(2, '=');
             let key = split.next().unwrap_or("");
-            let value = split.next().unwrap_or("");
-            if key.is_empty() || value.is_empty() {
+            if key.is_empty() {
+                // parameter key is must have while value is optional
                 continue;
             }
-            pairs.insert(key.to_lowercase(), value.to_string());
+            let value = split.next().unwrap_or("");
+            let key = key.to_lowercase();
+            pairs.insert(
+                // add the query paramter value for sorting,
+                // just in case of duplicate keys by value lexicographically in ascending order.
+                format!("{}{}", key, value),
+                (key.to_lowercase(), value.to_string()),
+            );
         }
 
         let mut canonicalized_parameters = String::new();
@@ -223,8 +230,13 @@ impl Request {
                     canonicalized_parameters.push('&');
                 }
                 first = false;
+                let query_pair = pairs[key].clone();
                 // Join each parameter key value pair with '='
-                let p = format!("{}={}", key, pairs[key]);
+                let p = if query_pair.1.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{}={}", query_pair.0, query_pair.1)
+                };
                 canonicalized_parameters.push_str(&p);
             }
         }
@@ -352,7 +364,7 @@ mod tests {
 
     #[test]
     fn get_url_path_and_canonicalized_parameters_test() {
-        let mut raw_string = "GET /machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f HTTP/1.1\r\n".to_string();
+        let mut raw_string = "GET /machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&keyOnly&comp=again&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f HTTP/1.1\r\n".to_string();
         raw_string.push_str("Connection: Keep-Alive\r\n");
         raw_string.push_str("Accept: */*\r\n");
         raw_string.push_str(super::super::CRLF);
@@ -362,7 +374,7 @@ mod tests {
         assert_eq!("/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2",
          path_para.0, "path mismatch");
         assert_eq!(
-            "comp=config&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
+            "comp=again&comp=config&incarnation=1&keyonly&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
             "query parameters mismatch"
         );
     }
