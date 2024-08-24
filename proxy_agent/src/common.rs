@@ -4,6 +4,7 @@ pub mod config;
 pub mod constants;
 pub mod helpers;
 pub mod http;
+pub mod hyper_client;
 pub mod logger;
 
 #[cfg(windows)]

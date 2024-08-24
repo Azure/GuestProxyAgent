@@ -1,12 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::{
-    common::{
-        constants,
-        http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
-    },
+    common::{constants, hyper_client, logger},
     proxy::{proxy_connection::Connection, Claims},
 };
+use http::StatusCode;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -632,81 +630,58 @@ impl Clone for Key {
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-// base_url must end with '/'
-pub fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
-    let url = base_url.join(STATUS_URL).unwrap();
-    let mut req = Request::new(STATUS_URL.to_string(), "GET".to_string());
-    req.headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());
-    req.headers.add_header(
-        constants::DATE_HEADER.to_string(),
-        misc_helpers::get_date_time_rfc1123_string(),
-    );
-    let mut http_request = HttpRequest::new(url, req);
-    http_request
-        .request
-        .headers
-        .add_header("Host".to_string(), http_request.get_host());
-
-    let response = http::get_response_in_string(&mut http_request)?;
-    if response.status != Response::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Host response {}", response.status),
-        ));
-    }
-
-    let status: KeyStatus = serde_json::from_str(&response.get_body_as_string()?)?;
+pub async fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
+    let url = base_url.join(STATUS_URL).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "Failed to join {} and {}, error: {}",
+                base_url, STATUS_URL, e
+            ),
+        )
+    })?;
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    let status: KeyStatus =
+        hyper_client::get(url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
 }
 
 // base_url must end with '/'
-pub fn acquire_key(base_url: Url) -> std::io::Result<Key> {
-    let url = base_url.join(KEY_URL).unwrap();
-    let mut req = Request::new(KEY_URL.to_string(), "POST".to_string());
-    req.headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());
-    req.headers.add_header(
-        constants::DATE_HEADER.to_string(),
-        misc_helpers::get_date_time_rfc1123_string(),
-    );
-    req.headers
-        .add_header("Content-Type".to_string(), "application/json".to_string());
-    req.set_body_as_string(r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string());
-    req.headers.add_header(
-        headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-        req.get_body_len().to_string(),
-    );
-    let mut http_request = HttpRequest::new(url, req);
-    http_request
-        .request
-        .headers
-        .add_header("Host".to_string(), http_request.get_host());
+pub async fn acquire_key(base_url: Url) -> std::io::Result<Key> {
+    let url = base_url.join(KEY_URL).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
+        )
+    })?;
 
-    let response = http::get_response_in_string(&mut http_request)?;
-    if response.status != Response::OK {
+    let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
+    let request = hyper_client::build_request(hyper::Method::POST, url.clone(), &headers, Some(body.as_bytes()), None, None)?;
+    let response = match hyper_client::send_request(&host, port, request, logger::write_warning).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("Failed to send acquire key, error: {}", e),
+            ));
+        }
+    };
+    if response.status() != StatusCode::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("{} - {}", response.status, response.get_body_as_string()?),
+            format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
-
-    let response_body = response.get_body_as_string()?;
-    match serde_json::from_str(&response_body) {
-        Ok(key) => Ok(key),
-        Err(e) => Err(Error::new(
-            ErrorKind::InvalidData,
-            format!(
-                "Cannot parse the json response body {} with error {}",
-                response_body, e
-            ),
-        )),
-    }
+    hyper_client::read_response_body(response).await
 }
 
-// base_url must end with '/'
 pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
     let url = base_url
