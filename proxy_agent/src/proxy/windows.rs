@@ -99,71 +99,85 @@ fn load_users() -> HashMap<u64, &'static str> {
 /*
     Get user name and user group names
 */
-pub fn get_user(logon_id: u64) -> (String, Vec<String>) {
-    unsafe {
-        let mut user_name = "undefined".to_string();
-        let luid = LUID {
-            LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
-            HighPart: (logon_id >> 32) as i32,
-        };
+pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
+    let mut user_name;
+    let luid = LUID {
+        LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
+        HighPart: (logon_id >> 32) as i32,
+    };
 
-        let mut data = MaybeUninit::<*mut SECURITY_LOGON_SESSION_DATA>::uninit();
-        let _status = Identity::LsaGetLogonSessionData(&luid, data.as_mut_ptr());
+    let mut data = MaybeUninit::<*mut SECURITY_LOGON_SESSION_DATA>::uninit();
+    let status = unsafe { Identity::LsaGetLogonSessionData(&luid, data.as_mut_ptr()) };
+    if status != 0 {
+        let e = Error::from_raw_os_error(status as i32);
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!(
+                "LsaGetLogonSessionData failed ({}) with os error: {}",
+                status, e
+            ),
+        ));
+    }
 
-        let session_data = *data.assume_init();
-        if session_data.UserName.Length != 0 {
-            user_name = from_unicode_string(&session_data.UserName);
-        }
-        let mut domain_user_name = user_name.clone();
-        if session_data.LogonDomain.Length != 0 {
-            domain_user_name = format!(
-                "{}\\{}",
-                from_unicode_string(&session_data.LogonDomain),
-                domain_user_name
-            );
-        }
+    let session_data = unsafe { *data.assume_init() };
+    if session_data.UserName.Length != 0 {
+        user_name = from_unicode_string(&session_data.UserName);
+    } else {
+        let e = Error::last_os_error();
+        return Err(Error::new(
+            ErrorKind::Other,
+            format!("LsaGetLogonSessionData could not get the user name: {}", e),
+        ));
+    }
+    let mut domain_user_name = user_name.clone();
+    if session_data.LogonDomain.Length != 0 {
+        domain_user_name = format!(
+            "{}\\{}",
+            from_unicode_string(&session_data.LogonDomain),
+            domain_user_name
+        );
+    }
 
-        // call NetUserGetLocalGroups to get local user group names
-        let mut user_groups = Vec::new();
-        let mut group_count = 0;
-        let mut total_group_count = 0;
-        let mut group_info = null_mut();
-        let status = net_user_get_local_groups(
-            null_mut(),
-            to_pwstr(domain_user_name.as_str()).as_mut_ptr(),
-            0,
-            LG_INCLUDE_INDIRECT,
-            &mut group_info,
-            MAX_PREFERRED_LENGTH,
-            &mut group_count,
-            &mut total_group_count,
-        )
-        .unwrap();
-        if status == 0 {
-            let group_info = std::slice::from_raw_parts(
+    // call NetUserGetLocalGroups to get local user group names
+    let mut user_groups = Vec::new();
+    let mut group_count = 0;
+    let mut total_group_count = 0;
+    let mut group_info = null_mut();
+    let status = net_user_get_local_groups(
+        null_mut(),
+        to_pwstr(domain_user_name.as_str()).as_mut_ptr(),
+        0,
+        LG_INCLUDE_INDIRECT,
+        &mut group_info,
+        MAX_PREFERRED_LENGTH,
+        &mut group_count,
+        &mut total_group_count,
+    )?;
+    if status == 0 {
+        let group_info = unsafe {
+            std::slice::from_raw_parts(
                 group_info as *const u8 as *const LocalgroupUsersInfo0,
                 group_count as usize,
-            );
-            for group in group_info {
-                let group_name = from_pwstr(group.lgrui0_name);
-                user_groups.push(group_name);
-            }
-        } else {
-            let message = format!(
-                "NetUserGetLocalGroups '{}' failed with status: {}",
-                domain_user_name, status
-            );
-            eprintln!("{}", message);
-            logger::write_warning(message);
+            )
+        };
+        for group in group_info {
+            let group_name = from_pwstr(group.lgrui0_name);
+            user_groups.push(group_name);
         }
-
-        // update user name if it's a built-in user
-        if BUILTIN_USERS.contains_key(&logon_id) {
-            user_name = BUILTIN_USERS[&logon_id].to_string();
-        }
-
-        (user_name, user_groups)
+    } else {
+        let e = Error::from_raw_os_error(status as i32);
+        logger::write_warning(format!(
+            "NetUserGetLocalGroups '{}' failed ({}) with os error: {}",
+            domain_user_name, status, e
+        ));
     }
+
+    // update user name if it's a built-in user
+    if BUILTIN_USERS.contains_key(&logon_id) {
+        user_name = BUILTIN_USERS[&logon_id].to_string();
+    }
+
+    Ok((user_name, user_groups))
 }
 
 fn from_unicode_string(unicode_string: &UNICODE_STRING) -> String {
@@ -352,7 +366,7 @@ mod tests {
                 println!("LUID: {:?} - {:?}", uid.HighPart, uid.LowPart);
                 let logon_id: u64 = (uid.HighPart as u64) << 32 | uid.LowPart as u64;
                 println!("LogonId: {}", logon_id);
-                let user = super::get_user(logon_id);
+                let user = super::get_user(logon_id).unwrap();
                 let user_name = user.0;
                 let user_groups = user.1;
                 println!("UserName: {}", user_name);

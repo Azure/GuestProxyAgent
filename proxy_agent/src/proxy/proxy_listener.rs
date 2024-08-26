@@ -195,7 +195,23 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
             }
         }
     }
-    let claims = Claims::from_audit_entry(&entry, client_source_ip, shared_state.clone());
+    let claims = match Claims::from_audit_entry(&entry, client_source_ip, shared_state.clone()) {
+        Ok(c) => c,
+        Err(e) => {
+            Connection::write_warning(
+                connection.id,
+                format!("Failed to get claims from audit entry: {}", e),
+            );
+            send_response(stream, Response::MISDIRECTED);
+            log_connection_summary(
+                shared_state.clone(),
+                connection,
+                &request,
+                Response::MISDIRECTED.to_string(),
+            );
+            return;
+        }
+    };
 
     let claim_details: String = match serde_json::to_string(&claims) {
         Ok(json) => json,
