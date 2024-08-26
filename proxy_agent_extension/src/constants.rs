@@ -73,6 +73,8 @@ pub const MIN_SUPPORTED_OS_BUILD: u32 = 17763;
 pub const MIN_SUPPORTED_MARINER_OS_BUILD: u32 = 2;
 #[cfg(not(windows))]
 pub const MIN_SUPPORTED_UBUNTU_OS_BUILD: u32 = 22;
+#[cfg(not(windows))]
+pub const MIN_SUPPORTED_AZURE_LINUX_OS_BUILD: u32 = 3;
 
 pub const STATE_KEY_READ_PROXY_AGENT_STATUS_FILE: &str = "ReadProxyAgentStatusFile";
 pub const STATE_KEY_FILE_VERSION: &str = "FileVersion";

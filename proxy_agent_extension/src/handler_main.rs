@@ -100,6 +100,8 @@ fn check_linux_os_supported(version: Version) -> bool {
         version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD
     } else if linux_type.contains("mariner") {
         return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
+    } else if linux_type.contains("azure linux") {
+        return version.major >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
     } else {
         return false;
     }
