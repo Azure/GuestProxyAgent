@@ -66,15 +66,18 @@ pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
             telemetry_wrapper::set_logger_status_message(cloned_state.clone(), status);
         },
     );
-    event_reader::start_async(
+    tokio::spawn(event_reader::start(
         config::get_events_dir(),
-        Duration::from_secs(300),
+        Some(Duration::from_secs(300)),
         true,
         shared_state.clone(),
-        None,
-    );
+    ));
     provision_wrapper::set_event_log_threads_initialized(shared_state.clone(), true);
-    proxy_agent_status::start_async(Duration::default(), shared_state.clone());
+
+    tokio::spawn(proxy_agent_status::start(
+        Duration::default(),
+        shared_state.clone(),
+    ));
 }
 
 fn write_provision_state(
@@ -126,7 +129,7 @@ fn write_provision_state(
     }
 }
 
-pub fn get_provision_status_wait(
+pub async fn get_provision_status_wait(
     provision_dir: Option<PathBuf>,
     duration: Option<Duration>,
 ) -> (bool, String) {
@@ -138,7 +141,7 @@ pub fn get_provision_status_wait(
 
         if let Some(d) = duration {
             if d.as_millis() >= helpers::get_elapsed_time_in_millisec() {
-                std::thread::sleep(Duration::from_millis(100));
+                tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
         }
@@ -174,11 +177,10 @@ mod tests {
     use crate::shared_state::SharedState;
     use std::env;
     use std::fs;
-    use std::thread;
     use std::time::Duration;
 
-    #[test]
-    fn provision_state_test() {
+    #[tokio::test]
+    async fn provision_state_test() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("update_provision_state_test");
 
@@ -186,7 +188,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
 
         let provision_status =
-            super::get_provision_status_wait(Some(temp_test_path.to_path_buf()), None);
+            super::get_provision_status_wait(Some(temp_test_path.to_path_buf()), None).await;
         assert!(!provision_status.0, "provision_status.0 must be false");
         assert_eq!(
             0,
@@ -202,13 +204,19 @@ mod tests {
         let s2 = shared_state.clone();
         let s3 = shared_state.clone();
         let handles = vec![
-            thread::spawn(move || super::update_provision_state(1, Some(dir1), s1)),
-            thread::spawn(move || super::update_provision_state(2, Some(dir2), s2)),
-            thread::spawn(move || super::update_provision_state(4, Some(dir3), s3)),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(1, Some(dir1), s1);
+            }),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(2, Some(dir2), s2);
+            }),
+            tokio::task::spawn_blocking(|| {
+                super::update_provision_state(4, Some(dir3), s3);
+            }),
         ];
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.await.unwrap();
         }
 
         let provisioned_file = temp_test_path.join("provisioned.tag");
@@ -225,7 +233,8 @@ mod tests {
         let provision_status = super::get_provision_status_wait(
             Some(temp_test_path.to_path_buf()),
             Some(Duration::from_millis(5)),
-        );
+        )
+        .await;
         assert!(provision_status.0, "provision_status.0 must be true");
         assert_eq!(
             0,

@@ -27,26 +27,14 @@ const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
 struct LocalgroupUsersInfo0 {
     pub lgrui0_name: windows_sys::core::PWSTR,
 }
-static NETAPI32_DLL: Lazy<Library> = Lazy::new(|| load_dll_with_retry("netapi32.dll\0", 3));
-
-fn load_dll_with_retry(dll_name: &str, max_retry: u8) -> Library {
-    let mut retry = 0;
-    unsafe {
-        loop {
-            match Library::new(dll_name) {
-                Ok(lib) => return lib,
-                Err(e) => {
-                    if retry >= max_retry {
-                        panic!("Loading {} failed with error: {}", dll_name, e);
-                    }
-                    retry += 1;
-                    logger::write_warning(format!(
-                        "Loading {} failed with error: {}, retrying {}...",
-                        dll_name, e, retry
-                    ));
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-            }
+static NETAPI32_DLL: Lazy<Library> = Lazy::new(load_netapi32_dll);
+fn load_netapi32_dll() -> Library {
+    let dll_name = "netapi32.dll\0";
+    match unsafe { Library::new(dll_name) } {
+        Ok(lib) => lib,
+        Err(e) => {
+            logger::write_error(format!("Loading {} failed with error: {}.", dll_name, e));
+            panic!("Loading {} failed with error: {}", dll_name, e);
         }
     }
 }

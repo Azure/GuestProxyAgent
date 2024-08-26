@@ -14,7 +14,6 @@ use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 #[cfg(not(windows))]
 pub use linux::BpfObject;
@@ -45,14 +44,8 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    thread::spawn(move || {
-        start(local_port, shared_state);
-    });
-}
-
-fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let started = start_impl(local_port, shared_state.clone());
+pub async fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+    let started = start_impl(local_port, shared_state.clone()).await;
 
     let level = if started {
         event_logger::INFO_LEVEL
@@ -70,7 +63,7 @@ fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     started
 }
 
-fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+async fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     #[cfg(windows)]
     {
         if !windows::initialized_success(shared_state.clone()) {
@@ -82,7 +75,7 @@ fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
         if is_started(shared_state.clone()) {
             return true;
         }
-        thread::sleep(std::time::Duration::from_millis(10));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
     is_started(shared_state.clone())
