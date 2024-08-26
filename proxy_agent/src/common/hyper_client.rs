@@ -11,18 +11,18 @@ use http_body_util::Empty;
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::Request;
+use hyper::Uri;
 use hyper_util::rt::TokioIo;
 use itertools::Itertools;
 use proxy_agent_shared::misc_helpers;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::net::TcpStream;
-use url::Url;
 
 const LF: &str = "\n";
 
 pub async fn get<T, F>(
-    full_url: Url,
+    full_url: Uri,
     headers: &HashMap<String, String>,
     key_guid: Option<String>,
     key: Option<String>,
@@ -164,7 +164,7 @@ where
 
 pub fn build_request(
     method: http::Method,
-    full_url: Url,
+    full_url: Uri,
     headers: &HashMap<String, String>,
     body: Option<&[u8]>,
     key_guid: Option<String>,
@@ -172,12 +172,11 @@ pub fn build_request(
 ) -> std::io::Result<Request<BoxBody<Bytes, hyper::Error>>> {
     let (host, _) = host_port_from_uri(full_url.clone())?;
 
-    let uri = url_to_uri(full_url)?;
     let mut request_builder = Request::builder()
         .method(method)
-        .uri(match uri.path_and_query() {
+        .uri(match full_url.path_and_query() {
             Some(pq) => pq.as_str(),
-            None => uri.path(),
+            None => full_url.path(),
         })
         .header(
             constants::DATE_HEADER,
@@ -264,8 +263,8 @@ where
     })
 }
 
-pub fn host_port_from_uri(full_url: Url) -> std::io::Result<(String, u16)> {
-    let host = match full_url.host_str() {
+pub fn host_port_from_uri(full_url: Uri) -> std::io::Result<(String, u16)> {
+    let host = match full_url.host() {
         Some(h) => h.to_string(),
         None => {
             return Err(std::io::Error::new(
@@ -274,29 +273,9 @@ pub fn host_port_from_uri(full_url: Url) -> std::io::Result<(String, u16)> {
             ))
         }
     };
-    let port = full_url.port().unwrap_or(80);
+    let port = full_url.port_u16().unwrap_or(80);
 
     Ok((host, port))
-}
-
-fn url_to_uri(url: Url) -> std::io::Result<hyper::Uri> {
-    match url.as_str().parse::<hyper::Uri>() {
-        Ok(u) => Ok(u),
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to parse url {}: {}", url, e),
-        )),
-    }
-}
-
-fn parse_uri(uri_str: &str) -> std::io::Result<hyper::Uri> {
-    match uri_str.parse::<hyper::Uri>() {
-        Ok(u) => Ok(u),
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to parse uri {}: {}", uri_str, e),
-        )),
-    }
 }
 
 /*
@@ -313,7 +292,7 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data.extend(LF.as_bytes());
 
     data.extend(headers_to_canonicalized_string(&head.headers).as_bytes());
-    let path_para = get_path_and_canonicalized_parameters(relative_uri_into_url(&head.uri));
+    let path_para = get_path_and_canonicalized_parameters(head.uri.clone());
     data.extend(path_para.0.as_bytes());
     data.extend(LF.as_bytes());
     data.extend(path_para.1.as_bytes());
@@ -351,7 +330,7 @@ fn request_to_sign_input(
     }
     match request_builder.uri_ref() {
         Some(u) => {
-            let path_para = get_path_and_canonicalized_parameters(relative_uri_into_url(u));
+            let path_para = get_path_and_canonicalized_parameters(u.clone());
             data.extend(path_para.0.as_bytes());
             data.extend(LF.as_bytes());
             data.extend(path_para.1.as_bytes());
@@ -391,48 +370,64 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
     canonicalized_headers
 }
 
-/// Convert a relative URI to a full URL
-/// uri - The relative URI in hyper::Uri format
-/// Returns a full URL in url::Url format
-fn relative_uri_into_url(uri: &hyper::Uri) -> Url {
-    let path_query = match uri.path_and_query() {
-        Some(pq) => pq.as_str(),
-        None => uri.path(),
-    };
-    // Url crate does not support parsing relative paths, so we need to add a dummy base url
-    let mut url = Url::parse("http://127.0.0.1").unwrap();
-    if let Ok(u) = url.join(path_query) {
-        url = u
-    }
-    url
-}
-
-fn get_path_and_canonicalized_parameters(url: Url) -> (String, String) {
+fn get_path_and_canonicalized_parameters(url: hyper::Uri) -> (String, String) {
     let path = url.path().to_string();
 
-    let parameters = url.query_pairs();
-    let mut pairs: HashMap<String, String> = HashMap::new();
+    let query_pairs = query_pairs(&url);
     let mut canonicalized_parameters = String::new();
-    if parameters.count() > 0 {
-        for p in parameters {
-            // Convert the parameter name to lowercase
-            pairs.insert(p.0.to_lowercase(), p.1.to_string());
+    let mut pairs: HashMap<String, (String, String)> = HashMap::new();
+    if !query_pairs.is_empty() {
+        for (key, value) in query_pairs {
+            let key = key.to_lowercase();
+            pairs.insert(
+                // add the query paramter value for sorting,
+                // just in case of duplicate keys by value lexicographically in ascending order.
+                format!("{}{}", key, value),
+                (key.to_lowercase(), value.to_string()),
+            );
         }
 
-        // Sort the parameters lexicographically by parameter name, in ascending order.
+        // Sort the parameters lexicographically by parameter name and value, in ascending order.
         let mut first = true;
         for key in pairs.keys().sorted() {
             if !first {
                 canonicalized_parameters.push('&');
             }
             first = false;
+            let query_pair = pairs[key].clone();
             // Join each parameter key value pair with '='
-            let p = format!("{}={}", key, pairs[key]);
+            let p = if query_pair.1.is_empty() {
+                key.to_string()
+            } else {
+                format!("{}={}", query_pair.0, query_pair.1)
+            };
             canonicalized_parameters.push_str(&p);
         }
     }
 
     (path, canonicalized_parameters)
+}
+
+/// get query parameters from uri
+/// uri - the uri to get query parameters from
+/// return - a vec of query parameters
+///     first one is the query parameter key
+///     second one is parameter value
+pub fn query_pairs(uri: &Uri) -> Vec<(String, String)> {
+    let query = uri.query().unwrap_or("");
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for pair in query.split('&') {
+        let mut split = pair.splitn(2, '=');
+        let key = split.next().unwrap_or("");
+        if key.is_empty() {
+            // parameter key is must have while value is optional
+            continue;
+        }
+        let value = split.next().unwrap_or("");
+        pairs.push((key.to_string(), value.to_string()));
+    }
+
+    pairs
 }
 
 pub fn empty_body() -> BoxBody<Bytes, hyper::Error> {

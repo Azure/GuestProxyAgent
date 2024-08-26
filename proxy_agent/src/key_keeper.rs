@@ -8,13 +8,13 @@ use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use crate::{acl, redirector};
+use hyper::Uri;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::{path::PathBuf, thread, time::Duration};
-use url::Url;
 
 //pub const RUNNING_STATE: &str = "running";
 pub const DISABLE_STATE: &str = "disabled";
@@ -27,26 +27,24 @@ const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 pub fn poll_status_async(
-    base_url: Url,
+    base_url: Uri,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
-    thread::spawn(move || {
-        poll_secure_channel_status(
-            base_url,
-            key_dir,
-            interval,
-            config_start_redirector,
-            shared_state,
-        );
-    });
+    tokio::spawn(poll_secure_channel_status(
+        base_url,
+        key_dir,
+        interval,
+        config_start_redirector,
+        shared_state,
+    ));
 }
 
 // poll secure channel status at interval
-fn poll_secure_channel_status(
-    base_url: Url,
+async fn poll_secure_channel_status(
+    base_url: Uri,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
@@ -127,7 +125,7 @@ fn poll_secure_channel_status(
             started_event_threads = true;
         }
 
-        let status = match key::get_status(base_url.clone()) {
+        let status = match key::get_status(base_url.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 let err_string = format!("{:?}", e);
@@ -233,7 +231,7 @@ fn poll_secure_channel_status(
             // or could not read locally,
             // try fetch from server
             if !key_found {
-                let key = match key::acquire_key(base_url.clone()) {
+                let key = match key::acquire_key(base_url.clone()).await {
                     Ok(k) => k,
                     Err(e) => {
                         logger::write_warning(format!("Failed to acquire key details: {:?}", e));
@@ -254,7 +252,7 @@ fn poll_secure_channel_status(
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {
-                    match key::attest_key(base_url.clone(), &key) {
+                    match key::attest_key(base_url.clone(), &key).await {
                         Ok(()) => {
                             // update in memory
                             key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
@@ -462,7 +460,7 @@ mod tests {
         let cloned_keys_dir = keys_dir.to_path_buf();
         let shared_state = SharedState::new();
         key_keeper::poll_status_async(
-            Url::parse("http://127.0.0.1:8081/").unwrap(),
+            "http://127.0.0.1:8081/".parse().unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
