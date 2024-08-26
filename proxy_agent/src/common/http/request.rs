@@ -202,28 +202,21 @@ impl Request {
 
         // The query_pairs method from the Url struct returns an iterator over the query pairs, which are automatically percent-decoded
         // To get the raw percent-encoded values, we need to manually parse the query string
-        let query = url.query().unwrap_or("");
-        let mut pairs: HashMap<String, (String, String)> = HashMap::new();
-        for pair in query.split('&') {
-            let mut split = pair.splitn(2, '=');
-            let key = split.next().unwrap_or("");
-            if key.is_empty() {
-                // parameter key is must have while value is optional
-                continue;
-            }
-            let value = split.next().unwrap_or("");
-            let key = key.to_lowercase();
-            pairs.insert(
-                // add the query paramter value for sorting,
-                // just in case of duplicate keys by value lexicographically in ascending order.
-                format!("{}{}", key, value),
-                (key.to_lowercase(), value.to_string()),
-            );
-        }
-
+        let query_pairs = Self::query_pairs(&url);
         let mut canonicalized_parameters = String::new();
-        if !pairs.is_empty() {
-            // Sort the parameters lexicographically by parameter name, in ascending order.
+        let mut pairs: HashMap<String, (String, String)> = HashMap::new();
+        if !query_pairs.is_empty() {
+            for (key, value) in query_pairs {
+                let key = key.to_lowercase();
+                pairs.insert(
+                    // add the query paramter value for sorting,
+                    // just in case of duplicate keys by value lexicographically in ascending order.
+                    format!("{}{}", key, value),
+                    (key.to_lowercase(), value.to_string()),
+                );
+            }
+
+            // Sort the parameters lexicographically by parameter name and value, in ascending order.
             let mut first = true;
             for key in pairs.keys().sorted() {
                 if !first {
@@ -264,6 +257,28 @@ impl Request {
         data.extend(path_para.1.as_bytes());
 
         data
+    }
+
+    /// get query parameters from uri
+    /// uri - the uri to get query parameters from
+    /// return - a vec of query parameters
+    ///     first one is the query parameter key
+    ///     second one is parameter value
+    pub fn query_pairs(uri: &Url) -> Vec<(String, String)> {
+        let query = uri.query().unwrap_or("");
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        for pair in query.split('&') {
+            let mut split = pair.splitn(2, '=');
+            let key = split.next().unwrap_or("");
+            if key.is_empty() {
+                // parameter key is must have while value is optional
+                continue;
+            }
+            let value = split.next().unwrap_or("");
+            pairs.push((key.to_string(), value.to_string()));
+        }
+
+        pairs
     }
 
     pub fn expect_continue_request(&self) -> bool {

@@ -12,19 +12,17 @@ use windows_sys::Win32::System::SystemInformation::{
 };
 
 pub fn get_processor_count() -> usize {
-    unsafe {
-        let mut data = MaybeUninit::<SYSTEM_INFO>::uninit();
-        let _status: () = GetSystemInfo(data.as_mut_ptr());
+    let mut data = MaybeUninit::<SYSTEM_INFO>::uninit();
+    unsafe { GetSystemInfo(data.as_mut_ptr()) };
 
-        let data = data.assume_init();
-        data.dwNumberOfProcessors as usize
-    }
+    let data = unsafe { data.assume_init() };
+    data.dwNumberOfProcessors as usize
 }
 
 pub fn get_memory_in_mb() -> u64 {
+    let mut data = MaybeUninit::<MEMORYSTATUSEX>::uninit();
+    let data = data.as_mut_ptr();
     unsafe {
-        let mut data = MaybeUninit::<MEMORYSTATUSEX>::uninit();
-        let data = data.as_mut_ptr();
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         GlobalMemoryStatusEx(data);
         (*data).ullTotalPhys / 1024 / 1024

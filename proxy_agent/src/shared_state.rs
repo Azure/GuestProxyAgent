@@ -10,6 +10,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 use windows_service::service_control_handler::ServiceStatusHandle;
@@ -18,6 +19,7 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 
 #[derive(Clone)]
 pub struct SharedState {
+    cancellation_token: CancellationToken,
     // key_keeper
     key: Option<Key>,
     current_secure_channel_state: String,
@@ -72,6 +74,7 @@ impl SharedState {
 impl Default for SharedState {
     fn default() -> Self {
         SharedState {
+            cancellation_token: CancellationToken::new(),
             // key_keeper
             key: None,
             current_secure_channel_state: crate::key_keeper::UNKNOWN_STATE.to_string(),
@@ -112,6 +115,20 @@ impl Default for SharedState {
             #[cfg(windows)]
             service_status_handle: None,
         }
+    }
+}
+
+pub mod shared_state_wrapper {
+    use super::SharedState;
+    use std::sync::{Arc, Mutex};
+    use tokio_util::sync::CancellationToken;
+
+    pub fn get_cancellation_token(shared_state: Arc<Mutex<SharedState>>) -> CancellationToken {
+        shared_state.lock().unwrap().cancellation_token.clone()
+    }
+
+    pub fn cancel_cancellation_token(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().cancellation_token.cancel();
     }
 }
 

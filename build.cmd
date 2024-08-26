@@ -15,6 +15,8 @@ SET out_dir=%out_path%\%Configuration%
 SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\bin
 SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
+
+REM package `tokio v1.39.3` cannot be built because it requires rustc 1.70 or newer
 SET rustup_version=1.80.0
 
 
