@@ -209,7 +209,10 @@ impl Privilege {
                     );
 
                     for (key, value) in query_parameters {
-                        match request_url.query_pairs().find(|(k, _)| k == key) {
+                        match Request::query_pairs(&request_url)
+                            .into_iter()
+                            .find(|(k, _)| k == key)
+                        {
                             Some((_, v)) => {
                                 if v.to_lowercase() == value.to_lowercase() {
                                     Connection::write_information(
