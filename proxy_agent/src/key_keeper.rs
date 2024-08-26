@@ -88,7 +88,7 @@ pub async fn poll_secure_channel_status(
     }
 }
 async fn loop_poll(
-    base_url: Url,
+    base_url: Uri,
     key_dir: PathBuf,
     interval: Duration,
     shared_state: Arc<Mutex<SharedState>>,
@@ -389,7 +389,6 @@ mod tests {
     use std::env;
     use std::fs;
     use std::time::Duration;
-    use url::Url;
 
     #[test]
     fn check_local_key_test() {
@@ -465,8 +464,8 @@ mod tests {
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
         let shared_state = SharedState::new();
-        key_keeper::poll_status_async(
-            "http://127.0.0.1:8081/".parse().unwrap(),
+        tokio::spawn(super::poll_secure_channel_status(
+            (format!("http://{}:{}/", ip, port)).parse().unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,

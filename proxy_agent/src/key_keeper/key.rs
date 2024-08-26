@@ -633,7 +633,8 @@ const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
 pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
-    let url = format!("{}{}", base_url, STATUS_URL);
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
         Error::new(
             ErrorKind::InvalidInput,
@@ -653,7 +654,8 @@ pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
 }
 
 pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
-    let url = format!("{}{}", base_url, KEY_URL);
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
         Error::new(
             ErrorKind::InvalidInput,
@@ -695,7 +697,11 @@ pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
 
 pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let url = format!("{}{}/{}/key-attestation", base_url, KEY_URL, key.guid);
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!(
+        "http://{}:{}{}/{}/key-attestation",
+        host, port, KEY_URL, key.guid
+    );
     let url: Uri = url.parse().map_err(|e| {
         Error::new(
             ErrorKind::InvalidInput,
@@ -703,7 +709,6 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
         )
     })?;
 
-    let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let request = hyper_client::build_request(
