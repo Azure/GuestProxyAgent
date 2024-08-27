@@ -4,6 +4,7 @@ use crate::misc_helpers;
 use once_cell::sync::Lazy;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
+use std::{fs, str};
 use std::{
     io::{Error, ErrorKind},
     path::PathBuf,
@@ -11,6 +12,9 @@ use std::{
 
 pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
 pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
+pub const OS_RELEASE_PATH: &str = "/etc/os-release";
+pub const OS_VERSION: &str = "VERSION_ID=";
+pub const OS_NAME: &str = "NAME=";
 
 #[derive(Serialize, Deserialize)]
 struct FileMount {
@@ -27,13 +31,51 @@ struct FileSystem {
 
 static OS_INFO: Lazy<Info> = Lazy::new(os_info::get);
 pub fn get_os_version() -> String {
+    let linux_type = OS_INFO.os_type().to_string().to_lowercase();
+    if linux_type == "linux" {
+        match fs::read_to_string(OS_RELEASE_PATH) {
+            Ok(output) => {
+                for line in output.lines() {
+                    if line.starts_with(OS_VERSION) {
+                        let version = line
+                            .trim_start_matches(OS_VERSION)
+                            .trim_matches('"')
+                            .to_string();
+                        return version;
+                    }
+                }
+            }
+            Err(_e) => {
+                return "Unknown".to_string();
+            }
+        }
+    }
     OS_INFO.version().to_string()
 }
 pub fn get_long_os_version() -> String {
-    format!("Linux:{}-{}", OS_INFO.os_type(), OS_INFO.version())
+    format!("Linux:{}-{}", get_os_type(), get_os_version())
 }
 
 pub fn get_os_type() -> String {
+    let linux_type = OS_INFO.os_type().to_string().to_lowercase();
+    if linux_type == "linux" {
+        match fs::read_to_string(OS_RELEASE_PATH) {
+            Ok(output) => {
+                for line in output.lines() {
+                    if line.starts_with(OS_NAME) {
+                        let name = line
+                            .trim_start_matches(OS_NAME)
+                            .trim_matches('"')
+                            .to_string();
+                        return name;
+                    }
+                }
+            }
+            Err(_e) => {
+                return "Unknown".to_string();
+            }
+        }
+    }
     OS_INFO.os_type().to_string()
 }
 
