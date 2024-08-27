@@ -46,8 +46,13 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
         None => request.url.chars().skip(1).collect(),
     };
     let segments: Vec<&str> = path.split('/').collect();
+    logger::write_information(format!(
+        "handle_request:{}, path: {} and segments: {:?}",
+        request.method, path, segments
+    ));
 
     let mut response = Response::from_status(Response::OK.to_string());
+    let mut content_type = String::from("application/json; charset=utf-8");
     if request.method == "GET" {
         if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "status" {
@@ -74,6 +79,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
                 response.set_body_as_string(serde_json::to_string(&status).unwrap());
             }
         } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
+            content_type = "text/xml; charset=utf-8".to_string();
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <GoalState xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="goalstate10.xsd">
               <Version>2015-04-05</Version>
@@ -110,6 +116,7 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             let goal_state_str = goal_state_str.replace("##port##", &port.to_string());
             response.set_body_as_string(goal_state_str.to_string());
         } else if path.starts_with("machine/") && path.contains("type=sharedConfig") {
+            content_type = "text/xml; charset=utf-8".to_string();
             let shared_config_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <SharedConfig version="1.0.0.0" goalStateIncarnation="16">
               <Deployment name="7d2798bb72a0413d9a60b355277df726" guid="{25a2c1a1-2986-4d1c-bd37-6abe8571218d}" incarnation="132" isNonCancellableTopologyChangeEnabled="false">
@@ -325,20 +332,15 @@ fn handle_request(mut stream: TcpStream, ip: String, port: u16) -> bool {
             && segments.len() > 1
             && segments[1] == "?comp=telemetrydata"
         {
-            // post telemetry data
-            // send continue response
-            let mut continue_response = Response::from_status(Response::CONTINUE.to_string());
-            _ = stream.write_all(continue_response.as_raw_string().as_bytes());
-            _ = stream.flush();
-
-            // receive the data
-            let content_length = request.headers.get_content_length().unwrap();
-
-            // receive body content from client
-            http::receive_body(&stream, content_length).unwrap();
+            content_type = String::new();
         }
     }
 
+    if !content_type.is_empty() {
+        response
+            .headers
+            .add_header("Content-Type".to_string(), content_type);
+    }
     _ = stream.write_all(response.as_raw_string().as_bytes());
     _ = stream.flush();
     logger::write_information("WireServer processed request.".to_string());

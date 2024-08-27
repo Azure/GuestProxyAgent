@@ -441,3 +441,19 @@ pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .map_err(|never| match never {})
         .boxed()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn get_path_and_canonicalized_parameters_test() {
+        let url_str = "/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&keyOnly&comp=again&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f";
+        let url = url_str.parse::<hyper::Uri>().unwrap();
+        let path_para = super::get_path_and_canonicalized_parameters(url);
+        assert_eq!("/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2",
+         path_para.0, "path mismatch");
+        assert_eq!(
+            "comp=again&comp=config&incarnation=1&keyonly&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
+            "query parameters mismatch"
+        );
+    }
+}
