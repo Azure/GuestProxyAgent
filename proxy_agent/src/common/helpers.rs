@@ -17,8 +17,10 @@ static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
         let ram_in_mb = match windows::get_memory_in_mb() {
             Ok(ram) => ram,
             Err(e) => {
-                log::error!("Failed to get memory in MB: {}", e);
-                0
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("get_memory_in_mb failed: {}", e),
+                );
             }
         };
         let cpu_count = windows::get_processor_count();
