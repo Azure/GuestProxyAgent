@@ -130,6 +130,10 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
         format!("Got request: {}", request.description()),
     );
 
+    if request.url == provision::PROVISION_URL_PATH {
+        return handle_provision_state_check_request(connection.id, stream, shared_state.clone());
+    }
+
     // lookup the eBPF audit_map
     let client_source_ip: IpAddr;
     let client_source_port: u16;
@@ -675,6 +679,38 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
         constants::AUTHORIZATION_HEADER.to_string(),
         "value".to_string(),
     );
+
+    // response to original client
+    _ = client_stream.write_all(response.as_raw_string().as_bytes());
+    _ = client_stream.flush();
+}
+
+fn handle_provision_state_check_request(
+    connection_id: u128,
+    mut client_stream: &TcpStream,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
+    let provision_state = provision::get_provision_state(shared_state);
+    let (response_status, provision_state) = match serde_json::to_string(&provision_state) {
+        Ok(json) => {
+            Connection::write(connection_id, format!("Provision state: {}", json));
+            (Response::OK, json)
+        }
+        Err(e) => {
+            let error = format!("Failed to get provision state: {}", e);
+            Connection::write_warning(connection_id, error.to_string());
+            (Response::BAD_GATEWAY, error)
+        }
+    };
+
+    let mut response = Response::from_status(response_status.to_string());
+
+    // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
+    response.headers.add_header(
+        constants::AUTHORIZATION_HEADER.to_string(),
+        "value".to_string(),
+    );
+    response.set_body(provision_state.as_bytes().to_vec());
 
     // response to original client
     _ = client_stream.write_all(response.as_raw_string().as_bytes());
