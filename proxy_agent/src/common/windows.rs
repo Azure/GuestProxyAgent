@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::logger;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use windows_sys::Win32::Networking::WinSock;
@@ -25,7 +26,9 @@ pub fn get_memory_in_mb() -> Result<u64, String> {
     unsafe {
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(data) == 0 {
-            return Err("GlobalMemoryStatusEx failed".to_string());
+            logger::write_error("GlobalMemoryStatusEx failed".to_string());
+            logger::write_error(Error::last_os_error().to_string());
+            return Err(String::from("GlobalMemoryStatusEx failed"));
         }
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
         Ok(memory_in_mb)
@@ -59,7 +62,7 @@ mod tests {
             Ok(memory) => {
                 assert_ne!(0, memory, "Memory cannot be 0.");
             }
-            Err(e) => panic!("Failed to get memory: {}", e),
+            Err(e) => assert!(false, "{}", format!("Failed to get memory: {}", e)),
         }
     }
 }
