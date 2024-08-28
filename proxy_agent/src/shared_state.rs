@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
@@ -28,6 +29,7 @@ pub struct SharedState {
     imds_rule_id: String,
     key_keeper_shutdown: bool,
     key_keeper_status_message: String,
+    key_keeper_notify: Arc<Notify>,
     // proxy_listener
     proxy_listner_shutdown: bool,
     connection_count: u128,
@@ -84,6 +86,7 @@ impl Default for SharedState {
             imds_rule_id: String::new(),
             key_keeper_shutdown: false,
             key_keeper_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
+            key_keeper_notify: Arc::new(Notify::new()),
             // proxy_listener
             proxy_listner_shutdown: false,
             connection_count: 0,
@@ -137,6 +140,8 @@ pub mod shared_state_wrapper {
 
 /// wrapper functions for KeyKeeper related state fields
 pub mod key_keeper_wrapper {
+    use tokio::sync::Notify;
+
     use super::SharedState;
     use crate::key_keeper::key::Key;
     use std::sync::{Arc, Mutex};
@@ -262,6 +267,14 @@ pub mod key_keeper_wrapper {
             .unwrap()
             .key_keeper_status_message
             .to_string()
+    }
+
+    pub fn notify(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().key_keeper_notify.notify_one();
+    }
+
+    pub fn get_notify(shared_state: Arc<Mutex<SharedState>>) -> Arc<Notify> {
+        shared_state.lock().unwrap().key_keeper_notify.clone()
     }
 }
 

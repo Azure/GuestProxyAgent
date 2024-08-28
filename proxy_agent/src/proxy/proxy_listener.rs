@@ -690,6 +690,9 @@ fn handle_provision_state_check_request(
     mut client_stream: &TcpStream,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
+    // notify key_keeper to poll the status
+    key_keeper_wrapper::notify(shared_state.clone());
+
     let provision_state = provision::get_provision_state(shared_state);
     let (response_status, provision_state) = match serde_json::to_string(&provision_state) {
         Ok(json) => {

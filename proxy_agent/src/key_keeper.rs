@@ -96,6 +96,7 @@ async fn loop_poll(
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
+    let notify = key_keeper_wrapper::get_notify(shared_state.clone());
     loop {
         if !first_iteration {
             // skip the sleep for the first loop
@@ -112,7 +113,20 @@ async fn loop_poll(
                 } else {
                     interval
                 };
-            tokio::time::sleep(sleep).await;
+
+            tokio::select! {
+                _ = notify.notified() => {
+                    if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) != DISABLE_STATE {
+                        let message = format!( "poll_secure_channel_status task notified but secure channel state is not disabled, continue with sleep wait for {:?}.", sleep);
+                        logger::write_warning(message);
+                        tokio::time::sleep(sleep).await;
+                    } else{
+                        let message = "poll_secure_channel_status task notified and secure channel state is disabled, start poll status now.".to_string();
+                        logger::write_warning(message);
+                    }
+                },
+                _ = tokio::time::sleep(sleep) => {}
+            }
         }
         first_iteration = false;
 
