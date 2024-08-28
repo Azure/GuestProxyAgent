@@ -14,7 +14,13 @@ use super::windows;
 static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
     #[cfg(windows)]
     {
-        let ram_in_mb = windows::get_memory_in_mb();
+        let ram_in_mb = match windows::get_memory_in_mb() {
+            Ok(ram) => ram,
+            Err(e) => {
+                log::error!("Failed to get memory in MB: {}", e);
+                0
+            }
+        };
         let cpu_count = windows::get_processor_count();
         (ram_in_mb, cpu_count)
     }
