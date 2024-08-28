@@ -56,8 +56,10 @@ mod tests {
     fn get_memory_in_mb_test() {
         let memory = super::get_memory_in_mb();
         match memory {
-            Ok(memory) => println!("Memory in MB: {}", memory),
-            Err(e) => assert_ne!(0, memory, "Memory cannot be 0."),
+            Ok(memory) => {
+                assert_ne!(0, memory, "Memory cannot be 0.");
+            }
+            Err(e) => panic!("Failed to get memory: {}", e),
         }
     }
 }

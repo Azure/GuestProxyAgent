@@ -20,7 +20,7 @@ static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
                 Error::new(
                     ErrorKind::InvalidInput,
                     format!("get_memory_in_mb failed: {}", e),
-                ); 
+                );
                 0
             }
         };
