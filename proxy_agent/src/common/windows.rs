@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::logger;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use windows_sys::Win32::Networking::WinSock;
