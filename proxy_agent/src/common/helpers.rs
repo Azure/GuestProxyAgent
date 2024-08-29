@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::logger;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
@@ -17,10 +18,7 @@ static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
         let ram_in_mb = match windows::get_memory_in_mb() {
             Ok(ram) => ram,
             Err(e) => {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("get_memory_in_mb failed: {}", e),
-                );
+                logger::write_error(format!("get_memory_in_mb failed: {}", e));
                 0
             }
         };

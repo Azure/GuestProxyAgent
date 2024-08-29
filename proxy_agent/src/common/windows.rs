@@ -26,9 +26,10 @@ pub fn get_memory_in_mb() -> Result<u64, String> {
     unsafe {
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(data) == 0 {
-            logger::write_error("GlobalMemoryStatusEx failed".to_string());
-            logger::write_error(Error::last_os_error().to_string());
-            return Err(String::from("GlobalMemoryStatusEx failed"));
+            return Err(format!(
+                "GlobalMemoryStatusEx failed: {}",
+                Error::last_os_error()
+            ));
         }
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
         Ok(memory_in_mb)
