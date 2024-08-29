@@ -11,6 +11,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::io::{Error, ErrorKind};
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -174,7 +175,7 @@ pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionSt
     }
 }
 
-/// Get current provision status and wait until provision finished or timeout
+/// Get current GPA service provision status and wait until provision finished or timeout
 /// it serves for --status --wait command line option
 pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) -> (bool, String) {
     loop {
@@ -210,15 +211,18 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
 fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
-    let provision_url =
-        url::Url::parse(&format!("http://127.0.0.1:{}{}", port, PROVISION_URL_PATH)).map_err(
-            |e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to parse provision url with error: {}", e),
-                )
-            },
-        )?;
+    let provision_url = url::Url::parse(&format!(
+        "http://{}:{}{}",
+        Ipv4Addr::LOCALHOST,
+        port,
+        PROVISION_URL_PATH
+    ))
+    .map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to parse provision url with error: {}", e),
+        )
+    })?;
     let mut req = Request::new(PROVISION_URL_PATH.to_string(), "GET".to_string());
     req.headers
         .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());

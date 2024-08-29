@@ -51,6 +51,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         if args[1].to_lowercase() == "console" {
+            // console mode - start GPA as long running process
             let shared_state = SharedState::new();
             service::start_service(shared_state.clone());
             println!("Press Enter to end it.");
@@ -58,34 +59,39 @@ async fn main() {
             _ = std::io::stdin().read_line(&mut temp);
             service::stop_service(shared_state.clone());
         } else if args[1].to_lowercase() == "--version" {
+            // --version command to print the version of the GPA
             println!("{}", misc_helpers::get_current_version());
         } else if args[1].to_lowercase() == "--status" {
+            // --status command to get the provision status of the GPA service
             let mut wait_time: u64 = 0;
             if args.len() >= 4 && args[2].to_lowercase() == "--wait" {
+                // --wait command to wait for the provision status until the given time in seconds
+                // it is an optional, if not provided then it will query the provision state once by waiting for 0 seconds.
                 wait_time = args[3].parse::<u64>().unwrap_or(0);
             }
-            let status = provision::get_provision_status_wait(
+            let (provision_finished, error_message) = provision::get_provision_status_wait(
                 constants::PROXY_AGENT_PORT,
                 Some(Duration::from_secs(wait_time)),
             )
             .await;
-            if !status.0 {
+            if !provision_finished {
                 // exit code 1 means provision not finished yet.
                 process::exit(1);
             } else {
                 // provision finished
-                if !status.1.is_empty() {
-                    // exit code 2 means provision finished but failed.
-                    println!("{}", status.1);
+                if !error_message.is_empty() {
+                    // if there is any error message then print it and exit with exit code 2.
+                    println!("{}", error_message);
                     process::exit(2);
                 }
-                // provision finished and success
+                // no error message then exit with 0.
                 return;
             }
         } else {
             println!("Invalid argument: {}", args[1]);
         }
     } else {
+        // no argument provided, start the GPA as an OS service
         #[cfg(windows)]
         {
             _ = service_dispatcher::start(constants::PROXY_AGENT_SERVICE_NAME, ffi_service_main);
