@@ -174,6 +174,8 @@ pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionSt
     }
 }
 
+/// Get current provision status and wait until provision finished or timeout
+/// it serves for --status --wait command line option
 pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) -> (bool, String) {
     loop {
         let provision_state = get_current_provision_status(port);
@@ -203,7 +205,7 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
     }
 }
 
-// Get provision status
+// Get current provision status from GPA service via http request
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.

@@ -131,7 +131,12 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
     );
 
     if request.url == provision::PROVISION_URL_PATH {
-        return handle_provision_state_check_request(connection.id, stream, shared_state.clone());
+        return handle_provision_state_check_request(
+            connection.id,
+            request,
+            stream,
+            shared_state.clone(),
+        );
     }
 
     // lookup the eBPF audit_map
@@ -687,9 +692,20 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
 
 fn handle_provision_state_check_request(
     connection_id: u128,
+    request: Request,
     mut client_stream: &TcpStream,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
+    // check MetaData header exists or not
+    if request.headers.get(constants::METADATA_HEADER).is_none() {
+        Connection::write_warning(
+            connection_id,
+            "No MetaData header found in the request.".to_string(),
+        );
+        send_response(client_stream, Response::BAD_REQUEST);
+        return;
+    }
+
     // notify key_keeper to poll the status
     key_keeper_wrapper::notify(shared_state.clone());
 
@@ -743,6 +759,7 @@ mod tests {
     use crate::common::http::response::Response;
     use crate::common::logger;
     use crate::key_keeper::key::Key;
+    use crate::provision;
     use crate::proxy::proxy_listener;
     use crate::proxy::proxy_listener::Connection;
     use crate::proxy::Claims;
@@ -792,18 +809,31 @@ mod tests {
             .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
-
         let response = http::receive_response_data(&client).unwrap();
-
-        // stop listener
-        proxy_listener::stop(port, shared_state);
-        handle.join().unwrap();
-
         assert_eq!(
             Response::MISDIRECTED,
             response.status,
             "response.status mismatched."
         );
+
+        // test provision state check without MetaData header
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        let mut request =
+            Request::new(provision::PROVISION_URL_PATH.to_string(), "GET".to_string());
+        client
+            .write_all(request.as_raw_string().as_bytes())
+            .unwrap();
+        client.flush().unwrap();
+        let response = http::receive_response_data(&client).unwrap();
+        assert_eq!(
+            Response::BAD_REQUEST,
+            response.status,
+            "response.status mismatched."
+        );
+
+        // stop listener
+        proxy_listener::stop(port, shared_state);
+        handle.join().unwrap();
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);
