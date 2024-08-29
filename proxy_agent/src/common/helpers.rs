@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::logger;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
@@ -11,6 +10,8 @@ use sysinfo::{System, SystemExt};
 
 #[cfg(windows)]
 use super::windows;
+#[cfg(windows)]
+use crate::common::logger;
 
 static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
     #[cfg(windows)]
