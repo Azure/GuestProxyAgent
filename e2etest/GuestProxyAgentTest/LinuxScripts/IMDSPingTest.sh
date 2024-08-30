@@ -2,6 +2,8 @@
 
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
+imdsSecureChannelEnabled=$(echo imdsSecureChannelEnabled)
+echo "imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
 
 # make 10 requests if any failed, will failed the test for tcp port scalability config
 for i in {1..10}; do
@@ -14,14 +16,19 @@ for i in {1..10}; do
         exit -1
     fi
     sleep 1
-    authorizationHeader=$(curl -s -I -H "Metadata:True" $url | grep -Fi "x-ms-azure-host-authorization")
-    if [ "$authorizationHeader" = "" ]; then
-        echo "Response authorization header not exist"
-        exit -1
+
+    if [$imdsSecureChannelEnabled -eq "true"]; then
+        authorizationHeader=$(curl -s -I -H "Metadata:True" $url | grep -Fi "x-ms-azure-host-authorization")
+        if [ "$authorizationHeader" = "" ]; then
+            echo "Response authorization header not exist"
+            exit -1
+        else
+            echo "Response authorization header exists"
+        fi
+        sleep 1
     else
-        echo "Response authorization header exists"
-    fi
-    sleep 1
+		echo "IMDS secure channel is not enabled. Skipping x-ms-azure-host-authorization header validation"
+	fi
 done
 
 exit 0

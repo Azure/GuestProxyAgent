@@ -5,7 +5,6 @@ pub mod acl;
 pub mod common;
 pub mod host_clients;
 pub mod key_keeper;
-pub mod monitor;
 pub mod provision;
 pub mod proxy;
 pub mod proxy_agent_status;
@@ -30,8 +29,21 @@ use std::ffi::OsString;
 use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
+// define_windows_service does not accept async function in fffi_service_main,
+// also it does not allow to pass tokio runtime or handle as arguments to the function.
+// we have to use the global variable to set the tokio runtime handle.
+#[cfg(windows)]
+static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
+    tokio::sync::OnceCell::const_new();
 
-fn main() {
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    // set the tokio runtime handle
+    #[cfg(windows)]
+    ASYNC_RUNTIME_HANDLE
+        .set(tokio::runtime::Handle::current())
+        .unwrap();
+
     // start the Instant to calculate the elapsed time
     _ = helpers::get_elapsed_time_in_millisec();
 
@@ -52,7 +64,8 @@ fn main() {
                 wait_time = args[3].parse::<u64>().unwrap_or(0);
             }
             let status =
-                provision::get_provision_status_wait(None, Some(Duration::from_secs(wait_time)));
+                provision::get_provision_status_wait(None, Some(Duration::from_secs(wait_time)))
+                    .await;
             if !status.0 {
                 // exit code 1 means provision not finished yet.
                 process::exit(1);
@@ -77,17 +90,23 @@ fn main() {
 
         #[cfg(not(windows))]
         {
-            service::start_service_wait();
+            service::start_service_wait().await;
         }
     }
 }
 
 #[cfg(windows)]
-fn proxy_agent_windows_service_main(args: Vec<OsString>) {
+fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
     // start the Instant to calculate the elapsed time
     _ = helpers::get_elapsed_time_in_millisec();
 
-    if let Err(e) = windows::run_service(args) {
-        logger::write_error(format!("{e}"));
-    }
+    // Pass the tokio runtime handle here to launch the windows service.
+    let handle = ASYNC_RUNTIME_HANDLE
+        .get()
+        .expect("You must provide the Tokio runtime handle before this function is called");
+    handle.block_on(async {
+        if let Err(e) = windows::run_service() {
+            logger::write_error(format!("Error in running the service: {}", e));
+        }
+    });
 }

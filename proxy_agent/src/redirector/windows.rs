@@ -176,11 +176,11 @@ pub fn lookup_audit(
 }
 
 pub fn get_audit_from_redirect_context(tcp_stream: &TcpStream) -> std::io::Result<AuditEntry> {
+    // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
+    let value = AuditEntry::empty();
+    let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
+    let mut redirect_context_returned: u32 = 0;
     unsafe {
-        // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
-        let value = AuditEntry::empty();
-        let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
-        let mut redirect_context_returned: u32 = 0;
         WinSock::WSAIoctl(
             tcp_stream.as_raw_socket() as usize,
             WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
@@ -191,13 +191,13 @@ pub fn get_audit_from_redirect_context(tcp_stream: &TcpStream) -> std::io::Resul
             &mut redirect_context_returned,
             ptr::null_mut(),
             None,
-        );
-        common::windows::check_winsock_last_error(
-            "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT",
-        )?;
+        )
+    };
+    common::windows::check_winsock_last_error(
+        "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT",
+    )?;
 
-        Ok(value)
-    }
+    Ok(value)
 }
 
 pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {

@@ -6,7 +6,7 @@ param (
     [string]$customOutputJsonSAS,    
     [string]$expectedProxyAgentVersion
 )
-Write-Ouput "expectedProxyAgentVersion=$expectedProxyAgentVersion"
+Write-Output "expectedProxyAgentVersion=$expectedProxyAgentVersion"
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
 
@@ -51,7 +51,6 @@ do {
     start-sleep -Seconds 3
 } until ($false)
 
-
 $extensionFolder = Split-Path -Path $statusFolderPath -Parent
 Write-Output "Extension Folder: $extensionFolder"
 $PIRExePath = [IO.Path]::Combine($extensionFolder, "ProxyAgentExt.exe")
@@ -64,12 +63,12 @@ do {
     if ($boolStatus) {
         $json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
         $extensionStatus = $json.status.status
-        if ($extensionStatus -eq "success") {
+        if ($extensionStatus -eq "Success") {
             Write-Output "The extension status is success: $extensionStatus."
             $guestProxyAgentExtensionStatusObjGenerated = $true
             break
         }
-        if ($extensionStatus -eq "error") {
+        if ($extensionStatus -eq "Error") {
             Write-Output "The extension status is error: $extensionStatus."
             break
         }
@@ -108,20 +107,28 @@ Write-Output "TEST: ProxyAgent version running in VM is the same as expected ver
 $proxyAgentExeCmd = $extensionFolder + "\ProxyAgent\ProxyAgent\GuestProxyAgent.exe --version"
 $proxyAgentVersion = Invoke-Expression $proxyAgentExeCmd
 Write-Output "proxy agent version from extension folder: $proxyAgentVersion"
-$guestProxyAgentExtensionVersion = $true
-$proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
-$jsonObject = $proxyAgentStatus | ConvertFrom-json
-$extractedVersion = $jsonObject.version
-if ($extractedVersion -ne $proxyAgentVersion) {
-    Write-Output "Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
-    $guestProxyAgentExtensionVersion = $false
-}
-if ($expectedProxyAgentVersion -ne "0") {
-    if ($extractedVersion -eq $expectedProxyAgentVersion){ 
-        Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
-    } else {
-        Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $expectedProxyAgentVersion ]"
+$guestProxyAgentExtensionVersion = $false
+$json = Get-Content $statusFilePath | Out-String | ConvertFrom-Json
+if ($json.status.substatus -is [System.Collections.IEnumerable] -and $json.status.substatus.Count -gt 0) {
+    Write-Output "The 'substatus' array exists and has length greater than 0."
+    $guestProxyAgentExtensionVersion = $true
+} 
+if ($guestProxyAgentExtensionVersion) {
+    $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
+    $jsonObject = $proxyAgentStatus | ConvertFrom-json
+    $extractedVersion = $jsonObject.version
+    if ($extractedVersion -ne $proxyAgentVersion) {
+        Write-Output "Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
         $guestProxyAgentExtensionVersion = $false
+    }
+    if ($expectedProxyAgentVersion -ne "0") {
+        $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
+        if ($extractedVersion -eq $cleanExpectedProxyAgentVersion){ 
+            Write-Output "After Update Version check: The proxy agent version matches the expected and extracted version"
+        } else {
+            Write-Output "After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $cleanExpectedProxyAgentVersion ]"
+            $guestProxyAgentExtensionVersion = $false
+        }
     }
 }
 

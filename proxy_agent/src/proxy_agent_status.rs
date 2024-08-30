@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
-use crate::monitor;
 use crate::proxy::proxy_listener;
 use crate::shared_state::{
-    agent_status_wrapper, proxy_listener_wrapper, telemetry_wrapper, SharedState,
+    agent_status_wrapper, proxy_listener_wrapper, shared_state_wrapper, telemetry_wrapper,
+    SharedState,
 };
 use crate::{key_keeper, redirector};
 use proxy_agent_shared::misc_helpers;
@@ -14,36 +14,28 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
-pub fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    _ = thread::Builder::new()
-        .name("guest_proxy_agent_status".to_string())
-        .spawn(move || {
-            start(interval, shared_state);
-        });
-}
-
-fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
+pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    logger::write("proxy_agent_status thread started.".to_string());
-
+    logger::write("proxy_agent_status task started.".to_string());
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    tokio::select! {
+        _ = loop_status(interval, shared_state.clone()) => {}
+        _ = cancellation_token.cancelled() => {
+            logger::write_warning("cancellation token signal received, stop the guest_proxy_agent_status task.".to_string());
+        }
+    }
+}
+async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
     let dir_path = config::get_logs_dir();
 
     loop {
-        if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
-            logger::write_warning(
-                "Stop signal received, exiting the guest_proxy_agent_status thread.".to_string(),
-            );
-            break;
-        }
-
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
@@ -62,7 +54,7 @@ fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
             start_time = Instant::now();
         }
 
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
     }
 }
 
@@ -95,7 +87,12 @@ fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentSt
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status,
-        monitorStatus: monitor::get_status(shared_state.clone()),
+        // monitorStatus is proxy_agent_status itself status
+        monitorStatus: ProxyAgentDetailStatus {
+            status: ModuleState::RUNNING.to_string(),
+            message: "proxy_agent_status thread started.".to_string(),
+            states: None,
+        },
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
