@@ -130,6 +130,15 @@ fn handle_connection(connection: &mut Connection, shared_state: Arc<Mutex<Shared
         format!("Got request: {}", request.description()),
     );
 
+    if request.url == provision::PROVISION_URL_PATH {
+        return handle_provision_state_check_request(
+            connection.id,
+            request,
+            stream,
+            shared_state.clone(),
+        );
+    }
+
     // lookup the eBPF audit_map
     let client_source_ip: IpAddr;
     let client_source_port: u16;
@@ -681,6 +690,52 @@ fn send_response(mut client_stream: &TcpStream, status: &str) {
     _ = client_stream.flush();
 }
 
+fn handle_provision_state_check_request(
+    connection_id: u128,
+    request: Request,
+    mut client_stream: &TcpStream,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
+    // check MetaData header exists or not
+    if request.headers.get(constants::METADATA_HEADER).is_none() {
+        Connection::write_warning(
+            connection_id,
+            "No MetaData header found in the request.".to_string(),
+        );
+        send_response(client_stream, Response::BAD_REQUEST);
+        return;
+    }
+
+    // notify key_keeper to poll the status
+    key_keeper_wrapper::notify(shared_state.clone());
+
+    let provision_state = provision::get_provision_state(shared_state);
+    let (response_status, provision_state) = match serde_json::to_string(&provision_state) {
+        Ok(json) => {
+            Connection::write(connection_id, format!("Provision state: {}", json));
+            (Response::OK, json)
+        }
+        Err(e) => {
+            let error = format!("Failed to get provision state: {}", e);
+            Connection::write_warning(connection_id, error.to_string());
+            (Response::BAD_GATEWAY, error)
+        }
+    };
+
+    let mut response = Response::from_status(response_status.to_string());
+
+    // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
+    response.headers.add_header(
+        constants::AUTHORIZATION_HEADER.to_string(),
+        "value".to_string(),
+    );
+    response.set_body(provision_state.as_bytes().to_vec());
+
+    // response to original client
+    _ = client_stream.write_all(response.as_raw_string().as_bytes());
+    _ = client_stream.flush();
+}
+
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
         ModuleState::STOPPED.to_string()
@@ -704,6 +759,7 @@ mod tests {
     use crate::common::http::response::Response;
     use crate::common::logger;
     use crate::key_keeper::key::Key;
+    use crate::provision;
     use crate::proxy::proxy_listener;
     use crate::proxy::proxy_listener::Connection;
     use crate::proxy::Claims;
@@ -753,18 +809,31 @@ mod tests {
             .write_all(request.as_raw_string().as_bytes())
             .unwrap();
         client.flush().unwrap();
-
         let response = http::receive_response_data(&client).unwrap();
-
-        // stop listener
-        proxy_listener::stop(port, shared_state);
-        handle.join().unwrap();
-
         assert_eq!(
             Response::MISDIRECTED,
             response.status,
             "response.status mismatched."
         );
+
+        // test provision state check without MetaData header
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        let mut request =
+            Request::new(provision::PROVISION_URL_PATH.to_string(), "GET".to_string());
+        client
+            .write_all(request.as_raw_string().as_bytes())
+            .unwrap();
+        client.flush().unwrap();
+        let response = http::receive_response_data(&client).unwrap();
+        assert_eq!(
+            Response::BAD_REQUEST,
+            response.status,
+            "response.status mismatched."
+        );
+
+        // stop listener
+        proxy_listener::stop(port, shared_state);
+        handle.join().unwrap();
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(temp_test_path);
