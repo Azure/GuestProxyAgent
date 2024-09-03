@@ -10,7 +10,8 @@ use crate::service_main;
 #[cfg(not(windows))]
 pub fn start_service_wait() {
     // start service
-    service_main::enable_agent();
+    let service_state = service_main::service_state::ServiceState::new();
+    service_main::run(service_state);
 
     loop {
         // continue to sleep until the service is stopped

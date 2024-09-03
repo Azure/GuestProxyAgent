@@ -14,7 +14,11 @@ use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread;
+
+#[cfg(not(windows))]
+pub use linux::BpfObject;
+#[cfg(windows)]
+pub use windows::BpfObject;
 
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
@@ -40,68 +44,67 @@ impl AuditEntry {
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
-pub fn start_async(local_port: u16, shared_state: Arc<Mutex<SharedState>>) {
-    thread::spawn(move || {
-        start(local_port, shared_state);
-    });
+pub async fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+    let started = start_impl(local_port, shared_state.clone()).await;
+
+    let level = if started {
+        event_logger::INFO_LEVEL
+    } else {
+        event_logger::ERROR_LEVEL
+    };
+    event_logger::write_event(
+        level,
+        get_status_message(shared_state.clone()),
+        "start",
+        "redirector",
+        logger::AGENT_LOGGER_KEY,
+    );
+
+    started
 }
 
-fn start(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+async fn start_impl(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
+    #[cfg(windows)]
+    {
+        if !windows::initialized_success(shared_state.clone()) {
+            return false;
+        }
+    }
     for _ in 0..5 {
-        #[cfg(windows)]
-        {
-            windows::start(local_port, shared_state.clone());
-        }
-        #[cfg(not(windows))]
-        {
-            linux::start(local_port, shared_state.clone());
-        }
-
-        let level = if is_started() {
-            event_logger::INFO_LEVEL
-        } else {
-            event_logger::ERROR_LEVEL
-        };
-        event_logger::write_event(
-            level,
-            get_status_message(),
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
-        if is_started() {
+        start_internal(local_port, shared_state.clone());
+        if is_started(shared_state.clone()) {
             return true;
         }
-        thread::sleep(std::time::Duration::from_millis(10));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
-    is_started()
+    is_started(shared_state.clone())
 }
 
-pub fn close(local_port: u16) {
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     #[cfg(windows)]
     {
-        windows::close(local_port);
+        windows::close(shared_state);
     }
     #[cfg(not(windows))]
     {
-        linux::close(local_port);
+        linux::close(shared_state);
     }
 }
 
-fn get_status_message() -> String {
+fn get_status_message(shared_state: Arc<Mutex<SharedState>>) -> String {
     #[cfg(windows)]
     {
-        windows::get_status()
+        windows::get_status(shared_state)
     }
     #[cfg(not(windows))]
     {
-        linux::get_status()
+        linux::get_status(shared_state)
     }
 }
 
-pub fn get_status() -> ProxyAgentDetailStatus {
-    let mut message = get_status_message();
+pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
+    let mut message = get_status_message(shared_state.clone());
     if message.len() > MAX_STATUS_MESSAGE_LENGTH {
         event_logger::write_event(
             event_logger::WARN_LEVEL,
@@ -117,7 +120,7 @@ pub fn get_status() -> ProxyAgentDetailStatus {
         message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);
     }
 
-    let status = if is_started() {
+    let status = if is_started(shared_state.clone()) {
         ModuleState::RUNNING.to_string()
     } else {
         ModuleState::STOPPED.to_string()
@@ -130,25 +133,28 @@ pub fn get_status() -> ProxyAgentDetailStatus {
     }
 }
 
-pub fn is_started() -> bool {
+pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
     #[cfg(windows)]
     {
-        windows::is_started()
+        windows::is_started(shared_state)
     }
     #[cfg(not(windows))]
     {
-        linux::is_started()
+        linux::is_started(shared_state)
     }
 }
 
-pub fn lookup_audit(source_port: u16) -> std::io::Result<AuditEntry> {
+pub fn lookup_audit(
+    source_port: u16,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> std::io::Result<AuditEntry> {
     #[cfg(windows)]
     {
-        windows::lookup_audit(source_port)
+        windows::lookup_audit(source_port, shared_state)
     }
     #[cfg(not(windows))]
     {
-        linux::lookup_audit(source_port)
+        linux::lookup_audit(source_port, shared_state)
     }
 }
 
@@ -250,6 +256,11 @@ pub use windows::update_imds_redirect_policy;
 pub use linux::update_wire_server_redirect_policy;
 #[cfg(windows)]
 pub use windows::update_wire_server_redirect_policy;
+
+#[cfg(not(windows))]
+use linux::start_internal;
+#[cfg(windows)]
+use windows::start_internal;
 
 #[cfg(test)]
 mod tests {

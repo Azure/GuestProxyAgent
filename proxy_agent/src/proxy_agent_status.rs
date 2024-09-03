@@ -1,59 +1,41 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::common::{config, logger};
-use crate::monitor;
 use crate::proxy::proxy_listener;
-use crate::proxy::proxy_summary::ProxySummary;
-use crate::shared_state::{proxy_listener_wrapper, SharedState};
+use crate::shared_state::{
+    agent_status_wrapper, proxy_listener_wrapper, shared_state_wrapper, telemetry_wrapper,
+    SharedState,
+};
 use crate::{key_keeper, redirector};
-use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
-    GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentStatus,
-    ProxyConnectionSummary,
+    GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
+    ProxyAgentStatus,
 };
-use proxy_agent_shared::telemetry::event_logger;
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
-static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static mut SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static mut FAILED_AUTHENTICATE_SUMMARY_MAP: Lazy<Mutex<HashMap<String, ProxyConnectionSummary>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-pub fn start_async(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    _ = thread::Builder::new()
-        .name("guest_proxy_agent_status".to_string())
-        .spawn(move || {
-            start(interval, shared_state);
-        });
-}
-
-fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
-    let shutdown = SHUT_DOWN.clone();
+pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     if interval == Duration::default() {
         interval = Duration::from_secs(60); // update status every 1 minute
     }
 
-    logger::write("proxy_agent_status thread started.".to_string());
-
+    logger::write("proxy_agent_status task started.".to_string());
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    tokio::select! {
+        _ = loop_status(interval, shared_state.clone()) => {}
+        _ = cancellation_token.cancelled() => {
+            logger::write_warning("cancellation token signal received, stop the guest_proxy_agent_status task.".to_string());
+        }
+    }
+}
+async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();
     let dir_path = config::get_logs_dir();
 
     loop {
-        if shutdown.load(Ordering::Relaxed) {
-            logger::write_warning(
-                "Stop signal received, exiting the guest_proxy_agent_status thread.".to_string(),
-            );
-            break;
-        }
-
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
         if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
@@ -68,22 +50,31 @@ fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
                 "Clearing the connection summary map and failed authenticate summary map."
                     .to_string(),
             );
-            unsafe {
-                let mut summary_map_guard = SUMMARY_MAP.lock().unwrap();
-                summary_map_guard.clear();
-                let mut summary_map_guard = FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap();
-                summary_map_guard.clear();
-                start_time = Instant::now();
-            }
+            agent_status_wrapper::clear_all_summary(shared_state.clone());
+            start_time = Instant::now();
         }
 
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
     }
 }
 
-pub fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentStatus {
+fn get_telemetry_log_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
+    let status = if telemetry_wrapper::get_logger_shutdown(shared_state.clone()) {
+        ModuleState::STOPPED.to_string()
+    } else {
+        ModuleState::RUNNING.to_string()
+    };
+
+    ProxyAgentDetailStatus {
+        status,
+        message: telemetry_wrapper::get_logger_status_message(shared_state),
+        states: None,
+    }
+}
+
+fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentStatus {
     let key_latch_status = key_keeper::get_status(shared_state.clone());
-    let ebpf_status = redirector::get_status();
+    let ebpf_status = redirector::get_status(shared_state.clone());
     let proxy_status = proxy_listener::get_status(shared_state.clone());
     let mut status = OverallState::SUCCESS.to_string();
     if key_latch_status.status != ModuleState::RUNNING
@@ -92,74 +83,42 @@ pub fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAge
     {
         status = OverallState::ERROR.to_string();
     }
+
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status,
-        monitorStatus: monitor::get_status(),
+        // monitorStatus is proxy_agent_status itself status
+        monitorStatus: ProxyAgentDetailStatus {
+            status: ModuleState::RUNNING.to_string(),
+            message: "proxy_agent_status thread started.".to_string(),
+            states: None,
+        },
         keyLatchStatus: key_latch_status,
         ebpfProgramStatus: ebpf_status,
         proxyListenerStatus: proxy_status,
-        telemetryLoggerStatus: event_logger::get_status(),
+        telemetryLoggerStatus: get_telemetry_log_status(shared_state.clone()),
         proxyConnectionsCount: proxy_listener_wrapper::get_connection_count(shared_state),
     }
 }
 
-pub fn proxy_connection_summary_new(summary: ProxySummary) -> ProxyConnectionSummary {
-    ProxyConnectionSummary {
-        userName: summary.userName.to_string(),
-        ip: summary.ip.to_string(),
-        port: summary.port,
-        processCmdLine: summary.processCmdLine.to_string(),
-        responseStatus: summary.responseStatus.to_string(),
-        count: 1,
-        userGroups: Some(summary.userGroups.clone()),
-        processFullPath: Some(summary.processFullPath.to_string()),
-    }
-}
-pub fn increase_count(connection_summary: &mut ProxyConnectionSummary) {
-    connection_summary.count += 1;
-}
-
-pub fn guest_proxy_agent_aggregate_status_new(
+fn guest_proxy_agent_aggregate_status_new(
     shared_state: Arc<Mutex<SharedState>>,
 ) -> GuestProxyAgentAggregateStatus {
     GuestProxyAgentAggregateStatus {
         timestamp: misc_helpers::get_date_time_string_with_milliseconds(),
         proxyAgentStatus: proxy_agent_status_new(shared_state.clone()),
-        proxyConnectionSummary: get_all_connection_summary(false),
-        failedAuthenticateSummary: get_all_connection_summary(true),
+        proxyConnectionSummary: agent_status_wrapper::get_all_connection_summary(
+            shared_state.clone(),
+            false,
+        ),
+        failedAuthenticateSummary: agent_status_wrapper::get_all_connection_summary(
+            shared_state.clone(),
+            true,
+        ),
     }
 }
 
-pub fn add_connection_summary(summary: ProxySummary, is_failed_authenticate: bool) {
-    let mut summary_map = if is_failed_authenticate {
-        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
-    } else {
-        unsafe { SUMMARY_MAP.lock().unwrap() }
-    };
-
-    let summary_key = summary.to_key_string();
-    if let std::collections::hash_map::Entry::Vacant(e) = summary_map.entry(summary_key.clone()) {
-        e.insert(proxy_connection_summary_new(summary));
-    } else if let Some(connection_summary) = summary_map.get_mut(&summary_key) {
-        increase_count(connection_summary);
-    }
-}
-
-fn get_all_connection_summary(is_failed_authenticate: bool) -> Vec<ProxyConnectionSummary> {
-    let summary_map_lock = if is_failed_authenticate {
-        unsafe { FAILED_AUTHENTICATE_SUMMARY_MAP.lock().unwrap() }
-    } else {
-        unsafe { SUMMARY_MAP.lock().unwrap() }
-    };
-    let mut copy_summary: Vec<ProxyConnectionSummary> = Vec::new();
-    for (_, connection_summary) in summary_map_lock.iter() {
-        copy_summary.push(connection_summary.clone());
-    }
-    copy_summary
-}
-
-pub fn write_aggregate_status_to_file(
+fn write_aggregate_status_to_file(
     dir_path: PathBuf,
     status: GuestProxyAgentAggregateStatus,
 ) -> std::io::Result<()> {

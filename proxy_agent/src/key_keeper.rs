@@ -6,14 +6,14 @@ use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::proxy_authentication;
-use crate::shared_state::{key_keeper_wrapper, SharedState};
+use crate::shared_state::{key_keeper_wrapper, shared_state_wrapper, SharedState};
 use crate::{acl, redirector};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::{path::PathBuf, thread, time::Duration};
+use std::{path::PathBuf, time::Duration};
 use url::Url;
 
 //pub const RUNNING_STATE: &str = "running";
@@ -26,39 +26,24 @@ const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
 const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
-pub fn poll_status_async(
-    base_url: Url,
-    key_dir: PathBuf,
-    interval: Duration,
-    config_start_redirector: bool,
-    shared_state: Arc<Mutex<SharedState>>,
-) {
-    thread::spawn(move || {
-        poll_secure_channel_status(
-            base_url,
-            key_dir,
-            interval,
-            config_start_redirector,
-            shared_state,
-        );
-    });
-}
-
 // poll secure channel status at interval
-fn poll_secure_channel_status(
+pub async fn poll_secure_channel_status(
     base_url: Url,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
-    let message = "poll secure channel status thread started.";
+    let message = "poll secure channel status task started.";
     key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
     logger::write(message.to_string());
 
-    // launch redirector initialization when the key keeper thread is running
+    // launch redirector initialization when the key keeper task is running
     if config_start_redirector {
-        redirector::start_async(constants::PROXY_AGENT_PORT, shared_state.clone());
+        tokio::spawn(redirector::start(
+            constants::PROXY_AGENT_PORT,
+            shared_state.clone(),
+        ));
     }
 
     _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
@@ -83,17 +68,36 @@ fn poll_secure_channel_status(
         }
     }
 
+    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    tokio::select! {
+        _ = loop_poll(
+            base_url.clone(),
+            key_dir.clone(),
+            interval,
+            shared_state.clone(),
+        ) => {
+            let message = "poll_secure_channel_status task exited.";
+            key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
+            logger::write(message.to_string());
+        },
+        _ = cancellation_token.cancelled() => {
+            let message = "poll_secure_channel_status task cancelled.";
+            key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
+            logger::write(message.to_string());
+        }
+    }
+}
+async fn loop_poll(
+    base_url: Url,
+    key_dir: PathBuf,
+    interval: Duration,
+    shared_state: Arc<Mutex<SharedState>>,
+) {
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
+    let notify = key_keeper_wrapper::get_notify(shared_state.clone());
     loop {
-        if key_keeper_wrapper::get_shutdown(shared_state.clone()) {
-            let message = "Stop signal received, exiting the poll_secure_channel_status thread.";
-            key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
-            logger::write_warning(message.to_string());
-            break;
-        }
-
         if !first_iteration {
             // skip the sleep for the first loop
 
@@ -109,7 +113,20 @@ fn poll_secure_channel_status(
                 } else {
                     interval
                 };
-            thread::sleep(sleep);
+
+            tokio::select! {
+                _ = notify.notified() => {
+                    if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) != DISABLE_STATE {
+                        let message = format!( "poll_secure_channel_status task notified but secure channel state is not disabled, continue with sleep wait for {:?}.", sleep);
+                        logger::write_warning(message);
+                        tokio::time::sleep(sleep).await;
+                    } else{
+                        let message = "poll_secure_channel_status task notified and secure channel state is disabled, start poll status now.".to_string();
+                        logger::write_warning(message);
+                    }
+                },
+                _ = tokio::time::sleep(sleep) => {}
+            }
         }
         first_iteration = false;
 
@@ -156,7 +173,10 @@ fn poll_secure_channel_status(
                 "Wireserver rule id changed from {} to {}.",
                 old_wire_server_rule_id, wireserver_rule_id
             ));
-            proxy_authentication::set_wireserver_rules(status.get_wireserver_rules());
+            proxy_authentication::set_wireserver_rules(
+                shared_state.clone(),
+                status.get_wireserver_rules(),
+            );
         }
 
         let (updated, old_imds_rule_id) =
@@ -166,7 +186,7 @@ fn poll_secure_channel_status(
                 "IMDS rule id changed from {} to {}.",
                 old_imds_rule_id, imds_rule_id
             ));
-            proxy_authentication::set_imds_rules(status.get_imds_rules());
+            proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
         }
 
         let state = status.get_secure_channel_state();
@@ -287,8 +307,12 @@ fn poll_secure_channel_status(
             // update the redirector policy map
             redirector::update_wire_server_redirect_policy(
                 status.get_wire_server_mode() != DISABLE_STATE,
+                shared_state.clone(),
             );
-            redirector::update_imds_redirect_policy(status.get_imds_mode() != DISABLE_STATE);
+            redirector::update_imds_redirect_policy(
+                status.get_imds_mode() != DISABLE_STATE,
+                shared_state.clone(),
+            );
 
             // customer has not enforce the secure channel state
             if state == DISABLE_STATE {
@@ -378,7 +402,6 @@ mod tests {
     use proxy_agent_shared::{logger_manager, misc_helpers};
     use std::env;
     use std::fs;
-    use std::thread;
     use std::time::Duration;
     use url::Url;
 
@@ -414,8 +437,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn poll_secure_channel_status_tests() {
+    #[tokio::test]
+    async fn poll_secure_channel_status_tests() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("poll_secure_channel_status_tests");
         let mut log_dir = temp_test_path.to_path_buf();
@@ -443,10 +466,12 @@ mod tests {
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-        thread::spawn(move || {
+
+        // LATER: need switch to tokio spawn once the server_mock is async
+        std::thread::spawn(move || {
             server_mock::start(ip.to_string(), port);
         });
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state
         server_mock::set_secure_channel_state(false);
@@ -454,17 +479,16 @@ mod tests {
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
         let shared_state = SharedState::new();
-        key_keeper::poll_status_async(
-            Url::parse("http://127.0.0.1:8081/").unwrap(),
+        tokio::spawn(super::poll_secure_channel_status(
+            Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,
             shared_state.clone(),
-        );
-
+        ));
         for _ in [0; 5] {
             // wait poll_secure_channel_status run at least one loop
-            thread::sleep(Duration::from_millis(100));
+            tokio::time::sleep(Duration::from_millis(100)).await;
             if keys_dir.exists() {
                 break;
             }
@@ -479,7 +503,7 @@ mod tests {
         // set secure channel state to running
         server_mock::set_secure_channel_state(true);
         // wait poll_secure_channel_status run at least one loop
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let key_files = misc_helpers::get_files(&keys_dir).unwrap();
         assert_eq!(
             1,

@@ -29,6 +29,11 @@ impl Headers {
         }
     }
 
+    /// Get the header (key, value) by key
+    pub fn get(&self, key: &str) -> Option<&(String, String)> {
+        self.map.get(&key.to_lowercase())
+    }
+
     pub fn copy(&self) -> Self {
         let mut headers = Headers::new();
         for header in self.map.values() {

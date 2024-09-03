@@ -26,10 +26,10 @@ if [[ $os == *"Ubuntu"* ]]; then
     done
 else
     for  i in {1..3}; do
-        echo "start installing zip via yum $i"
-        sudo yum -y install zip
+        echo "start installing zip via dnf $i"
+        sudo dnf -y install zip
         sleep 10
-        install=$(yum list --installed zip)
+        install=$(dnf list --installed zip)
         echo "install=$install"
         if [[ $install == *"zip"* ]]; then
             echo "zip installed successfully"

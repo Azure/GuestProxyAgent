@@ -12,22 +12,26 @@ use windows_sys::Win32::System::SystemInformation::{
 };
 
 pub fn get_processor_count() -> usize {
-    unsafe {
-        let mut data = MaybeUninit::<SYSTEM_INFO>::uninit();
-        let _status: () = GetSystemInfo(data.as_mut_ptr());
+    let mut data = MaybeUninit::<SYSTEM_INFO>::uninit();
+    unsafe { GetSystemInfo(data.as_mut_ptr()) };
 
-        let data = data.assume_init();
-        data.dwNumberOfProcessors as usize
-    }
+    let data = unsafe { data.assume_init() };
+    data.dwNumberOfProcessors as usize
 }
 
-pub fn get_memory_in_mb() -> u64 {
+pub fn get_memory_in_mb() -> Result<u64, String> {
+    let mut data = MaybeUninit::<MEMORYSTATUSEX>::uninit();
+    let data = data.as_mut_ptr();
     unsafe {
-        let mut data = MaybeUninit::<MEMORYSTATUSEX>::uninit();
-        let data = data.as_mut_ptr();
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
-        GlobalMemoryStatusEx(data);
-        (*data).ullTotalPhys / 1024 / 1024
+        if GlobalMemoryStatusEx(data) == 0 {
+            return Err(format!(
+                "GlobalMemoryStatusEx failed: {}",
+                Error::last_os_error()
+            ));
+        }
+        let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
+        Ok(memory_in_mb)
     }
 }
 
@@ -54,7 +58,11 @@ mod tests {
     #[test]
     fn get_memory_in_mb_test() {
         let memory = super::get_memory_in_mb();
-        println!("Memory in MB: {}", memory);
-        assert_ne!(0, memory, "Memory cannot be 0.");
+        match memory {
+            Ok(memory) => {
+                assert_ne!(0, memory, "Memory cannot be 0.");
+            }
+            Err(e) => assert!(false, "{}", format!("Failed to get memory: {}", e)),
+        }
     }
 }
