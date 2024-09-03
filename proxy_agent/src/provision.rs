@@ -99,6 +99,8 @@ pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
         config::get_events_dir(),
         Some(Duration::from_secs(300)),
         true,
+        None,
+        None,
         shared_state.clone(),
     ));
     provision_wrapper::set_event_log_threads_initialized(shared_state.clone(), true);

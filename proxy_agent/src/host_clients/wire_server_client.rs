@@ -1,20 +1,23 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::http::{
-    self, headers, http_request::HttpRequest, request::Request, response::Response,
-};
+
+use crate::common::{hyper_client, logger};
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
+use http::Method;
+use hyper::Uri;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
-use std::{io::prelude::*, net::TcpStream};
-use url::{Position, Url};
 
 pub struct WireServerClient {
     ip: String,
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
 }
+
+const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
+const GOALSTATE_URI: &str = "machine?comp=goalstate";
 
 impl WireServerClient {
     pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
@@ -25,145 +28,98 @@ impl WireServerClient {
         }
     }
 
-    fn endpoint(&self) -> String {
-        format!("{}:{}", self.ip, self.port)
-    }
-
-    fn create_http_request(&self, method: &str, uri: String) -> std::io::Result<HttpRequest> {
-        let mut url;
-        match Url::parse(&uri) {
-            Ok(u) => url = u,
-            Err(_) => {
-                url = Url::parse(&format!("http://{}:{}", self.ip, self.port)).unwrap();
-                match url.join(&uri) {
-                    Ok(u) => url = u,
-                    Err(e) => {
-                        return Err(Error::new(
-                            ErrorKind::InvalidData,
-                            format!("Failed to construct url - {} with error: {}", uri, e),
-                        ));
-                    }
-                }
-            }
-        }
-
-        let path_para = &url[Position::BeforePath..];
-        let mut req = Request::new(path_para.to_string(), method.to_string());
-        req.headers
-            .add_header("x-ms-version".to_string(), "2012-11-30".to_string());
-        let http_request = HttpRequest::new_proxy_agent_request(
-            url,
-            req,
-            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
-            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
-        )?;
-
-        Ok(http_request)
-    }
-
-    pub fn send_telemetry_data(&self, xml_data: String) -> std::io::Result<()> {
+    pub async fn send_telemetry_data(&self, xml_data: String) -> std::io::Result<()> {
         if xml_data.is_empty() {
             return Ok(());
         }
 
-        let data = xml_data.as_bytes();
-        let mut http_request =
-            self.create_http_request("POST", "/machine/?comp=telemetrydata".to_string())?;
-        http_request.request.headers.add_header(
+        let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
+        let url: Uri = url.parse().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Failed to parse URL {} with error: {}", url, e),
+            )
+        })?;
+        let mut headers = HashMap::new();
+        headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
+        headers.insert(
             "Content-Type".to_string(),
             "text/xml; charset=utf-8".to_string(),
         );
-        http_request.request.headers.add_header(
-            headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-            data.len().to_string(),
-        );
-        http_request.request.headers.add_header(
-            headers::EXPECT_HEADER_NAME.to_string(),
-            headers::EXPECT_HEADER_VALUE.to_string(),
-        );
 
-        let mut client = TcpStream::connect(self.endpoint())?;
-        // send http request without body
-        _ = client.write_all(http_request.request.as_raw_string().as_bytes());
-        _ = client.flush();
-        let raw_response_data = http::receive_data_in_string(&client)?;
-        let response = Response::from_raw_data(raw_response_data);
-        if response.is_continue_response() {
-            _ = client.write_all(data);
-            _ = client.flush();
-            let raw_response_data = http::receive_data_in_string(&client)?;
-            let response = Response::from_raw_data(raw_response_data);
-            if response.status != Response::OK {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Host responsed {}.", &response.status),
-                ));
-            }
-        } else {
-            return Err(Error::new(
-                ErrorKind::ConnectionRefused,
-                "Host does not response continue to receive the request body.",
+        let request = hyper_client::build_request(
+            Method::POST,
+            url.clone(),
+            &headers,
+            Some(xml_data.as_bytes()),
+            None, // post telemetry data does not require signing
+            None,
+        )?;
+        let response =
+            match hyper_client::send_request(&self.ip, self.port, request, logger::write_warning)
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to send telemetry request {}", e),
+                    ))
+                }
+            };
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Failed to get telemetry response from {}, status code: {}",
+                    url, status
+                ),
             ));
         }
 
         Ok(())
     }
 
-    pub fn get_goalstate(&self) -> std::io::Result<GoalState> {
-        const GOALSTATE_URI: &str = "/machine?comp=goalstate";
-        let mut http_request = self.create_http_request("GET", GOALSTATE_URI.to_string())?;
+    pub async fn get_goalstate(&self) -> std::io::Result<GoalState> {
+        let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
+        let url = url.parse().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Failed to parse URL {} with error: {}", url, e),
+            )
+        })?;
+        let mut headers = HashMap::new();
+        headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        let response = http::get_response_in_string(&mut http_request)?;
-        if response.status != Response::OK {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Failed to retrieve GoalState {} - {}",
-                    response.status,
-                    response.get_body_as_string()?
-                ),
-            ));
-        }
-
-        let goal_state_str = response.get_body_as_string()?;
-        match serde_xml_rs::from_str::<GoalState>(&goal_state_str) {
-            Ok(goalstate) => Ok(goalstate),
-            Err(err) => Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Received goalstate is invalid: {}, Error: {}",
-                    goal_state_str, err
-                ),
-            )),
-        }
+        hyper_client::get(
+            url,
+            &headers,
+            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
+            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            logger::write_warning,
+        )
+        .await
     }
 
-    pub fn get_shared_config(&self, url: String) -> std::io::Result<SharedConfig> {
-        let mut http_request = self.create_http_request("GET", url.to_string())?;
+    pub async fn get_shared_config(&self, url: String) -> std::io::Result<SharedConfig> {
+        let mut headers = HashMap::new();
+        let url = url.parse().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Failed to parse URL {} with error: {}", url, e),
+            )
+        })?;
+        headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        let response = http::get_response_in_string(&mut http_request)?;
-        if response.status != Response::OK {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Failed to retrieve SharedConfig from url: {}. Response: {} - {}",
-                    url,
-                    response.status,
-                    response.get_body_as_string()?
-                ),
-            ));
-        }
-
-        let shared_config_str = response.get_body_as_string()?;
-        match serde_xml_rs::from_str::<SharedConfig>(&shared_config_str) {
-            Ok(shared_config) => Ok(shared_config),
-            Err(err) => Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Received shared_config is invalid: {}, Error: {}",
-                    shared_config_str, err
-                ),
-            )),
-        }
+        hyper_client::get(
+            url,
+            &headers,
+            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
+            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            logger::write_warning,
+        )
+        .await
     }
 }
