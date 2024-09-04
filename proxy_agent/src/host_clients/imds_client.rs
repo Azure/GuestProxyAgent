@@ -1,17 +1,20 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use super::instance_info::InstanceInfo;
-use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
+use crate::common::{hyper_client, logger};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
+use hyper::Uri;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
-use url::Url;
 
 pub struct ImdsClient {
     ip: String,
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
 }
+
+const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
 
 impl ImdsClient {
     pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
@@ -22,41 +25,25 @@ impl ImdsClient {
         }
     }
 
-    pub fn get_imds_instance_info(&self) -> std::io::Result<InstanceInfo> {
-        const IMDS_URI: &str = "/metadata/instance?api-version=2018-02-01";
+    pub async fn get_imds_instance_info(&self) -> std::io::Result<InstanceInfo> {
+        let url: Uri = (format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI))
+            .parse()
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("Failed to parse URL: {}", e),
+                )
+            })?;
+        let mut headers = HashMap::new();
+        headers.insert("Metadata".to_string(), "true".to_string());
 
-        let req = Request::new(IMDS_URI.to_string(), "GET".to_string());
-        let url = Url::parse(&format!("http://{}:{}", self.ip, self.port)).unwrap();
-        let url = url.join(IMDS_URI).unwrap();
-        let mut http_request = HttpRequest::new_proxy_agent_request(
+        hyper_client::get(
             url,
-            req,
+            &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
-        )?;
-
-        let response = http::get_response_in_string(&mut http_request)?;
-        if response.status != Response::OK {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Failed to retrieve instance info {} - {}",
-                    response.status,
-                    response.get_body_as_string()?
-                ),
-            ));
-        }
-
-        let instance_info_str = response.get_body_as_string()?;
-        match serde_json::from_str::<InstanceInfo>(&instance_info_str) {
-            Ok(instnce) => Ok(instnce),
-            Err(e) => Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "Received instance info is invalid: {}, Error: {}",
-                    instance_info_str, e
-                ),
-            )),
-        }
+            logger::write_warning,
+        )
+        .await
     }
 }

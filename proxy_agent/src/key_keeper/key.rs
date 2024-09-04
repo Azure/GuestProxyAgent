@@ -1,20 +1,17 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::{
-    common::{
-        constants,
-        http::{self, headers, http_request::HttpRequest, request::Request, response::Response},
-    },
+    common::{constants, hyper_client, logger},
     proxy::{proxy_connection::Connection, Claims},
 };
-use proxy_agent_shared::misc_helpers;
+use http::{Method, StatusCode};
+use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
     io::{Error, ErrorKind},
 };
-use url::Url;
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -187,7 +184,7 @@ impl Clone for Privilege {
 }
 
 impl Privilege {
-    pub fn is_match(&self, connection_id: u128, request_url: Url) -> bool {
+    pub fn is_match(&self, connection_id: u128, request_url: Uri) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match privilege '{}'", self.name),
@@ -209,9 +206,9 @@ impl Privilege {
                     );
 
                     for (key, value) in query_parameters {
-                        match Request::query_pairs(&request_url)
+                        match hyper_client::query_pairs(&request_url)
                             .into_iter()
-                            .find(|(k, _)| k == key)
+                            .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
                         {
                             Some((_, v)) => {
                                 if v.to_lowercase() == value.to_lowercase() {
@@ -635,109 +632,107 @@ impl Clone for Key {
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-// base_url must end with '/'
-pub fn get_status(base_url: Url) -> std::io::Result<KeyStatus> {
-    let url = base_url.join(STATUS_URL).unwrap();
-    let mut req = Request::new(STATUS_URL.to_string(), "GET".to_string());
-    req.headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());
-    req.headers.add_header(
-        constants::DATE_HEADER.to_string(),
-        misc_helpers::get_date_time_rfc1123_string(),
-    );
-    let mut http_request = HttpRequest::new(url, req);
-    http_request
-        .request
-        .headers
-        .add_header("Host".to_string(), http_request.get_host());
-
-    let response = http::get_response_in_string(&mut http_request)?;
-    if response.status != Response::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Host response {}", response.status),
-        ));
-    }
-
-    let status: KeyStatus = serde_json::from_str(&response.get_body_as_string()?)?;
+pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!("http://{}:{}{}", host, port, STATUS_URL);
+    let url: Uri = url.parse().map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "Failed to join {} and {}, error: {}",
+                base_url, STATUS_URL, e
+            ),
+        )
+    })?;
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    let status: KeyStatus =
+        hyper_client::get(url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
 }
 
-// base_url must end with '/'
-pub fn acquire_key(base_url: Url) -> std::io::Result<Key> {
-    let url = base_url.join(KEY_URL).unwrap();
-    let mut req = Request::new(KEY_URL.to_string(), "POST".to_string());
-    req.headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());
-    req.headers.add_header(
-        constants::DATE_HEADER.to_string(),
-        misc_helpers::get_date_time_rfc1123_string(),
-    );
-    req.headers
-        .add_header("Content-Type".to_string(), "application/json".to_string());
-    req.set_body_as_string(r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string());
-    req.headers.add_header(
-        headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-        req.get_body_len().to_string(),
-    );
-    let mut http_request = HttpRequest::new(url, req);
-    http_request
-        .request
-        .headers
-        .add_header("Host".to_string(), http_request.get_host());
+pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!("http://{}:{}{}", host, port, KEY_URL);
+    let url: Uri = url.parse().map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
+        )
+    })?;
 
-    let response = http::get_response_in_string(&mut http_request)?;
-    if response.status != Response::OK {
+    let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
+    let request = hyper_client::build_request(
+        hyper::Method::POST,
+        url.clone(),
+        &headers,
+        Some(body.as_bytes()),
+        None,
+        None,
+    )?;
+    let response =
+        match hyper_client::send_request(&host, port, request, logger::write_warning).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed to send acquire key, error: {}", e),
+                ));
+            }
+        };
+    if response.status() != StatusCode::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            format!("{} - {}", response.status, response.get_body_as_string()?),
+            format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
-
-    let response_body = response.get_body_as_string()?;
-    match serde_json::from_str(&response_body) {
-        Ok(key) => Ok(key),
-        Err(e) => Err(Error::new(
-            ErrorKind::InvalidData,
-            format!(
-                "Cannot parse the json response body {} with error {}",
-                response_body, e
-            ),
-        )),
-    }
+    hyper_client::read_response_body(response).await
 }
 
-// base_url must end with '/'
-pub fn attest_key(base_url: Url, key: &Key) -> std::io::Result<()> {
+pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let url = base_url
-        .join(KEY_URL)
-        .unwrap()
-        .join(&key.guid)
-        .unwrap()
-        .join("key-attestation")
-        .unwrap();
-    let mut req = Request::new(
-        format!("{}/{}/key-attestation", KEY_URL, key.guid),
-        "POST".to_string(),
+    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let url = format!(
+        "http://{}:{}{}/{}/key-attestation",
+        host, port, KEY_URL, key.guid
     );
-    req.headers.add_header(
-        headers::CONTENT_LENGTH_HEADER_NAME.to_string(),
-        0.to_string(),
-    );
-    let mut http_request = HttpRequest::new_proxy_agent_request(
+    let url: Uri = url.parse().map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Failed to join {} and {}, error: {}", base_url, url, e),
+        )
+    })?;
+
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    let request = hyper_client::build_request(
+        Method::POST,
         url,
-        req,
+        &headers,
+        None,
         Some(key.guid.to_string()),
         Some(key.key.to_string()),
     )?;
-    let mut response = http::get_response_in_string(&mut http_request)?;
-    if response.status != Response::OK {
+    let response =
+        match hyper_client::send_request(&host, port, request, logger::write_warning).await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed to send acquire key, error: {}", e),
+                ));
+            }
+        };
+    if response.status() != StatusCode::OK {
         return Err(Error::new(
             ErrorKind::Other,
-            response.as_raw_string().to_string(),
+            format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
 
@@ -752,6 +747,7 @@ mod tests {
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::Connection;
+    use hyper::Uri;
 
     #[test]
     fn key_status_v1_test() {
@@ -1142,21 +1138,25 @@ mod tests {
             }
         }"#;
         let privilege: Privilege = serde_json::from_str(privilege).unwrap();
-        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        let url: Uri = "http://localhost/test?key1=value1&key2=value2"
+            .parse()
+            .unwrap();
         assert!(
             privilege.is_match(1, url.clone()),
             "privilege should be matched"
         );
 
-        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value3").unwrap();
+        let url = "http://localhost/test?key1=value1&key2=value3"
+            .parse()
+            .unwrap();
         assert!(
-            !privilege.is_match(1, url.clone()),
+            !privilege.is_match(1, url),
             "privilege should not be matched"
         );
 
-        let url = url::Url::parse("http://localhost/test?key1=value1").unwrap();
+        let url = "http://localhost/test?key1=value1".parse().unwrap();
         assert!(
-            !privilege.is_match(1, url.clone()),
+            !privilege.is_match(1, url),
             "privilege should not be matched"
         );
 
@@ -1165,11 +1165,10 @@ mod tests {
             "path": "/test"        
         }"#;
         let privilege1: Privilege = serde_json::from_str(privilege1).unwrap();
-        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
-        assert!(
-            privilege1.is_match(1, url.clone()),
-            "privilege should be matched"
-        );
+        let url = "http://localhost/test?key1=value1&key2=value2"
+            .parse()
+            .unwrap();
+        assert!(privilege1.is_match(1, url), "privilege should be matched");
 
         let privilege2 = r#"{
             "name": "test",
@@ -1180,9 +1179,11 @@ mod tests {
             }
         }"#;
         let privilege2: Privilege = serde_json::from_str(privilege2).unwrap();
-        let url = url::Url::parse("http://localhost/test?key1=value1&key2=value2").unwrap();
+        let url = "http://localhost/test?key1=value1&key2=value2"
+            .parse()
+            .unwrap();
         assert!(
-            !privilege2.is_match(1, url.clone()),
+            !privilege2.is_match(1, url),
             "privilege should not be matched"
         );
 

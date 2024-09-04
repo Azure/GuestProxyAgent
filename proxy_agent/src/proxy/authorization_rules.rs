@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
+use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
-use url::Url;
 
 use super::{proxy_connection::Connection, Claims};
 
@@ -95,21 +95,17 @@ impl AuthorizationRules {
         }
 
         let url = request_url.to_lowercase();
-        let url = match Url::parse(&url) {
+        let url: Uri = match url.parse() {
             Ok(u) => u,
-            Err(_) => {
-                // url in http request usually is relative url, so we need to parse it with ambiguous base url to get the full url for formatting
-                let baseurl = Url::parse("http://127.0.0.1").unwrap();
-                match baseurl.join(&url) {
-                    Ok(u) => u,
-                    Err(_) => {
-                        Connection::write_error(
-                            connection_id,
-                            format!("Failed to parse the request url: {}", request_url),
-                        );
-                        return false;
-                    }
-                }
+            Err(e) => {
+                Connection::write_error(
+                    connection_id,
+                    format!(
+                        "Failed to parse the request url: {} with error {}",
+                        request_url, e
+                    ),
+                );
+                return false;
             }
         };
 

@@ -8,13 +8,13 @@ use crate::provision;
 use crate::proxy::proxy_authentication;
 use crate::shared_state::{key_keeper_wrapper, shared_state_wrapper, SharedState};
 use crate::{acl, redirector};
+use hyper::Uri;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::{path::PathBuf, time::Duration};
-use url::Url;
 
 //pub const RUNNING_STATE: &str = "running";
 pub const DISABLE_STATE: &str = "disabled";
@@ -28,7 +28,7 @@ const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 // poll secure channel status at interval
 pub async fn poll_secure_channel_status(
-    base_url: Url,
+    base_url: Uri,
     key_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
@@ -88,7 +88,7 @@ pub async fn poll_secure_channel_status(
     }
 }
 async fn loop_poll(
-    base_url: Url,
+    base_url: Uri,
     key_dir: PathBuf,
     interval: Duration,
     shared_state: Arc<Mutex<SharedState>>,
@@ -96,6 +96,7 @@ async fn loop_poll(
     let mut first_iteration: bool = true;
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
+    let notify = key_keeper_wrapper::get_notify(shared_state.clone());
     loop {
         if !first_iteration {
             // skip the sleep for the first loop
@@ -112,7 +113,20 @@ async fn loop_poll(
                 } else {
                     interval
                 };
-            tokio::time::sleep(sleep).await;
+
+            tokio::select! {
+                _ = notify.notified() => {
+                    if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) != DISABLE_STATE {
+                        let message = format!( "poll_secure_channel_status task notified but secure channel state is not disabled, continue with sleep wait for {:?}.", sleep);
+                        logger::write_warning(message);
+                        tokio::time::sleep(sleep).await;
+                    } else{
+                        let message = "poll_secure_channel_status task notified and secure channel state is disabled, start poll status now.".to_string();
+                        logger::write_warning(message);
+                    }
+                },
+                _ = tokio::time::sleep(sleep) => {}
+            }
         }
         first_iteration = false;
 
@@ -130,7 +144,7 @@ async fn loop_poll(
             started_event_threads = true;
         }
 
-        let status = match key::get_status(base_url.clone()) {
+        let status = match key::get_status(base_url.clone()).await {
             Ok(s) => s,
             Err(e) => {
                 let err_string = format!("{:?}", e);
@@ -236,7 +250,7 @@ async fn loop_poll(
             // or could not read locally,
             // try fetch from server
             if !key_found {
-                let key = match key::acquire_key(base_url.clone()) {
+                let key = match key::acquire_key(base_url.clone()).await {
                     Ok(k) => k,
                     Err(e) => {
                         logger::write_warning(format!("Failed to acquire key details: {:?}", e));
@@ -257,7 +271,7 @@ async fn loop_poll(
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {
-                    match key::attest_key(base_url.clone(), &key) {
+                    match key::attest_key(base_url.clone(), &key).await {
                         Ok(()) => {
                             // update in memory
                             key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
@@ -389,7 +403,6 @@ mod tests {
     use std::env;
     use std::fs;
     use std::time::Duration;
-    use url::Url;
 
     #[test]
     fn check_local_key_test() {
@@ -466,7 +479,7 @@ mod tests {
         let cloned_keys_dir = keys_dir.to_path_buf();
         let shared_state = SharedState::new();
         tokio::spawn(super::poll_secure_channel_status(
-            Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
+            (format!("http://{}:{}/", ip, port)).parse().unwrap(),
             cloned_keys_dir,
             Duration::from_millis(10),
             false,

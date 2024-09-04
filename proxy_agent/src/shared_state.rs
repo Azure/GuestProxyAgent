@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::provision::ProvisionFlags;
 use crate::proxy::authorization_rules::AuthorizationRules;
 use crate::redirector;
 use crate::telemetry::event_reader::VMMetaData;
@@ -10,6 +11,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
@@ -27,6 +29,7 @@ pub struct SharedState {
     imds_rule_id: String,
     key_keeper_shutdown: bool,
     key_keeper_status_message: String,
+    key_keeper_notify: Arc<Notify>,
     // proxy_listener
     proxy_listner_shutdown: bool,
     connection_count: u128,
@@ -35,8 +38,9 @@ pub struct SharedState {
     wireserver_rules: Option<AuthorizationRules>,
     imds_rules: Option<AuthorizationRules>,
     // provision
-    provision_state: u8,
+    provision_state: ProvisionFlags,
     provision_event_log_threads_initialized: bool,
+    provision_finished: bool,
     // redirector
     redirector_is_started: bool,
     redirector_status_message: String,
@@ -82,6 +86,7 @@ impl Default for SharedState {
             imds_rule_id: String::new(),
             key_keeper_shutdown: false,
             key_keeper_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
+            key_keeper_notify: Arc::new(Notify::new()),
             // proxy_listener
             proxy_listner_shutdown: false,
             connection_count: 0,
@@ -90,8 +95,9 @@ impl Default for SharedState {
             wireserver_rules: None,
             imds_rules: None,
             // provision
-            provision_state: 0,
+            provision_state: ProvisionFlags::NONE,
             provision_event_log_threads_initialized: false,
+            provision_finished: false,
             // redirector
             redirector_is_started: false,
             redirector_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
@@ -134,6 +140,8 @@ pub mod shared_state_wrapper {
 
 /// wrapper functions for KeyKeeper related state fields
 pub mod key_keeper_wrapper {
+    use tokio::sync::Notify;
+
     use super::SharedState;
     use crate::key_keeper::key::Key;
     use std::sync::{Arc, Mutex};
@@ -260,6 +268,14 @@ pub mod key_keeper_wrapper {
             .key_keeper_status_message
             .to_string()
     }
+
+    pub fn notify(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().key_keeper_notify.notify_one();
+    }
+
+    pub fn get_notify(shared_state: Arc<Mutex<SharedState>>) -> Arc<Notify> {
+        shared_state.lock().unwrap().key_keeper_notify.clone()
+    }
 }
 
 pub mod proxy_listener_wrapper {
@@ -335,25 +351,30 @@ pub mod proxy_authenticator_wrapper {
 }
 
 pub mod provision_wrapper {
+    use crate::provision::ProvisionFlags;
+
     use super::SharedState;
     use std::sync::{Arc, Mutex};
 
     /// Update the provision state
     /// # Arguments
     /// * `shared_state` - Arc<Mutex<SharedState>>
-    /// * `state` - u8
+    /// * `state` - ProvisionFlags
     /// # Returns
-    /// * `u8` - the updated provision state
+    /// * `ProvisionFlags` - the updated provision state
     /// # Remarks
     /// * The provision state is a bit field, the state is updated by OR operation
-    pub fn update_state(shared_state: Arc<Mutex<SharedState>>, state: u8) -> u8 {
+    pub fn update_state(
+        shared_state: Arc<Mutex<SharedState>>,
+        state: ProvisionFlags,
+    ) -> ProvisionFlags {
         let mut shared_state = shared_state.lock().unwrap();
         shared_state.provision_state |= state;
-        shared_state.provision_state
+        shared_state.provision_state.clone()
     }
 
-    pub fn get_state(shared_state: Arc<Mutex<SharedState>>) -> u8 {
-        shared_state.lock().unwrap().provision_state
+    pub fn get_state(shared_state: Arc<Mutex<SharedState>>) -> ProvisionFlags {
+        shared_state.lock().unwrap().provision_state.clone()
     }
 
     pub fn set_event_log_threads_initialized(
@@ -371,6 +392,14 @@ pub mod provision_wrapper {
             .lock()
             .unwrap()
             .provision_event_log_threads_initialized
+    }
+
+    pub fn set_provision_finished(shared_state: Arc<Mutex<SharedState>>) {
+        shared_state.lock().unwrap().provision_finished = true;
+    }
+
+    pub fn get_provision_finished(shared_state: Arc<Mutex<SharedState>>) -> bool {
+        shared_state.lock().unwrap().provision_finished
     }
 }
 
