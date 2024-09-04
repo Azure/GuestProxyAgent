@@ -41,6 +41,9 @@ fi
 echo "call zip -r $zipFilePath /var/log/azure-proxy-agent"
 cd /var/log/azure-proxy-agent
 zip -r $zipFilePath .
+echo "call zip -r $zipFilePath /var/log/azure"
+cd /var/log/azure
+zip -r $zipFilePath .
 ls -l $currentDir
 
 # upload log to blob

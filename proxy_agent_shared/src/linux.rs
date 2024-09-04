@@ -46,6 +46,7 @@ pub fn get_os_version() -> String {
                 }
             }
             Err(_e) => {
+                logger::error!("Failed to read os-release file: {}", OS_RELEASE_PATH);
                 return "Unknown".to_string();
             }
         }
