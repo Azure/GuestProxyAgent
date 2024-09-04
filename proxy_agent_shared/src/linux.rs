@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::misc_helpers;
+use crate::logger;
 use once_cell::sync::Lazy;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
