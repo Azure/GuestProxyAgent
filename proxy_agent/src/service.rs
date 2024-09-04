@@ -10,7 +10,6 @@ use crate::telemetry::event_reader;
 use proxy_agent_shared::logger_manager;
 use proxy_agent_shared::telemetry::event_logger;
 use std::sync::{Arc, Mutex};
-use url::Url;
 
 #[cfg(not(windows))]
 use std::time::Duration;
@@ -33,7 +32,9 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
     let config_start_redirector = config::get_start_redirector();
 
     tokio::spawn(crate::key_keeper::poll_secure_channel_status(
-        Url::parse(&format!("http://{}/", constants::WIRE_SERVER_IP)).unwrap(),
+        (format!("http://{}/", constants::WIRE_SERVER_IP))
+            .parse()
+            .unwrap(),
         config::get_keys_dir(),
         config::get_poll_key_status_duration(),
         config_start_redirector,
