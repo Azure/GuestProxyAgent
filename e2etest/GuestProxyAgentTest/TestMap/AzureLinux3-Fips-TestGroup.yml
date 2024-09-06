@@ -8,6 +8,5 @@ scenarios:
     name: BVTScenario
   - name: LinuxPackageScenario
     className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
-  # need to enable this test after extension version supporting Azure Linux 3 is available in PIR 
   - name: ProxyAgentExtension
     className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
