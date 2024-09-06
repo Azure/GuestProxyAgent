@@ -51,7 +51,7 @@ pub fn get_os_version() -> String {
                     "Failed to read os-release file in get_os_version(): {}",
                     OS_RELEASE_PATH
                 );
-                logger_manager::write_info(message);
+                logger_manager::write_warn(message);
                 return "Unknown".to_string();
             }
         }
@@ -82,7 +82,7 @@ pub fn get_os_type() -> String {
                     "Failed to read os-release file in get_os_type(): {}",
                     OS_RELEASE_PATH
                 );
-                logger_manager::write_info(message);
+                logger_manager::write_warn(message);
                 return "Unknown".to_string();
             }
         }
