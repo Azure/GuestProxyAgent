@@ -1,6 +1,25 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+//! This module contains the logic to interact with the wire server for sending telemetry data and getting goal state.
+//! Example
+//! ```rust
+//! use proxy_agent::common::constants;
+//! use proxy_agent::host_clients::wire_server_client;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! let shared_state = SharedState::new();
+//!
+//! let wire_server_client = wire_server_client::WireServerClient::new(constants::WIRE_SERVER_IP.to_string(), 80, shared_state);
+//! let goal_state = wire_server_client.get_goalstate().await;
+//! let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri()).await;
+//!
+//! let telemetry_data = "xml telemetry data".to_string();
+//! wire_server_client.send_telemetry_data(telemetry_data).await;
+//!
+//! ```
+
 use crate::common::{hyper_client, logger};
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::shared_state::{key_keeper_wrapper, SharedState};

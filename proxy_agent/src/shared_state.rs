@@ -19,48 +19,93 @@ use windows_service::service_control_handler::ServiceStatusHandle;
 
 const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 
+/// Shared state for the proxy agent
+/// The shared state is used to store the state of the agent, such as the key, secure channel state, provision state, etc.
+/// The shared state is wrapped in Arc<Mutex<SharedState>> to allow the shared state to be shared across threads/tasks
+/// Example:
+/// ```rust
+/// use proxy_agent::shared_state::SharedState;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+/// ```
 #[derive(Clone)]
 pub struct SharedState {
+    /// The cancellation token is used to cancel the agent when the agent is stopped
     cancellation_token: CancellationToken,
+
     // key_keeper
+    /// The key is used to compute sinature for the data between the agent and the host endpoints
     key: Option<Key>,
+    /// The current MSP secure channel state
     current_secure_channel_state: String,
+    /// The rule ID for the WireServer endpoints
     wireserver_rule_id: String,
+    /// The rule ID for the IMDS endpoints
     imds_rule_id: String,
+    /// The flag to indicate if the key keeper is shutdown
     key_keeper_shutdown: bool,
+    /// The status message for the key keeper module
     key_keeper_status_message: String,
+    /// The notify object for the key keeper module
     key_keeper_notify: Arc<Notify>,
+
     // proxy_listener
+    /// The flag to indicate if the proxy listener is shutdown
     proxy_listner_shutdown: bool,
+    /// The proxyied connection count for the listener
     connection_count: u128,
+    /// The status message for the proxy listener module
     proxy_listner_status_message: String,
+
     // proxy_authenticator
+    /// The authorization rules for the WireServer endpoints
     wireserver_rules: Option<AuthorizationRules>,
+    /// The authorization rules for the IMDS endpoints
     imds_rules: Option<AuthorizationRules>,
+
     // provision
+    /// The provision state, it is a bitflag field
     provision_state: ProvisionFlags,
+    /// The flag to indicate if the event log threads are initialized
     provision_event_log_threads_initialized: bool,
+    /// The flag to indicate if the GPA service provision is finished
     provision_finished: bool,
+
     // redirector
+    /// The flag to indicate if the redirector is started
     redirector_is_started: bool,
+    /// The status message for the redirector module
     redirector_status_message: String,
+    /// The local port for the redirector
     redirector_local_port: u16,
+    /// The BPF object for the redirector
     bpf_object: Option<Arc<Mutex<redirector::BpfObject>>>,
-    // monitor
-    monitor_shutdown: bool,
-    monitor_status_message: String,
+
     // agent_status
+    /// The flag to indicate if the agent status module is shutdown
     agent_status_shutdown: bool,
+    /// The proxy connection summary from the proxy
     proxy_summary: HashMap<String, ProxyConnectionSummary>,
+    /// The failed authenticate summary from the proxy
     failed_authenticate_summary: HashMap<String, ProxyConnectionSummary>,
+
     // proxy
+    /// The cached users information for the proxy
     proxy_uers: HashMap<u64, User>,
+
     // telemetry
+    /// The VM metadata for the telemetry events
     vm_metadata: Option<VMMetaData>,
+    /// The flag to indicate if the telemetry reader task is shutdown
     telemetry_reader_shutdown: bool,
+    /// The flag to indicate if the telemetry logger task is shutdown
     telemetry_logger_shutdown: bool,
+    /// The status message for the telemetry logger module
     telemetry_logger_status_message: String,
+
     // service
+    /// The service status handle for the Windows service
     #[cfg(windows)]
     service_status_handle: Option<ServiceStatusHandle>,
     // Add more state fields as needed,
@@ -70,12 +115,14 @@ pub struct SharedState {
 }
 
 impl SharedState {
+    /// Create a new SharedState instance, wrap it in Arc<Mutex<SharedState>> and return it
     pub fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(SharedState::default()))
     }
 }
 
 impl Default for SharedState {
+    /// Create a default SharedState instance
     fn default() -> Self {
         SharedState {
             cancellation_token: CancellationToken::new(),
@@ -103,9 +150,6 @@ impl Default for SharedState {
             redirector_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
             redirector_local_port: 0,
             bpf_object: None,
-            // monitor
-            monitor_shutdown: false,
-            monitor_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
             // agent_status
             agent_status_shutdown: false,
             proxy_summary: HashMap::new(),
@@ -124,7 +168,17 @@ impl Default for SharedState {
     }
 }
 
-pub mod shared_state_wrapper {
+/// wrapper functions for tokio related state fields
+/// Example:
+/// ```rust
+/// use proxy_agent::shared_state::SharedState;
+/// use proxy_agent::shared_state::tokio_wrapper;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+/// let cancellation_token = tokio_wrapper::get_cancellation_token(shared_state.clone());
+/// ```
+pub mod tokio_wrapper {
     use super::SharedState;
     use std::sync::{Arc, Mutex};
     use tokio_util::sync::CancellationToken;
@@ -139,12 +193,33 @@ pub mod shared_state_wrapper {
 }
 
 /// wrapper functions for KeyKeeper related state fields
+/// Example:
+/// ```rust
+/// use proxy_agent::shared_state::key_keeper_wrapper;
+/// use proxy_agent::shared_state::SharedState;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+///
+/// // set the key once the MSP feature is enabled
+/// key_keeper_wrapper::set_key(shared_state.clone(), key);
+/// key_keeper_wrapper::update_current_secure_channel_state(shared_state.clone(), state);
+/// key_keeper_wrapper::update_wireserver_rule_id(shared_state.clone(), rule_id);
+/// key_keeper_wrapper::update_imds_rule_id(shared_state.clone(), rule_id);
+///
+/// let key_value = key_keeper_wrapper::get_current_key_value(shared_state.clone());
+/// let key_guid = key_keeper_wrapper::get_current_key_guid(shared_state.clone());
+/// let key_incarnation = key_keeper_wrapper::get_current_key_incarnation(shared_state.clone());
+/// let state = key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone());
+///
+/// // clear the key once the MSP feature is disabled
+/// key_keeper_wrapper::clear_key(shared_state.clone());
+/// ```
 pub mod key_keeper_wrapper {
-    use tokio::sync::Notify;
-
     use super::SharedState;
     use crate::key_keeper::key::Key;
     use std::sync::{Arc, Mutex};
+    use tokio::sync::Notify;
 
     pub fn set_key(shared_state: Arc<Mutex<SharedState>>, key: Key) {
         shared_state.lock().unwrap().key = Some(key);
@@ -154,7 +229,7 @@ pub mod key_keeper_wrapper {
         shared_state.lock().unwrap().key = None;
     }
 
-    pub fn get_key(shared_state: Arc<Mutex<SharedState>>) -> Option<Key> {
+    fn get_key(shared_state: Arc<Mutex<SharedState>>) -> Option<Key> {
         shared_state.lock().unwrap().key.clone()
     }
 
@@ -176,7 +251,7 @@ pub mod key_keeper_wrapper {
     /// * `state` - String
     /// # Returns
     /// * `bool` - true if the state is update successfully
-    /// *        - false if state is the same as the current state  
+    /// *        - false if state is the same as the current state
     pub fn update_current_secure_channel_state(
         shared_state: Arc<Mutex<SharedState>>,
         state: String,
@@ -451,31 +526,6 @@ pub mod redirector_wrapper {
         shared_state: Arc<Mutex<SharedState>>,
     ) -> Option<Arc<Mutex<redirector::BpfObject>>> {
         shared_state.lock().unwrap().bpf_object.clone()
-    }
-}
-
-pub mod monitor_wrapper {
-    use super::SharedState;
-    use std::sync::{Arc, Mutex};
-
-    pub fn set_shutdown(shared_state: Arc<Mutex<SharedState>>, shutdown: bool) {
-        shared_state.lock().unwrap().monitor_shutdown = shutdown;
-    }
-
-    pub fn get_shutdown(shared_state: Arc<Mutex<SharedState>>) -> bool {
-        shared_state.lock().unwrap().monitor_shutdown
-    }
-
-    pub fn set_status_message(shared_state: Arc<Mutex<SharedState>>, status_message: String) {
-        shared_state.lock().unwrap().monitor_status_message = status_message;
-    }
-
-    pub fn get_status_message(shared_state: Arc<Mutex<SharedState>>) -> String {
-        shared_state
-            .lock()
-            .unwrap()
-            .monitor_status_message
-            .to_string()
     }
 }
 

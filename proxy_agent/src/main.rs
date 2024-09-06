@@ -37,6 +37,12 @@ define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
 static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
     tokio::sync::OnceCell::const_new();
 
+/// This function is the entry point of the GPA process.
+/// azure-proxy-agent /console - launch a long run process of GPA in console mode.
+/// azure-proxy-agent --version - print the version of the GPA.
+/// azure-proxy-agent --status [--wait <seconds>] - get the provision status of the GPA service.
+/// azure-proxy-agent - start the GPA as an OS service.
+///                     The GPA service will be started as an OS service in the background.
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     // set the tokio runtime handle
@@ -104,6 +110,7 @@ async fn main() {
     }
 }
 
+/// This function is the entry point of the GPA windows service.
 #[cfg(windows)]
 fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
     // start the Instant to calculate the elapsed time

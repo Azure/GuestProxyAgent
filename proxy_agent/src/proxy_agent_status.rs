@@ -1,10 +1,27 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//!
+//! This module contains the logic to get the status of the proxy agent.
+//! The status includes the status of the key keeper, ebpf program, proxy listener, telemetry logger and proxy connection summaries.
+//! The status is written to status.json file in the logs directory.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::proxy_agent_status;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//! use std::time::Duration;
+//!
+//! let shared_state = SharedState::new();
+//! let interval = Duration::from_secs(60);
+//! tokio::spawn(proxy_agent_status::start(interval, shared_state));
+//! ```
+
 use crate::common::{config, logger};
 use crate::proxy::proxy_listener;
 use crate::shared_state::{
-    agent_status_wrapper, proxy_listener_wrapper, shared_state_wrapper, telemetry_wrapper,
-    SharedState,
+    agent_status_wrapper, proxy_listener_wrapper, telemetry_wrapper, tokio_wrapper, SharedState,
 };
 use crate::{key_keeper, redirector};
 use proxy_agent_shared::misc_helpers;
@@ -22,7 +39,7 @@ pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>
     }
 
     logger::write("proxy_agent_status task started.".to_string());
-    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    let cancellation_token = tokio_wrapper::get_cancellation_token(shared_state.clone());
     tokio::select! {
         _ = loop_status(interval, shared_state.clone()) => {}
         _ = cancellation_token.cancelled() => {
@@ -30,6 +47,7 @@ pub async fn start(mut interval: Duration, shared_state: Arc<Mutex<SharedState>>
         }
     }
 }
+
 async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) {
     let map_clear_duration = Duration::from_secs(60 * 60 * 24);
     let mut start_time = Instant::now();

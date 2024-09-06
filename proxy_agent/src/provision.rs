@@ -1,6 +1,45 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+//! This module provides the provision functions for the GPA service and GPA --status command line.
+//! It is used to track the provision state for each module and write the provision state to provisioned.tag and status.tag files.
+//! It also provides the http handler to query the provision status for GPA service.
+//! It is used to query the provision status from GPA service http listener.
+//! Example for GPA service:
+//! ```rust
+//! use proxy_agent::provision;
+//! use std::sync::{Arc, Mutex};
+//! use std::time::Duration;
+//!
+//! let shared_state = Arc::new(Mutex::new(SharedState::new()));
+//! let provision_state = provision::get_provision_state(shared_state.clone());
+//! assert_eq!(false, provision_state.finished);
+//! assert_eq!(0, provision_state.errorMessage.len());
+//!
+//! // update provision state when each provision finished
+//! provision::redirector_ready(shared_state.clone());
+//! provision::key_latched(shared_state.clone());
+//! provision::listener_started(shared_state.clone());
+//!
+//! let provision_state = provision::get_provision_state(shared_state.clone());
+//! assert_eq!(true, provision_state.finished);
+//! assert_eq!(0, provision_state.errorMessage.len());
+//! ```
+//!
+//! Example for GPA command line option --status [--wait seconds]:
+//! ```rust
+//! use proxy_agent::provision;
+//! use std::time::Duration;
+//!
+//! let provision_not_finished_state = provision::get_provision_status_wait(8092, None).await;
+//! assert_eq!(false, provision_state.0);
+//! assert_eq!(0, provision_state.1.len());
+//!
+//! let provision_finished_state = provision::get_provision_status_wait(8092, Some(Duration::from_millis(5))).await;
+//! assert_eq!(true, provision_state.0);
+//! assert_eq!(0, provision_state.1.len());
+//! ```
+
 use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
 use crate::common::{config, constants, helpers, logger};
 use crate::proxy::proxy_listener;
@@ -20,6 +59,29 @@ const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
 const STATUS_TAG_FILE_NAME: &str = "status.tag";
 
 bitflags::bitflags! {
+    /// Provision flags
+    /// NONE - no provision finished
+    /// REDIRECTOR_READY - redirector provision finished
+    /// KEY_LATCH_READY - key latch provision finished
+    /// LISTENER_READY - listener provision finished
+    /// ALL_READY - all provision finished
+    /// It is used to track each module provision state
+    /// Example:
+    /// ```rust
+    /// use proxy_agent::provision::ProvisionFlags;
+    ///
+    /// let flags = ProvisionFlags::REDIRECTOR_READY | ProvisionFlags::KEY_LATCH_READY;
+    /// assert_eq!(3, flags.bits());
+    /// assert_eq!(true, flags.contains(ProvisionFlags::REDIRECTOR_READY));
+    /// assert_eq!(true, flags.contains(ProvisionFlags::KEY_LATCH_READY));
+    /// assert_eq!(false, flags.contains(ProvisionFlags::LISTENER_READY));
+    ///
+    /// let flags = ProvisionFlags::REDIRECTOR_READY | ProvisionFlags::KEY_LATCH_READY | ProvisionFlags::LISTENER_READY;
+    /// assert_eq!(7, flags.bits());
+    /// assert_eq!(true, flags.contains(ProvisionFlags::REDIRECTOR_READY));
+    /// assert_eq!(true, flags.contains(ProvisionFlags::KEY_LATCH_READY));
+    /// assert_eq!(true, flags.contains(ProvisionFlags::LISTENER_READY));
+    /// ```
     #[derive(Clone)]
     pub struct ProvisionFlags: u8 {
         const NONE = 0;
@@ -30,6 +92,10 @@ bitflags::bitflags! {
     }
 }
 
+/// Provision status
+/// finished - provision finished or timedout
+///            true means provision finished or timedout, false means provision still in progress
+/// errorMessage - provision error message
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ProivsionState {
@@ -37,20 +103,28 @@ pub struct ProivsionState {
     errorMessage: String,
 }
 
+/// Provision URL path, it is used to query the provision status from GPA service http listener
 pub const PROVISION_URL_PATH: &str = "/provision";
 
+/// Update provision state when redirector provision finished
+/// It could  be called by redirector module
 pub fn redirector_ready(shared_state: Arc<Mutex<SharedState>>) {
     update_provision_state(ProvisionFlags::REDIRECTOR_READY, None, shared_state);
 }
 
+/// Update provision state when key latch provision finished
+/// It could  be called by key latch module
 pub fn key_latched(shared_state: Arc<Mutex<SharedState>>) {
     update_provision_state(ProvisionFlags::KEY_LATCH_READY, None, shared_state);
 }
 
+/// Update provision state when listener provision finished
+/// It could  be called by listener module
 pub fn listener_started(shared_state: Arc<Mutex<SharedState>>) {
     update_provision_state(ProvisionFlags::LISTENER_READY, None, shared_state);
 }
 
+/// Update provision state for each module to shared_state
 fn update_provision_state(
     state: ProvisionFlags,
     provision_dir: Option<PathBuf>,
@@ -68,6 +142,16 @@ fn update_provision_state(
     }
 }
 
+/// Update provision state when provision timedout
+/// It will be called if key latch provision timedout
+/// Example:
+/// ```rust
+/// use proxy_agent::provision;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = Arc::new(Mutex::new(SharedState::new()));
+/// provision::provision_timeup(None, shared_state.clone());
+/// ```
 pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<SharedState>>) {
     let provision_state = provision_wrapper::get_state(shared_state.clone());
     if !provision_state.contains(ProvisionFlags::ALL_READY) {
@@ -78,6 +162,9 @@ pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<
     }
 }
 
+/// Start event logger & reader tasks and status reporting task
+/// It will be called when provision finished or timedout,
+/// it is designed to delay start those tasks to give more cpu time to provision tasks
 pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
     let logger_threads_initialized =
         provision_wrapper::get_event_log_threads_initialized(shared_state.clone());
@@ -111,6 +198,13 @@ pub fn start_event_threads(shared_state: Arc<Mutex<SharedState>>) {
     ));
 }
 
+/// Write provision state to provisioned.tag file and status.tag file under provision_dir
+/// provisioned.tag is backcompat file, it is used to indicate the provision finished for pilot WinPA
+/// status.tag is used to store the provision error message for current WinPA service to query the provision status
+///  if status.tag file exists, it means provision finished
+///  if status.tag file does not exist, it means provision still in progress
+///  the content of the status.tag file is the provision error message,
+///  empty means provision success, otherwise provision failed with error message
 fn write_provision_state(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<SharedState>>) {
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
@@ -170,6 +264,9 @@ fn get_provision_failed_state_message(shared_state: Arc<Mutex<SharedState>>) -> 
     state
 }
 
+/// Get provision state
+/// It returns the current GPA serice provision state (from shared_state) for GPA service
+/// This function is designed and invoked in GPA service
 pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionState {
     ProivsionState {
         finished: provision_wrapper::get_provision_finished(shared_state.clone()),
@@ -177,8 +274,8 @@ pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionSt
     }
 }
 
-/// Get current GPA service provision status and wait until provision finished or timeout
-/// it serves for --status --wait command line option
+/// Get current GPA service provision status and wait until the GPA service provision finished or timeout
+/// This function is designed for GPA command line, serves for --status [--wait seconds] option
 pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) -> (bool, String) {
     loop {
         let provision_state = get_current_provision_status(port);

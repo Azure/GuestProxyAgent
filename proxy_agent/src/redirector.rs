@@ -1,5 +1,34 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to redirect the http traffic to the GPA service proxy listener via eBPF.
+//! The eBPF program is loaded by the GPA service and the eBPF program is used to redirect the traffic to the GPA service proxy listener.
+//! GPA service update the eBPF map to allow particular http traffics to be redirected to the GPA service proxy listener.
+//! When eBPF redirects the http traffic, it writes the audit information to the eBPF map.
+//! The GPA service reads the audit information from the eBPF map and authorizes the requests before forwarding to the remote endpoints.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::redirector;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! // start the redirector with the shared state
+//! let shared_state = SharedState::new();
+//! let local_port = 8080;
+//! tokio::spawn(redirector::start(local_port, shared_state));
+//!
+//! // Update the redirect policy for the traffics
+//! redirector::update_wire_server_redirect_policy(true, shared_state.clone());
+//! redirector::update_imds_redirect_policy(false, shared_state.clone());
+//!
+//! // Get the status of the redirector
+//! let status = redirector::get_status(shared_state.clone());
+//!
+//! // Close the redirector to offload the eBPF program
+//! redirector::close(shared_state);
+//! ```
+
 #[cfg(windows)]
 mod windows;
 

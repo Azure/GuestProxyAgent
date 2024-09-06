@@ -1,5 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to get the instance information from the IMDS service.
+
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]

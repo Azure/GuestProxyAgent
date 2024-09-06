@@ -1,5 +1,37 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to get user and process details.
+//! When eBPF redirects the http traffic, it writes the uid and pid information to the eBPF map.
+//! The GPA service reads the audit/claims information via uid & pid.
+//! The GPA service uses the audit/claims information to authorize the requests before forwarding to the remote endpoints.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::proxy;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! // Get the user details
+//! let logon_id = 999u64;
+//! let shared_state = SharedState::new();
+//! let user = proxy::get_user(logon_id, shared_state.clone()).unwrap();
+//!
+//! // Get the process details
+//! let pid = std::process::id();
+//! let process = proxy::Process::from_pid(pid);
+//!
+//! // Get the claims from the audit entry
+//! let mut entry = proxy::AuditEntry::empty();
+//! entry.logon_id = 999; // LocalSystem logon_id
+//! entry.process_id = std::process::id();
+//! entry.destination_ipv4 = 0x10813FA8;
+//! entry.destination_port = 80;
+//! entry.is_admin = 1;
+//! let claims = proxy::Claims::from_audit_entry(&entry, "127.0.0.1".parse().unwrap(), shared_state.clone()).unwrap();
+//! println!("{}", serde_json::to_string(&claims).unwrap());
+//! ```
+
 pub mod authorization_rules;
 pub mod proxy_authentication;
 pub mod proxy_connection;

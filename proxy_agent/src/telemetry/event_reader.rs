@@ -1,13 +1,37 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to read the telemetry event files and send them to the wire server.
+//! The telemetry event files are written by the event_logger module.
+//! Example
+//! ```rust
+//! use proxy_agent::telemetry::event_reader;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//! use std::path::PathBuf;
+//! use std::time::Duration;
+//!
+//! // start the telemetry event reader with the shared state
+//! let shared_state = SharedState::new();
+//! let dir_path = PathBuf::from("/tmp");
+//! let interval = Some(Duration::from_secs(300));
+//! let delay_start = false;
+//! let server_ip = None;
+//! let server_port = None;
+//! tokio::spawn(event_reader::start(dir_path, interval, delay_start, server_ip, server_port, shared_state.clone()));
+//!
+//! // stop the telemetry event reader
+//! event_reader::stop(shared_state.clone());
+//! ```
+
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
 use crate::common::logger;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
-use crate::shared_state::shared_state_wrapper;
 use crate::shared_state::telemetry_wrapper;
+use crate::shared_state::tokio_wrapper;
 use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
@@ -17,6 +41,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// VMMetaData contains the metadata of the VM.
+/// The metadata is used to identify the VM and the image origin.
+/// It will be part of the telemetry data send to the wire server.
+/// The metadata is updated by the wire server and the IMDS client.
 #[derive(Clone)]
 pub struct VMMetaData {
     pub container_id: String,
@@ -66,7 +94,7 @@ pub async fn start(
     );
 
     let interval = interval.unwrap_or(Duration::from_secs(300));
-    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    let cancellation_token = tokio_wrapper::get_cancellation_token(shared_state.clone());
     tokio::select! {
         _ = loop_reader(dir_path, interval, delay_start, wire_server_client, imds_client, shared_state.clone()) => {}
         _ = cancellation_token.cancelled() => {

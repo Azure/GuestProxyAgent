@@ -1,5 +1,21 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to read the configuration from the config file.
+//! The configuration file is a json file that contains the configuration for the GPA service.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::config;
+//!
+//! // Get the logs directory
+//! let logs_dir = config::get_logs_dir();
+//!
+//! // Get the keys directory
+//! let keys_dir = config::get_keys_dir();
+//!
+//! ```
+
 use crate::common::constants;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;

@@ -1,12 +1,34 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! The key keeper module is responsible for polling the secure channel status from the WireServer endpoint.
+//! It polls the secure channel status at a specified interval and update the secure channel state, key details, access control rule details.
+//! This module will be launched when the GPA service is started.
+//! It start the redirector/eBPF module when the key keeper task is running.
+//! Example:
+//! ```rust
+//! use proxy_agent::key_keeper;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//! use hyper::Uri;
+//! use std::path::PathBuf;
+//! use std::time::Duration;
+//!
+//! let shared_state = SharedState::new();
+//! let base_url = "http://127:0.0.1:8081/";
+//! let key_dir = PathBuf::from("path");
+//! let interval = Duration::from_secs(10);
+//! let config_start_redirector = false;
+//! tokio::spawn(key_keeper::poll_secure_channel_status(base_url.parse().unwrap(), key_dir, interval, config_start_redirector, shared_state));
+//! ```
+
 pub mod key;
 
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::proxy_authentication;
-use crate::shared_state::{key_keeper_wrapper, shared_state_wrapper, SharedState};
+use crate::shared_state::{key_keeper_wrapper, tokio_wrapper, SharedState};
 use crate::{acl, redirector};
 use hyper::Uri;
 use proxy_agent_shared::misc_helpers;
@@ -26,7 +48,12 @@ const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
 const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
-// poll secure channel status at interval
+/// poll secure channel status at interval
+///  - base_url: the WireServer endpoint base url
+///  - key_dir: the folder to save the key details
+///  - interval: the interval to poll the secure channel status
+///  - config_start_redirector: boolean to indicate start the redirector when the key keeper task is running
+///  - shared_state: the global shared state
 pub async fn poll_secure_channel_status(
     base_url: Uri,
     key_dir: PathBuf,
@@ -68,7 +95,7 @@ pub async fn poll_secure_channel_status(
         }
     }
 
-    let cancellation_token = shared_state_wrapper::get_cancellation_token(shared_state.clone());
+    let cancellation_token = tokio_wrapper::get_cancellation_token(shared_state.clone());
     tokio::select! {
         _ = loop_poll(
             base_url.clone(),
@@ -87,6 +114,8 @@ pub async fn poll_secure_channel_status(
         }
     }
 }
+
+/// Loop to poll the secure channel status from the WireServer endpoint
 async fn loop_poll(
     base_url: Uri,
     key_dir: PathBuf,
@@ -115,6 +144,8 @@ async fn loop_poll(
                 };
 
             tokio::select! {
+                // check if the task is notified to continue,
+                // it desigend for pps scenario to notify the task to continue when the secure channel state is disabled
                 _ = notify.notified() => {
                     if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) != DISABLE_STATE {
                         let message = format!( "poll_secure_channel_status task notified but secure channel state is not disabled, continue with sleep wait for {:?}.", sleep);
@@ -353,10 +384,23 @@ fn check_local_key(key_dir: PathBuf, key: &Key) -> bool {
     }
 }
 
+/// Stop the key keeper task
 pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     key_keeper_wrapper::set_shutdown(shared_state.clone(), true);
 }
 
+/// Get the status of the key keeper task
+/// Return the status of the key keeper task
+/// The status includes the secure channel state, key guid, wire server rule id, imds rule id, key incarnation id and message
+/// Example:
+/// ```rust
+/// use proxy_agent::key_keeper;
+/// use proxy_agent::shared_state::SharedState;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+/// let status = key_keeper::get_status(shared_state);
+/// ```
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if key_keeper_wrapper::get_shutdown(shared_state.clone()) {
         ModuleState::STOPPED.to_string()
