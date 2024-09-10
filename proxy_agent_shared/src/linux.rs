@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::logger_manager;
 use crate::misc_helpers;
 use once_cell::sync::Lazy;
 use os_info::Info;
@@ -45,7 +46,12 @@ pub fn get_os_version() -> String {
                     }
                 }
             }
-            Err(_e) => {
+            Err(e) => {
+                let message = format!(
+                    "Failed to read os-release file in get_os_version(): {} with error: {}",
+                    OS_RELEASE_PATH, e
+                );
+                logger_manager::write_warn(message);
                 return "Unknown".to_string();
             }
         }
@@ -71,7 +77,12 @@ pub fn get_os_type() -> String {
                     }
                 }
             }
-            Err(_e) => {
+            Err(e) => {
+                let message = format!(
+                    "Failed to read os-release file in get_os_type(): {} with error: {}",
+                    OS_RELEASE_PATH, e
+                );
+                logger_manager::write_warn(message);
                 return "Unknown".to_string();
             }
         }

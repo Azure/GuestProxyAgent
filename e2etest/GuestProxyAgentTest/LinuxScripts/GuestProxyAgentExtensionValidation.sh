@@ -13,23 +13,29 @@ echo "Starting guest proxy agent extension validation script"
 
 echo "Get Extension Folder and Version"
 timeout=300
+interval=5
 elpased=0
 while :; do
     directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
+    found=0
     if [ $(echo "$directories" | wc -l) -eq 1 ]; then
-        for dir in $directories; do 
+        for dir in $directories; do
             PIRExtensionFolderPath=$dir
             echo "PIR extension folder path=" $PIRExtensionFolderPath
-        done 
-        break
+            found=1
+        done
+        if [ $found -eq 1 ]; then
+            break
+        fi
     fi
     ((elapsed += interval))
     if [[ $elapsed -ge $timeout ]]; then
         echo "Timeout reached. Exiting the loop."
         break
     fi
-    sleep 5
-done 
+    echo "Waiting for the extension folder to be created: $elapsed seconds elapsed"
+    sleep $interval
+done
 PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "PIRExtensionVersion=$PIRExtensionVersion"
 
