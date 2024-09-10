@@ -7,26 +7,31 @@ zipFile=$devExtensionSas
 
 echo "Starting install guest proxy agent extension script" 
 timeout=300
+interval=5
 elpased=0
-echo "Get Extension Folder and Version"
 while :; do
     directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
+    found=0
     if [ $(echo "$directories" | wc -l) -eq 1 ]; then
-        for dir in $directories; do 
+        for dir in $directories; do
             PIRExtensionFolderPath=$dir
             echo "PIR extension folder path=" $PIRExtensionFolderPath
             PIRExtensionFolderZip="${PIRExtensionFolderPath//-/__}.zip"
             echo "PIRExtensionFolderZip=$PIRExtensionFolderZip"
-        done 
-        break
+            found=1
+        done
+        if [ $found -eq 1 ]; then
+            break
+        fi
     fi
-    ((elapsed += 5))
+    ((elapsed += interval))
     if [[ $elapsed -ge $timeout ]]; then
         echo "Timeout reached. Exiting the loop."
         break
     fi
-    sleep 5
-done 
+    echo "Waiting for the extension folder to be created: $elapsed seconds elapsed"
+    sleep $interval
+done
 PIRExtensionVersion=$(echo "$PIRExtensionFolderPath" | grep -oP '(\d+\.\d+\.\d+)$')
 echo "PIRExtensionVersion=$PIRExtensionVersion"
 proxyAgentVersion="$(eval "$PIRExtensionFolderPath/ProxyAgent/ProxyAgent/azure-proxy-agent --version")"
