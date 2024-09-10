@@ -36,6 +36,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDe
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::{path::PathBuf, time::Duration};
 
 //pub const RUNNING_STATE: &str = "running";
@@ -126,6 +127,8 @@ async fn loop_poll(
     let mut started_event_threads: bool = false;
     let mut provision_timeup: bool = false;
     let notify = key_keeper_wrapper::get_notify(shared_state.clone());
+    let mut start = Instant::now();
+
     loop {
         if !first_iteration {
             // skip the sleep for the first loop
@@ -143,17 +146,29 @@ async fn loop_poll(
                     interval
                 };
 
+            let time = Instant::now();
             tokio::select! {
-                // check if the task is notified to continue,
-                // it desigend for pps scenario to notify the task to continue when the secure channel state is disabled
+                // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
+                // this is to handle quicker response to the secure channel state change during VM provisioning.
                 _ = notify.notified() => {
-                    if key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone()) != DISABLE_STATE {
-                        let message = format!( "poll_secure_channel_status task notified but secure channel state is not disabled, continue with sleep wait for {:?}.", sleep);
-                        logger::write_warning(message);
-                        tokio::time::sleep(sleep).await;
-                    } else{
-                        let message = "poll_secure_channel_status task notified and secure channel state is disabled, start poll status now.".to_string();
-                        logger::write_warning(message);
+                    let current_state = key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone());
+                    if  current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
+                        logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', start poll status now.", current_state));
+                        provision::key_latch_ready_state_reset(shared_state.clone());
+
+                        if start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
+                            // already timeup, reset the start timer
+                            start = Instant::now();
+                        }
+                    } else {
+                        let slept_time_in_millisec = time.elapsed().as_millis();
+                        let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
+                        if continue_sleep > 0 {
+                            let continue_sleep = Duration::from_millis(continue_sleep as u64);
+                            let message = format!("poll_secure_channel_status task notified but secure channel state is '{}', continue with sleep wait for {:?}.", current_state, continue_sleep);
+                            logger::write_warning(message);
+                            tokio::time::sleep(continue_sleep).await;
+                        }
                     }
                 },
                 _ = tokio::time::sleep(sleep) => {}
@@ -161,9 +176,7 @@ async fn loop_poll(
         }
         first_iteration = false;
 
-        if !provision_timeup
-            && helpers::get_elapsed_time_in_millisec() > PROVISION_TIMEUP_IN_MILLISECONDS
-        {
+        if !provision_timeup && start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
             provision::provision_timeup(None, shared_state.clone());
             provision_timeup = true;
         }

@@ -132,7 +132,7 @@ fn update_provision_state(
 ) {
     let provision_state = provision_wrapper::update_state(shared_state.clone(), state);
     if provision_state.contains(ProvisionFlags::ALL_READY) {
-        provision_wrapper::set_provision_finished(shared_state.clone());
+        provision_wrapper::set_provision_finished(shared_state.clone(), true);
 
         // write provision success state here
         write_provision_state(provision_dir, shared_state.clone());
@@ -140,6 +140,18 @@ fn update_provision_state(
         // start event threads right after provision successfully
         start_event_threads(shared_state.clone());
     }
+}
+
+pub fn key_latch_ready_state_reset(shared_state: Arc<Mutex<SharedState>>) {
+    reset_provision_state(ProvisionFlags::KEY_LATCH_READY, shared_state);
+}
+
+fn reset_provision_state(state_to_reset: ProvisionFlags, shared_state: Arc<Mutex<SharedState>>) {
+    let provision_state = provision_wrapper::reset_state(shared_state.clone(), state_to_reset);
+    provision_wrapper::set_provision_finished(
+        shared_state.clone(),
+        provision_state.contains(ProvisionFlags::ALL_READY),
+    );
 }
 
 /// Update provision state when provision timedout
@@ -155,7 +167,7 @@ fn update_provision_state(
 pub fn provision_timeup(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex<SharedState>>) {
     let provision_state = provision_wrapper::get_state(shared_state.clone());
     if !provision_state.contains(ProvisionFlags::ALL_READY) {
-        provision_wrapper::set_provision_finished(shared_state.clone());
+        provision_wrapper::set_provision_finished(shared_state.clone(), true);
 
         // write provision state
         write_provision_state(provision_dir, shared_state.clone());
@@ -438,6 +450,35 @@ mod tests {
         let event_threads_initialized =
             provision_wrapper::get_event_log_threads_initialized(shared_state.clone());
         assert!(event_threads_initialized);
+
+        // test reset key latch provision state
+        super::key_latch_ready_state_reset(shared_state.clone());
+        let provision_state = provision_wrapper::get_state(shared_state.clone());
+        assert!(!provision_state.contains(ProvisionFlags::KEY_LATCH_READY));
+        let provision_status =
+            super::get_provision_status_wait(port, Some(Duration::from_millis(5))).await;
+        assert!(!provision_status.0, "provision_status.0 must be false");
+        assert_eq!(
+            0,
+            provision_status.1.len(),
+            "provision_status.1 must be empty"
+        );
+
+        // test key_latched ready again
+        super::key_latched(shared_state.clone());
+        let provision_state = provision_wrapper::get_state(shared_state.clone());
+        assert!(
+            provision_state.contains(ProvisionFlags::ALL_READY),
+            "ALL_READY must be true after key_latched again"
+        );
+        let provision_status =
+            super::get_provision_status_wait(port, Some(Duration::from_millis(5))).await;
+        assert!(provision_status.0, "provision_status.0 must be true");
+        assert_eq!(
+            0,
+            provision_status.1.len(),
+            "provision_status.1 must be empty"
+        );
 
         // stop listener
         proxy_listener::stop(port, shared_state);
