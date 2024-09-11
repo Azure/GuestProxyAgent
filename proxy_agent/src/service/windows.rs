@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-//! This module contains the logic to start the GPA service as a Windows service, hook up stop service control handler.
+//! This module contains the logic to start the GPA service as a Windows service and hook up stop service control handler.
 //! The GPA service is implemented as a Windows service using the windows_service crate.
-//! Tt is started, stopped, and controlled by the Windows service manager.
+//! It is started, stopped, and controlled by the Windows service manager.
 
 use crate::common::{constants, logger};
 use crate::shared_state::service_wrapper;
