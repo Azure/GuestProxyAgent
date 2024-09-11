@@ -1,5 +1,22 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to authenticate the connection based on the claims.
+//! The claims are used to determine if the process is allowed to connect to the remote server.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::proxy_authentication;
+//! use proxy_agent::proxy::Claims;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! let shared_state = SharedState::new();
+//!
+//! let authenticate = proxy_authentication::get_authenticate(constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT, claims);
+//! authenticate.authenticate(1, "/test".to_string(), shared_state.clone());
+//!  
+
 use super::authorization_rules::AuthorizationRules;
 use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;

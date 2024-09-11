@@ -1,5 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
+
 use crate::proxy::Claims;
 use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
 use std::net::TcpStream;

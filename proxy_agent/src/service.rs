@@ -5,7 +5,7 @@ pub mod windows;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::proxy::proxy_listener;
-use crate::shared_state::{shared_state_wrapper, telemetry_wrapper, SharedState};
+use crate::shared_state::{telemetry_wrapper, tokio_wrapper, SharedState};
 use crate::telemetry::event_reader;
 use proxy_agent_shared::logger_manager;
 use proxy_agent_shared::telemetry::event_logger;
@@ -14,6 +14,16 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(windows))]
 use std::time::Duration;
 
+/// Start the service with the shared state.
+/// Example:
+/// ```rust
+/// use proxy_agent::service;
+/// use proxy_agent::shared_state::SharedState;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+/// service::start_service(shared_state);
+/// ```
 pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
     logger_manager::init_logger(
         logger::AGENT_LOGGER_KEY.to_string(),
@@ -44,6 +54,12 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener::start_async(constants::PROXY_AGENT_PORT, 20, shared_state.clone());
 }
 
+/// Start the service and wait until the service is stopped.
+/// Example:
+/// ```rust
+/// use proxy_agent::service;
+/// service::start_service_wait();
+/// ```
 #[cfg(not(windows))]
 pub async fn start_service_wait() {
     let shared_state = SharedState::new();
@@ -55,12 +71,22 @@ pub async fn start_service_wait() {
     }
 }
 
+/// Stop the service with the shared state.
+/// Example:
+/// ```rust
+/// use proxy_agent::service;
+/// use proxy_agent::shared_state::SharedState;
+/// use std::sync::{Arc, Mutex};
+///
+/// let shared_state = SharedState::new();
+/// service::stop_service(shared_state);
+/// ```
 pub fn stop_service(shared_state: Arc<Mutex<SharedState>>) {
     logger::write_information(format!(
         "============== GuestProxyAgent is stopping, elapsed: {}",
         helpers::get_elapsed_time_in_millisec()
     ));
-    shared_state_wrapper::cancel_cancellation_token(shared_state.clone());
+    tokio_wrapper::cancel_cancellation_token(shared_state.clone());
 
     crate::redirector::close(shared_state.clone());
     crate::key_keeper::stop(shared_state.clone());

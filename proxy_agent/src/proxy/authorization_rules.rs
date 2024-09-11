@@ -1,5 +1,22 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to authorize the request based on the authorization rules.
+//! The authorization rules is from user inputted access control rules.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::authorization_rules;
+//! use proxy_agent::proxy_connection::Connection;
+//!
+//! // convert the authorization item to access control rules
+//! let access_control_rules = AccessControlRules::from_authorization_item(authorization_item);
+//!
+//! // check if the request is allowed based on the access control rules
+//! let is_allowed = access_control_rules.is_allowed(connection_id, request_url, claims);
+//!
+//! ```
+
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
 use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};

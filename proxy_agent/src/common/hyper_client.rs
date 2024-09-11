@@ -1,6 +1,39 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+//! This module contains the logic to send http requests and read the response body via hyper crate.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::hyper_client;
+//! use host_clients::goal_state::GoalState;
+//! use std::collections::HashMap;
+//! use hyper::Uri;
+//! use std::str::FromStr;
+//!
+//! let mut headers = HashMap::new();
+//! headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
+//! let full_url = Uri::from_str("http://168.63.129.16/machine/machine?comp=goalstate").unwrap();
+//!
+//! // use get method to get response, and deserialize it
+//! let response: GoalState = hyper_client::get(full_url, &headers, None, None, |log| {
+//!    println!("{}", log);
+//! }).await.unwrap();
+//!
+//! // build request
+//! let request = hyper_client::build_request(Method::GET, full_url.clone(), &headers, None, None, None).unwrap();
+//!
+//! // send request
+//! let (host, port) = hyper_client::host_port_from_uri(full_url.clone()).unwrap();
+//! let response = hyper_client::send_request(&host, port, request, |log| {
+//!   println!("{}", log);
+//! }).await.unwrap();
+//!
+//! // read response body and deserialize it
+//! let response_body: GoalState = hyper_client::read_response_body(response).await.unwrap();
+//!
+//! ```
+
 use super::{constants, helpers};
 use http::request::Builder;
 use http::request::Parts;

@@ -1,5 +1,24 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to interact with the IMDS service.
+//! The IMDS service is used to get the instance information of the VM.
+//! The GPA service uses the IMDS service to get the instance information of the VM.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::commom::constants;
+//! use proxy_agent::host_clients::imds_client;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! let shared_state = SharedState::new();
+//!
+//! let imds_client = imds_client::ImdsClient::new(constants::IMDS_IP.to_string(), 80, shared_state);
+//! let instance_info = imds_client.get_imds_instance_info().await;
+//!
+//! ```
+
 use super::instance_info::InstanceInfo;
 use crate::common::{hyper_client, logger};
 use crate::shared_state::{key_keeper_wrapper, SharedState};

@@ -1,5 +1,43 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to generate the telemetry data to be send to wire server.
+//! Example
+//! ```rust
+//! use proxy_agent::telemetry::TelemetryData;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! // Create the telemetry data
+//! let mut telemetry_data = TelemetryData::new();
+//!
+//! // Add the event to the telemetry data
+//! let event_log = Event {
+//!    EventPid: "123".to_string(),
+//!    EventTid: "456".to_string(),
+//!    Version: "1.0".to_string(),
+//!    TaskName: "TaskName".to_string(),
+//!    TimeStamp: "2024-09-04T02:00:00.222z".to_string(),
+//!    EventLevel: "Info".to_string(),
+//!    Message: "Message".to_string(),
+//!    OperationId: "OperationId".to_string(),
+//! };
+//! let event = TelemetryEvent::from_event_log(&event_log, shared_state.clone());
+//! telemetry_data.add_event(event);
+//!
+//! // Get the size of the telemetry data
+//! let size = telemetry_data.get_size();
+//!
+//! // Get the xml of the telemetry data
+//! let xml = telemetry_data.to_xml();
+//!
+//! // Remove the last event from the telemetry data
+//! let event = telemetry_data.remove_last_event();
+//!
+//! // Get the event count of the telemetry data
+//! let count = telemetry_data.event_count();
+//! ```
+
 use super::event_reader;
 use crate::{common::helpers, shared_state::SharedState};
 use once_cell::sync::Lazy;
@@ -7,6 +45,7 @@ use proxy_agent_shared::telemetry::Event;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+/// TelemetryData struct to hold the telemetry events send to wire server.
 pub struct TelemetryData {
     events: Vec<TelemetryEvent>,
 }
@@ -22,6 +61,8 @@ impl TelemetryData {
         TelemetryData { events: Vec::new() }
     }
 
+    /// Convert the telemetry data to xml format.
+    /// The xml format is defined by the wire server.
     pub fn to_xml(&self) -> String {
         let mut xml: String = String::new();
 
@@ -35,6 +76,7 @@ impl TelemetryData {
         xml
     }
 
+    /// Get the size of the telemetry data in bytes.
     pub fn get_size(&self) -> usize {
         self.to_xml().as_bytes().len()
     }

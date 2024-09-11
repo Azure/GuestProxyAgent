@@ -1,5 +1,27 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the KeyStatus and Key structs and the logic to latch the key from the wire server.
+//! The KeyStatus struct contains the status of the key and the access control rule details from the wire server.
+//! The Key struct contains the key details that are latched from the wire server.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::common::constants;
+//! use proxy_agent::key_keeper::key::{Key, KeyStatus};
+//! use hyper::Uri;
+//!
+//! let base_url: Uri = format!("http://{}:{}", constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT).parse().unwrap();
+//! let status = KeyStatus::get_status(base_url.clone()).await.unwrap();
+//!
+//! // acquire the key if the has not attest yet
+//! let key = Key::acquire_key(base_url.clone()).await.unwrap();
+//!
+//! // attest the key
+//! Key::attest_key(base_url.clone(), &key).await.unwrap();
+//!
+//! ```
+
 use crate::{
     common::{constants, hyper_client, logger},
     proxy::{proxy_connection::Connection, Claims},
