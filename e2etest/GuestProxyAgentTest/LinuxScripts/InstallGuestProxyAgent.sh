@@ -6,33 +6,33 @@
 zipFile=$zipsas   # zipsas is a variable set by RunCommand extension by os.Setenv(name, value)
 
 currentDir=$(pwd)
-echo "currentDir=$currentDir"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - currentDir=$currentDir"
 
-echo "detecting os and installing unzip" #TODO: needs to be revisited if we support other distros
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - detecting os and installing unzip" #TODO: needs to be revisited if we support other distros
 os=$(hostnamectl | grep "Operating System")
-echo "os=$os"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
-        echo "start installing unzip via apt-get $i"
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing unzip via apt-get $i"
         sudo apt update
         sudo apt-get install unzip
         sleep 10
         install=$(apt list --installed unzip)
-        echo "install=$install"
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
         if [[ $install == *"unzip"* ]]; then
-            echo "unzip installed successfully"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - unzip installed successfully"
             break
         fi
     done
 else
     for  i in {1..3}; do
-        echo "start installing unzip via dnf $i"
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing unzip via dnf $i"
         sudo dnf -y install unzip
         sleep 10
         install=$(dnf list --installed unzip)
-        echo "install=$install"
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
         if [[ $install == *"unzip"* ]]; then
-            echo "unzip installed successfully"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - unzip installed successfully"
             break
         fi
     done
@@ -40,13 +40,13 @@ fi
 
 zipFilePath=$currentDir/guest-proxy-agent.zip
 decodedUrl=$(echo $zipFile | base64 -d)
-echo "start downloading guest-proxy-agent.zip"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start downloading guest-proxy-agent.zip"
 curl -L -o $zipFilePath "$decodedUrl"
 
-echo "start unzipping guest-proxy-agent.zip"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start unzipping guest-proxy-agent.zip"
 unzip -o $zipFilePath -d $currentDir
 ls -l $currentDir
 
-echo "start install & start guest-proxy-agent"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start install & start guest-proxy-agent"
 $currentDir/ProxyAgent/proxy_agent_setup install
 

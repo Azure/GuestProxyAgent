@@ -8,7 +8,7 @@ param (
     [string]$loadedModulesBaseLineSAS
 )
 
-Write-Output "Start Guest Proxy Agent Loaded Module Validation"
+Write-Output "$((Get-Date).ToUniversalTime()) - Start Guest Proxy Agent Loaded Module Validation"
 
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
@@ -26,7 +26,7 @@ New-Item -ItemType File -Path $moduleBaselineFilePath
 
 Invoke-WebRequest -Uri $moduleBaselineUrlString -OutFile $moduleBaselineFilePath
 
-Write-Output "Downloaded baseline file"
+Write-Output "$((Get-Date).ToUniversalTime()) - Downloaded baseline file"
 
 $baseArray = @()
 
@@ -34,7 +34,7 @@ foreach ($line in Get-Content $moduleBaselineFilePath| Where-Object { $_.Trim() 
     $baseArray += $line.Trim().ToLower()
 }
 
-Write-Output "Read baseline list: $baseArray"
+Write-Output "$((Get-Date).ToUniversalTime()) - Read baseline list: $baseArray"
 
 $processName = "GuestProxyAgent"
 $process = Get-Process -Name $processName -ErrorAction SilentlyContinue
@@ -42,18 +42,18 @@ $process = Get-Process -Name $processName -ErrorAction SilentlyContinue
 $currentModulesArray = @()
 
 if ($process -eq $null) {
-    Write-Output "Process '$processName' not found."
+    Write-Output "$((Get-Date).ToUniversalTime()) - Process '$processName' not found."
 } else {
-    Write-Output "Loaded modules for process '$processName':"
+    Write-Output "$((Get-Date).ToUniversalTime()) - Loaded modules for process '$processName':"
     $modules = $process.Modules
     foreach ($module in $modules) {
         $moduleName = $module.ModuleName
 		$currentModulesArray += $moduleName.Trim().ToLower()
-        Write-Output "Module Name: $moduleName"        
+        Write-Output "$((Get-Date).ToUniversalTime()) - Module Name: $moduleName"        
     }
 }
 
-Write-Output "Current loaded list: $currentModulesArray"
+Write-Output "$((Get-Date).ToUniversalTime()) - Current loaded list: $currentModulesArray"
 
 $comparisonResult = Compare-Object -ReferenceObject $baseArray -DifferenceObject $currentModulesArray
 
@@ -61,10 +61,10 @@ $missedInBaselineModules = @()
 $newAddedModules = @()
 $isMatch = $false
 if ($comparisonResult -eq $null -or $comparisonResult.Count -eq 0) {
-    Write-Output "No differences found."
+    Write-Output "$((Get-Date).ToUniversalTime()) - No differences found."
     $isMatch = $true
 } else {
-    Write-Output "Differences found:"
+    Write-Output "$((Get-Date).ToUniversalTime()) - Differences found:"
     # Display the differences
     foreach ($result in $comparisonResult) {
         $inputObject = '"' + $result.InputObject + '"'
@@ -87,4 +87,4 @@ $headers = @{
 }
 
 Invoke-RestMethod -Uri $decodedUrlString -Method Put -Headers $headers -InFile $customOutputJsonPath
-Write-Output "Uploaded json output result."
+Write-Output "$((Get-Date).ToUniversalTime()) - Uploaded json output result."
