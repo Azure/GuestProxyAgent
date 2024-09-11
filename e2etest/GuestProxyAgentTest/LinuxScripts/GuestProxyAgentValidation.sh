@@ -56,7 +56,7 @@ jsonString='{"guestProxyAgentServiceInstalled": "'$guestProxyAgentServiceExist'"
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - $jsonString"
 
 # write to $customOutputJsonPath
-echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - $jsonString" > $customOutputJsonPath
+echo "$jsonString" > $customOutputJsonPath
 
 # upload $customOutputJsonPath to blob
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start uploading file=@$customOutputJsonPath to blob"
