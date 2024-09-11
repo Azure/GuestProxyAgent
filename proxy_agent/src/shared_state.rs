@@ -37,7 +37,7 @@ pub struct SharedState {
     // key_keeper
     /// The key is used to compute sinature for the data between the agent and the host endpoints
     key: Option<Key>,
-    /// The current MSP secure channel state
+    /// The current secure channel state
     current_secure_channel_state: String,
     /// The rule ID for the WireServer endpoints
     wireserver_rule_id: String,
@@ -201,7 +201,7 @@ pub mod tokio_wrapper {
 ///
 /// let shared_state = SharedState::new();
 ///
-/// // set the key once the MSP feature is enabled
+/// // set the key once the feature is enabled
 /// key_keeper_wrapper::set_key(shared_state.clone(), key);
 /// key_keeper_wrapper::update_current_secure_channel_state(shared_state.clone(), state);
 /// key_keeper_wrapper::update_wireserver_rule_id(shared_state.clone(), rule_id);
@@ -212,7 +212,7 @@ pub mod tokio_wrapper {
 /// let key_incarnation = key_keeper_wrapper::get_current_key_incarnation(shared_state.clone());
 /// let state = key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone());
 ///
-/// // clear the key once the MSP feature is disabled
+/// // clear the key once the feature is disabled
 /// key_keeper_wrapper::clear_key(shared_state.clone());
 /// ```
 pub mod key_keeper_wrapper {
