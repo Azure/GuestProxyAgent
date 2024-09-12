@@ -14,7 +14,6 @@ serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.6.0"        # xml Deserializer
 bitflags = "2.6.0"            # support bitflag enum
-url = "2.3.1"                 # parse url string
 hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
 regex = "1.9.5"               # match process name in cmdline
