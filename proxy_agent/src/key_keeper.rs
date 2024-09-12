@@ -506,14 +506,16 @@ mod tests {
             20,
         );
 
+        let shared_state = SharedState::new();
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-
-        // LATER: need switch to tokio spawn once the server_mock is async
-        std::thread::spawn(move || {
-            server_mock::start(ip.to_string(), port);
-        });
+        let cloned_shared_state = shared_state.clone();
+        tokio::spawn(server_mock::start(
+            ip.to_string(),
+            port,
+            cloned_shared_state.clone(),
+        ));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state
@@ -521,7 +523,6 @@ mod tests {
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
-        let shared_state = SharedState::new();
         tokio::spawn(super::poll_secure_channel_status(
             (format!("http://{}:{}/", ip, port)).parse().unwrap(),
             cloned_keys_dir,
@@ -555,8 +556,8 @@ mod tests {
         );
 
         // stop poll
-        key_keeper::stop(shared_state);
-        server_mock::stop(ip.to_string(), port);
+        key_keeper::stop(shared_state.clone());
+        server_mock::stop(shared_state.clone());
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);

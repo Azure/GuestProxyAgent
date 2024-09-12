@@ -10,6 +10,7 @@ use serde_derive::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ProxySummary {
+    pub id: u128,
     pub method: String,
     pub url: String,
     pub clientIp: String,
