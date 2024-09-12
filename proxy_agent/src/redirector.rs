@@ -42,7 +42,6 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDe
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
-use std::os::windows::io::AsRawSocket;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -205,6 +204,8 @@ pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> std::io::Result<Aud
 pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {
     #[cfg(windows)]
     {
+        use std::os::windows::io::AsRawSocket;
+
         windows::get_audit_from_redirect_context(_tcp_stream.as_raw_socket() as usize)
     }
     #[cfg(not(windows))]
