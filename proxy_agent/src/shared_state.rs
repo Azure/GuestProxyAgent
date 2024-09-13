@@ -448,6 +448,23 @@ pub mod provision_wrapper {
         shared_state.provision_state.clone()
     }
 
+    /// Reset the provision state
+    /// # Arguments
+    /// * `shared_state` - Arc<Mutex<SharedState>>
+    /// * `state` - ProvisionFlags to reset/remove from the provision state
+    /// # Returns
+    /// * `ProvisionFlags` - the updated provision state
+    /// # Remarks
+    /// * The provision state is a bit field, the state is updated by AND & NOT operation
+    pub fn reset_state(
+        shared_state: Arc<Mutex<SharedState>>,
+        state: ProvisionFlags,
+    ) -> ProvisionFlags {
+        let mut shared_state = shared_state.lock().unwrap();
+        shared_state.provision_state &= !state;
+        shared_state.provision_state.clone()
+    }
+
     pub fn get_state(shared_state: Arc<Mutex<SharedState>>) -> ProvisionFlags {
         shared_state.lock().unwrap().provision_state.clone()
     }
@@ -469,8 +486,8 @@ pub mod provision_wrapper {
             .provision_event_log_threads_initialized
     }
 
-    pub fn set_provision_finished(shared_state: Arc<Mutex<SharedState>>) {
-        shared_state.lock().unwrap().provision_finished = true;
+    pub fn set_provision_finished(shared_state: Arc<Mutex<SharedState>>, provision_finished: bool) {
+        shared_state.lock().unwrap().provision_finished = provision_finished;
     }
 
     pub fn get_provision_finished(shared_state: Arc<Mutex<SharedState>>) -> bool {
