@@ -1,5 +1,24 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module is responsible for starting the proxy server and handling incoming requests.
+//! It listens on a specified port and forwards the requests to the target server, 
+//!  then forward the response from the target server and sends it back to the client.
+//! It also handles the provision state check request.
+//! It uses the `hyper` crate to handle the HTTP requests and responses, 
+//!  uses the `tower` crate to limit the incoming request body size.
+//! 
+//! Example:
+//! ```rust
+//! use crate::common::config;
+//! use crate::proxy::proxy_server;
+//! use crate::shared_state::SharedState;
+//!
+//! let shared_state = Arc::new(Mutex::new(SharedState::new()));
+//! let port = config::get_proxy_port();
+//! tokio::spawn(proxy_server::start(port, shared_state.clone()));
+//! ```
+
 use crate::common::{config, constants, helpers, hyper_client, logger};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
 use crate::proxy::{proxy_authentication, proxy_summary::ProxySummary, Claims};
@@ -113,7 +132,7 @@ async fn accept_one_reqeust(
             Err(e) => {
                 Connection::write_error(
                     INITIAL_CONNECTION_ID,
-                    format!("Failed to set read timeout: {}", e),
+                    format!("Failed to set stream read timeout: {}", e),
                 );
                 return;
             }
@@ -373,46 +392,11 @@ async fn handle_request(
     }
 
     // start new request to the Host endpoint
-    let server_addr = format!("{}:{}", ip, port);
-    let proxy_stream = match TcpStream::connect(server_addr.to_string()).await {
-        Ok(stream) => stream,
-        Err(e) => {
-            Connection::write_warning(
-                connection.id,
-                format!("Failed to connect to host {}: {}", server_addr, e),
-            );
-            log_connection_summary(
-                &connection,
-                StatusCode::SERVICE_UNAVAILABLE,
-                shared_state.clone(),
-            );
-            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
-        }
-    };
-    let io = TokioIo::new(proxy_stream);
-    let connection_id = connection.id;
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-        Ok((sender, conn)) => (sender, conn),
-        Err(e) => {
-            Connection::write_warning(connection_id, format!("Failed to connect to host: {}", e));
-            log_connection_summary(
-                &connection,
-                StatusCode::SERVICE_UNAVAILABLE,
-                shared_state.clone(),
-            );
-            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
-        }
-    };
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            Connection::write(
-                connection_id,
-                format!("Connection to host failed: {:?}", err),
-            );
-        }
-    });
-
-    let proxy_response = sender.send_request(proxy_request).await;
+    let proxy_response =
+        hyper_client::send_request(ip.to_string().as_str(), port, proxy_request, move |msg| {
+            Connection::write_warning(connection_id, msg);
+        })
+        .await;
     forward_response(proxy_response, connection, shared_state).await
 }
 
@@ -455,7 +439,7 @@ async fn handle_provision_state_check_request(
 }
 
 async fn forward_response(
-    proxy_response: hyper::Result<Response<Incoming>>,
+    proxy_response: std::io::Result<Response<Incoming>>,
     connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -630,46 +614,17 @@ async fn handle_request_with_signature(
     }
 
     // start new request to the Host endpoint
-    let server_addr = format!("{}:{}", connection.request_ip(), connection.port);
-    let proxy_stream = match TcpStream::connect(server_addr.to_string()).await {
-        Ok(stream) => stream,
-        Err(e) => {
-            Connection::write_warning(
-                connection.id,
-                format!("Failed to connect to host {}: {}", server_addr, e),
-            );
-            log_connection_summary(
-                &connection,
-                StatusCode::SERVICE_UNAVAILABLE,
-                shared_state.clone(),
-            );
-            return Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE));
-        }
-    };
-    let io = TokioIo::new(proxy_stream);
     let connection_id = connection.id;
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-        Ok((sender, conn)) => (sender, conn),
-        Err(e) => {
-            Connection::write_warning(connection_id, format!("Failed to connect to host: {}", e));
-            log_connection_summary(
-                &connection,
-                StatusCode::MISDIRECTED_REQUEST,
-                shared_state.clone(),
-            );
-            return Ok(empty_response(StatusCode::MISDIRECTED_REQUEST));
-        }
-    };
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            Connection::write(
-                connection_id,
-                format!("Connection to host failed: {:?}", err),
-            );
-        }
-    });
+    let proxy_response = hyper_client::send_request(
+        &connection.request_ip(),
+        connection.port,
+        proxy_request,
+        move |msg| {
+            Connection::write_warning(connection_id, msg);
+        },
+    )
+    .await;
 
-    let proxy_response = sender.send_request(proxy_request).await;
     forward_response(proxy_response, connection, shared_state).await
 }
 

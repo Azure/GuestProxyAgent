@@ -260,13 +260,16 @@ pub fn build_request(
     }
 }
 
-pub async fn send_request<F>(
+pub async fn send_request<B, F>(
     host: &str,
     port: u16,
-    request: Request<BoxBody<Bytes, hyper::Error>>,
+    request: Request<B>,
     log_fun: F,
 ) -> std::io::Result<hyper::Response<hyper::body::Incoming>>
 where
+    B: hyper::body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     F: Fn(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
