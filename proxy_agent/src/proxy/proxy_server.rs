@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 //! This module is responsible for starting the proxy server and handling incoming requests.
-//! It listens on a specified port and forwards the requests to the target server, 
+//! It listens on a specified port and forwards the requests to the target server,
 //!  then forward the response from the target server and sends it back to the client.
 //! It also handles the provision state check request.
-//! It uses the `hyper` crate to handle the HTTP requests and responses, 
+//! It uses the `hyper` crate to handle the HTTP requests and responses,
 //!  uses the `tower` crate to limit the incoming request body size.
-//! 
+//!
 //! Example:
 //! ```rust
 //! use crate::common::config;
