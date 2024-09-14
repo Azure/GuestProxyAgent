@@ -12,6 +12,8 @@ Source0:        %{name}_%{version}.tar.gz
 %description
 Microsoft Azure Guest Proxy Agent.
 
+%define _buildshell /bin/bash
+
 %prep
 %setup -n %{name}_%{version}
 
