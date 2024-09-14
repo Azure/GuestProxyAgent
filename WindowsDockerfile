@@ -1,0 +1,30 @@
+FROM mcr.microsoft.com/windows/server:ltsc2022
+WORKDIR C:\\Users\\ContainerAdministrator
+
+ARG RUST_VERSION
+
+RUN curl -SL --output vs_buildtools.exe https://aka.ms/vs/17/release/vs_buildtools.exe
+
+# Install VS Build Tools with:
+#   "Desktop development with C++"
+#   "The Windows 10 or 11 SDK"
+#   "MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated libs (latest)"
+RUN start /w vs_buildtools.exe --quiet --wait --norestart --nocache --installPath "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools" --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.Windows10SDK --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre || IF "%ERRORLEVEL%"=="3010" EXIT 0
+
+# WDK for Windows 11, version 22H2 (version 10.0.22621.x) w/ "Windows Driver Kit Visual Studio Extension"
+RUN curl -SL --output wdksetup.exe https://go.microsoft.com/fwlink/?linkid=2196230
+RUN wdksetup.exe /features + /q
+
+# Clang
+RUN curl -SL --output clanginstaller.exe https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.1/LLVM-11.0.1-win64.exe
+RUN clanginstaller.exe
+
+# Nuget
+RUN curl -SL --output nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+RUN mv nuget.exe "C:\\Program Files (x86)\NuGet\nuget.exe"
+RUN SET "PATH=C:\\Program Files (x86)\NuGet\nuget.exe;%PATH%"
+
+# Rust
+RUN curl -SL --output rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
+RUN rustup-init.exe
+RUN rustup update $RUST_VERSION
