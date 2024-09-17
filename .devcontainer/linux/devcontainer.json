@@ -1,0 +1,35 @@
+{
+  "name": "gpalinuxdev",
+  "build": {
+    "dockerfile": "./Dockerfile",
+    "args": {
+      "RUST_VERSION": "1.81.0"
+    }
+  },
+  "customizations": {
+    "jetbrains": {
+      "settings": {
+        "Git4Idea:app:Git-Application-Settings.use_credential_helper": true,
+        "com.intellij:app:BaseRefactoringSettings.rename_search_in_comments_for_file": false,
+        "Docker:app:DockerSettings.dockerComposePath": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+        "Docker:app:DockerSettings.dockerPath": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe"
+      }
+    },
+    "vscode": {
+      "extensions": [
+        "bierner.markdown-mermaid",
+        "rust-lang.rust-analyzer",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cpptools-themes",
+        "ms-vscode.cmake-tools",
+        "ms-vscode-remote.remote-containers",
+        "ms-azuretools.vscode-docker",
+        "shd101wyy.markdown-preview-enhanced",
+        "davidanson.vscode-markdownlint",
+        "ms-vscode.powershell",
+        "redhat.vscode-yaml"
+      ]
+    }
+  }
+}

@@ -1,13 +1,11 @@
 services:
-  windev:
+  gpawindev:
     build:
-      context: ./dockerfiles
-      dockerfile: WindowsDockerfile
+      context: windows-dockerfiles
+      dockerfile: Dockerfile
       args:
-        RUST_VERSION: 1.80.0
+        RUST_VERSION: 1.81.0
     platform: windows/amd64
     volumes:
       - ./:C:\Users\ContainerAdministrator\GuestProxyAgent:rw
     working_dir: C:\Users\ContainerAdministrator\GuestProxyAgent
-
-    #command: ["cmd", "/K", "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\VsDevCmd.bat"]

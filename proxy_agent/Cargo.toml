@@ -7,7 +7,7 @@ build = "build.rs"
 
 [dependencies]
 proxy_agent_shared = { path ="../proxy_agent_shared"}
-itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
+itertools = "0.13.0"          # use to sort iterator elements into a new iterator in ascending order
 once_cell = "1.17.0"          # use Lazy
 serde = "1.0.152"
 serde_derive = "1.0.152"
@@ -48,7 +48,7 @@ features = [
 ]
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "0.5.0"     # windows NT service
+windows-service = "0.7.0"     # windows NT service
 windows-acl = "0.3.0"         # ACL the latch key folder
 winapi = "0.3.9"              # used by windows-acl PSID
 libloading = "0.8.0"          # for dynamic load libraries

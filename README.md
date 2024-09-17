@@ -80,11 +80,22 @@ recommended. Clone the repo locally, then launch the container. Your local repo 
 We use Ubuntu as the base image. The same dockerfile is likely to work on other distros with minimal tweaking, but only
 the provided configuration is validated.
 
+#### With Dev Containers
+
+Use `/.devcontainer/linux/devcontainer.json`. Launch however you prefer / is appropriate for your choice of tools. 
+
+If using VS Code with the repo already opened as your workspace, you can open the command palette and select
+`Dev Container: Reopen in Container`.
+
+#### Manually
+
 ```shell
-docker-compose -f docker-compose-linux.yml run --build -it linuxdev
+docker-compose -f docker-compose-linux.yml run --build -it gpalinuxdev
 ```
 
-Within the attached container, the full build, all tests, and all packaging can be run with:
+#### Once Within Container
+
+The full build, all tests, and all packaging can be run with:
 
 ```shell
 chmod +x ./build-linux.sh
@@ -99,7 +110,7 @@ chmod +x ./build-linux.sh
 ### Developing for Windows Targets
 
 ```shell
-docker-compose -f docker-compose-windows.yml run --build -it windev
+docker-compose -f docker-compose-windows.yml run --build -it gpawindev
 ```
 
 Within the attached container, the full build, all tests, and all packaging can be run with:
@@ -111,6 +122,12 @@ Within the attached container, the full build, all tests, and all packaging can 
 > In certain Windows environments you may notice inordinately slow downloads during
 > the docker image build. If you are in one of these edge cases, consider disabling RCS which [can potentially help](https://github.com/microsoft/Windows-Containers/issues/145):
 > `powershell "Get-NetAdapterRSC | Disable-NetAdapterRSC"`
+
+### Other tips
+
+- If your setup is relying on OpenSSH for container communication, use a modern version of OpenSSH for better performance.
+On Windows, this can be installed with `winget install -e --id Microsoft.OpenSSH.Beta`.
+- Docker can only manage Windows or Linux containers at one time. Right-click on the Docker icon in the system tray
 
 ## Contributing
 

@@ -1,5 +1,5 @@
 FROM mcr.microsoft.com/windows/server:ltsc2022
-WORKDIR C:\\Users\\ContainerAdministrator
+WORKDIR C:/Users/ContainerAdministrator
 
 ARG RUST_VERSION
 
@@ -43,6 +43,7 @@ RUN choco install llvm -y
 
 RUN choco install nuget.commandline -y
 RUN choco install dotnet-sdk -y
+RUN choco install git -y
 
 # Rust
 RUN curl -SL --output rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
