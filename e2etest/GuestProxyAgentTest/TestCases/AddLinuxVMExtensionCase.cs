@@ -13,8 +13,7 @@ namespace GuestProxyAgentTest.TestCases
         public AddLinuxVMExtensionCase() : base("AddLinuxVMExtensionCase")
         { }
         public AddLinuxVMExtensionCase(string testCaseName) : base(testCaseName)
-        {
-        }
+        { }
 
         private const string EXTENSION_NAME = "ProxyAgentLinuxTest";
 
@@ -29,9 +28,7 @@ namespace GuestProxyAgentTest.TestCases
                 TypeHandlerVersion = "1.0",
                 AutoUpgradeMinorVersion = false,
                 EnableAutomaticUpgrade = false,
-                Settings =
-                {
-                }
+                Settings = { }
             };
 
             try
@@ -56,7 +53,7 @@ namespace GuestProxyAgentTest.TestCases
                 else
                 {
                     // capture the provisioning data into TestResultDetails and continue poll the extension instance view
-                    context.TestResultDetails.StdErr = string.Format("VMExtension provisioning data: {}", FormatVMExtensionData(result?.Value?.Data););
+                    context.TestResultDetails.StdErr = string.Format("VMExtension provisioning data: {}", FormatVMExtensionData(result?.Value?.Data));
                 }
             }
             catch (Exception ex)
