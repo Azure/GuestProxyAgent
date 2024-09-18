@@ -221,11 +221,17 @@ fn write_provision_state(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
-    _ = misc_helpers::try_create_folder(provision_dir.to_path_buf());
-    _ = std::fs::write(
+    if let Err(e) = misc_helpers::try_create_folder(provision_dir.to_path_buf()) {
+        logger::write_error(format!("Failed to create provision folder with error: {e}"));
+        return;
+    }
+
+    if let Err(e) = std::fs::write(
         provisioned_file,
         misc_helpers::get_date_time_string_with_milliseconds(),
-    );
+    ) {
+        logger::write_error(format!("Failed to write provisioned file with error: {e}"));
+    }
 
     let failed_state_message = get_provision_failed_state_message(shared_state.clone());
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_TMP_FILE_NAME);

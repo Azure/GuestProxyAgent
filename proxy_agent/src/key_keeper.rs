@@ -74,11 +74,18 @@ pub async fn poll_secure_channel_status(
         ));
     }
 
-    _ = misc_helpers::try_create_folder(key_dir.to_path_buf());
-    logger::write(format!(
-        "key folder {} created if not exists before.",
-        misc_helpers::path_to_string(key_dir.to_path_buf())
-    ));
+    if let Err(e) = misc_helpers::try_create_folder(key_dir.to_path_buf()) {
+        logger::write_warning(format!(
+            "key folder {} created failed with error {}.",
+            misc_helpers::path_to_string(key_dir.to_path_buf()),
+            e
+        ));
+    } else {
+        logger::write(format!(
+            "key folder {} created if not exists before.",
+            misc_helpers::path_to_string(key_dir.to_path_buf())
+        ));
+    }
 
     match acl::acl_directory(key_dir.to_path_buf()) {
         Ok(()) => {
@@ -307,11 +314,19 @@ async fn loop_poll(
                 let guid = key.guid.to_string();
                 let mut key_file = key_dir.to_path_buf().join(&guid);
                 key_file.set_extension("key");
-                _ = misc_helpers::json_write_to_file(&key, key_file);
-                logger::write_information(format!(
-                    "Successfully acquired the key '{}' details from server and saved locally.",
-                    guid
-                ));
+                match misc_helpers::json_write_to_file(&key, key_file) {
+                    Ok(()) => {
+                        logger::write_information(format!(
+                        "Successfully acquired the key '{}' details from server and saved locally.", guid));
+                    }
+                    Err(e) => {
+                        logger::write_warning(format!(
+                            "Failed to save key details to file: {:?}",
+                            e
+                        ));
+                        continue;
+                    }
+                }
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {

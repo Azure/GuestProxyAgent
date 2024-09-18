@@ -52,7 +52,7 @@ async fn main() {
         .unwrap();
 
     // start the Instant to calculate the elapsed time
-    _ = helpers::get_elapsed_time_in_millisec();
+    let _time = helpers::get_elapsed_time_in_millisec();
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
@@ -62,7 +62,7 @@ async fn main() {
             service::start_service(shared_state.clone());
             println!("Press Enter to end it.");
             let mut temp = String::new();
-            _ = std::io::stdin().read_line(&mut temp);
+            let _read = std::io::stdin().read_line(&mut temp);
             service::stop_service(shared_state.clone());
         } else if args[1].to_lowercase() == "--version" {
             // --version command to print the version of the GPA
@@ -100,7 +100,12 @@ async fn main() {
         // no argument provided, start the GPA as an OS service
         #[cfg(windows)]
         {
-            _ = service_dispatcher::start(constants::PROXY_AGENT_SERVICE_NAME, ffi_service_main);
+            match service_dispatcher::start(constants::PROXY_AGENT_SERVICE_NAME, ffi_service_main) {
+                Ok(_) => {}
+                Err(e) => {
+                    logger::write_error(format!("Error in starting the service dispatcher: {}", e));
+                }
+            }
         }
 
         #[cfg(not(windows))]
@@ -114,7 +119,7 @@ async fn main() {
 #[cfg(windows)]
 fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
     // start the Instant to calculate the elapsed time
-    _ = helpers::get_elapsed_time_in_millisec();
+    let _time = helpers::get_elapsed_time_in_millisec();
 
     // Pass the tokio runtime handle here to launch the windows service.
     let handle = ASYNC_RUNTIME_HANDLE
