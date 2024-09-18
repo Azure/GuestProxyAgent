@@ -478,16 +478,18 @@ pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
-// check the request could skip the sig
-// and stream the body to the server directly
+/// Certain endpoints are exempt from enforcement regardless of the VM's configuration.
+/// Restricting access to these non-security impacting endpoints would introduce unreasonable
+/// overhead and/or harm live-site investigations. Since the service won't require a signature,
+/// there is no reason to generate one.
 pub fn should_skip_sig(method: hyper::Method, relative_uri: hyper::Uri) -> bool {
     let url = relative_uri.to_string().to_lowercase();
 
     // currently, we agreed to skip the sig for those requests:
     //      o PUT   /vmAgentLog
     //      o POST  /machine/?comp=telemetrydata
-    (method == hyper::Method::PUT || method == hyper::Method::POST)
-        && (url == "/machine/?comp=telemetrydata" || url == "/vmagentlog")
+    (method == hyper::Method::PUT && url == "/vmagentlog")
+        || (method == hyper::Method::POST && url == "/machine/?comp=telemetrydata")
 }
 
 #[cfg(test)]

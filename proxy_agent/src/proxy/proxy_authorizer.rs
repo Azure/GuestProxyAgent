@@ -1,20 +1,21 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-//! This module contains the logic to authenticate the connection based on the claims.
+//! This module contains the logic to authorize the connection based on the claims.
 //! The claims are used to determine if the process is allowed to connect to the remote server.
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::proxy_authentication;
+//! use proxy_agent::proxy_authorizer;
 //! use proxy_agent::proxy::Claims;
 //! use proxy_agent::shared_state::SharedState;
 //! use std::sync::{Arc, Mutex};
 //!
 //! let shared_state = SharedState::new();
 //!
-//! let authenticate = proxy_authentication::get_authenticate(constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT, claims);
-//! authenticate.authenticate(1, "/test".to_string(), shared_state.clone());
+//! let authorize = proxy_authorizer::get_authorizer(constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT, claims);
+//! let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
+//! authorize.authorize(1, url, shared_state.clone());
 //!  
 
 use super::authorization_rules::AuthorizationRules;
@@ -104,9 +105,9 @@ mod default {
     }
 }
 
-pub trait Authenticate {
-    // authenticate the connection
-    fn authenticate(
+pub trait Authorizer {
+    // authorize the connection
+    fn authorize(
         &self,
         connection_id: u128,
         request_url: hyper::Uri,
@@ -118,8 +119,8 @@ pub trait Authenticate {
 struct WireServer {
     claims: Claims,
 }
-impl Authenticate for WireServer {
-    fn authenticate(
+impl Authorizer for WireServer {
+    fn authorize(
         &self,
         connection_id: u128,
         request_url: hyper::Uri,
@@ -185,8 +186,8 @@ struct Imds {
     #[allow(dead_code)]
     claims: Claims,
 }
-impl Authenticate for Imds {
-    fn authenticate(
+impl Authorizer for Imds {
+    fn authorize(
         &self,
         connection_id: u128,
         request_url: hyper::Uri,
@@ -242,8 +243,8 @@ struct GAPlugin {
     claims: Claims,
 }
 
-impl Authenticate for GAPlugin {
-    fn authenticate(
+impl Authorizer for GAPlugin {
+    fn authorize(
         &self,
         _connection_id: u128,
         _request_url: hyper::Uri,
@@ -269,8 +270,8 @@ impl Authenticate for GAPlugin {
 }
 
 struct ProxyAgent {}
-impl Authenticate for ProxyAgent {
-    fn authenticate(
+impl Authorizer for ProxyAgent {
+    fn authorize(
         &self,
         _connection_id: u128,
         _request_url: hyper::Uri,
@@ -286,8 +287,8 @@ impl Authenticate for ProxyAgent {
 }
 
 struct Default {}
-impl Authenticate for Default {
-    fn authenticate(
+impl Authorizer for Default {
+    fn authorize(
         &self,
         _connection_id: u128,
         _request_url: hyper::Uri,
@@ -301,7 +302,7 @@ impl Authenticate for Default {
     }
 }
 
-pub fn get_authenticate(ip: String, port: u16, claims: Claims) -> Box<dyn Authenticate> {
+pub fn get_authorizer(ip: String, port: u16, claims: Claims) -> Box<dyn Authorizer> {
     if ip == constants::WIRE_SERVER_IP && port == constants::WIRE_SERVER_PORT {
         Box::new(WireServer { claims })
     } else if ip == constants::GA_PLUGIN_IP && port == constants::GA_PLUGIN_PORT {
@@ -315,7 +316,7 @@ pub fn get_authenticate(ip: String, port: u16, claims: Claims) -> Box<dyn Authen
     }
 }
 
-pub fn authenticate(
+pub fn authorize(
     ip: String,
     port: u16,
     connection_id: u128,
@@ -323,9 +324,9 @@ pub fn authenticate(
     claims: Claims,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> bool {
-    let auth = get_authenticate(ip, port, claims);
+    let auth = get_authorizer(ip, port, claims);
     Connection::write(connection_id, format!("Got auth: {}", auth.to_string()));
-    auth.authenticate(connection_id, request_uri, shared_state)
+    auth.authorize(connection_id, request_uri, shared_state)
 }
 
 #[cfg(test)]
@@ -347,7 +348,7 @@ mod tests {
             clientIp: "127.0.0.1".to_string(),
         };
         let shared_state = crate::shared_state::SharedState::new();
-        let auth = super::get_authenticate(
+        let auth: Box<dyn super::Authorizer> = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
             crate::common::constants::WIRE_SERVER_PORT,
             claims.clone(),
@@ -358,11 +359,11 @@ mod tests {
             "WireServer { runAsElevated: true, processName: test }"
         );
         assert!(
-            auth.authenticate(1, test_uri.clone(), shared_state.clone()),
+            auth.authorize(1, test_uri.clone(), shared_state.clone()),
             "WireServer authentication must be true"
         );
 
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::GA_PLUGIN_IP.to_string(),
             crate::common::constants::GA_PLUGIN_PORT,
             claims.clone(),
@@ -372,33 +373,33 @@ mod tests {
             "GAPlugin { runAsElevated: true, processName: test }"
         );
         assert!(
-            auth.authenticate(1, test_uri.clone(), shared_state.clone()),
+            auth.authorize(1, test_uri.clone(), shared_state.clone()),
             "GAPlugin authentication must be true since it has not enabled for builtin processes in the config yet"
         );
 
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::IMDS_IP.to_string(),
             crate::common::constants::IMDS_PORT,
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "IMDS");
         assert!(
-            auth.authenticate(1, test_uri.clone(), shared_state.clone()),
+            auth.authorize(1, test_uri.clone(), shared_state.clone()),
             "IMDS authentication must be true"
         );
 
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::PROXY_AGENT_IP.to_string(),
             crate::common::constants::PROXY_AGENT_PORT,
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "ProxyAgent");
         assert!(
-            !auth.authenticate(1, test_uri.clone(), shared_state.clone()),
+            !auth.authorize(1, test_uri.clone(), shared_state.clone()),
             "ProxyAgent authentication must be false"
         );
 
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::PROXY_AGENT_IP.to_string(),
             crate::common::constants::PROXY_AGENT_PORT + 1,
             claims.clone(),
@@ -419,7 +420,7 @@ mod tests {
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
         };
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
             crate::common::constants::WIRE_SERVER_PORT,
             claims.clone(),
@@ -436,7 +437,7 @@ mod tests {
         };
         super::set_wireserver_rules(shared_state.clone(), Some(disabled_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "WireServer authentication must be true with disabled rules"
         );
 
@@ -455,12 +456,12 @@ mod tests {
         };
         super::set_wireserver_rules(shared_state.clone(), Some(audit_allow_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "WireServer authentication must be true with audit allow rules"
         );
         super::set_wireserver_rules(shared_state.clone(), Some(audit_deny_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "WireServer authentication must be true with audit deny rules"
         );
 
@@ -479,12 +480,12 @@ mod tests {
         };
         super::set_wireserver_rules(shared_state.clone(), Some(enforce_allow_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "WireServer authentication must be true with enforce allow rules"
         );
         super::set_wireserver_rules(shared_state.clone(), Some(enforce_deny_rules));
         assert!(
-            !auth.authenticate(1, url.clone(), shared_state.clone()),
+            !auth.authorize(1, url.clone(), shared_state.clone()),
             "WireServer authentication must be false with enforce deny rules"
         );
     }
@@ -502,7 +503,7 @@ mod tests {
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
         };
-        let auth = super::get_authenticate(
+        let auth = super::get_authorizer(
             crate::common::constants::IMDS_IP.to_string(),
             crate::common::constants::IMDS_PORT,
             claims.clone(),
@@ -519,7 +520,7 @@ mod tests {
         };
         super::set_imds_rules(shared_state.clone(), Some(disabled_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "IMDS authentication must be true with disabled rules"
         );
 
@@ -538,12 +539,12 @@ mod tests {
         };
         super::set_imds_rules(shared_state.clone(), Some(audit_allow_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "IMDS authentication must be true with audit allow rules"
         );
         super::set_imds_rules(shared_state.clone(), Some(audit_deny_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "IMDS authentication must be true with audit deny rules"
         );
 
@@ -562,12 +563,12 @@ mod tests {
         };
         super::set_imds_rules(shared_state.clone(), Some(enforce_allow_rules));
         assert!(
-            auth.authenticate(1, url.clone(), shared_state.clone()),
+            auth.authorize(1, url.clone(), shared_state.clone()),
             "IMDS authentication must be true with enforce allow rules"
         );
         super::set_imds_rules(shared_state.clone(), Some(enforce_deny_rules));
         assert!(
-            !auth.authenticate(1, url.clone(), shared_state.clone()),
+            !auth.authorize(1, url.clone(), shared_state.clone()),
             "IMDS authentication must be false with enforce deny rules"
         );
     }

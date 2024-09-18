@@ -28,7 +28,8 @@ impl ConnectionContext {
         hyper_client::should_skip_sig(self.method.clone(), self.url.clone())
     }
 
-    pub fn request_ip(&self) -> String {
+    /// Get the target server ip address in string for logging purpose.
+    pub fn get_ip_string(&self) -> String {
         if let Some(ip) = &self.ip {
             return ip.to_string();
         }

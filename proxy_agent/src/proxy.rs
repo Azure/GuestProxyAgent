@@ -33,7 +33,7 @@
 //! ```
 
 pub mod authorization_rules;
-pub mod proxy_authentication;
+pub mod proxy_authorizer;
 pub mod proxy_connection;
 pub mod proxy_server;
 pub mod proxy_summary;

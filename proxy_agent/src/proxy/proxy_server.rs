@@ -21,7 +21,7 @@
 
 use crate::common::{config, constants, helpers, hyper_client, logger};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
-use crate::proxy::{proxy_authentication, proxy_summary::ProxySummary, Claims};
+use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::{
     agent_status_wrapper, key_keeper_wrapper, proxy_listener_wrapper, tokio_wrapper, SharedState,
 };
@@ -324,7 +324,7 @@ async fn handle_request(
     connection.port = port;
 
     // authenticate the connection
-    if !proxy_authentication::authenticate(
+    if !proxy_authorizer::authorize(
         ip.to_string(),
         port,
         connection_id,
@@ -509,7 +509,7 @@ fn log_connection_summary(
         runAsElevated: claims.runAsElevated,
         method: connection.method.to_string(),
         url: connection.url.to_string(),
-        ip: connection.request_ip(),
+        ip: connection.get_ip_string(),
         port: connection.port,
         responseStatus: response_status.to_string(),
         elapsedTime: elapsed_time.as_millis(),
@@ -616,7 +616,7 @@ async fn handle_request_with_signature(
     // start new request to the Host endpoint
     let connection_id = connection.id;
     let proxy_response = hyper_client::send_request(
-        &connection.request_ip(),
+        &connection.get_ip_string(),
         connection.port,
         proxy_request,
         move |msg| {

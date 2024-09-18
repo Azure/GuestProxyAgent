@@ -27,7 +27,7 @@ pub mod key;
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
-use crate::proxy::proxy_authentication;
+use crate::proxy::proxy_authorizer;
 use crate::shared_state::{key_keeper_wrapper, tokio_wrapper, SharedState};
 use crate::{acl, redirector};
 use hyper::Uri;
@@ -217,7 +217,7 @@ async fn loop_poll(
                 "Wireserver rule id changed from {} to {}.",
                 old_wire_server_rule_id, wireserver_rule_id
             ));
-            proxy_authentication::set_wireserver_rules(
+            proxy_authorizer::set_wireserver_rules(
                 shared_state.clone(),
                 status.get_wireserver_rules(),
             );
@@ -230,7 +230,7 @@ async fn loop_poll(
                 "IMDS rule id changed from {} to {}.",
                 old_imds_rule_id, imds_rule_id
             ));
-            proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
+            proxy_authorizer::set_imds_rules(shared_state.clone(), status.get_imds_rules());
         }
 
         let state = status.get_secure_channel_state();
@@ -523,11 +523,10 @@ mod tests {
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-        let cloned_shared_state = shared_state.clone();
         tokio::spawn(server_mock::start(
             ip.to_string(),
             port,
-            cloned_shared_state.clone(),
+            shared_state.clone(),
         ));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
