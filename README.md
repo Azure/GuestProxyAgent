@@ -48,7 +48,7 @@ This means that the feature can be enabled on existing workloads without breakin
 ## Compatibility
 
 eBPF is available in Linux kernels 5.15+ and on Windows VMs with [eBPF-for-Windows](https://github.com/microsoft/ebpf-for-windows).
-The design is not dependent on any modern security hardware, but its can be further enhanced by hardware like vTPM when
+The design is not dependent on any modern security hardware, but it can be further enhanced by hardware like vTPM when
 available.
  
 This project supports Azure VMs running:
@@ -71,9 +71,10 @@ The following diagram shows the basic architecture of this project and related c
 
 ### Prerequisites
 
-Ensure you have `docker-compose` installed and can download ~3-10GB on first run. The repo provides a build image for
-Linux and one for Windows. The containers pre-configure all dependencies for you; compiling outside them is not
-recommended. Clone the repo locally, then launch the container. Your local repo will be mounted with `rw`.
+Ensure you have `docker-compose` installed and can download ~5-10GB on first run for the Linux container and ~30GB for
+the Windows container. The repo provides a build image for Linux and one for Windows. The containers pre-configure all
+dependencies for you; compiling outside them is not recommended. Clone the repo locally, then launch the container.
+Your local repo will be mounted with `rw`.
 
 ### Developing for Linux Targets
 
@@ -127,7 +128,8 @@ Within the attached container, the full build, all tests, and all packaging can 
 
 - If your setup is relying on OpenSSH for container communication, use a modern version of OpenSSH for better performance.
 On Windows, this can be installed with `winget install -e --id Microsoft.OpenSSH.Beta`.
-- Docker can only manage Windows or Linux containers at one time. Right-click on the Docker icon in the system tray
+- Docker Desktop can only manage Windows or Linux containers at one time. Right-click on the Docker icon in the system
+tray and select `Switch to windows containers...` or `Switch to linux containers...` as needed.
 
 ## Contributing
 
