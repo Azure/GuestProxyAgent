@@ -48,9 +48,15 @@ namespace GuestProxyAgentTest.TestCases
                 var provisioningState = result.Value.Data.ProvisioningState;
                 if (result.HasValue && result.Value.Data != null && result.Value.Data.ProvisioningState == "Succeeded")
                 {
+                    // add vm extension operation succeeded
                     context.TestResultDetails.Succeed = true;
                     context.TestResultDetails.CustomOut = FormatVMExtensionData(result.Value.Data);
                     return;
+                }
+                else
+                {
+                    // capture the provisioning data into TestResultDetails and continue poll the extension instance view
+                    context.TestResultDetails.StdErr = string.Format("VMExtension provisioning data: {}", FormatVMExtensionData(result?.Value?.Data););
                 }
             }
             catch (Exception ex)
