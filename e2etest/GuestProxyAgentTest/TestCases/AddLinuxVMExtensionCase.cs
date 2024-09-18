@@ -66,7 +66,7 @@ namespace GuestProxyAgentTest.TestCases
             var startTime = DateTime.UtcNow;
             while (true)
             {
-                var vmExtension = await vmr.GetVirtualMachineExtensions().GetAsync(EXTENSION_NAME);
+                var vmExtension = await vmr.GetVirtualMachineExtensionAsync(EXTENSION_NAME, expand: "instanceView");
                 var instanceView = vmExtension?.Value?.Data?.InstanceView;
                 if (instanceView?.Statuses?.Count > 0 && instanceView.Statuses[0].DisplayStatus == "Provisioning succeeded")
                 {
