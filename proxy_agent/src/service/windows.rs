@@ -39,7 +39,7 @@ pub fn run_service() -> windows_service::Result<()> {
                             ));
                         }
                     }
-                    _ => {
+                    None => {
                         // workaround to stop the service by exiting the process
                         logger::write_warning(
                             "Force exit the process to stop the service.".to_string(),
