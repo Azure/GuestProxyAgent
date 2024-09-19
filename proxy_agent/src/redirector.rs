@@ -41,6 +41,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -55,8 +56,8 @@ pub struct AuditEntry {
     pub logon_id: u64,
     pub process_id: u32,
     pub is_admin: i32,
-    pub destination_ipv4: u32,
-    pub destination_port: u16,
+    pub destination_ipv4: u32, // in network byte order
+    pub destination_port: u16, // in network byte order
 }
 
 impl AuditEntry {
@@ -68,6 +69,14 @@ impl AuditEntry {
             destination_ipv4: 0,
             destination_port: 0,
         }
+    }
+
+    pub fn destination_port_in_host_byte_order(&self) -> u16 {
+        u16::from_be(self.destination_port)
+    }
+
+    pub fn destination_ipv4_addr(&self) -> Ipv4Addr {
+        Ipv4Addr::from_bits(self.destination_ipv4.to_be())
     }
 }
 
@@ -187,10 +196,17 @@ pub fn lookup_audit(
     }
 }
 
+#[cfg(windows)]
+pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
+    windows::get_audit_from_redirect_context(raw_socket_id)
+}
+
 pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {
     #[cfg(windows)]
     {
-        windows::get_audit_from_redirect_context(_tcp_stream)
+        use std::os::windows::io::AsRawSocket;
+
+        windows::get_audit_from_redirect_context(_tcp_stream.as_raw_socket() as usize)
     }
     #[cfg(not(windows))]
     {

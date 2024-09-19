@@ -18,7 +18,6 @@
 //! ```
 
 use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
-use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{proxy_connection::Connection, Claims};
@@ -106,32 +105,17 @@ impl AuthorizationRules {
         }
     }
 
-    pub fn is_allowed(&self, connection_id: u128, request_url: String, claims: Claims) -> bool {
+    pub fn is_allowed(&self, connection_id: u128, request_url: hyper::Uri, claims: Claims) -> bool {
         if self.mode.to_lowercase() == "disabled" {
             return true;
         }
-
-        let url = request_url.to_lowercase();
-        let url: Uri = match url.parse() {
-            Ok(u) => u,
-            Err(e) => {
-                Connection::write_error(
-                    connection_id,
-                    format!(
-                        "Failed to parse the request url: {} with error {}",
-                        request_url, e
-                    ),
-                );
-                return false;
-            }
-        };
 
         if let Some(rules) = &self.rules {
             let mut role_privilege_matched = false;
             for rule in rules {
                 // is privilege match
                 for privilege in &rule.privileges {
-                    if privilege.is_match(connection_id, url.clone()) {
+                    if privilege.is_match(connection_id, request_url.clone()) {
                         role_privilege_matched = true;
                         for identity in &rule.identities {
                             if identity.is_match(connection_id, claims.clone()) {
@@ -166,6 +150,7 @@ mod tests {
     };
     use crate::proxy::authorization_rules::AuthorizationRules;
     use crate::proxy::{proxy_connection::Connection, Claims};
+    use std::str::FromStr;
 
     #[test]
     fn test_authorization_rules() {
@@ -221,12 +206,12 @@ mod tests {
             runAsElevated: true,
         };
         // assert the claim is allowed given the rules above
-        let url = url::Url::parse("http://localhost/test/test").unwrap();
-        assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
-        let relativeurl = "/test/test".to_string();
-        assert!(rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
+        let url = hyper::Uri::from_str("http://localhost/test/test").unwrap();
+        assert!(rules.is_allowed(0, url, claims.clone()));
+        let relative_url = hyper::Uri::from_str("/test/test").unwrap();
+        assert!(rules.is_allowed(0, relative_url.clone(), claims.clone()));
         claims.userName = "test1".to_string();
-        assert!(!rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
+        assert!(!rules.is_allowed(0, relative_url, claims.clone()));
 
         // Test Audit Mode
         let access_control_rules = AccessControlRules {
@@ -296,10 +281,10 @@ mod tests {
         assert_eq!(rules.mode, "disabled");
         assert!(rules.rules.is_some());
 
-        let url = url::Url::parse("http://localhost/test/test1").unwrap();
-        assert!(rules.is_allowed(0, url.to_string(), claims.clone()));
-        let relativeurl = "/test/test1".to_string();
-        assert!(rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
+        let url = hyper::Uri::from_str("http://localhost/test/test1").unwrap();
+        assert!(rules.is_allowed(0, url, claims.clone()));
+        let relative_url = hyper::Uri::from_str("/test/test1").unwrap();
+        assert!(rules.is_allowed(0, relative_url, claims.clone()));
 
         // Test enforce mode, identity not match
         let access_control_rules = AccessControlRules {
@@ -335,9 +320,9 @@ mod tests {
         assert_eq!(rules.mode, "enforce");
         assert!(rules.rules.is_some());
 
-        let url = url::Url::parse("http://localhost/test?").unwrap();
-        assert!(!rules.is_allowed(0, url.to_string(), claims.clone()));
-        let relativeurl = "/test?".to_string();
-        assert!(!rules.is_allowed(0, relativeurl.to_string(), claims.clone()));
+        let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
+        assert!(!rules.is_allowed(0, url, claims.clone()));
+        let relativeurl = hyper::Uri::from_str("/test?").unwrap();
+        assert!(!rules.is_allowed(0, relativeurl, claims.clone()));
     }
 }
