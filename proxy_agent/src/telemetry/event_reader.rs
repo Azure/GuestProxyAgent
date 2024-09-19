@@ -320,7 +320,7 @@ mod tests {
     use crate::shared_state::key_keeper_wrapper;
     use crate::test_mock::server_mock;
     use proxy_agent_shared::{logger_manager, misc_helpers};
-    use std::{env, fs, thread};
+    use std::{env, fs};
 
     #[tokio::test]
     async fn test_event_reader_thread() {
@@ -350,12 +350,15 @@ mod tests {
         let imds_client = ImdsClient::new(ip, port, shared_state.clone());
 
         key_keeper_wrapper::set_key(shared_state.clone(), Key::empty());
-
-        thread::spawn(move || {
-            server_mock::start(ip.to_string(), port);
-        });
+        let cloned_shared_state = shared_state.clone();
+        tokio::spawn(server_mock::start(
+            ip.to_string(),
+            port,
+            cloned_shared_state.clone(),
+        ));
         tokio::time::sleep(Duration::from_millis(100)).await;
         logger::write("server_mock started.".to_string());
+
         match update_vm_meta_data(shared_state.clone(), &wire_server_client, &imds_client).await {
             Ok(()) => {
                 logger::write("success updated the vm metadata.".to_string());
@@ -395,7 +398,7 @@ mod tests {
         //Should be 10 events written and read into events Vector
         assert_eq!(events_read, 10);
 
+        server_mock::stop(shared_state.clone());
         _ = fs::remove_dir_all(&temp_dir);
-        server_mock::stop(ip.to_string(), port);
     }
 }

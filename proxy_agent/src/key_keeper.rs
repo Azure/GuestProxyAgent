@@ -27,7 +27,7 @@ pub mod key;
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
-use crate::proxy::proxy_authentication;
+use crate::proxy::proxy_authorizer;
 use crate::shared_state::{key_keeper_wrapper, tokio_wrapper, SharedState};
 use crate::{acl, redirector};
 use hyper::Uri;
@@ -224,7 +224,7 @@ async fn loop_poll(
                 "Wireserver rule id changed from {} to {}.",
                 old_wire_server_rule_id, wireserver_rule_id
             ));
-            proxy_authentication::set_wireserver_rules(
+            proxy_authorizer::set_wireserver_rules(
                 shared_state.clone(),
                 status.get_wireserver_rules(),
             );
@@ -237,7 +237,7 @@ async fn loop_poll(
                 "IMDS rule id changed from {} to {}.",
                 old_imds_rule_id, imds_rule_id
             ));
-            proxy_authentication::set_imds_rules(shared_state.clone(), status.get_imds_rules());
+            proxy_authorizer::set_imds_rules(shared_state.clone(), status.get_imds_rules());
         }
 
         let state = status.get_secure_channel_state();
@@ -534,14 +534,15 @@ mod tests {
             20,
         );
 
+        let shared_state = SharedState::new();
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-
-        // LATER: need switch to tokio spawn once the server_mock is async
-        std::thread::spawn(move || {
-            server_mock::start(ip.to_string(), port);
-        });
+        tokio::spawn(server_mock::start(
+            ip.to_string(),
+            port,
+            shared_state.clone(),
+        ));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state
@@ -549,7 +550,6 @@ mod tests {
 
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
-        let shared_state = SharedState::new();
         tokio::spawn(super::poll_secure_channel_status(
             (format!("http://{}:{}/", ip, port)).parse().unwrap(),
             cloned_keys_dir,
@@ -583,8 +583,8 @@ mod tests {
         );
 
         // stop poll
-        key_keeper::stop(shared_state);
-        server_mock::stop(ip.to_string(), port);
+        key_keeper::stop(shared_state.clone());
+        server_mock::stop(shared_state.clone());
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);

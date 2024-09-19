@@ -40,16 +40,15 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::http::{self, http_request::HttpRequest, request::Request, response::Response};
-use crate::common::{config, constants, helpers, logger};
-use crate::proxy::proxy_listener;
+use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
-use std::io::{Error, ErrorKind};
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -275,7 +274,7 @@ fn get_provision_failed_state_message(shared_state: Arc<Mutex<SharedState>>) -> 
     if !provision_state.contains(ProvisionFlags::LISTENER_READY) {
         state.push_str(&format!(
             "proxyListenerStatus - {}\r\n",
-            proxy_listener::get_status(shared_state.clone()).message
+            proxy_server::get_status(shared_state.clone()).message
         ));
     }
 
@@ -296,8 +295,7 @@ pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionSt
 /// This function is designed for GPA command line, serves for --status [--wait seconds] option
 pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) -> (bool, String) {
     loop {
-        let provision_state = get_current_provision_status(port);
-        let (finished, message) = match provision_state {
+        let (finished, message) = match get_current_provision_status(port).await {
             Ok(state) => (state.finished, state.errorMessage),
             Err(e) => {
                 println!(
@@ -327,40 +325,24 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
-fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
-    let provision_url = url::Url::parse(&format!(
+async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
+    let provision_url: hyper::Uri = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
         port,
         PROVISION_URL_PATH
-    ))
+    )
+    .parse()
     .map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("Failed to parse provision url with error: {}", e),
         )
     })?;
-    let mut req = Request::new(PROVISION_URL_PATH.to_string(), "GET".to_string());
-    req.headers
-        .add_header(constants::METADATA_HEADER.to_string(), "True ".to_string());
 
-    let mut http_request = HttpRequest::new(provision_url, req);
-    http_request
-        .request
-        .headers
-        .add_header("Host".to_string(), http_request.get_host());
-
-    let response = http::get_response_in_string(&mut http_request)?;
-    let response_body = response.get_body_as_string()?;
-    if response.status != Response::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Host response {} - {}", response.status, response_body),
-        ));
-    }
-
-    let state: ProivsionState = serde_json::from_str(&response_body)?;
-    Ok(state)
+    let mut headers = HashMap::new();
+    headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());
+    hyper_client::get(provision_url, &headers, None, None, logger::write_warning).await
 }
 
 #[cfg(test)]
@@ -368,8 +350,9 @@ mod tests {
     use crate::common::logger;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_connection::Connection;
-    use crate::proxy::proxy_listener;
+    use crate::proxy::proxy_server;
     use crate::shared_state::provision_wrapper;
+    use crate::shared_state::tokio_wrapper;
     use crate::shared_state::SharedState;
     use proxy_agent_shared::logger_manager;
     use std::env;
@@ -397,7 +380,7 @@ mod tests {
         // start listener, the port must different from the one used in production code
         let shared_state = SharedState::new();
         let port: u16 = 8092;
-        proxy_listener::start_async(port, 1, shared_state.clone());
+        tokio::spawn(proxy_server::start(port, shared_state.clone()));
 
         // give some time to let the listener started
         let sleep_duration = Duration::from_millis(100);
@@ -487,7 +470,8 @@ mod tests {
         );
 
         // stop listener
-        proxy_listener::stop(port, shared_state);
+        tokio_wrapper::cancel_cancellation_token(shared_state.clone());
+        proxy_server::stop(shared_state);
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
