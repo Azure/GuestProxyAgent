@@ -27,7 +27,7 @@ use windows_service::{define_windows_service, service_dispatcher};
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command()]
 struct Cli {
     /// GPA VM Extension commands
     #[command(subcommand)]

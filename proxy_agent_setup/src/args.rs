@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::fmt::{Display, Formatter};
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command()]
 pub(crate) struct Cli {
     /// GPA VM Extension commands
     #[command(subcommand)]

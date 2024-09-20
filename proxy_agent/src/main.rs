@@ -19,6 +19,7 @@ pub mod test_mock;
 use clap::{Parser, Subcommand};
 use common::constants;
 use common::helpers;
+use proxy_agent_shared::misc_helpers;
 use shared_state::SharedState;
 use std::{process, time::Duration};
 
@@ -45,7 +46,7 @@ static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
 /// azure-proxy-agent - start the GPA as an OS service.
 ///                     The GPA service will be started as an OS service in the background.
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command()]
 struct Cli {
     /// get the provision status of the GPA service
     #[arg(short, long)]
@@ -54,6 +55,10 @@ struct Cli {
     /// wait for the provision status to finish
     #[arg(short, long, requires = "status")]
     wait: Option<u64>,
+
+    /// print the version of the GPA
+    #[arg(short, long)]
+    version: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -77,6 +82,12 @@ async fn main() {
     _ = helpers::get_elapsed_time_in_millisec();
 
     let cli = Cli::parse();
+
+    if cli.version {
+        println!("{}", misc_helpers::get_current_version());
+        return;
+    }
+
     if cli.status {
         // --wait parameter to wait for the provision status until the given time in seconds
         // it is an optional, if not provided then it will query the provision state once by waiting for 0 seconds.
