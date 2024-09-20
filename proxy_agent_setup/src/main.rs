@@ -10,6 +10,7 @@ pub mod setup;
 #[cfg(not(windows))]
 mod linux;
 
+use clap::Parser;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
 use std::process;
@@ -25,32 +26,18 @@ const SERVICE_NAME: &str = "azure-proxy-agent";
 
 fn main() {
     logger::init_logger();
-    let args = args::Args::parse(std::env::args().collect());
+    let cli = args::Cli::parse();
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
         misc_helpers::get_current_version(),
-        args
+        cli
     ));
 
-    match args.action.as_str() {
-        args::Args::INSTALL => {
-            stop_service();
-            let proxy_agent_target_folder = copy_proxy_agent();
-            setup_service(
-                proxy_agent_target_folder,
-                misc_helpers::get_current_exe_dir(),
-            );
-        }
-        args::Args::UNINSTALL => {
-            let proxy_agent_running_folder = uninstall_service();
-            if args.uninstall_mode == args::Args::DELETE_PACKAGE {
-                delete_package(proxy_agent_running_folder);
-            }
-        }
-        args::Args::BACKUP => {
+    match cli.command {
+        args::Command::Backup => {
             backup_proxy_agent();
         }
-        args::Args::RESTORE => {
+        args::Command::Restore { delete_backup } => {
             if !check_backup_exists() {
                 logger::write("Backup check failed, skip the restore operation.".to_string());
                 return;
@@ -62,14 +49,27 @@ fn main() {
                 backup::proxy_agent_backup_folder(),
             );
 
-            if args.uninstall_mode == args::Args::DELETE_PACKAGE {
+            if delete_backup {
                 delete_backup_folder();
             }
         }
-        args::Args::PURGE => {
+        args::Command::Uninstall { uninstall_mode } => {
+            let proxy_agent_running_folder = uninstall_service();
+            if uninstall_mode == args::UninstallMode::Package {
+                delete_package(proxy_agent_running_folder);
+            }
+        }
+        args::Command::Purge => {
             delete_backup_folder();
         }
-        _ => {}
+        args::Command::Install => {
+            stop_service();
+            let proxy_agent_target_folder = copy_proxy_agent();
+            setup_service(
+                proxy_agent_target_folder,
+                misc_helpers::get_current_exe_dir(),
+            );
+        }
     }
 }
 

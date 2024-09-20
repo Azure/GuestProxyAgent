@@ -4,6 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs;
+use crate::ExensionCommand;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::version::Version;
@@ -34,12 +35,7 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     common::get_handler_environment(exe_path)
 });
 
-pub fn program_start(args: Vec<String>, config_seq_no: Option<String>) {
-    if args.len() < 2 {
-        eprintln!("input args length invalid {}", args.len());
-        process::exit(constants::INVALID_INPUT_ARGS_LENGTH);
-    }
-
+pub fn program_start(command: ExensionCommand, config_seq_no: Option<String>) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
     logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
@@ -56,7 +52,7 @@ pub fn program_start(args: Vec<String>, config_seq_no: Option<String>) {
         process::exit(constants::EXIT_CODE_NOT_SUPPORTED_OS_VERSION);
     }
 
-    handle_command(&args[1], &config_seq_no);
+    handle_command(command, &config_seq_no);
 }
 
 #[cfg(windows)]
@@ -165,18 +161,17 @@ fn get_exe_parent() -> PathBuf {
     exe_parent.to_path_buf()
 }
 
-fn handle_command(cmd: &str, config_seq_no: &Option<String>) {
-    logger::write(format!("entering handle command: {cmd}"));
+fn handle_command(command: ExensionCommand, config_seq_no: &Option<String>) {
+    logger::write(format!("entering handle command: {:?}", command));
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
-    let status_folder_path: PathBuf = Path::new(&status_folder).to_path_buf();
-    match cmd {
-        "install" => install_handler(),
-        "uninstall" => uninstall_handler(),
-        "enable" => enable_handler(status_folder_path, config_seq_no),
-        "disable" => disable_handler(),
-        "reset" => reset_handler(),
-        "update" => update_handler(),
-        _ => {}
+    let status_folder_path: PathBuf = PathBuf::from(&status_folder);
+    match command {
+        ExensionCommand::Install => install_handler(),
+        ExensionCommand::Uninstall => uninstall_handler(),
+        ExensionCommand::Enable => enable_handler(status_folder_path, config_seq_no),
+        ExensionCommand::Disable => disable_handler(),
+        ExensionCommand::Reset => reset_handler(),
+        ExensionCommand::Update => update_handler(),
     }
 }
 
