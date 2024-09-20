@@ -12,6 +12,8 @@ pub mod redirector;
 pub mod service;
 pub mod shared_state;
 pub mod telemetry;
+
+#[cfg(test)]
 pub mod test_mock;
 
 use clap::{Parser, Subcommand};
