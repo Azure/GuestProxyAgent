@@ -196,7 +196,12 @@ fn set_stream_read_time_out(
     // Convert the stream to a std stream
     let std_stream = stream.into_std()?;
     // Set the read timeout
-    _ = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+    if let Err(e) = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
+        Connection::write_warning(
+            INITIAL_CONNECTION_ID,
+            format!("Failed to set read timeout: {}", e),
+        );
+    }
 
     // Clone the stream for the service_fn
     let cloned_std_stream = std_stream.try_clone()?;

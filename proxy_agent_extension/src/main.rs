@@ -40,7 +40,9 @@ fn main() {
         common::start_event_logger(constants::SERVICE_LOG_FILE);
         #[cfg(windows)]
         {
-            _ = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main);
+            if let Err(e) = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main) {
+                logger::write(format!("Failed to start the service: {}", e));
+            }
         }
         #[cfg(not(windows))]
         {
@@ -51,5 +53,7 @@ fn main() {
 
 #[cfg(windows)]
 fn proxy_agent_extension_windows_service_main(args: Vec<OsString>) {
-    _ = service_main::windows_main::run_service(args);
+    if let Err(e) = service_main::windows_main::run_service(args) {
+        logger::write(format!("Failed to start the service: {}", e));
+    }
 }
