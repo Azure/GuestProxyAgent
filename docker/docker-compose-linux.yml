@@ -1,12 +1,12 @@
 services:
   gpalinuxdev:
     build:
-      context: ./.devcontainer/linux
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: LinuxDockerfile
       args:
-        RUST_VERSION: 1.81.0
+        RUST_VERSION: 1.80.0
     platform: linux/amd64
     volumes:
-      - ./:/usr/root/GuestProxyAgent:rw
+      - ../:/usr/root/GuestProxyAgent:rw
     working_dir: /usr/root/GuestProxyAgent
     command: /bin/bash

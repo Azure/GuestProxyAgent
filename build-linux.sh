@@ -3,6 +3,13 @@
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
 
+# Prints then runs the command based on: https://stackoverflow.com/questions/31656645/how-do-i-echo-directly-on-standard-output-inside-a-shell-function
+runthis(){
+    echo "$@"
+    ## Run the command and redirect its error output
+    "$@" >&2
+}
+
 echo "======= Get the directory of the script"
 root_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 out_path=$root_path"/out"
@@ -28,7 +35,7 @@ CleanBuild=$2
 if [ "$CleanBuild" = "clean" ] 
 then 
     echo "======= delete old files"
-    rm -rf $out_dir
+    runthis rm -rf $out_dir
 fi
 
 echo "======= rustup component add rust-std-x86_64-unknown-linux-musl"
@@ -49,7 +56,7 @@ fi
 echo "======= build proxy_agent_shared"
 cargo_toml=$root_path/proxy_agent_shared/Cargo.toml
 echo "Defined: cargo_toml=$cargo_toml"
-cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
+runthis cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -58,7 +65,7 @@ then
 fi
 
 echo "======= run rust proxy_agent_shared tests"
-cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -69,7 +76,7 @@ fi
 echo "======= build ebpf program after the proxy_agent_shared is built to let $out_dir created."
 echo "======= build ebpf program for x64_x86 platform"
 ebpf_path=$root_path/linux-ebpf
-clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -82,7 +89,7 @@ ls -l $out_dir/ebpf_cgroup.o
 echo "======= build proxy_agent"
 cargo_toml=$root_path/proxy_agent/Cargo.toml
 echo "Defined: cargo_toml=$cargo_toml"
-cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
+runthis cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -94,11 +101,11 @@ echo "======= copy config file for Linux platform"
 cp -f -T $root_path/proxy_agent/config/GuestProxyAgent.linux.json $out_dir/proxy-agent.json
 
 echo "======= copy files for run/debug proxy_agent Unit test"
-cp -f $out_dir/* $out_dir/deps/
-cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
+runthis cp -f $out_dir/* $out_dir/deps/
+runthis cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
 
 echo "======= run rust proxy_agent tests"
-cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -110,7 +117,7 @@ echo "======= build proxy_agent_extension"
 cargo_toml=$root_path/proxy_agent_extension/Cargo.toml
 extension_src_path=$root_path/proxy_agent_extension/src/linux
 echo "Defined: cargo_toml=$cargo_toml"
-cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
+runthis cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -119,11 +126,11 @@ then
 fi
 
 echo "======= copy files for run/debug proxy_agent_extension Unit test"
-cp -f $out_dir/* $out_dir/deps/
-cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
+runthis cp -f $out_dir/* $out_dir/deps/
+runthis cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
 
 echo "======= run rust proxy_agent_extension tests"
-cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -136,7 +143,7 @@ cp -f -r $root_path/proxy_agent_setup/src/linux/* $out_dir/
 echo "======= build proxy_agent_setup"
 cargo_toml=$root_path/proxy_agent_setup/Cargo.toml
 echo "Defined: cargo_toml=$cargo_toml"
-cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
+runthis cargo build $release_flag --manifest-path $cargo_toml --target-dir $out_path --target $build_target
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -144,11 +151,11 @@ then
     exit $error_code
 fi
 echo "======= copy files for run/debug proxy_agent_setup Unit test"
-cp -f $out_dir/* $out_dir/deps/
-cp -f -r $out_dir/* $root_path/proxy_agent_setup/target/$Configuration/
+runthis cp -f $out_dir/* $out_dir/deps/
+runthis cp -f -r $out_dir/* $root_path/proxy_agent_setup/target/$Configuration/
 
 echo "======= build e2e test solution"
-dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest
+runthis dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest
 error_code=$?
 if [ $error_code -ne 0 ]
 then 

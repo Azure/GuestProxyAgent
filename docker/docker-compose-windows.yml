@@ -1,0 +1,11 @@
+services:
+  gpawindev:
+    build:
+      context: .
+      dockerfile: WindowsDockerfile
+      args:
+        RUST_VERSION: 1.80.0
+    platform: windows/amd64
+    volumes:
+      - ../:C:\Users\ContainerAdministrator\GuestProxyAgent:rw
+    working_dir: C:\Users\ContainerAdministrator\GuestProxyAgent
