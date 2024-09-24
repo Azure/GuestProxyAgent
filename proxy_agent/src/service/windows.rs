@@ -32,9 +32,14 @@ pub fn run_service() -> windows_service::Result<()> {
                             wait_hint: Duration::default(),
                             process_id: None,
                         };
-                        _ = status_handle.set_service_status(stop_state);
+                        if let Err(e) = status_handle.set_service_status(stop_state) {
+                            logger::write_error(format!(
+                                "Failed to set service status to Stopped: {}",
+                                e
+                            ));
+                        }
                     }
-                    _ => {
+                    None => {
                         // workaround to stop the service by exiting the process
                         logger::write_warning(
                             "Force exit the process to stop the service.".to_string(),
