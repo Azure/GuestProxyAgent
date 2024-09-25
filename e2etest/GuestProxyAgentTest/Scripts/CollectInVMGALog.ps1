@@ -24,7 +24,7 @@ $collectGuestLogExePath = $gaFolder + "\CollectGuestLogs.exe"
 $currentFolder = $PWD.Path
 $logZipPath = $currentFolder + "\VMAgentLogs.zip"; 
 
-Write-Host "CollectGuestLogExe path: $collectGuestLogExePath"
+Write-Output "$((Get-Date).ToUniversalTime()) - CollectGuestLogExe path: $collectGuestLogExePath"
 
 Start-Process -FilePath $collectGuestLogExePath -WorkingDirectory $currentFolder -ArgumentList "-Mode:full -FileName:$logZipPath" -Wait -NoNewWindow
 

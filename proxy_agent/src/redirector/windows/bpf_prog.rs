@@ -260,7 +260,9 @@ Return Value:
  */
 pub fn close_bpf_object(shared_state: Arc<Mutex<SharedState>>) {
     if let Some(obj) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        _ = bpf_object__close(obj.lock().unwrap().0);
+        if let Err(e) = bpf_object__close(obj.lock().unwrap().0) {
+            logger::write_error(format!("bpf_object__close with error: {}", e));
+        }
     }
     redirector_wrapper::clear_bpf_object(shared_state.clone());
 }

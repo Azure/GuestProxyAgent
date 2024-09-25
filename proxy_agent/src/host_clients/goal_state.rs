@@ -1,5 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the structs for the goal state and shared config from wire server.
+
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]

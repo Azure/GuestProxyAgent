@@ -1,11 +1,16 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the proxy summary struct.
+//! The proxy summary struct is used to store the summary of the proxied connections.
+
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ProxySummary {
+    pub id: u128,
     pub method: String,
     pub url: String,
     pub clientIp: String,

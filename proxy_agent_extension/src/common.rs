@@ -70,7 +70,9 @@ pub fn get_file_path(
     file_extension: &str,
 ) -> PathBuf {
     let mut file: PathBuf = status_folder;
-    _ = misc_helpers::try_create_folder(file.clone());
+    if let Err(e) = misc_helpers::try_create_folder(file.clone()) {
+        logger::write(format!("Error in creating folder: {:?}", e));
+    }
     match config_seq_no {
         Some(config_seq_no) => {
             file.push(config_seq_no);
@@ -135,7 +137,9 @@ pub fn update_current_seq_no(
                 Ok(seq_no) => {
                     if seq_no != *new_seq_no {
                         logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
-                        _ = fs::write(&current_seq_no_stored_file, new_seq_no);
+                        if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
+                            logger::write(format!("Error in writing seq no to file: {:?}", e));
+                        }
                     } else {
                         logger::write("no update on seq no".to_string());
                         should_report_status = false;
@@ -146,7 +150,9 @@ pub fn update_current_seq_no(
                         "no seq no found, writing seq no {} to file",
                         new_seq_no
                     ));
-                    _ = fs::write(&current_seq_no_stored_file, new_seq_no);
+                    if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
+                        logger::write(format!("Error in writing seq no to file: {:?}", e));
+                    }
                 }
             }
         }
