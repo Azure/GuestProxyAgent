@@ -9,7 +9,7 @@ param (
 $decodedUrlBytes = [System.Convert]::FromBase64String($customOutputJsonSAS)
 $decodedUrlString = [System.Text.Encoding]::UTF8.GetString($decodedUrlBytes)
 
-Write-Output "Start Guest Proxy Agent Validation"
+Write-Output "$((Get-Date).ToUniversalTime()) - Start Guest Proxy Agent Validation"
 
 $currentFolder = $PWD.Path
 $customOutputJsonPath = $currentFolder + "\proxyagentvalidation.json"; 
@@ -22,10 +22,10 @@ $guestProxyAgentServiceStatus = ""
 $guestProxyAgentProcessExist = $true
 
 if ($service -ne $null) {
-    Write-Output "The service $serviceName exists."    
+    Write-Output "$((Get-Date).ToUniversalTime()) - The service $serviceName exists."    
     $guestProxyAgentServiceStatus = $service.Status
 } else {
-    Write-Output "The service $serviceName does not exist."
+    Write-Output "$((Get-Date).ToUniversalTime()) - The service $serviceName does not exist."
     $guestProxyAgentServiceExist = $false
     $guestProxyAgentServiceStatus = "service not exists"
 }
@@ -35,26 +35,26 @@ $processName = "GuestProxyAgent"
 $process = Get-Process -Name $processName -ErrorAction SilentlyContinue
 
 if ($process -ne $null) {
-    Write-Output "The process $processName exists."
+    Write-Output "$((Get-Date).ToUniversalTime()) - The process $processName exists."
 } else {
     $guestProxyAgentProcessExist = $false
-    Write-Output "The process $processName does not exist."
+    Write-Output "$((Get-Date).ToUniversalTime()) - The process $processName does not exist."
 }
 
 $folderPath = "C:\WindowsAzure\ProxyAgent\Logs"
 $guestProxyAgentLogGenerated = $false
 
 if (Test-Path -Path $folderPath -PathType Container) {
-    Write-Output "The folder $folderPath exists."
+    Write-Output "$((Get-Date).ToUniversalTime()) - The folder $folderPath exists."
     $files = Get-ChildItem -Path $folderPath -File
     if ($files.Count -gt 0) {
-        Write-Output "The folder $folderPath contains files."
+        Write-Output "$((Get-Date).ToUniversalTime()) - The folder $folderPath contains files."
         $guestProxyAgentLogGenerated = $true
     } else {
-        Write-Output "The folder $folderPath is empty."
+        Write-Output "$((Get-Date).ToUniversalTime()) - The folder $folderPath is empty."
     }
 } else {
-    Write-Output "The folder $folderPath does not exist."
+    Write-Output "$((Get-Date).ToUniversalTime()) - The folder $folderPath does not exist."
 }
 
 
@@ -63,7 +63,7 @@ $jsonString = '{"guestProxyAgentServiceInstalled": ' + $guestProxyAgentServiceEx
         + ', "guestProxyAgentServiceStatus": "' + $guestProxyAgentServiceStatus `
         + '", "guestProxyAgentLogGenerated": ' + $guestProxyAgentLogGenerated.ToString().ToLower() + '}'
 
-Write-Output $jsonString
+Write-Output "$((Get-Date).ToUniversalTime()) - $jsonString"
 
 Set-Content -Path $customOutputJsonPath -Value $jsonString
 

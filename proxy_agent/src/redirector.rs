@@ -1,5 +1,34 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+//! This module contains the logic to redirect the http traffic to the GPA service proxy listener via eBPF.
+//! The eBPF program is loaded by the GPA service and the eBPF program is used to redirect the traffic to the GPA service proxy listener.
+//! GPA service update the eBPF map to allow particular http traffics to be redirected to the GPA service proxy listener.
+//! When eBPF redirects the http traffic, it writes the audit information to the eBPF map.
+//! The GPA service reads the audit information from the eBPF map and authorizes the requests before forwarding to the remote endpoints.
+//!
+//! Example
+//! ```rust
+//! use proxy_agent::redirector;
+//! use proxy_agent::shared_state::SharedState;
+//! use std::sync::{Arc, Mutex};
+//!
+//! // start the redirector with the shared state
+//! let shared_state = SharedState::new();
+//! let local_port = 8080;
+//! tokio::spawn(redirector::start(local_port, shared_state));
+//!
+//! // Update the redirect policy for the traffics
+//! redirector::update_wire_server_redirect_policy(true, shared_state.clone());
+//! redirector::update_imds_redirect_policy(false, shared_state.clone());
+//!
+//! // Get the status of the redirector
+//! let status = redirector::get_status(shared_state.clone());
+//!
+//! // Close the redirector to offload the eBPF program
+//! redirector::close(shared_state);
+//! ```
+
 #[cfg(windows)]
 mod windows;
 
@@ -12,6 +41,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -26,8 +56,8 @@ pub struct AuditEntry {
     pub logon_id: u64,
     pub process_id: u32,
     pub is_admin: i32,
-    pub destination_ipv4: u32,
-    pub destination_port: u16,
+    pub destination_ipv4: u32, // in network byte order
+    pub destination_port: u16, // in network byte order
 }
 
 impl AuditEntry {
@@ -39,6 +69,14 @@ impl AuditEntry {
             destination_ipv4: 0,
             destination_port: 0,
         }
+    }
+
+    pub fn destination_port_in_host_byte_order(&self) -> u16 {
+        u16::from_be(self.destination_port)
+    }
+
+    pub fn destination_ipv4_addr(&self) -> Ipv4Addr {
+        Ipv4Addr::from_bits(self.destination_ipv4.to_be())
     }
 }
 
@@ -158,10 +196,17 @@ pub fn lookup_audit(
     }
 }
 
+#[cfg(windows)]
+pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
+    windows::get_audit_from_redirect_context(raw_socket_id)
+}
+
 pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {
     #[cfg(windows)]
     {
-        windows::get_audit_from_redirect_context(_tcp_stream)
+        use std::os::windows::io::AsRawSocket;
+
+        windows::get_audit_from_redirect_context(_tcp_stream.as_raw_socket() as usize)
     }
     #[cfg(not(windows))]
     {

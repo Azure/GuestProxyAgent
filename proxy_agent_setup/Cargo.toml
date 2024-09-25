@@ -1,12 +1,13 @@
 [package]
 name = "proxy_agent_setup"
-version = "1.0.21"
+version = "1.0.22"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 proxy_agent_shared = { path ="../proxy_agent_shared"}
+clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"             # Rust Windows resource helper to add file version

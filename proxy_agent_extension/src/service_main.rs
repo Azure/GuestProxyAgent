@@ -26,7 +26,7 @@ const MAX_STATE_COUNT: u32 = 120;
 
 pub fn run(service_state: Arc<Mutex<ServiceState>>) {
     let message = format!(
-        "GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
+        "==============  GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
         misc_helpers::get_current_version(),
         misc_helpers::get_processor_arch(),
         misc_helpers::get_long_os_version()

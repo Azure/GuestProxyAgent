@@ -5,7 +5,7 @@
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
 
-echo "Start Guest Proxy Agent Validation"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Start Guest Proxy Agent Validation"
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentvalidation.json
 
@@ -35,29 +35,29 @@ fi
 logdir="/var/log/azure-proxy-agent"
 guestProxyAgentLogGenerated='false'
 if [ -d "$logdir" ]; then
-    echo "logdir '$logdir' exists"
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - logdir '$logdir' exists"
     ls -l $logdir
     # check if any log file is generated
     logFileCount=$(ls -l $logdir | grep -v ^l | wc -l)
-    echo "logFileCount=$logFileCount"
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - logFileCount=$logFileCount"
     if [ $logFileCount -gt 0 ]; then
         guestProxyAgentLogGenerated='true'
     fi
 else
-    echo "logdir does not exist"
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - logdir does not exist"
 fi
 
-echo "guestProxyAgentServiceExist=$guestProxyAgentServiceExist"
-echo "guestProxyAgentServiceStatus=$guestProxyAgentServiceStatus"
-echo "guestProxyProcessStarted=$guestProxyProcessStarted"
-echo "guestProxyAgentLogGenerated=$guestProxyAgentLogGenerated"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentServiceExist=$guestProxyAgentServiceExist"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentServiceStatus=$guestProxyAgentServiceStatus"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyProcessStarted=$guestProxyProcessStarted"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentLogGenerated=$guestProxyAgentLogGenerated"
 
 jsonString='{"guestProxyAgentServiceInstalled": "'$guestProxyAgentServiceExist'", "guestProxyAgentServiceStatus": "'$guestProxyAgentServiceStatus'", "guestProxyProcessStarted": "'$guestProxyProcessStarted'", "guestProxyAgentLogGenerated": "'$guestProxyAgentLogGenerated'"}'
-echo "$jsonString"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - $jsonString"
 
 # write to $customOutputJsonPath
 echo "$jsonString" > $customOutputJsonPath
 
 # upload $customOutputJsonPath to blob
-echo "start uploading file=@$customOutputJsonPath to blob"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start uploading file=@$customOutputJsonPath to blob"
 curl -X PUT -T $customOutputJsonPath -H "x-ms-date: $(date -u)" -H "x-ms-blob-type: BlockBlob" "$customOutputJsonUrl"

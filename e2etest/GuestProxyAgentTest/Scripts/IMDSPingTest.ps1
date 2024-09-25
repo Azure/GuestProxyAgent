@@ -5,7 +5,7 @@ param (
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$imdsSecureChannelEnabled
 )
-Write-Output "imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
+Write-Output "$((Get-Date).ToUniversalTime()) - imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
 
 $i = 0
 # make 10 requests if any failed, will failed the test for tcp port scalability config
@@ -16,32 +16,32 @@ while ($i -lt 10) {
         $webRequest.Headers.Add("Metadata", "True")
         $response = $webRequest.GetResponse()
         if ($response.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
-            Write-Output "Response status code is OK (200)"
+            Write-Output "$((Get-Date).ToUniversalTime()) - Response status code is OK (200)"
         }
         else {
-            Write-Error "Ping test failed. Response status code is $($response.StatusCode)"
+            Write-Error "$((Get-Date).ToUniversalTime()) - Ping test failed. Response status code is $($response.StatusCode)"
             exit -1
         }
 
         if ($imdsSecureChannelEnabled -eq "true") {
             $responseHeaders = $response.Headers
             if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
-                Write-Error "Ping test failed. Response does not contain x-ms-azure-host-authorization header"
+                Write-Error "$((Get-Date).ToUniversalTime()) - Ping test failed. Response does not contain x-ms-azure-host-authorization header"
                 exit -1
             }
             else {
-                Write-Output "Ping test passed. Response contains x-ms-azure-host-authorization header"
+                Write-Output "$((Get-Date).ToUniversalTime()) - Ping test passed. Response contains x-ms-azure-host-authorization header"
             }
 		
         }
         else {
-            Write-Output "IMDS secure channel is not enabled. Skipping x-ms-azure-host-authorization header validation"
+            Write-Output "$((Get-Date).ToUniversalTime()) - IMDS secure channel is not enabled. Skipping x-ms-azure-host-authorization header validation"
         }
 
         $webRequest.Abort()
     }
     catch {
-        Write-Error "An error occurred: $_"
+        Write-Error "$((Get-Date).ToUniversalTime()) - An error occurred: $_"
         exit -1
     }
     start-sleep -Seconds 1
