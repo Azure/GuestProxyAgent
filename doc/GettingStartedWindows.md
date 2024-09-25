@@ -58,13 +58,16 @@ If you are prefer an isolated build environment, you can use the Windows Contain
 > If either of these are concern, use the previous instructions.
 
 ```shell
-docker-compose -f docker/docker-compose-windows.yml run --build -it gpawindev
+docker-compose build
+docker-compose up --detach
+docker-compose exec gpawindev cmd
 ```
 
 Within the attached container, the full build, all tests, and all packaging can be run with:
 
 ```shell
-./build.cmd
+vs-init
+build
 ```
 
 > In certain Windows environments you may notice inordinately slow downloads during

@@ -17,7 +17,8 @@ RUN curl -SL --output vs_community.exe https://aka.ms/vs/17/release/vs_community
 #   Windows 11 SDK (10.0.26100.0)
 RUN start /w vs_community.exe --quiet --wait --norestart --nocache \
     --installPath "%ProgramFiles%\Microsoft Visual Studio\2022\Community" \
-    --add Microsoft.VisualStudio.Workload.VCTools \
+    --includeRecommended \
+    --add Microsoft.VisualStudio.Workload.NativeDesktop \
     --add Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre \
     --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre \
     --add Microsoft.VisualStudio.Component.VC.ATL.ARM64.Spectre \
@@ -49,7 +50,8 @@ RUN choco install git -y
 RUN curl -SL --output rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
 RUN rustup-init.exe -y -q
 RUN SET "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-RUN rustup install %RUST_VERSION%
+RUN rustup update %RUST_VERSION%
+RUN rustup default %RUST_VERSION%
 
 ENTRYPOINT ["C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\Tools\\VsDevCmd.bat", \
     "&&", "powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass"]
