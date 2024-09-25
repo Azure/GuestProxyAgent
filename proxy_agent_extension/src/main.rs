@@ -15,6 +15,7 @@ pub mod linux;
 #[cfg(windows)]
 pub mod windows;
 
+use clap::{Parser, Subcommand};
 use proxy_agent_shared::misc_helpers;
 use std::env;
 
@@ -25,13 +26,40 @@ use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
 
+#[derive(Parser)]
+#[command()]
+struct Cli {
+    /// GPA VM Extension commands
+    #[command(subcommand)]
+    command: Option<ExensionCommand>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ExensionCommand {
+    /// enable the GPA VM Extension
+    Enable,
+    /// disable the GPA VM Extension
+    Disable,
+    /// uninstall the GPA VM Extension
+    Uninstall,
+    /// install the GPA VM Extension
+    Install,
+    /// update the GPA VM Extension
+    Update,
+    /// reset the GPA VM Extension state
+    Reset,
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() > 1 {
+    let cli = Cli::parse();
+
+    if let Some(command) = cli.command {
+        // extension commands
         let config_seq_no =
             env::var("ConfigSequenceNumber").unwrap_or_else(|_e| "no seq no".to_string());
-        handler_main::program_start(args, Some(config_seq_no));
+        handler_main::program_start(command, Some(config_seq_no));
     } else {
+        // no arguments, start it as a service
         let exe_path = misc_helpers::get_current_exe_dir();
         let log_folder = common::get_handler_environment(exe_path)
             .logFolder
@@ -40,7 +68,9 @@ fn main() {
         common::start_event_logger(constants::SERVICE_LOG_FILE);
         #[cfg(windows)]
         {
-            _ = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main);
+            if let Err(e) = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main) {
+                logger::write(format!("Failed to start the service: {}", e));
+            }
         }
         #[cfg(not(windows))]
         {
@@ -51,5 +81,7 @@ fn main() {
 
 #[cfg(windows)]
 fn proxy_agent_extension_windows_service_main(args: Vec<OsString>) {
-    _ = service_main::windows_main::run_service(args);
+    if let Err(e) = service_main::windows_main::run_service(args) {
+        logger::write(format!("Failed to start the service: {}", e));
+    }
 }

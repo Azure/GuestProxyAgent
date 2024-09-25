@@ -1,72 +1,67 @@
-use std::fmt::{Display, Formatter};
-
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-pub struct Args {
-    pub action: String,         // install, uninstall, or help
-    pub uninstall_mode: String, // optional parameter for uninstall: service or package
+use clap::{Parser, Subcommand, ValueEnum};
+use std::fmt::{Display, Formatter};
+
+#[derive(Parser)]
+#[command()]
+pub(crate) struct Cli {
+    /// GPA VM Extension commands
+    #[command(subcommand)]
+    pub command: Command,
 }
 
-impl Args {
-    pub const INSTALL: &'static str = "install";
-    pub const UNINSTALL: &'static str = "uninstall";
-    pub const BACKUP: &'static str = "backup";
-    pub const RESTORE: &'static str = "restore";
-    pub const PURGE: &'static str = "purge";
-    pub const HELP: &'static str = "help";
-    pub const UNINSTALL_SERVICE: &'static str = "service";
-    pub const DELETE_PACKAGE: &'static str = "package";
-
-    pub fn parse(args: Vec<String>) -> Self {
-        if args.len() < 2 {
-            Args::print_help();
-            std::process::exit(1);
-        }
-        let action = match args[1].clone().to_lowercase().as_str() {
-            Args::INSTALL => Args::INSTALL,
-            Args::UNINSTALL => Args::UNINSTALL,
-            Args::BACKUP => Args::BACKUP,
-            Args::RESTORE => Args::RESTORE,
-            Args::PURGE => Args::PURGE,
-            Args::HELP => {
-                Args::print_help();
-                std::process::exit(0);
-            }
-            _ => {
-                Args::print_help();
-                std::process::exit(1);
-            }
-        };
-
-        if args.len() > 2
-            && args[2].to_lowercase() != Args::UNINSTALL_SERVICE
-            && args[2].to_lowercase() != Args::DELETE_PACKAGE
-        {
-            Args::print_help();
-            std::process::exit(1);
-        }
-
-        let uninstall_mode = if args.len() > 2 {
-            args[2].to_lowercase()
-        } else {
-            Args::DELETE_PACKAGE.to_string()
-        };
-
-        Args {
-            action: action.to_string(),
-            uninstall_mode,
-        }
-    }
-
-    fn print_help() {
-        println!("Usage: proxy_agent_setup <action> [service]");
-        println!("  action: install, uninstall, backup, restore, purge, or help");
-        println!("  service: optional parameter for uninstall or restore: service or package. Default is package.");
-    }
+#[derive(Subcommand)]
+pub(crate) enum Command {
+    /// backup the GPA service
+    Backup,
+    /// restore the GPA service
+    Restore {
+        #[arg(default_value_t = true)]
+        delete_backup: bool,
+    },
+    /// uninstall the GPA service
+    Uninstall {
+        #[arg(default_value_t = UninstallMode::Service)]
+        uninstall_mode: UninstallMode,
+    },
+    /// install the GPA VM service
+    Install,
+    /// purge the backup GPA service files
+    Purge,
 }
 
-impl Display for Args {
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub(crate) enum UninstallMode {
+    Service,
+    Package,
+}
+
+impl Display for Cli {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.action, self.uninstall_mode)
+        write!(f, "{}", self.command)
+    }
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Backup => write!(f, "backup"),
+            Command::Restore { delete_backup } => {
+                write!(f, "restore delete_backup={}", delete_backup)
+            }
+            Command::Uninstall { uninstall_mode } => write!(f, "uninstall {}", uninstall_mode),
+            Command::Install => write!(f, "install"),
+            Command::Purge => write!(f, "purge"),
+        }
+    }
+}
+
+impl Display for UninstallMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UninstallMode::Service => write!(f, "service"),
+            UninstallMode::Package => write!(f, "package"),
+        }
     }
 }

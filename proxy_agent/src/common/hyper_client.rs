@@ -260,13 +260,16 @@ pub fn build_request(
     }
 }
 
-pub async fn send_request<F>(
+pub async fn send_request<B, F>(
     host: &str,
     port: u16,
-    request: Request<BoxBody<Bytes, hyper::Error>>,
+    request: Request<B>,
     log_fun: F,
 ) -> std::io::Result<hyper::Response<hyper::body::Incoming>>
 where
+    B: hyper::body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     F: Fn(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
@@ -473,6 +476,20 @@ pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()
+}
+
+/// Certain endpoints are exempt from enforcement regardless of the VM's configuration.
+/// Restricting access to these non-security impacting endpoints would introduce unreasonable
+/// overhead and/or harm live-site investigations. Since the service won't require a signature,
+/// there is no reason to generate one.
+pub fn should_skip_sig(method: hyper::Method, relative_uri: hyper::Uri) -> bool {
+    let url = relative_uri.to_string().to_lowercase();
+
+    // currently, we agreed to skip the sig for those requests:
+    //      o PUT   /vmAgentLog
+    //      o POST  /machine/?comp=telemetrydata
+    (method == hyper::Method::PUT && url == "/vmagentlog")
+        || (method == hyper::Method::POST && url == "/machine/?comp=telemetrydata")
 }
 
 #[cfg(test)]

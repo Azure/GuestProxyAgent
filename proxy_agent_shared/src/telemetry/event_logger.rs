@@ -31,17 +31,23 @@ pub fn start_async<F>(
     F: Fn(String) + Send + 'static,
 {
     let key = logger_key.to_string();
-    _ = thread::Builder::new()
+    if let Err(e) = thread::Builder::new()
         .name("event_logger".to_string())
         .spawn(move || {
-            _ = start(
+            start(
                 event_dir,
                 interval,
                 max_event_file_count,
                 &key,
                 set_status_fn,
             );
-        });
+        })
+    {
+        logger_manager::write_error(
+            logger_key,
+            format!("Failed to start event logger thread with error: {}", e),
+        );
+    }
 }
 
 fn start<F>(
@@ -50,8 +56,7 @@ fn start<F>(
     max_event_file_count: usize,
     logger_key: &str,
     set_status_fn: F,
-) -> std::io::Result<()>
-where
+) where
     F: Fn(String),
 {
     let message = "Telemetry event logger thread started.";
@@ -59,7 +64,10 @@ where
 
     logger_manager::write(logger_key, message.to_string());
 
-    misc_helpers::try_create_folder(event_dir.to_path_buf())?;
+    if let Err(e) = misc_helpers::try_create_folder(event_dir.to_path_buf()) {
+        let message = format!("Failed to create event folder with error: {}", e);
+        set_status_fn(message.to_string());
+    }
 
     let shutdown = SHUT_DOWN.clone();
     if interval == Duration::default() {
@@ -139,8 +147,6 @@ where
             }
         }
     }
-
-    Ok(())
 }
 
 pub fn stop() {
