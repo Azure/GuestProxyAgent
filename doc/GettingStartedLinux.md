@@ -21,7 +21,10 @@ If using VS Code with the repo already opened as your workspace, you can open th
 ### Manually
 
 ```shell
-docker-compose -f docker/docker-compose-linux.yml run -it gpalinuxdev
+cd docker/linux
+docker-compose build
+docker-compose up --detach
+docker-compose exec gpalinuxdev /bin/bash
 ```
 
 ### Once Within Container

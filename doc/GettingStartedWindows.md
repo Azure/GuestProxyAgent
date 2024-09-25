@@ -58,6 +58,7 @@ If you are prefer an isolated build environment, you can use the Windows Contain
 > If either of these are concern, use the previous instructions.
 
 ```shell
+cd docker/windows
 docker-compose build
 docker-compose up --detach
 docker-compose exec gpawindev cmd

@@ -17,14 +17,12 @@ RUN apt update && \
     linux-tools-generic \
     rpm \
     musl-tools \
-    zip
+    zip \
+    dotnet-sdk-8.0 \
+    sudo
 
-# Install dotnet
-RUN apt install -y dotnet-sdk-8.0
+# Originally was grouped with install dotnet
 RUN chown -R root:root /var/lib
-
-# Test Dependencies
-RUN apt install sudo
 
 # Install Rust
 RUN apt install curl

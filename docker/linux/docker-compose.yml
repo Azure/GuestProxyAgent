@@ -2,8 +2,7 @@ services:
   gpalinuxdev:
     build:
       context: .
-      container_name: GpaLinuxDev
-      dockerfile: DockerFile
+      dockerfile: Dockerfile
       args:
         RUST_VERSION: 1.80.0
     platform: linux/amd64
