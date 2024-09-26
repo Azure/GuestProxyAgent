@@ -115,7 +115,15 @@ namespace GuestProxyAgentTest.Utilities
                 {
                     ProxyAgentSettings = new ProxyAgentSettings()
                     {
-                        Enabled = true
+                        Enabled = true,
+                        Imds = new HostEndpointSettings()
+                        {
+                            InVmAccessControlProfileReferenceId= "/subscriptions/6e6d1158-04fa-4954-89fc-92805ba952d6/resourcegroups/CPlatProxyAgentTest/Microsoft.Compute/galleries/PROXYAGENTGALLERY/InVMAccessControlProfiles/Windows_WS_Audit/versions/1.0.0",
+                        },
+                        WireServer = new HostEndpointSettings()
+                        {
+                            InVmAccessControlProfileReferenceId = "/subscriptions/6e6d1158-04fa-4954-89fc-92805ba952d6/resourcegroups/CPlatProxyAgentTest/Microsoft.Compute/galleries/PROXYAGENTGALLERY/InVMAccessControlProfiles/Windows_Imds_Audit/versions/1.0.0",
+                        },
                     }
                 };
             }
