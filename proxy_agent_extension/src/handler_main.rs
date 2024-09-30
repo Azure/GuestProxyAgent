@@ -116,7 +116,7 @@ fn report_os_not_supported(config_seq_no: Option<String>) {
         operation: "CheckOSVersionSupport".to_string(),
         configurationAppliedTime: misc_helpers::get_date_time_string(),
         status: constants::ERROR_STATUS.to_string(),
-        code: constants::NOT_SUPPORTED_OS_VERSION,
+        code: constants::EXIT_CODE_NOT_SUPPORTED_OS_VERSION,
         formattedMessage: structs::FormattedMessage {
             lang: constants::LANG_EN_US.to_string(),
             message: message.to_string(),
