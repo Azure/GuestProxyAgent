@@ -52,7 +52,7 @@ pub const INVALID_FILE_VERSION: &str = "0.0.0.0";
 pub const SERVICE_START_RETRY_COUNT: u32 = 5;
 pub const STATUS_CODE_OK: i32 = 0;
 
-// Non zero exit codes 
+// Non zero exit codes
 pub const EXIT_CODE_HANDLERENV_ERR: i32 = 1;
 pub const EXIT_CODE_SERVICE_UPDATE_ERR: i32 = 2;
 pub const EXIT_CODE_SERVICE_INSTALL_ERR: i32 = 3;
