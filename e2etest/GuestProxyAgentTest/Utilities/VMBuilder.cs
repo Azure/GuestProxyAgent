@@ -116,13 +116,13 @@ namespace GuestProxyAgentTest.Utilities
                     ProxyAgentSettings = new ProxyAgentSettings()
                     {
                         Enabled = true,
-                        Imds = new HostEndpointSettings()
-                        {
-                            InVmAccessControlProfileReferenceId= "/subscriptions/f21bdc74-62a2-437e-acbb-ecc81bbdee5c/resourceGroups/ProxyAgentE2E/providers/Microsoft.Compute/galleries/InVMAccessControlProfiles/inVMAccessControlProfiles/WindowsIMDS/versions/1.0.0",
-                        },
                         WireServer = new HostEndpointSettings()
                         {
-                            InVmAccessControlProfileReferenceId = "/subscriptions/f21bdc74-62a2-437e-acbb-ecc81bbdee5c/resourceGroups/ProxyAgentE2E/providers/Microsoft.Compute/galleries/InVMAccessControlProfiles/inVMAccessControlProfiles/WindowsWireServer/versions/1.2.0",
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmWireServerAccessControlProfileReferenceId,
+                        },
+                        Imds = new HostEndpointSettings()
+                        {
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmIMDSAccessControlProfileReferenceId,
                         },
                     }
                 };
