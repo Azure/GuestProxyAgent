@@ -18,5 +18,9 @@ namespace GuestProxyAgentTest.Models
         public string Location { get; set; } = null!;
         public string VmSize { get; set; } = null!;
         public string SharedStorageAccountUrl { get; set; } = null!;
+        public string WindowsInVmWireServerAccessControlProfileReferenceId { get; set; } = null!;
+        public string WindowsInVmIMDSAccessControlProfileReferenceId { get; set; } = null!;
+        public string LinuxInVmWireServerAccessControlProfileReferenceId { get; set; } = null!;
+        public string LinuxInVmIMDSAccessControlProfileReferenceId { get; set; } = null!;
     }
 }
