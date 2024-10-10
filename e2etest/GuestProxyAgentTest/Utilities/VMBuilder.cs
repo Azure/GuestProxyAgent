@@ -115,7 +115,15 @@ namespace GuestProxyAgentTest.Utilities
                 {
                     ProxyAgentSettings = new ProxyAgentSettings()
                     {
-                        Enabled = true
+                        Enabled = true,
+                        WireServer = new HostEndpointSettings()
+                        {
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmWireServerAccessControlProfileReferenceId,
+                        },
+                        Imds = new HostEndpointSettings()
+                        {
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmIMDSAccessControlProfileReferenceId,
+                        },
                     }
                 };
             }
