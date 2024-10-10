@@ -36,52 +36,40 @@ namespace GuestProxyAgentTest.Settings
         internal string sharedStorageAccountUrl = null!;
         internal string testResultFolder = null!;
         internal int testTimeoutMilliseconds = 1000 * 60 * 120;
+        internal string windowsInVmWireServerAccessControlProfileReferenceId = null!;
+        internal string windowsInVmIMDSAccessControlProfileReferenceId = null!;
+        internal string linuxInVmWireServerAccessControlProfileReferenceId = null!;
+        internal string linuxInVmIMDSAccessControlProfileReferenceId = null!;
+
 
         private TestSetting() { }
-
-        /// <summary>
-        /// Init the E2ETest setting instance
-        /// </summary>
-        /// <param name="tenantId"></param>
-        /// <param name="appClientId"></param>
-        /// <param name="cert"></param>
-        /// <param name="subscriptionId"></param>
-        /// <param name="location"></param>
-        /// <param name="scriptsFolder"></param>
-        /// <param name="zipFilePath"></param>
-        /// <param name="testResultFolder"></param>
-        public static void Init(string tenantId, string appClientId, string subscriptionId, AzureLocation location, string vmSize, string sharedStorageAccountUrl, string scriptsFolder, string resourcesFolder, string zipFilePath, string testResultFolder)
-        {
-            if (_instance != null)
-            {
-                return;
-            }
-            _instance = new TestSetting();
-            _instance.tenantId = tenantId;
-            _instance.appClientId = appClientId;
-            _instance.location = location;
-            _instance.subscriptionId = subscriptionId;
-            _instance.vmSize = vmSize;
-            _instance.zipFilePath = zipFilePath;
-            _instance.scriptsFolder = scriptsFolder;
-            _instance.resourcesFolder = resourcesFolder;
-            _instance.sharedStorageAccountUrl = sharedStorageAccountUrl;
-            _instance.testResultFolder = testResultFolder;
-        }
 
         public static void Init(TestConfig testConfig, string zipFilePath, string testResultFolder)
         {
             var scriptsFolder = Constants.IS_WINDOWS() ? "Scripts" : "LinuxScripts";
-            Init(testConfig.TenantId
-                , testConfig.AppClientId
-                , testConfig.SubscriptionId
-                , new AzureLocation(testConfig.Location)
-                , testConfig.VmSize
-                , testConfig.SharedStorageAccountUrl
-                , Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, scriptsFolder)
-                , Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Resources")
-                , zipFilePath
-                , testResultFolder);
+
+
+            if (_instance != null)
+            {
+                return;
+            }
+            _instance = new TestSetting()
+            {
+                tenantId = testConfig.TenantId,
+                appClientId = testConfig.AppClientId,
+                location = new AzureLocation(testConfig.Location),
+                subscriptionId = testConfig.SubscriptionId,
+                vmSize = testConfig.VmSize,
+                scriptsFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, scriptsFolder),
+                resourcesFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Resources"),
+                sharedStorageAccountUrl = testConfig.SharedStorageAccountUrl,
+                windowsInVmWireServerAccessControlProfileReferenceId = testConfig.WindowsInVmWireServerAccessControlProfileReferenceId,
+                windowsInVmIMDSAccessControlProfileReferenceId = testConfig.WindowsInVmIMDSAccessControlProfileReferenceId,
+                linuxInVmWireServerAccessControlProfileReferenceId = testConfig.LinuxInVmWireServerAccessControlProfileReferenceId,
+                linuxInVmIMDSAccessControlProfileReferenceId = testConfig.LinuxInVmIMDSAccessControlProfileReferenceId,
+                zipFilePath = zipFilePath,
+                testResultFolder = testResultFolder,
+            };
         }
     }
 
@@ -97,7 +85,7 @@ namespace GuestProxyAgentTest.Settings
             return ValueTask.FromResult(GetToken(requestContext, cancellationToken));
         }
 
-        
+
     }
 
     public class GuestProxyAgentE2EStorageAccountTokenCredential : TokenCredential

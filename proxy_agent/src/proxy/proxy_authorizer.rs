@@ -129,9 +129,6 @@ impl Authorizer for WireServer {
         if !self.claims.runAsElevated {
             return false;
         }
-        if default::is_platform_process(&self.claims) {
-            return true;
-        }
 
         if config::get_wire_server_support() == 2 {
             let wireserver_rules =
