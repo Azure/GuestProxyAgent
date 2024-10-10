@@ -1,7 +1,6 @@
 # Getting Started with Linux
 
-Developing outside the container isn't recommended. To do so, refer to the [dockerfile](/docker/Dockerfile) for
-an up to date list of dependencies to install.
+Developing outside the container isn't recommended. See [Local Dev](#Local-Dev) for details.
 
 ## Dev Container
 
@@ -40,3 +39,10 @@ chmod +x ./build-linux.sh
 > generic package will be used instead. If you're still having issues building, or generic doesn't work with a different
 > base image, you can disable the WSL2 backend in Docker Desktop's settings (note this will come with a performance
 > penalty).
+
+## Local Dev
+
+The dockerfile relies upon [this script](../docker/linux/install.sh) which you can try to run directly. Keep in mind it
+and the build script make changes to your system which may be undesired and your results may vary. If you chose to use
+the script, run it as root to set up your machine then follow the [Once Within Container](#once-within-container) steps
+to build.

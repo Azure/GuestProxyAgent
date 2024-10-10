@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        RUST_VERSION: 1.80.0
+        RUST_VERSION: 1.81.0
     platform: linux/amd64
     volumes:
       - ../../:/usr/root/GuestProxyAgent:rw
