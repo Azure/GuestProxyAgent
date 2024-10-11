@@ -205,7 +205,7 @@ impl AuthorizationRules {
             if privilege_matched {
                 Connection::write_information(
                     connection_id,
-                    "Privilege matched once, but no identity matches.".to_string(),
+                    "Privilege matched once, but no identity matches, deny the access.".to_string(),
                 );
                 return false;
             }
