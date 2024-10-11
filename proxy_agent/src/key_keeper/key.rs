@@ -40,6 +40,11 @@ const ENFORCE_MODE: &str = "enforce";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
 //const DENY_DEFAULT_ACCESS: &str = "deny";
 
+
+pub trait Keyable {
+    fn get_key(&self) -> String;
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct KeyStatus {
@@ -205,6 +210,12 @@ impl Clone for Privilege {
     }
 }
 
+impl Keyable for Privilege {
+    fn get_key(&self) -> String {
+        self.name.to_string()
+    }
+}
+
 impl Privilege {
     pub fn is_match(&self, connection_id: u128, request_url: Uri) -> bool {
         Connection::write_information(
@@ -279,6 +290,12 @@ impl Clone for Role {
     }
 }
 
+impl Keyable for Role {
+    fn get_key(&self) -> String {
+        self.name.to_string()
+    }
+}
+
 impl Clone for Identity {
     fn clone(&self) -> Self {
         Identity {
@@ -289,6 +306,12 @@ impl Clone for Identity {
             processName: self.processName.clone(),
         }
     }
+}
+
+impl Keyable for Identity {
+    fn get_key(&self) -> String {
+        self.name.to_string()
+    }    
 }
 
 impl Identity {

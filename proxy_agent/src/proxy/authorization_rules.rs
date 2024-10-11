@@ -17,18 +17,10 @@
 //!
 //! ```
 
-use crate::key_keeper::key::{AuthorizationItem, Identity, Privilege};
-use serde_derive::{Deserialize, Serialize};
-
 use super::{proxy_connection::Connection, Claims};
-
-#[derive(Serialize, Deserialize, Clone)]
-#[allow(non_snake_case)]
-pub struct Rule {
-    pub roleName: String,
-    pub privileges: Vec<Privilege>,
-    pub identities: Vec<Identity>,
-}
+use crate::key_keeper::key::{AuthorizationItem, Identity, Keyable, Privilege};
+use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
@@ -37,61 +29,45 @@ pub struct AuthorizationRules {
     pub defaultAllowed: bool,
     // disabled, audit, enforce
     pub mode: String,
-    pub rules: Option<Vec<Rule>>,
+    // all the defined unique privileges, distinct by name
+    pub privileges: Option<Vec<Privilege>>,
+    // The identities assigned to this privilege
+    // key - privilege name, value - the assigned identity names
+    pub privilegeAssignments: Option<HashMap<String, Vec<String>>>,
+    // all the defined unique identities, distinct by name
+    // key - identity name, value - identity object
+    pub identities: Option<HashMap<String, Identity>>,
 }
 
 #[allow(dead_code)]
 impl AuthorizationRules {
     pub fn from_authorization_item(authorization_item: AuthorizationItem) -> AuthorizationRules {
-        let rules = match authorization_item.rules {
-            Some(access_control_rules) => match access_control_rules.roleAssignments {
+        let (identities, privileges) = match authorization_item.rules {
+            Some(input_rules) => (
+                AuthorizationRules::vec_to_dict(input_rules.identities),
+                AuthorizationRules::vec_to_dict(input_rules.privileges),
+            ),
+            None => (None, None),
+        };
+
+        let privilege_assignments = match authorization_item.rules {
+            Some(input_rules) => match input_rules.roleAssignments {
                 Some(role_assignments) => {
-                    let mut rules = Vec::new();
-                    for role_assignment in role_assignments {
-                        let role_name = role_assignment.role.to_string();
+                    let mut privilege_assignments: HashMap<String, Vec<String>> = HashMap::new();
 
-                        let mut privileges = Vec::new();
-                        match &access_control_rules.privileges {
-                            Some(input_privileges) => match &access_control_rules.roles {
-                                Some(roles) => {
-                                    for role in roles {
-                                        if role.name == role_name {
-                                            for privilege_name in &role.privileges {
-                                                for privilege in input_privileges {
-                                                    if privilege.name == *privilege_name {
-                                                        privileges.push(privilege.clone());
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                None => {}
-                            },
-                            None => {}
-                        }
-
-                        let mut identities = Vec::new();
-                        match &access_control_rules.identities {
-                            Some(input_identities) => {
-                                for identity_name in role_assignment.identities {
-                                    for identity in input_identities {
-                                        if identity.name == identity_name {
-                                            identities.push(identity.clone());
-                                        }
-                                    }
-                                }
+                    for assignment in role_assignments {
+                        assignment.role 
+                        assignment.identities.iter().for_each(|identity| {
+                            let privilege_name = assignment.role.clone();
+                            if AuthorizationRules::contains_key(privilege_assignments.clone(), privilege_name.clone()) {
+                                let identities = privilege_assignments.get_mut(&privilege_name).unwrap();
+                                identities.push(identity.clone());
+                            } else {
+                                privilege_assignments.insert(privilege_name.clone(), vec![identity.clone()]);
                             }
-                            None => {}
-                        }
-
-                        rules.push(Rule {
-                            roleName: role_name,
-                            privileges,
-                            identities,
-                        });
+                        }); 
                     }
-                    Some(rules)
+                    Some(privilege_assignments)
                 }
                 None => None,
             },
@@ -102,6 +78,29 @@ impl AuthorizationRules {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
             mode: authorization_item.mode.to_lowercase(),
             rules,
+        }
+    }
+
+    fn vec_to_dict<T>(vec: Option<Vec<T>>) -> Option<HashMap<String, T>>
+    where
+        T: Clone + Keyable,
+    {
+        match vec {
+            Some(vec) => {
+                let mut dict: HashMap<String, T> = HashMap::new();
+                for v in vec {
+                    dict.insert(v.get_key(), v.clone());
+                }
+                Some(dict)
+            }
+            None => None,
+        }
+    }
+
+    fn contains_key(dict: Option<HashMap<String, T>>, key: String) -> bool {
+        match dict {
+            Some(dict) => dict.contains_key(&key),
+            None => false,
         }
     }
 
