@@ -40,7 +40,6 @@ const ENFORCE_MODE: &str = "enforce";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
 //const DENY_DEFAULT_ACCESS: &str = "deny";
 
-
 pub trait Keyable {
     fn get_key(&self) -> String;
 }
@@ -311,7 +310,7 @@ impl Clone for Identity {
 impl Keyable for Identity {
     fn get_key(&self) -> String {
         self.name.to_string()
-    }    
+    }
 }
 
 impl Identity {

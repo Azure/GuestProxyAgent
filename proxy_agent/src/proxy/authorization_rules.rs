@@ -20,7 +20,7 @@
 use super::{proxy_connection::Connection, Claims};
 use crate::key_keeper::key::{AuthorizationItem, Identity, Keyable, Privilege};
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
@@ -30,10 +30,10 @@ pub struct AuthorizationRules {
     // disabled, audit, enforce
     pub mode: String,
     // all the defined unique privileges, distinct by name
-    pub privileges: Option<Vec<Privilege>>,
+    pub privileges: Option<HashMap<String, Privilege>>,
     // The identities assigned to this privilege
     // key - privilege name, value - the assigned identity names
-    pub privilegeAssignments: Option<HashMap<String, Vec<String>>>,
+    pub privilegeAssignments: Option<HashMap<String, HashSet<String>>>,
     // all the defined unique identities, distinct by name
     // key - identity name, value - identity object
     pub identities: Option<HashMap<String, Identity>>,
@@ -42,42 +42,75 @@ pub struct AuthorizationRules {
 #[allow(dead_code)]
 impl AuthorizationRules {
     pub fn from_authorization_item(authorization_item: AuthorizationItem) -> AuthorizationRules {
-        let (identities, privileges) = match authorization_item.rules {
-            Some(input_rules) => (
-                AuthorizationRules::vec_to_dict(input_rules.identities),
-                AuthorizationRules::vec_to_dict(input_rules.privileges),
-            ),
-            None => (None, None),
-        };
+        let (identities, privileges, privilege_assignments) = match authorization_item.rules {
+            Some(input_rules) => {
+                let roles = AuthorizationRules::vec_to_dict(input_rules.roles);
+                let identities = AuthorizationRules::vec_to_dict(input_rules.identities);
+                let privileges = AuthorizationRules::vec_to_dict(input_rules.privileges);
 
-        let privilege_assignments = match authorization_item.rules {
-            Some(input_rules) => match input_rules.roleAssignments {
-                Some(role_assignments) => {
-                    let mut privilege_assignments: HashMap<String, Vec<String>> = HashMap::new();
+                let privilege_assignments = match input_rules.roleAssignments {
+                    Some(role_assignments) => {
+                        let mut privilege_assignments: HashMap<String, HashSet<String>> =
+                            HashMap::new();
 
-                    for assignment in role_assignments {
-                        assignment.role 
-                        assignment.identities.iter().for_each(|identity| {
-                            let privilege_name = assignment.role.clone();
-                            if AuthorizationRules::contains_key(privilege_assignments.clone(), privilege_name.clone()) {
-                                let identities = privilege_assignments.get_mut(&privilege_name).unwrap();
-                                identities.push(identity.clone());
-                            } else {
-                                privilege_assignments.insert(privilege_name.clone(), vec![identity.clone()]);
+                        for assignment in role_assignments {
+                            match AuthorizationRules::get_from_dict(&roles, assignment.role.clone())
+                            {
+                                Some(role) => {
+                                    for privilege_name in role.privileges {
+                                        if AuthorizationRules::contains_key(
+                                            &privileges,
+                                            privilege_name.clone(),
+                                        ) {
+                                            let assignemnts = if privilege_assignments
+                                                .contains_key(&privilege_name)
+                                            {
+                                                privilege_assignments
+                                                    .get_mut(&privilege_name)
+                                                    .unwrap()
+                                            } else {
+                                                let assignments = HashSet::new();
+                                                privilege_assignments
+                                                    .insert(privilege_name.clone(), assignments);
+                                                privilege_assignments
+                                                    .get_mut(&privilege_name)
+                                                    .unwrap()
+                                            };
+
+                                            for identity in &assignment.identities {
+                                                if !AuthorizationRules::contains_key(
+                                                    &identities,
+                                                    identity.clone(),
+                                                ) {
+                                                    // skip the identity if the identity is not defined
+                                                    continue;
+                                                }
+                                                assignemnts.insert(identity.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // skip the assignment if the role is not defined
+                                    continue;
+                                }
                             }
-                        }); 
+                        }
+                        Some(privilege_assignments)
                     }
-                    Some(privilege_assignments)
-                }
-                None => None,
-            },
-            None => None,
+                    None => None,
+                };
+                (identities, privileges, privilege_assignments)
+            }
+            None => (None, None, None),
         };
 
         AuthorizationRules {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
             mode: authorization_item.mode.to_lowercase(),
-            rules,
+            identities,
+            privileges,
+            privilegeAssignments: privilege_assignments,
         }
     }
 
@@ -97,35 +130,79 @@ impl AuthorizationRules {
         }
     }
 
-    fn contains_key(dict: Option<HashMap<String, T>>, key: String) -> bool {
+    fn contains_key<T>(dict: &Option<HashMap<String, T>>, key: String) -> bool {
         match dict {
             Some(dict) => dict.contains_key(&key),
             None => false,
         }
     }
 
+    fn get_from_dict<T>(dict: &Option<HashMap<String, T>>, key: String) -> Option<T>
+    where
+        T: Clone,
+    {
+        match dict {
+            Some(dict) => dict.get(&key).cloned(),
+            None => None,
+        }
+    }
+
     pub fn is_allowed(&self, connection_id: u128, request_url: hyper::Uri, claims: Claims) -> bool {
         if self.mode.to_lowercase() == "disabled" {
+            Connection::write_information(
+                connection_id,
+                "Access control is in disabled state, skip....".to_string(),
+            );
+
             return true;
         }
 
-        if let Some(rules) = &self.rules {
-            let mut role_privilege_matched = false;
-            for rule in rules {
-                // is privilege match
-                for privilege in &rule.privileges {
-                    if privilege.is_match(connection_id, request_url.clone()) {
-                        role_privilege_matched = true;
-                        for identity in &rule.identities {
-                            if identity.is_match(connection_id, claims.clone()) {
-                                return true;
+        if let (Some(privileges), Some(identities), Some(privilege_assignments)) = (
+            &self.privileges,
+            &self.identities,
+            &self.privilegeAssignments,
+        ) {
+            let mut privilege_matched = false;
+            for privilege in privileges.values() {
+                let privilege_name = privilege.name.clone();
+                if privilege.is_match(connection_id, request_url.clone()) {
+                    privilege_matched = true;
+                    Connection::write_information(
+                        connection_id,
+                        format!("Reqeust matched privilege '{}'.", privilege_name),
+                    );
+
+                    if let Some(assignments) = privilege_assignments.get(&privilege_name) {
+                        for assignemnt in assignments {
+                            let identity_name = assignemnt.clone();
+                            if let Some(identity) = identities.get(&identity_name) {
+                                if identity.is_match(connection_id, claims.clone()) {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!("Identity matched identity '{}'.", identity_name),
+                                    );
+                                    return true;
+                                } else {
+                                    Connection::write_information(
+                                        connection_id,
+                                        format!(
+                                            "Identity does not match identity '{}'.",
+                                            identity_name
+                                        ),
+                                    );
+                                }
                             }
                         }
                     }
+                } else {
+                    Connection::write_information(
+                        connection_id,
+                        format!("Reqeust does not match privilege '{}'.", privilege_name),
+                    );
                 }
             }
 
-            if role_privilege_matched {
+            if privilege_matched {
                 Connection::write_information(
                     connection_id,
                     "Privilege matched once, but no identity matches.".to_string(),
@@ -136,7 +213,14 @@ impl AuthorizationRules {
 
         Connection::write_information(
             connection_id,
-            "No privilege matched, fall back to default access.".to_string(),
+            format!(
+                "No privilege matched, fall back to use the default access: {}.",
+                if self.defaultAllowed {
+                    "allowed"
+                } else {
+                    "denied"
+                }
+            ),
         );
         self.defaultAllowed
     }
@@ -191,7 +275,9 @@ mod tests {
         let _clone_rules = rules.clone();
         assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "enforce");
-        assert!(rules.rules.is_some());
+        assert!(rules.privilegeAssignments.is_some());
+        assert!(rules.identities.is_some());
+        assert!(rules.privileges.is_some());
 
         let mut claims = Claims {
             userId: 0,
@@ -244,7 +330,9 @@ mod tests {
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "audit");
-        assert!(rules.rules.is_some());
+        assert!(rules.privilegeAssignments.is_some());
+        assert!(rules.identities.is_some());
+        assert!(rules.privileges.is_some());
 
         // Test Disabled Mode
         let access_control_rules = AccessControlRules {
@@ -278,7 +366,9 @@ mod tests {
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "disabled");
-        assert!(rules.rules.is_some());
+        assert!(rules.privilegeAssignments.is_some());
+        assert!(rules.identities.is_some());
+        assert!(rules.privileges.is_some());
 
         let url = hyper::Uri::from_str("http://localhost/test/test1").unwrap();
         assert!(rules.is_allowed(0, url, claims.clone()));
@@ -317,7 +407,9 @@ mod tests {
         let rules = AuthorizationRules::from_authorization_item(authorization_item);
         assert!(!rules.defaultAllowed);
         assert_eq!(rules.mode, "enforce");
-        assert!(rules.rules.is_some());
+        assert!(rules.privilegeAssignments.is_some());
+        assert!(rules.identities.is_some());
+        assert!(rules.privileges.is_some());
 
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
         assert!(!rules.is_allowed(0, url, claims.clone()));
