@@ -71,7 +71,7 @@ pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> Resul
             Ok(hex::encode(result))
         }
         Err(e) => Err(Error::hex(
-            format!("hex_encoded_key '{}' is invalid", hex_encoded_key), e
+            hex_encoded_key, e
         )),
     }
 }

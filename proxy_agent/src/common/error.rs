@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::error::Error as StdError;
-use std::fmt;
+use std::fmt::{Display};
 
 #[derive(Debug)]
 pub struct Error(Box<ErrorType>);
@@ -20,6 +20,10 @@ impl Error {
         Self::new(ErrorType::Hyper(error))
     }
 
+    pub fn http(message: String, error: http::Error) -> Self {
+        Self::new(ErrorType::Http(message, error))
+    }
+
     pub fn hex(message: String, error: hex::FromHexError) -> Self {
         Self::new(ErrorType::Hex(message, error))
     }
@@ -32,61 +36,67 @@ impl Error {
         Self::new(ErrorType::Parse(message))
     }
 
-    pub fn wireserver(message: String, error_type: WireServerErrorType) -> Self {
-        Self::new(ErrorType::WireServer(message, error_type))
+    pub fn wireserver(error_type: WireServerErrorType, message: String) -> Self {
+        Self::new(ErrorType::WireServer(error_type, message))
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.description())
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
-impl StdError for Error {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match *self.0 {
-            ErrorType::Hyper(ref err) => {
-                match err {
-                    HyperErrorType::Request(_, ref hyper_err) => Some(hyper_err),
-                    _ => None
-                }
-            },
-            _ => None
-        }
-    }
-}
+impl StdError for Error {}
 
-impl From<hyper::Error> for Error {
-    fn from(error: hyper::Error) -> Self {
-        Error::hyper(HyperErrorType::Request("".to_string(), error))
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ErrorType {
+    #[error("IO error: {0}: {1}")]
     IO(String, std::io::Error),
+
+    #[error("{0}")]
     Hyper(HyperErrorType),
+
+    #[error("{0}: {1}")]
+    Http(String, http::Error),
+
+    #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
+
+    #[error("{0}")]
     Key(String),
-    WireServer(String, WireServerErrorType),
+
+    #[error("{0}: {1}")]
+    WireServer(WireServerErrorType, String),
+
+    #[error("{0}")]
     Parse(String)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum HyperErrorType {
-    Request(String, hyper::Error),
-    Response(String, hyper::Error),
-    Http(String, http::Error),
+    #[error("{0}: {1}")]
+    Custom(String, hyper::Error),
+    
+    #[error("Failed to get {0} from request builder")]
     RequestBuilder(String),
-    ServerError(String),
+
+    #[error("Failed to get response from {0}, status code: {1}")]
+    ServerError(String, u16),
+
+    #[error("Deserialization failed: {0}")]
     Deserialize(String)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum WireServerErrorType
 {
+    #[error("Telemetry error")]
     Telemetry,
+
+    #[error("Goal state error")]
     GoalState,
+
+    #[error("Shared config error")]
     SharedConfig
 }

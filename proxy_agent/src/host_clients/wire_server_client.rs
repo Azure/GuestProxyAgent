@@ -79,8 +79,8 @@ impl WireServerClient {
                 Ok(r) => r,
                 Err(e) => {
                     return Err(Error::wireserver(
-                        format!("Failed to send request {}", e),
-                        WireServerErrorType::Telemetry
+                        WireServerErrorType::Telemetry,
+                        format!("Failed to send request {}", e)
                     ))
                 }
             };
@@ -88,8 +88,8 @@ impl WireServerClient {
         let status = response.status();
         if !status.is_success() {
             return Err(Error::wireserver(
-                format!("Failed to get response from {}, status code: {}", url, status),
-                WireServerErrorType::Telemetry
+                WireServerErrorType::Telemetry,
+                format!("Failed to get response from {}, status code: {}", url, status)
             ));
         }
 
@@ -115,7 +115,9 @@ impl WireServerClient {
         )
         .await
         .map_err(|e| {
-            Error::wireserver(format!("{}", e), WireServerErrorType::GoalState)
+            Error::wireserver(
+                WireServerErrorType::GoalState, e.to_string()
+            )
         })
     }
 
@@ -137,7 +139,9 @@ impl WireServerClient {
         )
         .await
         .map_err(|e| {
-            Error::wireserver(format!("{}", e), WireServerErrorType::SharedConfig)
+            Error::wireserver(
+                WireServerErrorType::SharedConfig, e.to_string()
+            )
         })
     }
 }

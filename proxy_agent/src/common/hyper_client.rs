@@ -75,10 +75,7 @@ where
     let status = response.status();
     if !status.is_success() {
         return Err(Error::hyper(HyperErrorType::ServerError(
-            format!(
-                "Failed to get response from {}, status code: {}",
-                full_url, status
-            )
+            full_url.to_string(), status.as_u16()
         )));
     }
 
@@ -132,7 +129,7 @@ where
             Ok(f) => f,
             Err(e) => {
                 return Err(Error::hyper(
-                    HyperErrorType::Response(
+                    HyperErrorType::Custom(
                         "Failed to get next frame from response".to_string(), e
                     )
                 ))
@@ -249,10 +246,8 @@ pub fn build_request(
     };
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
-        Err(e) => Err(Error::hyper(
-            HyperErrorType::Http(
-                "Failed to build request body".to_string(), e
-            )
+        Err(e) => Err(Error::http(
+            "Failed to build request body".to_string(), e
         )),
     }
 }
@@ -286,7 +281,7 @@ where
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
         .map_err(|e| {
-            Error::hyper(HyperErrorType::Request(
+            Error::hyper(HyperErrorType::Custom(
                 format!("Failed to establish connection to {}", addr), e
             ))
         })?;
@@ -298,7 +293,7 @@ where
     });
 
     sender.send_request(request).await.map_err(|e| {
-        Error::hyper(HyperErrorType::Request(
+        Error::hyper(HyperErrorType::Custom(
             format!("Failed to send request to {}", full_url), e
         ))
     })
@@ -349,7 +344,7 @@ fn request_to_sign_input(
         None => {
             return Err(Error::hyper(
                 HyperErrorType::RequestBuilder(
-                    "Failed to get method from request builder".to_string()
+                    "method".to_string()
                 )
             ))
         }
@@ -379,7 +374,7 @@ fn request_to_sign_input(
         None => {
             return Err(Error::hyper(
                 HyperErrorType::RequestBuilder(
-                    "Failed to get uri from request builder".to_string()
+                    "uri".to_string()
                 )
             ))
         }
