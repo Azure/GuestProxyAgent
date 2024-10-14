@@ -12,8 +12,16 @@ impl Error {
         Self(Box::new(error))
     }
 
+    pub fn io(message: String, error: std::io::Error) -> Self {
+        Self::new(ErrorType::IO(message, error))
+    }
+
     pub fn hyper(error: HyperClientError) -> Self {
         Self::new(ErrorType::Hyper(error))
+    }
+
+    pub fn hex(message: String, error: hex::FromHexError) -> Self {
+        Self::new(ErrorType::Hex(message, error))
     }
 }
 
@@ -39,10 +47,9 @@ impl StdError for Error {
 
 #[derive(Debug)]
 pub enum ErrorType {
+    IO(String, std::io::Error),
     Hyper(HyperClientError),
-    //Hyper(String, hyper::Error),
-    Http(String, http::Error),
-    Custom(CustomErrorType, String)
+    Hex(String, hex::FromHexError)
 }
 
 #[derive(Debug)]
@@ -54,10 +61,4 @@ pub enum HyperClientError {
     ServerError(String),
     Deserialize(String),
     InvalidUrl(String),
-}
-
-#[derive(Debug)]
-pub enum CustomErrorType {
-    Parse,
-    Deserialize
 }

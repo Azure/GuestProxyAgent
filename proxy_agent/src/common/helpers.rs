@@ -3,7 +3,8 @@
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
-use std::io::{Error, ErrorKind};
+use super::error::Error;
+use super::result::Result;
 
 #[cfg(not(windows))]
 use sysinfo::{System, SystemExt};
@@ -61,7 +62,7 @@ pub fn get_long_os_version() -> String {
     CURRENT_OS_INFO.1.to_string()
 }
 
-pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> std::io::Result<String> {
+pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> Result<String> {
     match hex::decode(&hex_encoded_key) {
         Ok(key) => {
             let mut mac = hmac_sha256::HMAC::new(key);
@@ -69,12 +70,8 @@ pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> std::
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!(
-                "hex_encoded_key '{}' is invalid, error: {}",
-                hex_encoded_key, e
-            ),
+        Err(e) => Err(Error::hex(
+            format!("hex_encoded_key '{}' is invalid", hex_encoded_key), e
         )),
     }
 }
@@ -132,7 +129,6 @@ mod tests {
         assert!(result.is_err(), "invalid key should fail.");
 
         let e = result.unwrap_err();
-        assert_eq!(ErrorKind::InvalidInput, e.kind(), "ErrorKind mismatch");
         let error = e.to_string();
         assert!(
             error.contains(invalid_hex_encoded_key),

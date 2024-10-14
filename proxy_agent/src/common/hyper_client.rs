@@ -270,7 +270,15 @@ where
     F: Fn(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
-    let stream = TcpStream::connect(addr.to_string()).await?;
+    let stream = match TcpStream::connect(addr.to_string()).await {
+        Ok(tcp_stream) => tcp_stream,
+        Err(e) => return Err(
+            Error::io(
+                format!("Failed to open TCP connection to {}", addr), e
+            )
+        )
+    };
+
     let io = TokioIo::new(stream);
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
@@ -289,7 +297,7 @@ where
 
     sender.send_request(request).await.map_err(|e| {
         Error::hyper(HyperClientError::Request(
-            format!("Failed to send request to {}", request.uri()), e
+            format!("Failed to send request to {}", host), e
         ))
     })
 }
