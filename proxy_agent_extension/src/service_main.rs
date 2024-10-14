@@ -480,7 +480,10 @@ fn extension_substatus(
                 "proxy connection summary is empty".to_string();
         }
         let substatus_failed_auth_message: String;
-        if !proxy_agent_aggregate_status_top_level.failedAuthenticateSummary.is_empty() {
+        if !proxy_agent_aggregate_status_top_level
+            .failedAuthenticateSummary
+            .is_empty()
+        {
             let proxy_agent_aggregate_failed_auth_status_obj =
                 proxy_agent_aggregate_status_top_level.failedAuthenticateSummary;
             match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
@@ -969,7 +972,7 @@ mod tests {
                 constants::PLUGIN_FAILED_AUTH_NAME.to_string()
             );
             assert_eq!(
-                status.substatus[3].name, 
+                status.substatus[3].name,
                 constants::EBPF_SUBSTATUS_NAME.to_string()
             );
 
