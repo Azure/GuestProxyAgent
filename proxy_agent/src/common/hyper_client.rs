@@ -35,7 +35,7 @@
 //! ```
 
 use super::result::Result;
-use super::error::{Error, HyperClientError};
+use super::error::{Error, HyperErrorType};
 
 use super::{constants, helpers};
 use http::request::Builder;
@@ -74,7 +74,7 @@ where
     let response = send_request(&host, port, request, log_fun).await?;
     let status = response.status();
     if !status.is_success() {
-        return Err(Error::hyper(HyperClientError::ServerError(
+        return Err(Error::hyper(HyperErrorType::ServerError(
             format!(
                 "Failed to get response from {}, status code: {}",
                 full_url, status
@@ -132,7 +132,7 @@ where
             Ok(f) => f,
             Err(e) => {
                 return Err(Error::hyper(
-                    HyperClientError::Response(
+                    HyperErrorType::Response(
                         "Failed to get next frame from response".to_string(), e
                     )
                 ))
@@ -152,7 +152,7 @@ where
                     body_string.push_str(&String::from_utf16_lossy(&u16_vec));
                 }
                 "utf-32" => {
-                    return Err(Error::hyper(HyperClientError::Deserialize(
+                    return Err(Error::hyper(HyperErrorType::Deserialize(
                         "utf-32 charset is not supported".to_string()
                     )))
                 }
@@ -168,7 +168,7 @@ where
         "xml" => match serde_xml_rs::from_str(&body_string) {
             Ok(t) => Ok(t),
             Err(e) => Err(Error::hyper(
-                HyperClientError::Deserialize(
+                HyperErrorType::Deserialize(
                     format!(
                         "Failed to xml deserialize response body with content_type {} from: {} with error {}",
                         content_type, body_string, e
@@ -180,7 +180,7 @@ where
         _ => match serde_json::from_str(&body_string) {
             Ok(t) => Ok(t),
             Err(e) => Err(Error::hyper(
-                HyperClientError::Deserialize(
+                HyperErrorType::Deserialize(
                     format!(
                         "Failed to json deserialize response body with {} from: {} with error {}",
                         content_type, body_string, e
@@ -198,7 +198,7 @@ pub fn build_request(
     body: Option<&[u8]>,
     key_guid: Option<String>,
     key: Option<String>,
-) -> Result<Request<BoxBody<Bytes, Error>>> {
+) -> Result<Request<BoxBody<Bytes, hyper::Error>>> {
     let (host, _) = host_port_from_uri(full_url.clone())?;
 
     let mut request_builder = Request::builder()
@@ -250,7 +250,7 @@ pub fn build_request(
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
         Err(e) => Err(Error::hyper(
-            HyperClientError::Http(
+            HyperErrorType::Http(
                 "Failed to build request body".to_string(), e
             )
         )),
@@ -270,6 +270,8 @@ where
     F: Fn(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
+    let full_url = request.uri().clone();
+
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
         Err(e) => return Err(
@@ -284,7 +286,7 @@ where
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
         .map_err(|e| {
-            Error::hyper(HyperClientError::Request(
+            Error::hyper(HyperErrorType::Request(
                 format!("Failed to establish connection to {}", addr), e
             ))
         })?;
@@ -296,8 +298,8 @@ where
     });
 
     sender.send_request(request).await.map_err(|e| {
-        Error::hyper(HyperClientError::Request(
-            format!("Failed to send request to {}", host), e
+        Error::hyper(HyperErrorType::Request(
+            format!("Failed to send request to {}", full_url), e
         ))
     })
 }
@@ -306,9 +308,9 @@ pub fn host_port_from_uri(full_url: Uri) -> Result<(String, u16)> {
     let host = match full_url.host() {
         Some(h) => h.to_string(),
         None => {
-            return Err(Error::hyper(HyperClientError::InvalidUrl(
+            return Err(Error::parse(
                 format!("Failed to get host from uri {}", full_url)
-            )))
+            ))
         }
     };
     let port = full_url.port_u16().unwrap_or(80);
@@ -346,7 +348,7 @@ fn request_to_sign_input(
         Some(m) => m.as_str().as_bytes().to_vec(),
         None => {
             return Err(Error::hyper(
-                HyperClientError::RequestBuilder(
+                HyperErrorType::RequestBuilder(
                     "Failed to get method from request builder".to_string()
                 )
             ))
@@ -376,7 +378,7 @@ fn request_to_sign_input(
         }
         None => {
             return Err(Error::hyper(
-                HyperClientError::RequestBuilder(
+                HyperErrorType::RequestBuilder(
                     "Failed to get uri from request builder".to_string()
                 )
             ))
@@ -470,13 +472,13 @@ pub fn query_pairs(uri: &Uri) -> Vec<(String, String)> {
     pairs
 }
 
-pub fn empty_body() -> BoxBody<Bytes, Error> {
+pub fn empty_body() -> BoxBody<Bytes, hyper::Error> {
     Empty::<Bytes>::new()
         .map_err(|never| match never {})
         .boxed()
 }
 
-pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, Error> {
+pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()

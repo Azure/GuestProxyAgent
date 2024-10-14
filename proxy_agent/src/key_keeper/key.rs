@@ -21,6 +21,8 @@
 //! Key::attest_key(base_url.clone(), &key).await.unwrap();
 //!
 //! ```
+use crate::common::error::Error;
+use crate::common::result::Result;
 
 use crate::{
     common::{constants, hyper_client, logger},
@@ -32,7 +34,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
-    io::{Error, ErrorKind},
+    io::{ErrorKind},
 };
 
 const AUDIT_MODE: &str = "audit";
@@ -398,7 +400,7 @@ impl Clone for RoleAssignment {
 }
 
 impl KeyStatus {
-    fn validate(&self) -> std::io::Result<bool> {
+    fn validate(&self) -> Result<bool> {
         let mut validate_message = "key status validate failed: ".to_string();
         let mut validate_result = true;
 
@@ -457,7 +459,7 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::new(ErrorKind::InvalidData, validate_message));
+            return Err(Error::key(validate_message));
         }
 
         Ok(validate_result)
@@ -654,16 +656,12 @@ impl Clone for Key {
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
+pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!(
-                "Failed to join {} and {}, error: {}",
-                base_url, STATUS_URL, e
-            ),
+        Error::parse(
+            format!("Failed to join {} and {}, error: {}", base_url, STATUS_URL, e)
         )
     })?;
     let mut headers = HashMap::new();
@@ -675,13 +673,12 @@ pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
     Ok(status)
 }
 
-pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
+pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
+        Error::parse(
+            format!("Failed to join {} and {} with error: {}", base_url, KEY_URL, e)
         )
     })?;
 
@@ -702,22 +699,20 @@ pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to send acquire key, error: {}", e),
+                return Err(Error::key(
+                    format!("Failed to send acquire key, error: {}", e)
                 ));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
+        return Err(Error::key(
             format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }
     hyper_client::read_response_body(response).await
 }
 
-pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
+pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!(
@@ -725,9 +720,8 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
         host, port, KEY_URL, key.guid
     );
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, url, e),
+        Error::parse(
+            format!("Failed to join {} and {}, error: {}", base_url, url, e)
         )
     })?;
 
@@ -745,15 +739,13 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
+                return Err(Error::key(
                     format!("Failed to send acquire key, error: {}", e),
                 ));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
+        return Err(Error::key(
             format!("Failed to acquire key, status code: {}", response.status()),
         ));
     }

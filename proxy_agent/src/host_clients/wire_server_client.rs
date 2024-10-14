@@ -20,13 +20,12 @@
 //!
 //! ```
 
-use crate::common::{hyper_client, logger};
+use crate::common::{hyper_client, logger, result::Result, error::{Error, WireServerErrorType}};
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use http::Method;
 use hyper::Uri;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 
 pub struct WireServerClient {
@@ -47,16 +46,15 @@ impl WireServerClient {
         }
     }
 
-    pub async fn send_telemetry_data(&self, xml_data: String) -> std::io::Result<()> {
+    pub async fn send_telemetry_data(&self, xml_data: String) -> Result<()> {
         if xml_data.is_empty() {
             return Ok(());
         }
 
         let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
         let url: Uri = url.parse().map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Failed to parse URL {} with error: {}", url, e),
+            Error::parse(
+                format!("Failed to parse URL {} with error: {}", url, e)
             )
         })?;
         let mut headers = HashMap::new();
@@ -80,33 +78,29 @@ impl WireServerClient {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to send telemetry request {}", e),
+                    return Err(Error::wireserver(
+                        format!("Failed to send request {}", e),
+                        WireServerErrorType::Telemetry
                     ))
                 }
             };
 
         let status = response.status();
         if !status.is_success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Failed to get telemetry response from {}, status code: {}",
-                    url, status
-                ),
+            return Err(Error::wireserver(
+                format!("Failed to get response from {}, status code: {}", url, status),
+                WireServerErrorType::Telemetry
             ));
         }
 
         Ok(())
     }
 
-    pub async fn get_goalstate(&self) -> std::io::Result<GoalState> {
+    pub async fn get_goalstate(&self) -> Result<GoalState> {
         let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
         let url = url.parse().map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Failed to parse URL {} with error: {}", url, e),
+            Error::parse(
+                format!("Failed to parse URL {} with error: {}", url, e)
             )
         })?;
         let mut headers = HashMap::new();
@@ -120,14 +114,16 @@ impl WireServerClient {
             logger::write_warning,
         )
         .await
+        .map_err(|e| {
+            Error::wireserver(format!("{}", e), WireServerErrorType::GoalState)
+        })
     }
 
-    pub async fn get_shared_config(&self, url: String) -> std::io::Result<SharedConfig> {
+    pub async fn get_shared_config(&self, url: String) -> Result<SharedConfig> {
         let mut headers = HashMap::new();
         let url = url.parse().map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("Failed to parse URL {} with error: {}", url, e),
+            Error::parse(
+                format!("Failed to parse URL {} with error: {}", url, e)
             )
         })?;
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
@@ -140,5 +136,8 @@ impl WireServerClient {
             logger::write_warning,
         )
         .await
+        .map_err(|e| {
+            Error::wireserver(format!("{}", e), WireServerErrorType::SharedConfig)
+        })
     }
 }

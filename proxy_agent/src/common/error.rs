@@ -16,12 +16,24 @@ impl Error {
         Self::new(ErrorType::IO(message, error))
     }
 
-    pub fn hyper(error: HyperClientError) -> Self {
+    pub fn hyper(error: HyperErrorType) -> Self {
         Self::new(ErrorType::Hyper(error))
     }
 
     pub fn hex(message: String, error: hex::FromHexError) -> Self {
         Self::new(ErrorType::Hex(message, error))
+    }
+
+    pub fn key(message: String) -> Self {
+        Self::new(ErrorType::Key(message))
+    }
+
+    pub fn parse(message: String) -> Self {
+        Self::new(ErrorType::Parse(message))
+    }
+
+    pub fn wireserver(message: String, error_type: WireServerErrorType) -> Self {
+        Self::new(ErrorType::WireServer(message, error_type))
     }
 }
 
@@ -36,7 +48,7 @@ impl StdError for Error {
         match *self.0 {
             ErrorType::Hyper(ref err) => {
                 match err {
-                    HyperClientError::Request(_, ref hyper_err) => Some(hyper_err),
+                    HyperErrorType::Request(_, ref hyper_err) => Some(hyper_err),
                     _ => None
                 }
             },
@@ -45,20 +57,36 @@ impl StdError for Error {
     }
 }
 
-#[derive(Debug)]
-pub enum ErrorType {
-    IO(String, std::io::Error),
-    Hyper(HyperClientError),
-    Hex(String, hex::FromHexError)
+impl From<hyper::Error> for Error {
+    fn from(error: hyper::Error) -> Self {
+        Error::hyper(HyperErrorType::Request("".to_string(), error))
+    }
 }
 
 #[derive(Debug)]
-pub enum HyperClientError {
+pub enum ErrorType {
+    IO(String, std::io::Error),
+    Hyper(HyperErrorType),
+    Hex(String, hex::FromHexError),
+    Key(String),
+    WireServer(String, WireServerErrorType),
+    Parse(String)
+}
+
+#[derive(Debug)]
+pub enum HyperErrorType {
     Request(String, hyper::Error),
     Response(String, hyper::Error),
     Http(String, http::Error),
     RequestBuilder(String),
     ServerError(String),
-    Deserialize(String),
-    InvalidUrl(String),
+    Deserialize(String)
+}
+
+#[derive(Debug)]
+pub enum WireServerErrorType
+{
+    Telemetry,
+    GoalState,
+    SharedConfig
 }

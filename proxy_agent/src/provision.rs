@@ -40,6 +40,9 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
+use crate::common::error::Error;
+use crate::common::result::Result;
+
 use crate::common::{config, constants, helpers, hyper_client, logger};
 use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
@@ -325,7 +328,7 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
-async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
+async fn get_current_provision_status(port: u16) -> Result<ProivsionState> {
     let provision_url: hyper::Uri = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
@@ -334,9 +337,8 @@ async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionSta
     )
     .parse()
     .map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to parse provision url with error: {}", e),
+        Error::parse(
+            format!("Failed to parse provision url with error: {}", e)
         )
     })?;
 

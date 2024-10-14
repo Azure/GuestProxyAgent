@@ -24,6 +24,8 @@
 //! event_reader::stop(shared_state.clone());
 //! ```
 
+use crate::common::result::Result;
+
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::constants;
@@ -170,7 +172,7 @@ async fn update_vm_meta_data(
     shared_state: Arc<Mutex<SharedState>>,
     wire_server_client: &WireServerClient,
     imds_client: &ImdsClient,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let goal_state = wire_server_client.get_goalstate().await?;
     let shared_config = wire_server_client
         .get_shared_config(goal_state.get_shared_config_uri())
