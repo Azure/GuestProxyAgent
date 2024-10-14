@@ -479,6 +479,27 @@ fn extension_substatus(
             substatus_proxy_agent_connection_message =
                 "proxy connection summary is empty".to_string();
         }
+        let substatus_failed_auth_message: String;
+        if !proxy_agent_aggregate_status_top_level.failedAuthenticateSummary.is_empty() {
+            let proxy_agent_aggregate_failed_auth_status_obj =
+                proxy_agent_aggregate_status_top_level.failedAuthenticateSummary;
+            match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
+                Ok(proxy_agent_aggregate_failed_auth_status) => {
+                    substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
+                }
+                Err(e) => {
+                    let error_message = format!(
+                        "Error in serializing proxy agent aggregate failed auth status: {}",
+                        e
+                    );
+                    logger::write(error_message.to_string());
+                    substatus_failed_auth_message = error_message;
+                }
+            }
+        } else {
+            logger::write("proxy failed auth summary is empty".to_string());
+            substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
+        }
 
         status.substatus = {
             vec![
@@ -506,7 +527,7 @@ fn extension_substatus(
                     code: constants::STATUS_CODE_OK,
                     formattedMessage: FormattedMessage {
                         lang: constants::LANG_EN_US.to_string(),
-                        message: substatus_proxy_agent_message.to_string(),
+                        message: substatus_failed_auth_message.to_string(),
                     },
                 },
             ]
