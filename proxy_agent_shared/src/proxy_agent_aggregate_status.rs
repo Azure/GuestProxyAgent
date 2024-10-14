@@ -5,68 +5,16 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub enum ModuleState {
-    Unknown,
-    Running,
-    Stopped,
-}
-
-impl ModuleState {
-    const RUNNING: &'static str = "RUNNING";
-    const STOPPED: &'static str = "STOPPED";
-    const UNKNOWN: &'static str = "UNKNOWN";
-}
-
-impl From<&str> for ModuleState {
-    fn from(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            ModuleState::RUNNING => ModuleState::Running,
-            ModuleState::STOPPED => ModuleState::Stopped,
-            _ => ModuleState::Unknown,
-        }
-    }
-}
-
-impl From<ModuleState> for String {
-    fn from(s: ModuleState) -> Self {
-        match s {
-            ModuleState::Running => ModuleState::RUNNING.to_string(),
-            ModuleState::Stopped => ModuleState::STOPPED.to_string(),
-            ModuleState::Unknown => ModuleState::UNKNOWN.to_string(),
-        }
-    }
+    UNKNOWN,
+    RUNNING,
+    STOPPED,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub enum OverallState {
-    Success,
-    Error,
-    Unknown,
-}
-
-impl OverallState {
-    const SUCCESS: &'static str = "SUCCESS"; // All required modules are running
-    const ERROR: &'static str = "ERROR"; // One or more required modules are not running
-    const UNKNOWN: &'static str = "UNKNOWN";
-}
-
-impl From<&str> for OverallState {
-    fn from(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            OverallState::SUCCESS => OverallState::Success,
-            OverallState::ERROR => OverallState::Error,
-            _ => OverallState::Unknown,
-        }
-    }
-}
-
-impl From<OverallState> for String {
-    fn from(s: OverallState) -> Self {
-        match s {
-            OverallState::Success => OverallState::SUCCESS.to_string(),
-            OverallState::Error => OverallState::ERROR.to_string(),
-            OverallState::Unknown => OverallState::UNKNOWN.to_string(),
-        }
-    }
+    SUCCESS,
+    ERROR,
+    UNKNOWN,
 }
 
 #[derive(Deserialize, Serialize)]

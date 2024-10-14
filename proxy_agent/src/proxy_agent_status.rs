@@ -78,9 +78,9 @@ async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) 
 
 fn get_telemetry_log_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if telemetry_wrapper::get_logger_shutdown(shared_state.clone()) {
-        ModuleState::Stopped
+        ModuleState::STOPPED
     } else {
-        ModuleState::Running
+        ModuleState::RUNNING
     };
 
     ProxyAgentDetailStatus {
@@ -94,13 +94,13 @@ fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentSt
     let key_latch_status = key_keeper::get_status(shared_state.clone());
     let ebpf_status = redirector::get_status(shared_state.clone());
     let proxy_status = proxy_server::get_status(shared_state.clone());
-    let status = if key_latch_status.status != ModuleState::Running
-        || ebpf_status.status != ModuleState::Running
-        || proxy_status.status != ModuleState::Running
+    let status = if key_latch_status.status != ModuleState::RUNNING
+        || ebpf_status.status != ModuleState::RUNNING
+        || proxy_status.status != ModuleState::RUNNING
     {
-        OverallState::Error
+        OverallState::ERROR
     } else {
-        OverallState::Success
+        OverallState::SUCCESS
     };
 
     ProxyAgentStatus {
@@ -108,7 +108,7 @@ fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentSt
         status,
         // monitorStatus is proxy_agent_status itself status
         monitorStatus: ProxyAgentDetailStatus {
-            status: ModuleState::Running,
+            status: ModuleState::RUNNING,
             message: "proxy_agent_status thread started.".to_string(),
             states: None,
         },

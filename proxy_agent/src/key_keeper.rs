@@ -431,9 +431,9 @@ pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
 /// ```
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if key_keeper_wrapper::get_shutdown(shared_state.clone()) {
-        ModuleState::Stopped
+        ModuleState::STOPPED
     } else {
-        ModuleState::Running
+        ModuleState::RUNNING
     };
 
     let mut states = HashMap::new();
