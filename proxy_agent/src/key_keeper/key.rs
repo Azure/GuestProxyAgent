@@ -40,10 +40,6 @@ const ENFORCE_MODE: &str = "enforce";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
 //const DENY_DEFAULT_ACCESS: &str = "deny";
 
-pub trait Keyable {
-    fn get_key(&self) -> String;
-}
-
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct KeyStatus {
@@ -209,14 +205,8 @@ impl Clone for Privilege {
     }
 }
 
-impl Keyable for Privilege {
-    fn get_key(&self) -> String {
-        self.name.to_string()
-    }
-}
-
 impl Privilege {
-    pub fn is_match(&self, connection_id: u128, request_url: Uri) -> bool {
+    pub fn is_match(&self, connection_id: u128, request_url: &Uri) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match privilege '{}'", self.name),
@@ -238,7 +228,7 @@ impl Privilege {
                     );
 
                     for (key, value) in query_parameters {
-                        match hyper_client::query_pairs(&request_url)
+                        match hyper_client::query_pairs(request_url)
                             .into_iter()
                             .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
                         {
@@ -289,12 +279,6 @@ impl Clone for Role {
     }
 }
 
-impl Keyable for Role {
-    fn get_key(&self) -> String {
-        self.name.to_string()
-    }
-}
-
 impl Clone for Identity {
     fn clone(&self) -> Self {
         Identity {
@@ -307,14 +291,8 @@ impl Clone for Identity {
     }
 }
 
-impl Keyable for Identity {
-    fn get_key(&self) -> String {
-        self.name.to_string()
-    }
-}
-
 impl Identity {
-    pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
+    pub fn is_match(&self, connection_id: u128, claims: &Claims) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match identity '{}'", self.name),
@@ -1185,22 +1163,19 @@ mod tests {
         let url: Uri = "http://localhost/test?key1=value1&key2=value2"
             .parse()
             .unwrap();
-        assert!(
-            privilege.is_match(1, url.clone()),
-            "privilege should be matched"
-        );
+        assert!(privilege.is_match(1, &url), "privilege should be matched");
 
         let url = "http://localhost/test?key1=value1&key2=value3"
             .parse()
             .unwrap();
         assert!(
-            !privilege.is_match(1, url),
+            !privilege.is_match(1, &url),
             "privilege should not be matched"
         );
 
         let url = "http://localhost/test?key1=value1".parse().unwrap();
         assert!(
-            !privilege.is_match(1, url),
+            !privilege.is_match(1, &url),
             "privilege should not be matched"
         );
 
@@ -1212,7 +1187,7 @@ mod tests {
         let url = "http://localhost/test?key1=value1&key2=value2"
             .parse()
             .unwrap();
-        assert!(privilege1.is_match(1, url), "privilege should be matched");
+        assert!(privilege1.is_match(1, &url), "privilege should be matched");
 
         let privilege2 = r#"{
             "name": "test",
@@ -1227,7 +1202,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege2.is_match(1, url),
+            !privilege2.is_match(1, &url),
             "privilege should not be matched"
         );
 
@@ -1262,10 +1237,7 @@ mod tests {
             "processName": "test"
         }"#;
         let identity: Identity = serde_json::from_str(identity).unwrap();
-        assert!(
-            identity.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity.is_match(1, &claims), "identity should be matched");
 
         let identity1 = r#"{
             "name": "test",
@@ -1276,7 +1248,7 @@ mod tests {
         }"#;
         let identity1: Identity = serde_json::from_str(identity1).unwrap();
         assert!(
-            !identity1.is_match(1, claims.clone()),
+            !identity1.is_match(1, &claims),
             "identity should not be matched"
         );
 
@@ -1287,7 +1259,7 @@ mod tests {
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
         assert!(
-            !identity2.is_match(1, claims.clone()),
+            !identity2.is_match(1, &claims),
             "identity should not be matched"
         );
 
@@ -1296,10 +1268,7 @@ mod tests {
             "userName": "test"
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
-        assert!(
-            identity2.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity2.is_match(1, &claims), "identity should be matched");
 
         // test processName
         let identity3 = r#"{
@@ -1308,7 +1277,7 @@ mod tests {
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
         assert!(
-            !identity3.is_match(1, claims.clone()),
+            !identity3.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity3 = r#"{
@@ -1316,10 +1285,7 @@ mod tests {
             "processName": "test"
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
-        assert!(
-            identity3.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity3.is_match(1, &claims), "identity should be matched");
 
         // test exePath
         let identity4 = r#"{
@@ -1328,7 +1294,7 @@ mod tests {
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
-            !identity4.is_match(1, claims.clone()),
+            !identity4.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity4 = r#"{
@@ -1336,10 +1302,7 @@ mod tests {
             "exePath": "test"
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
-        assert!(
-            identity4.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity4.is_match(1, &claims), "identity should be matched");
 
         // test groupName
         let identity5 = r#"{
@@ -1348,7 +1311,7 @@ mod tests {
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
         assert!(
-            !identity5.is_match(1, claims.clone()),
+            !identity5.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity5 = r#"{
@@ -1356,10 +1319,7 @@ mod tests {
             "groupName": "test"
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
-        assert!(
-            identity5.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity5.is_match(1, &claims), "identity should be matched");
 
         // clean up and ignore the clean up errors
         _ = std::fs::remove_dir_all(temp_test_path);

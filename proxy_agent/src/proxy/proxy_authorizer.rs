@@ -18,7 +18,7 @@
 //! authorize.authorize(1, url, shared_state.clone());
 //!  
 
-use super::authorization_rules::AuthorizationRules;
+use super::authorization_rules::{AuthorizationMode, AuthorizationRules};
 use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;
 use crate::key_keeper::key::AuthorizationItem;
@@ -159,7 +159,7 @@ impl Authorizer for WireServer {
                         true,
                     );
 
-                    if rules.mode.to_lowercase() == "audit" {
+                    if rules.mode == AuthorizationMode::Audit {
                         Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
                         return true;
                     }
@@ -219,7 +219,7 @@ impl Authorizer for Imds {
                         true,
                     );
 
-                    if rules.mode.to_lowercase() == "audit" {
+                    if rules.mode == AuthorizationMode::Audit {
                         Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
                         return true;
                     }
