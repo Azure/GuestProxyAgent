@@ -366,6 +366,15 @@ fn report_proxy_agent_aggregate_status(
                             message: error_message.to_string(),
                         },
                     },
+                    SubStatus {
+                        name: constants::PLUGIN_STATUS_NAME.to_string(),
+                        status: constants::TRANSITIONING_STATUS.to_string(),
+                        code: constants::STATUS_CODE_NOT_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: error_message.to_string(),
+                        },
+                    },
                 ]
             };
         }
@@ -412,6 +421,15 @@ fn extension_substatus(
                 },
                 SubStatus {
                     name: constants::PLUGIN_STATUS_NAME.to_string(),
+                    status: constants::TRANSITIONING_STATUS.to_string(),
+                    code: constants::STATUS_CODE_NOT_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: version_mismatch_message.to_string(),
+                    },
+                },
+                SubStatus {
+                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
                     status: constants::TRANSITIONING_STATUS.to_string(),
                     code: constants::STATUS_CODE_NOT_OK,
                     formattedMessage: FormattedMessage {
@@ -475,6 +493,15 @@ fn extension_substatus(
                 },
                 SubStatus {
                     name: constants::PLUGIN_STATUS_NAME.to_string(),
+                    status: constants::SUCCESS_STATUS.to_string(),
+                    code: constants::STATUS_CODE_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: substatus_proxy_agent_message.to_string(),
+                    },
+                },
+                SubStatus {
+                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
                     status: constants::SUCCESS_STATUS.to_string(),
                     code: constants::STATUS_CODE_OK,
                     formattedMessage: FormattedMessage {
@@ -801,11 +828,22 @@ mod tests {
             userGroups: Some(vec!["test".to_string()]),
         };
 
+        let proxy_failedAuthenticateSummary_obj = ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        };
+
         let toplevel_status = GuestProxyAgentAggregateStatus {
             timestamp: misc_helpers::get_date_time_string(),
             proxyAgentStatus: proxy_agent_status_obj,
             proxyConnectionSummary: vec![proxy_connection_summary_obj],
-            failedAuthenticateSummary: vec![],
+            failedAuthenticateSummary: vec![proxy_failedAuthenticateSummary_obj],
         };
 
         let mut status = StatusObj {
@@ -883,6 +921,15 @@ mod tests {
                                 message: "test".to_string(),
                             },
                         },
+                        SubStatus {
+                            name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
+                        },
                     ]
                 },
             };
@@ -898,6 +945,10 @@ mod tests {
             );
             assert_eq!(
                 status.substatus[2].name,
+                constants::PLUGIN_FAILED_AUTH_NAME.to_string()
+            );
+            assert_eq!(
+                status.substatus[3].name, 
                 constants::EBPF_SUBSTATUS_NAME.to_string()
             );
 
