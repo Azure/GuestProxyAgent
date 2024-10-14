@@ -3,23 +3,77 @@
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub struct ModuleState;
-impl ModuleState {
-    pub const RUNNING: &'static str = "RUNNING";
-    pub const STOPPED: &'static str = "STOPPED";
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+pub enum ModuleState {
+    Unknown,
+    Running,
+    Stopped,
 }
 
-pub struct OverallState;
+impl ModuleState {
+    const RUNNING: &'static str = "RUNNING";
+    const STOPPED: &'static str = "STOPPED";
+    const UNKNOWN: &'static str = "UNKNOWN";
+}
+
+impl From<&str> for ModuleState {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            ModuleState::RUNNING => ModuleState::Running,
+            ModuleState::STOPPED => ModuleState::Stopped,
+            _ => ModuleState::Unknown,
+        }
+    }
+}
+
+impl From<ModuleState> for String {
+    fn from(s: ModuleState) -> Self {
+        match s {
+            ModuleState::Running => ModuleState::RUNNING.to_string(),
+            ModuleState::Stopped => ModuleState::STOPPED.to_string(),
+            ModuleState::Unknown => ModuleState::UNKNOWN.to_string(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+pub enum OverallState {
+    Success,
+    Error,
+    Unknown,
+}
+
 impl OverallState {
-    pub const SUCCESS: &'static str = "SUCCESS"; // All required modules are running
-    pub const ERROR: &'static str = "ERROR"; // One or more required modules are not running
+    const SUCCESS: &'static str = "SUCCESS"; // All required modules are running
+    const ERROR: &'static str = "ERROR"; // One or more required modules are not running
+    const UNKNOWN: &'static str = "UNKNOWN";
+}
+
+impl From<&str> for OverallState {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            OverallState::SUCCESS => OverallState::Success,
+            OverallState::ERROR => OverallState::Error,
+            _ => OverallState::Unknown,
+        }
+    }
+}
+
+impl From<OverallState> for String {
+    fn from(s: OverallState) -> Self {
+        match s {
+            OverallState::Success => OverallState::SUCCESS.to_string(),
+            OverallState::Error => OverallState::ERROR.to_string(),
+            OverallState::Unknown => OverallState::UNKNOWN.to_string(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
 #[allow(non_snake_case)]
 pub struct ProxyAgentDetailStatus {
-    pub status: String,  // ModuleState, RUNNING|STOPPED
-    pub message: String, // detail message
+    pub status: ModuleState, // ModuleState, RUNNING|STOPPED
+    pub message: String,     // detail message
     #[serde(skip_serializing_if = "Option::is_none")]
     pub states: Option<HashMap<String, String>>, // module specific states
 }
@@ -28,7 +82,7 @@ pub struct ProxyAgentDetailStatus {
 #[allow(non_snake_case)]
 pub struct ProxyAgentStatus {
     pub version: String,
-    pub status: String, // OverallState, SUCCESS|FAILED
+    pub status: OverallState, // OverallState, SUCCESS|FAILED
     pub monitorStatus: ProxyAgentDetailStatus,
     pub keyLatchStatus: ProxyAgentDetailStatus,
     pub ebpfProgramStatus: ProxyAgentDetailStatus,

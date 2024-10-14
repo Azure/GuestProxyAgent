@@ -159,9 +159,9 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
     }
 
     let status = if is_started(shared_state.clone()) {
-        ModuleState::RUNNING.to_string()
+        ModuleState::Running
     } else {
-        ModuleState::STOPPED.to_string()
+        ModuleState::Stopped
     };
 
     ProxyAgentDetailStatus {

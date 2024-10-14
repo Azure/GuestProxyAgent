@@ -761,29 +761,29 @@ mod tests {
 
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
-            status: OverallState::SUCCESS.to_string(),
+            status: OverallState::Success,
             monitorStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::Running,
                 message: "test".to_string(),
                 states: None,
             },
             keyLatchStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::Running,
                 message: "test".to_string(),
                 states: None,
             },
             ebpfProgramStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::Running,
                 message: "test".to_string(),
                 states: None,
             },
             proxyListenerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::Running,
                 message: "test".to_string(),
                 states: None,
             },
             telemetryLoggerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::Running,
                 message: "test".to_string(),
                 states: None,
             },
