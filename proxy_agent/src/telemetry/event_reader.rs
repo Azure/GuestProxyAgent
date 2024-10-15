@@ -24,12 +24,9 @@
 //! event_reader::stop(shared_state.clone());
 //! ```
 
-use crate::common::result::Result;
-
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
-use crate::common::constants;
-use crate::common::logger;
+use crate::common::{constants, logger, result::Result};
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::shared_state::telemetry_wrapper;

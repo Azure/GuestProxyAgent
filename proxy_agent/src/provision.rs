@@ -40,10 +40,9 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::error::Error;
-use crate::common::result::Result;
-
-use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::common::{
+    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+};
 use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;

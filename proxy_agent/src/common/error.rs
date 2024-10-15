@@ -110,42 +110,43 @@ pub enum KeyErrorType {
 
     #[error("Failed to {0} key with status code: {1}")]
     KeyResponse(String, StatusCode),
-    
+
     #[error("Failed to join {0} and {1} with error: {2}")]
     ParseKeyUrl(String, String, InvalidUri),
 }
 
 #[cfg(test)]
 mod test {
+    use super::{Error, KeyErrorType, WireServerErrorType};
     use http::StatusCode;
-    use super::{Error, WireServerErrorType, KeyErrorType};
 
     #[test]
-    fn error_formatting_test()
-    {
-        let mut error = Error::hyper(
-            super::HyperErrorType::ServerError("testurl.com".to_string(), StatusCode::from_u16(500).unwrap())
-        );
+    fn error_formatting_test() {
+        let mut error = Error::hyper(super::HyperErrorType::ServerError(
+            "testurl.com".to_string(),
+            StatusCode::from_u16(500).unwrap(),
+        ));
         assert_eq!(
             error.to_string(),
             "Failed to get response from testurl.com, status code: 500 Internal Server Error"
         );
 
         error = Error::wire_server(
-            WireServerErrorType::Telemetry, "Invalid response".to_string()
+            WireServerErrorType::Telemetry,
+            "Invalid response".to_string(),
         );
         assert_eq!(
             error.to_string(),
             "Telemetry call to wire server failed with the error: Invalid response"
         );
 
-        error = Error::key(
-            KeyErrorType::SendKeyRequest("acquire".to_string(), error.to_string())
-        );
+        error = Error::key(KeyErrorType::SendKeyRequest(
+            "acquire".to_string(),
+            error.to_string(),
+        ));
         assert_eq!(
             error.to_string(),
             "Key error: Failed to send acquire key with error: Telemetry call to wire server failed with the error: Invalid response"
         );
-
     }
 }

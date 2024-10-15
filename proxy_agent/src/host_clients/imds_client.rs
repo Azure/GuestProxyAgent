@@ -19,11 +19,8 @@
 //!
 //! ```
 
-use crate::common::error::Error;
-use crate::common::result::Result;
-
 use super::instance_info::InstanceInfo;
-use crate::common::{hyper_client, logger};
+use crate::common::{error::Error, hyper_client, logger, result::Result};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use hyper::Uri;
 use std::collections::HashMap;
