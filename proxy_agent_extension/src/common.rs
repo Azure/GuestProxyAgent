@@ -20,7 +20,7 @@ pub fn get_handler_environment(exe_path: PathBuf) -> HandlerEnvironment {
     handler_env_path.push(constants::HANDLER_ENVIRONMENT_FILE);
 
     let handler_env_file: Vec<structs::Handler> =
-        match misc_helpers::json_read_from_file(handler_env_path) {
+        match misc_helpers::json_read_from_file(&handler_env_path) {
             Ok(temp) => temp,
             Err(e) => {
                 eprintln!("Error in reading handler env file: {e}");
@@ -369,7 +369,7 @@ mod tests {
         let handler_env_obj: Vec<Handler> = serde_json::from_str(json_handler_linux).unwrap();
 
         //Write the deserialized json object to HandlerEnvironment.json file
-        _ = misc_helpers::json_write_to_file(&handler_env_obj, handler_env_file);
+        _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
 
         let handler_env = super::get_handler_environment(temp_test_path.to_path_buf());
         assert_eq!(handler_env.logFolder, "log".to_string());
@@ -413,10 +413,9 @@ mod tests {
             substatus: Default::default(),
         };
         common::report_status(status_folder, &Some(seq_no.to_string()), &handler_status);
-        let status_obj = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-            expected_status_file.to_path_buf(),
-        )
-        .unwrap();
+        let status_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                .unwrap();
         assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.name, "test".to_string());
 
@@ -506,10 +505,9 @@ mod tests {
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
         super::report_status_enable_command(status_folder, &Some(config_seq_no.to_string()), None);
-        let status_obj = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-            expected_status_file.to_path_buf(),
-        )
-        .unwrap();
+        let status_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                .unwrap();
         assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.operation, "Enable");
         _ = fs::remove_dir_all(&temp_test_path);
@@ -537,10 +535,9 @@ mod tests {
             },
         };
         common::report_heartbeat(expected_heartbeat_file.to_path_buf(), heartbeat_obj);
-        let heartbeat_obj = misc_helpers::json_read_from_file::<Vec<TopLevelHeartbeat>>(
-            expected_heartbeat_file.to_path_buf(),
-        )
-        .unwrap();
+        let heartbeat_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelHeartbeat>>(&expected_heartbeat_file)
+                .unwrap();
         assert_eq!(heartbeat_obj.len(), 1);
         assert_eq!(heartbeat_obj[0].heartbeat.status, "test".to_string());
 

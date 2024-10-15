@@ -69,7 +69,7 @@ pub struct KeyStatus {
     pub authorizationRules: Option<AuthorizationRules>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct AuthorizationRules {
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -27,8 +27,11 @@ pub mod key;
 use self::key::Key;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
+use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::proxy::proxy_authorizer;
-use crate::shared_state::{key_keeper_wrapper, tokio_wrapper, SharedState};
+use crate::shared_state::{
+    key_keeper_wrapper, proxy_authenticator_wrapper, tokio_wrapper, SharedState,
+};
 use crate::{acl, redirector};
 use hyper::Uri;
 use proxy_agent_shared::misc_helpers;
@@ -52,12 +55,14 @@ const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 /// poll secure channel status at interval
 ///  - base_url: the WireServer endpoint base url
 ///  - key_dir: the folder to save the key details
+///  - log_dir: the folder to log the access control rule details
 ///  - interval: the interval to poll the secure channel status
 ///  - config_start_redirector: boolean to indicate start the redirector when the key keeper task is running
 ///  - shared_state: the global shared state
 pub async fn poll_secure_channel_status(
     base_url: Uri,
     key_dir: PathBuf,
+    log_dir: PathBuf,
     interval: Duration,
     config_start_redirector: bool,
     shared_state: Arc<Mutex<SharedState>>,
@@ -108,6 +113,7 @@ pub async fn poll_secure_channel_status(
         _ = loop_poll(
             base_url.clone(),
             key_dir.clone(),
+            log_dir.clone(),
             interval,
             shared_state.clone(),
         ) => {
@@ -127,6 +133,7 @@ pub async fn poll_secure_channel_status(
 async fn loop_poll(
     base_url: Uri,
     key_dir: PathBuf,
+    log_dir: PathBuf,
     interval: Duration,
     shared_state: Arc<Mutex<SharedState>>,
 ) {
@@ -213,6 +220,7 @@ async fn loop_poll(
         };
         logger::write_information(format!("Got key status successfully: {}.", status));
 
+        let mut access_control_rules_changed = false;
         let wireserver_rule_id = status.get_wireserver_rule_id();
         let imds_rule_id: String = status.get_imds_rule_id();
         let (updated, old_wire_server_rule_id) = key_keeper_wrapper::update_wireserver_rule_id(
@@ -228,6 +236,7 @@ async fn loop_poll(
                 shared_state.clone(),
                 status.get_wireserver_rules(),
             );
+            access_control_rules_changed = true;
         }
 
         let (updated, old_imds_rule_id) =
@@ -238,6 +247,20 @@ async fn loop_poll(
                 old_imds_rule_id, imds_rule_id
             ));
             proxy_authorizer::set_imds_rules(shared_state.clone(), status.get_imds_rules());
+            access_control_rules_changed = true;
+        }
+
+        if access_control_rules_changed {
+            let rules = AuthorizationRulesForLogging::new(
+                status.authorizationRules.clone(),
+                ComputedAuthorizationRules {
+                    wireserver: proxy_authenticator_wrapper::get_wireserver_rules(
+                        shared_state.clone(),
+                    ),
+                    imds: proxy_authenticator_wrapper::get_imds_rules(shared_state.clone()),
+                },
+            );
+            rules.write_all(&log_dir, 20);
         }
 
         let state = status.get_secure_channel_state();
@@ -254,7 +277,7 @@ async fn loop_poll(
                 // the key already latched before
                 if key_file.exists() {
                     // read the key details locally and update
-                    match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
+                    match misc_helpers::json_read_from_file::<Key>(&key_file) {
                         Ok(key) => {
                             key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
 
@@ -314,7 +337,7 @@ async fn loop_poll(
                 let guid = key.guid.to_string();
                 let mut key_file = key_dir.to_path_buf().join(&guid);
                 key_file.set_extension("key");
-                match misc_helpers::json_write_to_file(&key, key_file) {
+                match misc_helpers::json_write_to_file(&key, &key_file) {
                     Ok(()) => {
                         logger::write_information(format!(
                         "Successfully acquired the key '{}' details from server and saved locally.", guid));
@@ -403,7 +426,7 @@ fn check_local_key(key_dir: PathBuf, key: &Key) -> bool {
         return false;
     }
 
-    match misc_helpers::json_read_from_file::<Key>(key_file.to_path_buf()) {
+    match misc_helpers::json_read_from_file::<Key>(&key_file) {
         Ok(local_key) => local_key.guid == key.guid && local_key.key == key.key,
         Err(_) => {
             // failed to parse guid.key file
@@ -501,7 +524,7 @@ mod tests {
         let key: Key = serde_json::from_str(key_str).unwrap();
         let mut key_file = temp_test_path.to_path_buf().join(key.guid.clone());
         key_file.set_extension("key");
-        _ = misc_helpers::json_write_to_file(&key, key_file);
+        _ = misc_helpers::json_write_to_file(&key, &key_file);
 
         assert!(super::check_local_key(temp_test_path.to_path_buf(), &key));
 
@@ -552,7 +575,8 @@ mod tests {
         let cloned_keys_dir = keys_dir.to_path_buf();
         tokio::spawn(super::poll_secure_channel_status(
             (format!("http://{}:{}/", ip, port)).parse().unwrap(),
-            cloned_keys_dir,
+            cloned_keys_dir.clone(),
+            cloned_keys_dir.clone(),
             Duration::from_millis(10),
             false,
             shared_state.clone(),

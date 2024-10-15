@@ -125,7 +125,7 @@ fn start<F>(
         let mut file_path = event_dir.to_path_buf();
 
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        match misc_helpers::json_write_to_file(&events, file_path.to_path_buf()) {
+        match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
                 logger_manager::write(
                     logger_key,
