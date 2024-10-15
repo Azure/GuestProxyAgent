@@ -54,9 +54,9 @@ pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
 
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
-        ModuleState::STOPPED.to_string()
+        ModuleState::STOPPED
     } else {
-        ModuleState::RUNNING.to_string()
+        ModuleState::RUNNING
     };
 
     ProxyAgentDetailStatus {
