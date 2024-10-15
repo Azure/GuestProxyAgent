@@ -367,7 +367,7 @@ fn report_proxy_agent_aggregate_status(
                         },
                     },
                     SubStatus {
-                        name: constants::PLUGIN_STATUS_NAME.to_string(),
+                        name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
                         status: constants::TRANSITIONING_STATUS.to_string(),
                         code: constants::STATUS_CODE_NOT_OK,
                         formattedMessage: FormattedMessage {
