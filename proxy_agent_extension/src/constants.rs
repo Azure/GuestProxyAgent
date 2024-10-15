@@ -3,6 +3,7 @@
 pub const PLUGIN_NAME: &str = "ProxyAgentVMExtension";
 pub const PLUGIN_CONNECTION_NAME: &str = "ProxyAgentConnectionSummary";
 pub const PLUGIN_STATUS_NAME: &str = "ProxyAgentStatus";
+pub const PLUGIN_FAILED_AUTH_NAME: &str = "ProxyAgentFailedAuthenticationSummary";
 pub const HANDLER_ENVIRONMENT_FILE: &str = "HandlerEnvironment.json";
 pub const HANDLER_LOG_FILE: &str = "ProxyAgentExtension.log";
 pub const SERVICE_LOG_FILE: &str = "ProxyAgentExtensionService.log";
