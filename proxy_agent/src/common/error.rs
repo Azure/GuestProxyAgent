@@ -39,10 +39,6 @@ impl Error {
         Self::new(ErrorType::ParseUrl(url, message))
     }
 
-    pub fn parse_key_url(url: String, key_url: String, error: InvalidUri) -> Self {
-        Self::new(ErrorType::ParseKeyUrl(url, key_url, error))
-    }
-
     pub fn wire_server(error_type: WireServerErrorType, message: String) -> Self {
         Self::new(ErrorType::WireServer(error_type, message))
     }
@@ -67,17 +63,14 @@ pub enum ErrorType {
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
 
-    #[error("{0}")]
+    #[error("Key error: {0}")]
     Key(KeyErrorType),
 
-    #[error("{0} call to wire server failed with the error: {1}")]
+    #[error("{0} with the error: {1}")]
     WireServer(WireServerErrorType, String),
 
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),
-
-    #[error("Failed to join {0} and {1} with error: {2}")]
-    ParseKeyUrl(String, String, InvalidUri),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -97,13 +90,13 @@ pub enum HyperErrorType {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WireServerErrorType {
-    #[error("Telemetry")]
+    #[error("Telemetry call to wire server failed")]
     Telemetry,
 
-    #[error("Goal state")]
+    #[error("Goal state call to wire server failed")]
     GoalState,
 
-    #[error("Shared config")]
+    #[error("Shared config call to wire server failed")]
     SharedConfig,
 }
 
@@ -117,4 +110,7 @@ pub enum KeyErrorType {
 
     #[error("Failed to {0} key with status code: {1}")]
     KeyResponse(String, StatusCode),
+    
+    #[error("Failed to join {0} and {1} with error: {2}")]
+    ParseKeyUrl(String, String, InvalidUri),
 }

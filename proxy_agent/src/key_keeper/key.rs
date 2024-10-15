@@ -660,7 +660,9 @@ pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url
         .parse()
-        .map_err(|e| Error::parse_key_url(base_url.to_string(), STATUS_URL.to_string(), e))?;
+        .map_err(|e| Error::key(
+            KeyErrorType::ParseKeyUrl(base_url.to_string(), STATUS_URL.to_string(), e)
+        ))?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let status: KeyStatus =
@@ -675,7 +677,9 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url
         .parse()
-        .map_err(|e| Error::parse_key_url(base_url.to_string(), KEY_URL.to_string(), e))?;
+        .map_err(|e| Error::key(
+            KeyErrorType::ParseKeyUrl(base_url.to_string(), KEY_URL.to_string(), e)
+        ))?;
 
     let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
     let mut headers = HashMap::new();
@@ -718,7 +722,9 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
     );
     let url: Uri = url
         .parse()
-        .map_err(|e| Error::parse_key_url(base_url.to_string(), url, e))?;
+        .map_err(|e| Error::key(
+            KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)
+        ))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
