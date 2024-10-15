@@ -47,11 +47,13 @@ impl ImdsClient {
     }
 
     pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
-        let url: Uri = (format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI))
+        let url: String = (format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI));
+
+        let url : Uri = url
             .parse()
             .map_err(|e| {
-                Error::parse(
-                    format!("Failed to parse URL: {}", e)
+                Error::parse_url(
+                    url, e
                 )
             })?;
         let mut headers = HashMap::new();

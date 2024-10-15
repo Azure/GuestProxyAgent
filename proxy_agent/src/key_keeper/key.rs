@@ -21,7 +21,7 @@
 //! Key::attest_key(base_url.clone(), &key).await.unwrap();
 //!
 //! ```
-use crate::common::error::Error;
+use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
 
 use crate::{
@@ -34,7 +34,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::{
     collections::HashMap,
-    io::{ErrorKind},
 };
 
 const AUDIT_MODE: &str = "audit";
@@ -401,7 +400,7 @@ impl Clone for RoleAssignment {
 
 impl KeyStatus {
     fn validate(&self) -> Result<bool> {
-        let mut validate_message = "key status validate failed: ".to_string();
+        let mut validate_message = String::new();
         let mut validate_result = true;
 
         // validate authorizationScheme
@@ -459,7 +458,9 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::key(validate_message));
+            return Err(Error::key(
+                KeyErrorType::KeyStatusValidation(validate_message)
+            ));
         }
 
         Ok(validate_result)
@@ -660,8 +661,8 @@ pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::parse(
-            format!("Failed to join {} and {}, error: {}", base_url, STATUS_URL, e)
+        Error::parse_key_url(
+            base_url.to_string(), STATUS_URL.to_string(), e
         )
     })?;
     let mut headers = HashMap::new();
@@ -677,8 +678,8 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::parse(
-            format!("Failed to join {} and {} with error: {}", base_url, KEY_URL, e)
+        Error::parse_key_url(
+            base_url.to_string(), KEY_URL.to_string(), e
         )
     })?;
 
@@ -700,13 +701,17 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
             Ok(r) => r,
             Err(e) => {
                 return Err(Error::key(
-                    format!("Failed to send acquire key, error: {}", e)
+                    KeyErrorType::SendKeyRequest(
+                        "acquire".to_string(), e.to_string()
+                    )
                 ));
             }
         };
     if response.status() != StatusCode::OK {
         return Err(Error::key(
-            format!("Failed to acquire key, status code: {}", response.status()),
+            KeyErrorType::KeyResponse(
+                "acquire".to_string(), response.status()
+            )
         ));
     }
     hyper_client::read_response_body(response).await
@@ -720,8 +725,8 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
         host, port, KEY_URL, key.guid
     );
     let url: Uri = url.parse().map_err(|e| {
-        Error::parse(
-            format!("Failed to join {} and {}, error: {}", base_url, url, e)
+        Error::parse_key_url(
+            base_url.to_string(), url, e
         )
     })?;
 
@@ -740,13 +745,17 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
             Ok(r) => r,
             Err(e) => {
                 return Err(Error::key(
-                    format!("Failed to send acquire key, error: {}", e),
+                    KeyErrorType::SendKeyRequest(
+                        "attest".to_string(), e.to_string()
+                    )
                 ));
             }
         };
     if response.status() != StatusCode::OK {
         return Err(Error::key(
-            format!("Failed to acquire key, status code: {}", response.status()),
+            KeyErrorType::KeyResponse(
+                "attest".to_string(), response.status()
+            )
         ));
     }
 

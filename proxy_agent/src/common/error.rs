@@ -4,6 +4,9 @@
 use std::error::Error as StdError;
 use std::fmt::{Display};
 
+use http::uri::InvalidUri;
+use http::StatusCode;
+
 #[derive(Debug)]
 pub struct Error(Box<ErrorType>);
 
@@ -20,23 +23,27 @@ impl Error {
         Self::new(ErrorType::Hyper(error))
     }
 
-    pub fn http(message: String, error: http::Error) -> Self {
-        Self::new(ErrorType::Http(message, error))
-    }
-
     pub fn hex(message: String, error: hex::FromHexError) -> Self {
         Self::new(ErrorType::Hex(message, error))
     }
 
-    pub fn key(message: String) -> Self {
-        Self::new(ErrorType::Key(message))
+    pub fn key(error: KeyErrorType) -> Self {
+        Self::new(ErrorType::Key(error))
     }
 
-    pub fn parse(message: String) -> Self {
-        Self::new(ErrorType::Parse(message))
+    pub fn parse_url(url: String, error: InvalidUri) -> Self {
+        Self::new(ErrorType::ParseUrl(url, error.to_string()))
     }
 
-    pub fn wireserver(error_type: WireServerErrorType, message: String) -> Self {
+    pub fn parse_url_message(url: String, message: String) -> Self {
+        Self::new(ErrorType::ParseUrl(url, message))
+    }
+
+    pub fn parse_key_url(url: String, key_url: String, error: InvalidUri) -> Self {
+        Self::new(ErrorType::ParseKeyUrl(url, key_url, error))
+    }
+
+    pub fn wire_server(error_type: WireServerErrorType, message: String) -> Self {
         Self::new(ErrorType::WireServer(error_type, message))
     }
 }
@@ -57,20 +64,20 @@ pub enum ErrorType {
     #[error("{0}")]
     Hyper(HyperErrorType),
 
-    #[error("{0}: {1}")]
-    Http(String, http::Error),
-
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
 
     #[error("{0}")]
-    Key(String),
+    Key(KeyErrorType),
 
-    #[error("{0}: {1}")]
+    #[error("{0} call to wire server failed with the error: {1}")]
     WireServer(WireServerErrorType, String),
 
-    #[error("{0}")]
-    Parse(String)
+    #[error("Failed to parse URL {0} with error: {1}")]
+    ParseUrl(String, String),
+
+    #[error("Failed to join {0} and {1} with error: {2}")]
+    ParseKeyUrl(String, String, InvalidUri)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -78,11 +85,11 @@ pub enum HyperErrorType {
     #[error("{0}: {1}")]
     Custom(String, hyper::Error),
     
-    #[error("Failed to get {0} from request builder")]
+    #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
 
     #[error("Failed to get response from {0}, status code: {1}")]
-    ServerError(String, u16),
+    ServerError(String, StatusCode),
 
     #[error("Deserialization failed: {0}")]
     Deserialize(String)
@@ -91,12 +98,25 @@ pub enum HyperErrorType {
 #[derive(Debug, thiserror::Error)]
 pub enum WireServerErrorType
 {
-    #[error("Telemetry error")]
+    #[error("Telemetry")]
     Telemetry,
 
-    #[error("Goal state error")]
+    #[error("Goal state")]
     GoalState,
 
-    #[error("Shared config error")]
+    #[error("Shared config")]
     SharedConfig
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeyErrorType
+{
+    #[error("Key status validation failed with the error: {0}")]
+    KeyStatusValidation(String),
+    
+    #[error("Failed to send {0} with error: {1}")]
+    SendKeyRequest(String, String),
+
+    #[error("Failed to {0} key with status code: {1}")]
+    KeyResponse(String, StatusCode)
 }

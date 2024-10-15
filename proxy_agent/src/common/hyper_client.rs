@@ -75,7 +75,7 @@ where
     let status = response.status();
     if !status.is_success() {
         return Err(Error::hyper(HyperErrorType::ServerError(
-            full_url.to_string(), status.as_u16()
+            full_url.to_string(), status
         )));
     }
 
@@ -246,8 +246,10 @@ pub fn build_request(
     };
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
-        Err(e) => Err(Error::http(
-            "Failed to build request body".to_string(), e
+        Err(e) => Err(Error::hyper(
+            HyperErrorType::RequestBuilder(
+                format!("Failed to build request body: {}", e)
+            )
         )),
     }
 }
@@ -303,8 +305,8 @@ pub fn host_port_from_uri(full_url: Uri) -> Result<(String, u16)> {
     let host = match full_url.host() {
         Some(h) => h.to_string(),
         None => {
-            return Err(Error::parse(
-                format!("Failed to get host from uri {}", full_url)
+            return Err(Error::parse_url_message(
+                full_url.to_string(), "Failed to get host from uri".to_string()
             ))
         }
     };
@@ -344,7 +346,7 @@ fn request_to_sign_input(
         None => {
             return Err(Error::hyper(
                 HyperErrorType::RequestBuilder(
-                    "method".to_string()
+                    "Failed to get method from request builder".to_string()
                 )
             ))
         }
@@ -374,7 +376,7 @@ fn request_to_sign_input(
         None => {
             return Err(Error::hyper(
                 HyperErrorType::RequestBuilder(
-                    "uri".to_string()
+                    "Failed to get method from request builder".to_string()
                 )
             ))
         }

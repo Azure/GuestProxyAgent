@@ -329,18 +329,19 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
 async fn get_current_provision_status(port: u16) -> Result<ProivsionState> {
-    let provision_url: hyper::Uri = format!(
+    let provision_url: String = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
         port,
         PROVISION_URL_PATH
-    )
-    .parse()
-    .map_err(|e| {
-        Error::parse(
-            format!("Failed to parse provision url with error: {}", e)
-        )
-    })?;
+    );
+    
+    let provision_url: hyper::Uri = provision_url.parse()
+        .map_err(|e| {
+            Error::parse_url(
+                provision_url, e
+            )
+        })?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());
