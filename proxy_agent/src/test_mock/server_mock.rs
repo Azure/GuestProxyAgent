@@ -1,10 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::result::Result;
-use crate::common::error::Error;
-
-use crate::common::{hyper_client, logger};
+use crate::common::{hyper_client, logger, result::Result};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
 use crate::shared_state::{tokio_wrapper, SharedState};

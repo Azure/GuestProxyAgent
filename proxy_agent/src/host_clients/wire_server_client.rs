@@ -20,7 +20,11 @@
 //!
 //! ```
 
-use crate::common::{hyper_client, logger, result::Result, error::{Error, WireServerErrorType}};
+use crate::common::{
+    error::{Error, WireServerErrorType},
+    hyper_client, logger,
+    result::Result,
+};
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use http::Method;
@@ -52,11 +56,7 @@ impl WireServerClient {
         }
 
         let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
-        let url: Uri = url.parse().map_err(|e| {
-            Error::parse_url(
-                url, e
-            )
-        })?;
+        let url: Uri = url.parse().map_err(|e| Error::parse_url(url, e))?;
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
         headers.insert(
@@ -80,7 +80,7 @@ impl WireServerClient {
                 Err(e) => {
                     return Err(Error::wire_server(
                         WireServerErrorType::Telemetry,
-                        format!("Failed to send request {}", e)
+                        format!("Failed to send request {}", e),
                     ))
                 }
             };
@@ -89,7 +89,10 @@ impl WireServerClient {
         if !status.is_success() {
             return Err(Error::wire_server(
                 WireServerErrorType::Telemetry,
-                format!("Failed to get response from {}, status code: {}", url, status)
+                format!(
+                    "Failed to get response from {}, status code: {}",
+                    url, status
+                ),
             ));
         }
 
@@ -98,11 +101,7 @@ impl WireServerClient {
 
     pub async fn get_goalstate(&self) -> Result<GoalState> {
         let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
-        let url = url.parse().map_err(|e| {
-            Error::parse_url(
-                url, e
-            )
-        })?;
+        let url = url.parse().map_err(|e| Error::parse_url(url, e))?;
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
@@ -114,20 +113,12 @@ impl WireServerClient {
             logger::write_warning,
         )
         .await
-        .map_err(|e| {
-            Error::wire_server(
-                WireServerErrorType::GoalState, e.to_string()
-            )
-        })
+        .map_err(|e| Error::wire_server(WireServerErrorType::GoalState, e.to_string()))
     }
 
     pub async fn get_shared_config(&self, url: String) -> Result<SharedConfig> {
         let mut headers = HashMap::new();
-        let url = url.parse().map_err(|e| {
-            Error::parse_url(
-                url, e
-            )
-        })?;
+        let url = url.parse().map_err(|e| Error::parse_url(url, e))?;
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
         hyper_client::get(
@@ -138,10 +129,6 @@ impl WireServerClient {
             logger::write_warning,
         )
         .await
-        .map_err(|e| {
-            Error::wire_server(
-                WireServerErrorType::SharedConfig, e.to_string()
-            )
-        })
+        .map_err(|e| Error::wire_server(WireServerErrorType::SharedConfig, e.to_string()))
     }
 }

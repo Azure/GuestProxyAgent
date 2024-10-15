@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use super::error::Error;
+use super::result::Result;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
-use super::error::Error;
-use super::result::Result;
 
 #[cfg(not(windows))]
 use sysinfo::{System, SystemExt};
@@ -70,9 +70,7 @@ pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> Resul
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => Err(Error::hex(
-            hex_encoded_key, e
-        )),
+        Err(e) => Err(Error::hex(hex_encoded_key, e)),
     }
 }
 
@@ -102,7 +100,6 @@ pub fn write_startup_event(
 
 #[cfg(test)]
 mod tests {
-    use std::io::ErrorKind;
     #[test]
     fn get_system_info_tests() {
         let ram = super::get_ram_in_mb();

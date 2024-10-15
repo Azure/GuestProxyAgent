@@ -34,8 +34,8 @@
 //!
 //! ```
 
-use super::result::Result;
 use super::error::{Error, HyperErrorType};
+use super::result::Result;
 
 use super::{constants, helpers};
 use http::request::Builder;
@@ -75,7 +75,8 @@ where
     let status = response.status();
     if !status.is_success() {
         return Err(Error::hyper(HyperErrorType::ServerError(
-            full_url.to_string(), status
+            full_url.to_string(),
+            status,
         )));
     }
 
@@ -128,11 +129,10 @@ where
         let frame = match next {
             Ok(f) => f,
             Err(e) => {
-                return Err(Error::hyper(
-                    HyperErrorType::Custom(
-                        "Failed to get next frame from response".to_string(), e
-                    )
-                ))
+                return Err(Error::hyper(HyperErrorType::Custom(
+                    "Failed to get next frame from response".to_string(),
+                    e,
+                )))
             }
         };
         if let Some(chunk) = frame.data_ref() {
@@ -150,7 +150,7 @@ where
                 }
                 "utf-32" => {
                     return Err(Error::hyper(HyperErrorType::Deserialize(
-                        "utf-32 charset is not supported".to_string()
+                        "utf-32 charset is not supported".to_string(),
                     )))
                 }
                 _ => {
@@ -246,11 +246,10 @@ pub fn build_request(
     };
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
-        Err(e) => Err(Error::hyper(
-            HyperErrorType::RequestBuilder(
-                format!("Failed to build request body: {}", e)
-            )
-        )),
+        Err(e) => Err(Error::hyper(HyperErrorType::RequestBuilder(format!(
+            "Failed to build request body: {}",
+            e
+        )))),
     }
 }
 
@@ -271,11 +270,12 @@ where
 
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
-        Err(e) => return Err(
-            Error::io(
-                format!("Failed to open TCP connection to {}", addr), e
-            )
-        )
+        Err(e) => {
+            return Err(Error::io(
+                format!("Failed to open TCP connection to {}", addr),
+                e,
+            ))
+        }
     };
 
     let io = TokioIo::new(stream);
@@ -284,7 +284,8 @@ where
         .await
         .map_err(|e| {
             Error::hyper(HyperErrorType::Custom(
-                format!("Failed to establish connection to {}", addr), e
+                format!("Failed to establish connection to {}", addr),
+                e,
             ))
         })?;
 
@@ -296,7 +297,8 @@ where
 
     sender.send_request(request).await.map_err(|e| {
         Error::hyper(HyperErrorType::Custom(
-            format!("Failed to send request to {}", full_url), e
+            format!("Failed to send request to {}", full_url),
+            e,
         ))
     })
 }
@@ -306,7 +308,8 @@ pub fn host_port_from_uri(full_url: Uri) -> Result<(String, u16)> {
         Some(h) => h.to_string(),
         None => {
             return Err(Error::parse_url_message(
-                full_url.to_string(), "Failed to get host from uri".to_string()
+                full_url.to_string(),
+                "Failed to get host from uri".to_string(),
             ))
         }
     };
@@ -337,18 +340,13 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data
 }
 
-fn request_to_sign_input(
-    request_builder: &Builder,
-    body: Option<Vec<u8>>,
-) -> Result<Vec<u8>> {
+fn request_to_sign_input(request_builder: &Builder, body: Option<Vec<u8>>) -> Result<Vec<u8>> {
     let mut data: Vec<u8> = match request_builder.method_ref() {
         Some(m) => m.as_str().as_bytes().to_vec(),
         None => {
-            return Err(Error::hyper(
-                HyperErrorType::RequestBuilder(
-                    "Failed to get method from request builder".to_string()
-                )
-            ))
+            return Err(Error::hyper(HyperErrorType::RequestBuilder(
+                "Failed to get method from request builder".to_string(),
+            )))
         }
     };
     data.extend(LF.as_bytes());
@@ -374,11 +372,9 @@ fn request_to_sign_input(
             data.extend(path_para.1.as_bytes());
         }
         None => {
-            return Err(Error::hyper(
-                HyperErrorType::RequestBuilder(
-                    "Failed to get method from request builder".to_string()
-                )
-            ))
+            return Err(Error::hyper(HyperErrorType::RequestBuilder(
+                "Failed to get method from request builder".to_string(),
+            )))
         }
     }
 

@@ -31,10 +31,8 @@ use crate::{
 use http::{Method, StatusCode};
 use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::{
-    collections::HashMap,
-};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -458,9 +456,9 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::key(
-                KeyErrorType::KeyStatusValidation(validate_message)
-            ));
+            return Err(Error::key(KeyErrorType::KeyStatusValidation(
+                validate_message,
+            )));
         }
 
         Ok(validate_result)
@@ -660,11 +658,9 @@ const KEY_URL: &str = "/secure-channel/key";
 pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
-    let url: Uri = url.parse().map_err(|e| {
-        Error::parse_key_url(
-            base_url.to_string(), STATUS_URL.to_string(), e
-        )
-    })?;
+    let url: Uri = url
+        .parse()
+        .map_err(|e| Error::parse_key_url(base_url.to_string(), STATUS_URL.to_string(), e))?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let status: KeyStatus =
@@ -677,11 +673,9 @@ pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
 pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
-    let url: Uri = url.parse().map_err(|e| {
-        Error::parse_key_url(
-            base_url.to_string(), KEY_URL.to_string(), e
-        )
-    })?;
+    let url: Uri = url
+        .parse()
+        .map_err(|e| Error::parse_key_url(base_url.to_string(), KEY_URL.to_string(), e))?;
 
     let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
     let mut headers = HashMap::new();
@@ -700,19 +694,17 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::key(
-                    KeyErrorType::SendKeyRequest(
-                        "acquire".to_string(), e.to_string()
-                    )
-                ));
+                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                    "acquire".to_string(),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::key(
-            KeyErrorType::KeyResponse(
-                "acquire".to_string(), response.status()
-            )
-        ));
+        return Err(Error::key(KeyErrorType::KeyResponse(
+            "acquire".to_string(),
+            response.status(),
+        )));
     }
     hyper_client::read_response_body(response).await
 }
@@ -724,11 +716,9 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
         "http://{}:{}{}/{}/key-attestation",
         host, port, KEY_URL, key.guid
     );
-    let url: Uri = url.parse().map_err(|e| {
-        Error::parse_key_url(
-            base_url.to_string(), url, e
-        )
-    })?;
+    let url: Uri = url
+        .parse()
+        .map_err(|e| Error::parse_key_url(base_url.to_string(), url, e))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
@@ -744,19 +734,17 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::key(
-                    KeyErrorType::SendKeyRequest(
-                        "attest".to_string(), e.to_string()
-                    )
-                ));
+                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                    "attest".to_string(),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::key(
-            KeyErrorType::KeyResponse(
-                "attest".to_string(), response.status()
-            )
-        ));
+        return Err(Error::key(KeyErrorType::KeyResponse(
+            "attest".to_string(),
+            response.status(),
+        )));
     }
 
     Ok(())

@@ -335,13 +335,10 @@ async fn get_current_provision_status(port: u16) -> Result<ProivsionState> {
         port,
         PROVISION_URL_PATH
     );
-    
-    let provision_url: hyper::Uri = provision_url.parse()
-        .map_err(|e| {
-            Error::parse_url(
-                provision_url, e
-            )
-        })?;
+
+    let provision_url: hyper::Uri = provision_url
+        .parse()
+        .map_err(|e| Error::parse_url(provision_url, e))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());

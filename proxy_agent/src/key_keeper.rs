@@ -198,10 +198,7 @@ async fn loop_poll(
         let status = match key::get_status(base_url.clone()).await {
             Ok(s) => s,
             Err(e) => {
-                let message: String = format!(
-                    "Failed to get key status - {}",
-                    e.to_string()
-                );
+                let message: String = format!("Failed to get key status - {}", e);
                 key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
                 logger::write_warning(message);
                 continue;

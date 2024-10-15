@@ -19,7 +19,7 @@
 //! tokio::spawn(proxy_server::start(port, shared_state.clone()));
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger, result::Result, error::{Error, HyperErrorType}};
+use crate::common::{config, constants, helpers, hyper_client, logger, result::Result};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::{

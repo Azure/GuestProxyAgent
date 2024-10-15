@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::error::Error as StdError;
-use std::fmt::{Display};
+use std::fmt::Display;
 
 use http::uri::InvalidUri;
 use http::StatusCode;
@@ -77,14 +77,14 @@ pub enum ErrorType {
     ParseUrl(String, String),
 
     #[error("Failed to join {0} and {1} with error: {2}")]
-    ParseKeyUrl(String, String, InvalidUri)
+    ParseKeyUrl(String, String, InvalidUri),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum HyperErrorType {
     #[error("{0}: {1}")]
     Custom(String, hyper::Error),
-    
+
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
 
@@ -92,12 +92,11 @@ pub enum HyperErrorType {
     ServerError(String, StatusCode),
 
     #[error("Deserialization failed: {0}")]
-    Deserialize(String)
+    Deserialize(String),
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum WireServerErrorType
-{
+pub enum WireServerErrorType {
     #[error("Telemetry")]
     Telemetry,
 
@@ -105,18 +104,17 @@ pub enum WireServerErrorType
     GoalState,
 
     #[error("Shared config")]
-    SharedConfig
+    SharedConfig,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum KeyErrorType
-{
+pub enum KeyErrorType {
     #[error("Key status validation failed with the error: {0}")]
     KeyStatusValidation(String),
-    
-    #[error("Failed to send {0} with error: {1}")]
+
+    #[error("Failed to send {0} key with error: {1}")]
     SendKeyRequest(String, String),
 
     #[error("Failed to {0} key with status code: {1}")]
-    KeyResponse(String, StatusCode)
+    KeyResponse(String, StatusCode),
 }
