@@ -11,7 +11,7 @@ use http::StatusCode;
 pub struct Error(Box<ErrorType>);
 
 impl Error {
-    pub fn new(error: ErrorType) -> Self {
+    fn new(error: ErrorType) -> Self {
         Self(Box::new(error))
     }
 
@@ -53,7 +53,7 @@ impl Display for Error {
 impl StdError for Error {}
 
 #[derive(Debug, thiserror::Error)]
-pub enum ErrorType {
+enum ErrorType {
     #[error("IO error: {0}: {1}")]
     IO(String, std::io::Error),
 
@@ -113,4 +113,39 @@ pub enum KeyErrorType {
     
     #[error("Failed to join {0} and {1} with error: {2}")]
     ParseKeyUrl(String, String, InvalidUri),
+}
+
+#[cfg(test)]
+mod test {
+    use http::StatusCode;
+    use super::{Error, WireServerErrorType, KeyErrorType};
+
+    #[test]
+    fn error_formatting_test()
+    {
+        let mut error = Error::hyper(
+            super::HyperErrorType::ServerError("testurl.com".to_string(), StatusCode::from_u16(500).unwrap())
+        );
+        assert_eq!(
+            error.to_string(),
+            "Failed to get response from testurl.com, status code: 500 Internal Server Error"
+        );
+
+        error = Error::wire_server(
+            WireServerErrorType::Telemetry, "Invalid response".to_string()
+        );
+        assert_eq!(
+            error.to_string(),
+            "Telemetry call to wire server failed with the error: Invalid response"
+        );
+
+        error = Error::key(
+            KeyErrorType::SendKeyRequest("acquire".to_string(), error.to_string())
+        );
+        assert_eq!(
+            error.to_string(),
+            "Key error: Failed to send acquire key with error: Telemetry call to wire server failed with the error: Invalid response"
+        );
+
+    }
 }

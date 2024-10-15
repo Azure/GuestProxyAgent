@@ -652,6 +652,21 @@ impl Clone for Key {
     }
 }
 
+enum KeyAction
+{
+    Acquire,
+    Attest
+}
+
+impl Display for KeyAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            KeyAction::Acquire => write!(f, "acquire"),  
+            KeyAction::Attest => write!(f, "attest"),
+        }
+    }
+}
+
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
@@ -699,14 +714,14 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
             Ok(r) => r,
             Err(e) => {
                 return Err(Error::key(KeyErrorType::SendKeyRequest(
-                    "acquire".to_string(),
+                    format!("{}", KeyAction::Acquire),
                     e.to_string(),
                 )));
             }
         };
     if response.status() != StatusCode::OK {
         return Err(Error::key(KeyErrorType::KeyResponse(
-            "acquire".to_string(),
+            format!("{}", KeyAction::Acquire),
             response.status(),
         )));
     }
@@ -741,14 +756,14 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
             Ok(r) => r,
             Err(e) => {
                 return Err(Error::key(KeyErrorType::SendKeyRequest(
-                    "attest".to_string(),
+                    format!("{}", KeyAction::Attest),
                     e.to_string(),
                 )));
             }
         };
     if response.status() != StatusCode::OK {
         return Err(Error::key(KeyErrorType::KeyResponse(
-            "attest".to_string(),
+            format!("{}", KeyAction::Attest),
             response.status(),
         )));
     }
