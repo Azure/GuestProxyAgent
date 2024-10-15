@@ -3,23 +3,25 @@
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub struct ModuleState;
-impl ModuleState {
-    pub const RUNNING: &'static str = "RUNNING";
-    pub const STOPPED: &'static str = "STOPPED";
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+pub enum ModuleState {
+    UNKNOWN,
+    RUNNING,
+    STOPPED,
 }
 
-pub struct OverallState;
-impl OverallState {
-    pub const SUCCESS: &'static str = "SUCCESS"; // All required modules are running
-    pub const ERROR: &'static str = "ERROR"; // One or more required modules are not running
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+pub enum OverallState {
+    SUCCESS,
+    ERROR,
+    UNKNOWN,
 }
 
 #[derive(Deserialize, Serialize)]
 #[allow(non_snake_case)]
 pub struct ProxyAgentDetailStatus {
-    pub status: String,  // ModuleState, RUNNING|STOPPED
-    pub message: String, // detail message
+    pub status: ModuleState, // ModuleState, RUNNING|STOPPED
+    pub message: String,     // detail message
     #[serde(skip_serializing_if = "Option::is_none")]
     pub states: Option<HashMap<String, String>>, // module specific states
 }
@@ -28,7 +30,7 @@ pub struct ProxyAgentDetailStatus {
 #[allow(non_snake_case)]
 pub struct ProxyAgentStatus {
     pub version: String,
-    pub status: String, // OverallState, SUCCESS|FAILED
+    pub status: OverallState, // OverallState, SUCCESS|FAILED
     pub monitorStatus: ProxyAgentDetailStatus,
     pub keyLatchStatus: ProxyAgentDetailStatus,
     pub ebpfProgramStatus: ProxyAgentDetailStatus,
