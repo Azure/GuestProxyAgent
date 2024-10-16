@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{hyper_client, logger};
+use crate::common::{hyper_client, logger, result::Result};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
 use crate::shared_state::{tokio_wrapper, SharedState};
@@ -27,7 +27,7 @@ pub async fn start(
     ip: String,
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     logger::write_information("Mock Server starting...".to_string());
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();
@@ -70,7 +70,7 @@ async fn handle_request(
     ip: String,
     port: u16,
     request: Request<hyper::body::Incoming>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     logger::write_information("WireServer processing request.".to_string());
 
     let path: String = request.uri().path_and_query().unwrap().to_string();
