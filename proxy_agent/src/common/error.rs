@@ -1,11 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use http::{uri::InvalidUri, StatusCode};
 use std::error::Error as StdError;
 use std::fmt::Display;
-
-use http::uri::InvalidUri;
-use http::StatusCode;
 
 #[derive(Debug)]
 pub struct Error(Box<ErrorType>);

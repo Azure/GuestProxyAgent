@@ -36,7 +36,6 @@
 
 use super::error::{Error, HyperErrorType};
 use super::result::Result;
-
 use super::{constants, helpers};
 use http::request::Builder;
 use http::request::Parts;
