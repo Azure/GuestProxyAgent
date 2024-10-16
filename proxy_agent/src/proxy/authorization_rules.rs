@@ -23,7 +23,7 @@ use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, Identity, Pr
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::str::FromStr;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -273,7 +273,7 @@ impl AuthorizationRulesForLogging {
     /// The file name is in the format of "AuthorizationRules_{timestamp}.json"
     /// The content is the json string of the AuthorizationRulesForLogging object
     /// The file is written to the path_dir specified by the input parameter
-    pub fn write_all(&self, path_dir: &PathBuf, max_file_count: usize) {
+    pub fn write_all(&self, path_dir: &Path, max_file_count: usize) {
         // remove the old files
         let files = match misc_helpers::search_files(path_dir, r"^AuthorizationRules_.*\.json$") {
             Ok(files) => files,

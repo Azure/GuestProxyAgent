@@ -26,8 +26,7 @@
 
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
-use crate::common::constants;
-use crate::common::logger;
+use crate::common::{constants, logger, result::Result};
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::shared_state::telemetry_wrapper;
@@ -170,7 +169,7 @@ async fn update_vm_meta_data(
     shared_state: Arc<Mutex<SharedState>>,
     wire_server_client: &WireServerClient,
     imds_client: &ImdsClient,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let goal_state = wire_server_client.get_goalstate().await?;
     let shared_config = wire_server_client
         .get_shared_config(goal_state.get_shared_config_uri())

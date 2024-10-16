@@ -205,14 +205,7 @@ async fn loop_poll(
         let status = match key::get_status(&base_url).await {
             Ok(s) => s,
             Err(e) => {
-                let err_string = format!("{:?}", e);
-                let message: String = format!(
-                    "Failed to get key status - {}",
-                    match e.into_inner() {
-                        Some(err) => err.to_string(),
-                        None => err_string,
-                    }
-                );
+                let message: String = format!("Failed to get key status - {}", e);
                 key_keeper_wrapper::set_status_message(shared_state.clone(), message.to_string());
                 logger::write_warning(message);
                 continue;
@@ -260,7 +253,7 @@ async fn loop_poll(
                     imds: proxy_authenticator_wrapper::get_imds_rules(shared_state.clone()),
                 },
             );
-            rules.write_all(&log_dir, 20);
+            rules.write_all(&log_dir, constants::MAX_LOG_FILE_COUNT);
         }
 
         let state = status.get_secure_channel_state();

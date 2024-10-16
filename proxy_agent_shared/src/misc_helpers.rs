@@ -70,7 +70,7 @@ pub fn try_create_folder(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn json_write_to_file<T>(obj: &T, file_path: &PathBuf) -> std::io::Result<()>
+pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> std::io::Result<()>
 where
     T: ?Sized + Serialize,
 {
@@ -80,7 +80,7 @@ where
     Ok(())
 }
 
-pub fn json_read_from_file<T>(file_path: &PathBuf) -> std::io::Result<T>
+pub fn json_read_from_file<T>(file_path: &Path) -> std::io::Result<T>
 where
     T: DeserializeOwned,
 {
@@ -154,7 +154,7 @@ pub fn get_current_version() -> String {
     VERSION.to_string()
 }
 
-pub fn get_files(dir: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
+pub fn get_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     // search files
     let mut files: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -189,7 +189,7 @@ pub fn get_files(dir: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
 /// let search_regex_pattern = r"^MyFile.*\.json$"; // Regex pattern to match "MyFile*.json"
 /// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
 /// ```
-pub fn search_files(dir: &PathBuf, search_regex_pattern: &str) -> std::io::Result<Vec<PathBuf>> {
+pub fn search_files(dir: &Path, search_regex_pattern: &str) -> std::io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let regex = match Regex::new(search_regex_pattern) {
         Ok(re) => re,

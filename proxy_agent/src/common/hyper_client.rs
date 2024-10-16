@@ -34,6 +34,8 @@
 //!
 //! ```
 
+use super::error::{Error, HyperErrorType};
+use super::result::Result;
 use super::{constants, helpers};
 use http::request::Builder;
 use http::request::Parts;
@@ -55,37 +57,26 @@ use tokio::net::TcpStream;
 const LF: &str = "\n";
 
 pub async fn get<T, F>(
-    full_url: &Uri,
+    full_url: Uri,
     headers: &HashMap<String, String>,
     key_guid: Option<String>,
     key: Option<String>,
     log_fun: F,
-) -> std::io::Result<T>
+) -> Result<T>
 where
     T: DeserializeOwned,
     F: Fn(String) + Send + 'static,
 {
-    let request = build_request(Method::GET, full_url, headers, None, key_guid, key)?;
+    let request = build_request(Method::GET, full_url.clone(), headers, None, key_guid, key)?;
 
-    let (host, port) = host_port_from_uri(full_url)?;
-    let response = match send_request(&host, port, request, log_fun).await {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to send request to {}: {}", full_url, e),
-            ))
-        }
-    };
+    let (host, port) = host_port_from_uri(full_url.clone())?;
+    let response = send_request(&host, port, request, log_fun).await?;
     let status = response.status();
     if !status.is_success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Failed to get response from {}, status code: {}",
-                full_url, status
-            ),
-        ));
+        return Err(Error::hyper(HyperErrorType::ServerError(
+            full_url.to_string(),
+            status,
+        )));
     }
 
     read_response_body(response).await
@@ -93,7 +84,7 @@ where
 
 pub async fn read_response_body<T>(
     mut response: hyper::Response<hyper::body::Incoming>,
-) -> std::io::Result<T>
+) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -137,10 +128,10 @@ where
         let frame = match next {
             Ok(f) => f,
             Err(e) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to get next frame from response: {}", e),
-                ))
+                return Err(Error::hyper(HyperErrorType::Custom(
+                    "Failed to get next frame from response".to_string(),
+                    e,
+                )))
             }
         };
         if let Some(chunk) = frame.data_ref() {
@@ -157,10 +148,9 @@ where
                     body_string.push_str(&String::from_utf16_lossy(&u16_vec));
                 }
                 "utf-32" => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "utf-32 charset is not supported",
-                    ))
+                    return Err(Error::hyper(HyperErrorType::Deserialize(
+                        "utf-32 charset is not supported".to_string(),
+                    )))
                 }
                 _ => {
                     // default to utf-8
@@ -173,22 +163,24 @@ where
     match content_type {
         "xml" => match serde_xml_rs::from_str(&body_string) {
             Ok(t) => Ok(t),
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Failed to xml deserialize response body with content_type {} from: {} with error {}",
-               content_type,     body_string, e
+            Err(e) => Err(Error::hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to xml deserialize response body with content_type {} from: {} with error {}",
+                        content_type, body_string, e
+                    )
                 ),
             )),
         },
         // default to json
         _ => match serde_json::from_str(&body_string) {
             Ok(t) => Ok(t),
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Failed to json deserialize response body with {} from: {} with error {}",
-                  content_type,  body_string, e
+            Err(e) => Err(Error::hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to json deserialize response body with {} from: {} with error {}",
+                        content_type, body_string, e
+                    )
                 ),
             )),
         },
@@ -197,13 +189,13 @@ where
 
 pub fn build_request(
     method: http::Method,
-    full_url: &Uri,
+    full_url: Uri,
     headers: &HashMap<String, String>,
     body: Option<&[u8]>,
     key_guid: Option<String>,
     key: Option<String>,
-) -> std::io::Result<Request<BoxBody<Bytes, hyper::Error>>> {
-    let (host, _) = host_port_from_uri(full_url)?;
+) -> Result<Request<BoxBody<Bytes, hyper::Error>>> {
+    let (host, _) = host_port_from_uri(full_url.clone())?;
 
     let mut request_builder = Request::builder()
         .method(method)
@@ -239,7 +231,7 @@ pub fn build_request(
             "{} {} {}",
             constants::AUTHORIZATION_SCHEME,
             key_guid,
-            helpers::compute_signature(&key, input_to_sign.as_slice())?
+            helpers::compute_signature(key.to_string(), input_to_sign.as_slice())?
         );
         request_builder = request_builder.header(
             constants::AUTHORIZATION_HEADER.to_string(),
@@ -253,10 +245,10 @@ pub fn build_request(
     };
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to build request body: {}", e),
-        )),
+        Err(e) => Err(Error::hyper(HyperErrorType::RequestBuilder(format!(
+            "Failed to build request body: {}",
+            e
+        )))),
     }
 }
 
@@ -265,7 +257,7 @@ pub async fn send_request<B, F>(
     port: u16,
     request: Request<B>,
     log_fun: F,
-) -> std::io::Result<hyper::Response<hyper::body::Incoming>>
+) -> Result<hyper::Response<hyper::body::Incoming>>
 where
     B: hyper::body::Body + Send + 'static,
     B::Data: Send,
@@ -273,16 +265,27 @@ where
     F: Fn(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
-    let stream = TcpStream::connect(addr.to_string()).await?;
+    let full_url = request.uri().clone();
+
+    let stream = match TcpStream::connect(addr.to_string()).await {
+        Ok(tcp_stream) => tcp_stream,
+        Err(e) => {
+            return Err(Error::io(
+                format!("Failed to open TCP connection to {}", addr),
+                e,
+            ))
+        }
+    };
+
     let io = TokioIo::new(stream);
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
         .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to establish connection to {}: {}", addr, e),
-            )
+            Error::hyper(HyperErrorType::Custom(
+                format!("Failed to establish connection to {}", addr),
+                e,
+            ))
         })?;
 
     tokio::task::spawn(async move {
@@ -292,20 +295,20 @@ where
     });
 
     sender.send_request(request).await.map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to send request: {:?}", e),
-        )
+        Error::hyper(HyperErrorType::Custom(
+            format!("Failed to send request to {}", full_url),
+            e,
+        ))
     })
 }
 
-pub fn host_port_from_uri(full_url: &Uri) -> std::io::Result<(String, u16)> {
+pub fn host_port_from_uri(full_url: Uri) -> Result<(String, u16)> {
     let host = match full_url.host() {
         Some(h) => h.to_string(),
         None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to get host from uri {}", full_url),
+            return Err(Error::parse_url_message(
+                full_url.to_string(),
+                "Failed to get host from uri".to_string(),
             ))
         }
     };
@@ -328,7 +331,7 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data.extend(LF.as_bytes());
 
     data.extend(headers_to_canonicalized_string(&head.headers).as_bytes());
-    let path_para = get_path_and_canonicalized_parameters(&head.uri);
+    let path_para = get_path_and_canonicalized_parameters(head.uri.clone());
     data.extend(path_para.0.as_bytes());
     data.extend(LF.as_bytes());
     data.extend(path_para.1.as_bytes());
@@ -336,17 +339,13 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data
 }
 
-fn request_to_sign_input(
-    request_builder: &Builder,
-    body: Option<Vec<u8>>,
-) -> std::io::Result<Vec<u8>> {
+fn request_to_sign_input(request_builder: &Builder, body: Option<Vec<u8>>) -> Result<Vec<u8>> {
     let mut data: Vec<u8> = match request_builder.method_ref() {
         Some(m) => m.as_str().as_bytes().to_vec(),
         None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Failed to get method from request builder",
-            ))
+            return Err(Error::hyper(HyperErrorType::RequestBuilder(
+                "Failed to get method from request builder".to_string(),
+            )))
         }
     };
     data.extend(LF.as_bytes());
@@ -366,16 +365,15 @@ fn request_to_sign_input(
     }
     match request_builder.uri_ref() {
         Some(u) => {
-            let path_para = get_path_and_canonicalized_parameters(u);
+            let path_para = get_path_and_canonicalized_parameters(u.clone());
             data.extend(path_para.0.as_bytes());
             data.extend(LF.as_bytes());
             data.extend(path_para.1.as_bytes());
         }
         None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Failed to get uri from request builder",
-            ))
+            return Err(Error::hyper(HyperErrorType::RequestBuilder(
+                "Failed to get method from request builder".to_string(),
+            )))
         }
     }
 
@@ -406,10 +404,10 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
     canonicalized_headers
 }
 
-fn get_path_and_canonicalized_parameters(url: &hyper::Uri) -> (String, String) {
+fn get_path_and_canonicalized_parameters(url: hyper::Uri) -> (String, String) {
     let path = url.path().to_string();
 
-    let query_pairs = query_pairs(url);
+    let query_pairs = query_pairs(&url);
     let mut canonicalized_parameters = String::new();
     let mut pairs: HashMap<String, (String, String)> = HashMap::new();
     if !query_pairs.is_empty() {
@@ -482,7 +480,7 @@ pub fn full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 /// Restricting access to these non-security impacting endpoints would introduce unreasonable
 /// overhead and/or harm live-site investigations. Since the service won't require a signature,
 /// there is no reason to generate one.
-pub fn should_skip_sig(method: hyper::Method, relative_uri: &hyper::Uri) -> bool {
+pub fn should_skip_sig(method: hyper::Method, relative_uri: hyper::Uri) -> bool {
     let url = relative_uri.to_string().to_lowercase();
 
     // currently, we agreed to skip the sig for those requests:
@@ -498,7 +496,7 @@ mod tests {
     fn get_path_and_canonicalized_parameters_test() {
         let url_str = "/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&keyOnly&comp=again&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f";
         let url = url_str.parse::<hyper::Uri>().unwrap();
-        let path_para = super::get_path_and_canonicalized_parameters(&url);
+        let path_para = super::get_path_and_canonicalized_parameters(url);
         assert_eq!("/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2",
          path_para.0, "path mismatch");
         assert_eq!(
