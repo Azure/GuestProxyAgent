@@ -16,7 +16,7 @@ const BUILDIN_ADMIN_SID: &str = "S-1-5-32-544";
 const FULL_CONTROL: u32 = 2032127;
 
 pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
-    let dir_str = misc_helpers::path_to_string(dir_to_acl);
+    let dir_str = misc_helpers::path_to_string(&dir_to_acl);
     let mut acl;
     match ACL::from_file_path(&dir_str, true) {
         Ok(a) => acl = a,

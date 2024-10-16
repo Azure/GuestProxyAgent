@@ -32,7 +32,7 @@ use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     let exe_path = misc_helpers::get_current_exe_dir();
-    common::get_handler_environment(exe_path)
+    common::get_handler_environment(&exe_path)
 });
 
 pub fn program_start(command: ExensionCommand, config_seq_no: Option<String>) {
@@ -186,7 +186,7 @@ fn install_handler() {
 fn uninstall_handler() {
     logger::write("Uninstalling Handler".to_string());
     if !update_tag_file_exists() {
-        let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
+        let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
         match Command::new(setup_tool).arg("uninstall").output() {
             Ok(output) => {
                 match str::from_utf8(&output.stdout) {

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use proxy_agent_shared::misc_helpers;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn proxy_agent_folder_in_setup() -> PathBuf {
     let path: PathBuf = misc_helpers::get_current_exe_dir();
@@ -9,10 +9,10 @@ pub fn proxy_agent_folder_in_setup() -> PathBuf {
 }
 
 pub fn proxy_agent_exe_in_setup() -> PathBuf {
-    proxy_agent_exe_path(proxy_agent_folder_in_setup())
+    proxy_agent_exe_path(&proxy_agent_folder_in_setup())
 }
 
-pub fn proxy_agent_exe_path(proxy_agent_package_dir: PathBuf) -> PathBuf {
+pub fn proxy_agent_exe_path(proxy_agent_package_dir: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         proxy_agent_package_dir.join("GuestProxyAgent.exe")

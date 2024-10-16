@@ -27,7 +27,7 @@ fn init_ebpf_lib() -> Option<Library> {
     let bpf_api_file_path = ebpf_for_windows_dir.join(EBPF_API_FILE_NAME);
     logger::write_information(format!(
         "Try to load ebpf api file from: {}",
-        misc_helpers::path_to_string(bpf_api_file_path.to_path_buf())
+        misc_helpers::path_to_string(&bpf_api_file_path)
     ));
     match load_ebpf_api(bpf_api_file_path) {
         Ok(ebpf_lib) => {
@@ -65,7 +65,7 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> std::io::Result<Library> {
         Err(e) => {
             let message = format!(
                 "Loading ebpf api from file {} failed with error: {}",
-                misc_helpers::path_to_string(bpf_api_file_path.to_path_buf()),
+                misc_helpers::path_to_string(&bpf_api_file_path),
                 e
             );
             Err(Error::new(ErrorKind::Other, message))

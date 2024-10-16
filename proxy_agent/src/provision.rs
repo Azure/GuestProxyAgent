@@ -220,7 +220,7 @@ fn write_provision_state(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
-    if let Err(e) = misc_helpers::try_create_folder(provision_dir.to_path_buf()) {
+    if let Err(e) = misc_helpers::try_create_folder(&provision_dir) {
         logger::write_error(format!("Failed to create provision folder with error: {e}"));
         return;
     }
@@ -342,7 +342,7 @@ async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionSta
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());
-    hyper_client::get(provision_url, &headers, None, None, logger::write_warning).await
+    hyper_client::get(&provision_url, &headers, None, None, logger::write_warning).await
 }
 
 #[cfg(test)]

@@ -75,7 +75,7 @@ fn main() {
 
 fn copy_proxy_agent() -> PathBuf {
     let src_folder = setup::proxy_agent_folder_in_setup();
-    let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_in_setup());
+    let dst_folder = running::proxy_agent_version_target_folder(&setup::proxy_agent_exe_in_setup());
     #[cfg(windows)]
     {
         copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
@@ -103,9 +103,8 @@ fn backup_proxy_agent() {
 
 fn restore_proxy_agent() -> PathBuf {
     let src_folder = backup::proxy_agent_backup_package_folder();
-    let dst_folder = running::proxy_agent_version_target_folder(setup::proxy_agent_exe_path(
-        src_folder.to_path_buf(),
-    ));
+    let dst_folder =
+        running::proxy_agent_version_target_folder(&setup::proxy_agent_exe_path(&src_folder));
     #[cfg(windows)]
     {
         copy_proxy_agent_files(src_folder, dst_folder.to_path_buf());
@@ -119,7 +118,7 @@ fn restore_proxy_agent() -> PathBuf {
 
 #[cfg(windows)]
 fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
-    match misc_helpers::try_create_folder(dst_folder.to_path_buf()) {
+    match misc_helpers::try_create_folder(&dst_folder) {
         Ok(_) => {}
         Err(e) => {
             logger::write(format!(
@@ -131,7 +130,7 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     match misc_helpers::get_files(&src_folder) {
         Ok(files) => {
             for file in files {
-                let file_name = misc_helpers::get_file_name(file.to_path_buf());
+                let file_name = misc_helpers::get_file_name(&file);
                 let dst_file = dst_folder.join(&file_name);
                 match fs::copy(&file, &dst_file) {
                     Ok(_) => {
@@ -200,7 +199,7 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         SERVICE_NAME,
         SERVICE_DISPLAY_NAME,
         vec!["EbpfCore", "NetEbpfExt"],
-        setup::proxy_agent_exe_path(proxy_agent_target_folder),
+        setup::proxy_agent_exe_path(&proxy_agent_target_folder),
     ) {
         Ok(_) => {
             logger::write(format!("Install service {} successfully", SERVICE_NAME));
@@ -219,8 +218,7 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         // check if eBPF setup script exists, if exist then try launch the eBPF setup scripts
         let ebpf_setup_script_file = setup::ebpf_setup_script_file();
         if ebpf_setup_script_file.exists() && ebpf_setup_script_file.is_file() {
-            let setup_script_file_str =
-                misc_helpers::path_to_string(ebpf_setup_script_file.to_path_buf());
+            let setup_script_file_str = misc_helpers::path_to_string(&ebpf_setup_script_file);
             let output = misc_helpers::execute_command(
                 "powershell.exe",
                 vec![
@@ -243,7 +241,7 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
 }
 
 fn check_backup_exists() -> bool {
-    let proxy_agent_exe = setup::proxy_agent_exe_path(backup::proxy_agent_backup_package_folder());
+    let proxy_agent_exe = setup::proxy_agent_exe_path(&backup::proxy_agent_backup_package_folder());
     if !proxy_agent_exe.exists() {
         logger::write(format!(
             "GuestProxyAgent ({:?}) does not exists.",

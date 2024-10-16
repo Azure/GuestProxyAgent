@@ -145,16 +145,14 @@ async fn accept_one_reqeust(
             let large_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LARGE_LIMIT_SIZE);
             let low_limited_tower_service = tower::ServiceBuilder::new().layer(low_limit_layer);
             let large_limited_tower_service = tower::ServiceBuilder::new().layer(large_limit_layer);
-            let tower_service_layer = if crate::common::hyper_client::should_skip_sig(
-                req.method().clone(),
-                req.uri().clone(),
-            ) {
-                // skip signature check for large request
-                large_limited_tower_service.clone()
-            } else {
-                // use low limit for normal request
-                low_limited_tower_service.clone()
-            };
+            let tower_service_layer =
+                if crate::common::hyper_client::should_skip_sig(req.method().clone(), req.uri()) {
+                    // skip signature check for large request
+                    large_limited_tower_service.clone()
+                } else {
+                    // use low limit for normal request
+                    low_limited_tower_service.clone()
+                };
 
             let shared_state = shared_state.clone();
             let cloned_std_stream = cloned_std_stream.clone();
@@ -578,7 +576,7 @@ async fn handle_request_with_signature(
         key_keeper_wrapper::get_current_key_guid(shared_state.clone()),
     ) {
         let input_to_sign = hyper_client::as_sig_input(head, whole_body);
-        match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
+        match helpers::compute_signature(&key, input_to_sign.as_slice()) {
             Ok(sig) => {
                 let authorization_value =
                     format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
@@ -676,7 +674,7 @@ mod tests {
         let url: hyper::Uri = format!("http://{}:{}/", host, port).parse().unwrap();
         let request = hyper_client::build_request(
             Method::GET,
-            url.clone(),
+            &url,
             &HashMap::new(),
             None,
             key_keeper_wrapper::get_current_key_guid(shared_state.clone()),
@@ -696,7 +694,7 @@ mod tests {
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
         let request = hyper_client::build_request(
             Method::POST,
-            url.clone(),
+            &url,
             &HashMap::new(),
             Some(body.as_slice()),
             key_keeper_wrapper::get_current_key_guid(shared_state.clone()),

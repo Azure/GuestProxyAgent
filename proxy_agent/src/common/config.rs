@@ -121,7 +121,7 @@ impl Config {
         misc_helpers::json_read_from_file::<Config>(&file_path).unwrap_or_else(|_| {
             panic!(
                 "Error in reading Config from Json file: {}",
-                misc_helpers::path_to_string(file_path.to_path_buf())
+                misc_helpers::path_to_string(&file_path)
             )
         })
     }
@@ -200,7 +200,7 @@ mod tests {
         let mut temp_test_path: PathBuf = env::temp_dir();
         temp_test_path.push("config_struct_test");
         _ = fs::remove_dir_all(&temp_test_path);
-        match misc_helpers::try_create_folder(temp_test_path.to_path_buf()) {
+        match misc_helpers::try_create_folder(&temp_test_path) {
             Ok(_) => {}
             Err(err) => panic!("Failed to create folder: {}", err),
         }

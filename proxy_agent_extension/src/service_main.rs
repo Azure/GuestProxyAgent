@@ -50,7 +50,7 @@ pub fn run(service_state: Arc<Mutex<ServiceState>>) {
 
 fn heartbeat_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let handler_environment = common::get_handler_environment(exe_path);
+    let handler_environment = common::get_handler_environment(&exe_path);
     let heartbeat_file_path: PathBuf = handler_environment.heartbeatFile.to_string().into();
     let duration = Duration::from_secs(5 * 60);
     loop {
@@ -69,7 +69,7 @@ fn heartbeat_thread() {
 
 fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let handler_environment = common::get_handler_environment(exe_path.to_path_buf());
+    let handler_environment = common::get_handler_environment(&exe_path);
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
     let mut cache_seq_no = String::new();
     let proxyagent_file_version_in_extension = get_proxy_agent_file_version_in_extension();
@@ -104,7 +104,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
             );
             cache_seq_no = current_seq_no.to_string();
             let proxyagent_service_file_version =
-                misc_helpers::get_proxy_agent_version(common::get_proxy_agent_service_path());
+                misc_helpers::get_proxy_agent_version(&common::get_proxy_agent_service_path());
             if proxyagent_file_version_in_extension != proxyagent_service_file_version {
                 // Call setup tool to install or update proxy agent service
                 telemetry::event_logger::write_event(
@@ -116,7 +116,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
                     "service_main",
                     logger_key,
                 );
-                let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
+                let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
                 backup_proxyagent(&setup_tool);
                 let mut install_command = Command::new(&setup_tool);
                 // Set the current directory to the directory of the current executable for the setup tool to work properly
@@ -550,7 +550,7 @@ fn extension_substatus(
 }
 
 fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
-    let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
+    let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
     if status.status == *constants::ERROR_STATUS {
         let output = Command::new(&setup_tool).arg("restore").output();
         match output {
@@ -688,11 +688,11 @@ fn report_proxy_agent_service_status(
 fn get_proxy_agent_file_version_in_extension() -> String {
     // File version of proxy agent service already downloaded by VM Agent
     let path = common::get_proxy_agent_exe_path();
-    let version = misc_helpers::get_proxy_agent_version(path.to_path_buf());
+    let version = misc_helpers::get_proxy_agent_version(&path);
     logger::write(format!(
         "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
         version,
-        misc_helpers::path_to_string(path.to_path_buf())
+        misc_helpers::path_to_string(&path)
     ));
     version
 }
@@ -725,7 +725,7 @@ mod tests {
 
             //Clean up and ignore the clean up errors
             _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+            _ = misc_helpers::try_create_folder(&temp_test_path);
             let status_folder: PathBuf = temp_test_path.join("status");
             let log_folder: String = temp_test_path.to_str().unwrap().to_string();
             logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
@@ -804,7 +804,7 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
         logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
 
@@ -909,7 +909,7 @@ mod tests {
 
             //Clean up and ignore the clean up errors
             _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+            _ = misc_helpers::try_create_folder(&temp_test_path);
             let log_folder: String = temp_test_path.to_str().unwrap().to_string();
             logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
 

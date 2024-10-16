@@ -169,7 +169,7 @@ mod tests {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
-        misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
+        misc_helpers::try_create_folder(&temp_test_path).unwrap();
         let shared_state = SharedState::new();
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
