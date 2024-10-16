@@ -53,7 +53,7 @@ pub fn get_date_time_unix_nano() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }
 
-pub fn try_create_folder(dir: &PathBuf) -> std::io::Result<()> {
+pub fn try_create_folder(dir: &Path) -> std::io::Result<()> {
     match dir.try_exists() {
         Ok(exists) => {
             if !exists {

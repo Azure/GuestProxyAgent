@@ -54,7 +54,7 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
         Ok(path) => {
             logger::write(format!(
                 "Got cgroup2 mount path: '{}'",
-                misc_helpers::path_to_string(path.to_path_buf())
+                misc_helpers::path_to_string(&path)
             ));
             path
         }
@@ -112,7 +112,7 @@ fn open_ebpf_file(
             set_error_status(
                 format!(
                     "Failed to load eBPF program from file {}: {}",
-                    misc_helpers::path_to_string(bpf_file_path.to_path_buf()),
+                    misc_helpers::path_to_string(&bpf_file_path),
                     err
                 ),
                 shared_state.clone(),
