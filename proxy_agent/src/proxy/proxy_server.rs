@@ -19,7 +19,7 @@
 //! tokio::spawn(proxy_server::start(port, shared_state.clone()));
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::common::{config, constants, helpers, hyper_client, logger, result::Result};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::{
@@ -69,7 +69,7 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
 pub async fn start(
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Connection::init_logger(config::get_logs_dir());
 
     let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, port);
@@ -216,7 +216,7 @@ async fn handle_request(
     request: Request<Limited<hyper::body::Incoming>>,
     mut connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let connection_id = proxy_listener_wrapper::increase_connection_count(shared_state.clone());
     connection.id = connection_id;
     Connection::write_information(
@@ -409,7 +409,7 @@ async fn handle_provision_state_check_request(
     connection_id: u128,
     request: Request<Limited<hyper::body::Incoming>>,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     // check MetaData header exists or not
     if request.headers().get(constants::METADATA_HEADER).is_none() {
         Connection::write_warning(
@@ -444,10 +444,10 @@ async fn handle_provision_state_check_request(
 }
 
 async fn forward_response(
-    proxy_response: std::io::Result<Response<Incoming>>,
+    proxy_response: Result<Response<Incoming>>,
     connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let connection_id = connection.id;
     let proxy_response = match proxy_response {
         Ok(response) => response,
@@ -544,7 +544,7 @@ async fn handle_request_with_signature(
     connection: ConnectionContext,
     request: Request<Limited<Incoming>>,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let (head, body) = request.into_parts();
     let whole_body = match body.collect().await {
         Ok(data) => data.to_bytes(),

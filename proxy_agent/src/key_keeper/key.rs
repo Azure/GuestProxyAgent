@@ -23,17 +23,19 @@
 //! ```
 
 use crate::{
-    common::{constants, hyper_client, logger},
+    common::{
+        constants,
+        error::{Error, KeyErrorType},
+        hyper_client, logger,
+        result::Result,
+    },
     proxy::{proxy_connection::Connection, Claims},
 };
 use http::{Method, StatusCode};
 use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::{
-    collections::HashMap,
-    io::{Error, ErrorKind},
-};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -398,8 +400,8 @@ impl Clone for RoleAssignment {
 }
 
 impl KeyStatus {
-    fn validate(&self) -> std::io::Result<bool> {
-        let mut validate_message = "key status validate failed: ".to_string();
+    fn validate(&self) -> Result<bool> {
+        let mut validate_message = String::new();
         let mut validate_result = true;
 
         // validate authorizationScheme
@@ -457,7 +459,9 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::new(ErrorKind::InvalidData, validate_message));
+            return Err(Error::key(KeyErrorType::KeyStatusValidation(
+                validate_message,
+            )));
         }
 
         Ok(validate_result)
@@ -651,20 +655,32 @@ impl Clone for Key {
     }
 }
 
+enum KeyAction {
+    Acquire,
+    Attest,
+}
+
+impl Display for KeyAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            KeyAction::Acquire => write!(f, "acquire"),
+            KeyAction::Attest => write!(f, "attest"),
+        }
+    }
+}
+
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
+pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!(
-                "Failed to join {} and {}, error: {}",
-                base_url, STATUS_URL, e
-            ),
-        )
+        Error::key(KeyErrorType::ParseKeyUrl(
+            base_url.to_string(),
+            STATUS_URL.to_string(),
+            e,
+        ))
     })?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
@@ -675,14 +691,15 @@ pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
     Ok(status)
 }
 
-pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
+pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
-        )
+        Error::key(KeyErrorType::ParseKeyUrl(
+            base_url.to_string(),
+            KEY_URL.to_string(),
+            e,
+        ))
     })?;
 
     let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
@@ -702,34 +719,31 @@ pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to send acquire key, error: {}", e),
-                ));
+                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                    format!("{}", KeyAction::Acquire),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Failed to acquire key, status code: {}", response.status()),
-        ));
+        return Err(Error::key(KeyErrorType::KeyResponse(
+            format!("{}", KeyAction::Acquire),
+            response.status(),
+        )));
     }
     hyper_client::read_response_body(response).await
 }
 
-pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
+pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
     let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
     let url = format!(
         "http://{}:{}{}/{}/key-attestation",
         host, port, KEY_URL, key.guid
     );
-    let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, url, e),
-        )
-    })?;
+    let url: Uri = url
+        .parse()
+        .map_err(|e| Error::key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
@@ -745,17 +759,17 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to send acquire key, error: {}", e),
-                ));
+                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                    format!("{}", KeyAction::Attest),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Failed to acquire key, status code: {}", response.status()),
-        ));
+        return Err(Error::key(KeyErrorType::KeyResponse(
+            format!("{}", KeyAction::Attest),
+            response.status(),
+        )));
     }
 
     Ok(())

@@ -40,7 +40,9 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::common::{
+    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+};
 use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
@@ -325,20 +327,17 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
-async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
-    let provision_url: hyper::Uri = format!(
+async fn get_current_provision_status(port: u16) -> Result<ProivsionState> {
+    let provision_url: String = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
         port,
         PROVISION_URL_PATH
-    )
-    .parse()
-    .map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to parse provision url with error: {}", e),
-        )
-    })?;
+    );
+
+    let provision_url: hyper::Uri = provision_url
+        .parse()
+        .map_err(|e| Error::parse_url(provision_url, e))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());

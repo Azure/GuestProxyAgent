@@ -20,11 +20,10 @@
 //! ```
 
 use super::instance_info::InstanceInfo;
-use crate::common::{hyper_client, logger};
+use crate::common::{error::Error, hyper_client, logger, result::Result};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use hyper::Uri;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 
 pub struct ImdsClient {
@@ -44,15 +43,10 @@ impl ImdsClient {
         }
     }
 
-    pub async fn get_imds_instance_info(&self) -> std::io::Result<InstanceInfo> {
-        let url: Uri = (format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI))
-            .parse()
-            .map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Failed to parse URL: {}", e),
-                )
-            })?;
+    pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
+        let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
+
+        let url: Uri = url.parse().map_err(|e| Error::parse_url(url, e))?;
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 
