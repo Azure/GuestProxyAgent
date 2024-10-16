@@ -253,7 +253,7 @@ async fn loop_poll(
                     imds: proxy_authenticator_wrapper::get_imds_rules(shared_state.clone()),
                 },
             );
-            rules.write_all(&log_dir, 20);
+            rules.write_all(&log_dir, constants::MAX_LOG_FILE_COUNT);
         }
 
         let state = status.get_secure_channel_state();
