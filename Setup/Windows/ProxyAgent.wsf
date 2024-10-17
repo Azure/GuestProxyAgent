@@ -30,14 +30,14 @@
 
         <script language="VBScript">
 
-            Const ERROR_PROXYAGENT_PACKAGENOTFOUND          = 1
-            Const ERROR_AZUREKEYNOTCONFIGURED               = 2
-            Const ERROR_VMTYPENOTCONFIGURED                 = 3
-            Const ERROR_PROXYAGENT_KEYNOTCONFIGURED         = 4
-            Const ERROR_PROXYAGENT_INCARNATIONNOTCONFIGURED = 5
-            Const ERROR_PROXYAGENT_PACKAGENAMENOTFOUND      = 6
-            Const ERROR_PROXYAGENT_OS_NOT_SUPPORTED         = 7
-            Const EBPF_FOR_WINDOWS_SOURCE_PATH              = "ebpf-for-windows"
+            Const ERROR_PROXYAGENT_PACKAGE_NOT_FOUND           = 1
+            Const ERROR_AZURE_KEY_NOT_CONFIGURED               = 2
+            Const ERROR_VM_TYPE_NOT_CONFIGURED                 = 3
+            Const ERROR_PROXYAGENT_KEY_NOT_CONFIGURED          = 4
+            Const ERROR_PROXYAGENT_INCARNATION_NOT_CONFIGURED  = 5
+            Const ERROR_PROXYAGENT_PACKAGE_NAME_NOTFOUND       = 6
+            Const ERROR_PROXYAGENT_OS_NOT_SUPPORTED            = 7
+            Const EBPF_FOR_WINDOWS_SOURCE_PATH                 = "ebpf-for-windows"
 
             Dim g_Trace
             Dim oTraceEvent
@@ -92,9 +92,9 @@
                 End If
 
                 ' Uninstall/InstallEbpf
-                Dim  scriptPth, ebpfSourcePath
-                scriptPth = FsObject.GetParentFolderName(Me.Script.ScriptFullName)
-                ebpfSourcePath : ebpfSourcePath = FsObject.BuildPath(scriptPth, EBPF_FOR_WINDOWS_SOURCE_PATH)
+                Dim  scriptPath, ebpfSourcePath
+                scriptPath = FsObject.GetParentFolderName(Me.Script.ScriptFullName)
+                ebpfSourcePath : ebpfSourcePath = FsObject.BuildPath(scriptPath, EBPF_FOR_WINDOWS_SOURCE_PATH)
                 call CleanInstallEbpf(ebpfSourcePath)
                 If TraceError(g_Trace, "Installing eBPF failed.") <> 0 Then
                     Exit Function
@@ -331,7 +331,7 @@
                         End With
                         g_Trace.TraceEvent oTraceEvent
 
-                        ' Wait 2 secs before checking aproxyAgentin
+                        ' Wait 2 secs before checking ProxyAgent
                         Me.Script.Sleep 2000
                     Else
                         Set oTraceEvent = g_Trace.CreateEvent("INFO")            

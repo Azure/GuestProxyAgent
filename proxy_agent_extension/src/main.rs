@@ -31,11 +31,11 @@ define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_
 struct Cli {
     /// GPA VM Extension commands
     #[command(subcommand)]
-    command: Option<ExensionCommand>,
+    command: Option<ExtensionCommand>,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum ExensionCommand {
+pub enum ExtensionCommand {
     /// enable the GPA VM Extension
     Enable,
     /// disable the GPA VM Extension

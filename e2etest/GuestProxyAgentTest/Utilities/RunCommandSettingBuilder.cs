@@ -126,8 +126,8 @@ namespace GuestProxyAgentTest.Utilities
             }
             
             runCommandSetting.testCaseSetting = _testCaseSetting;
-            this.runCommandSetting.outputBlobSAS = StorageHelper.Instance.CreateAppendBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, Constants.RUNCOMMAND_OUTPUT_FILE_NAME, this._testCaseSetting.TestScenarioStroageFolderPrefix + "/" + this.runCommandSetting.runCommandName);
-            this.runCommandSetting.errorBlobSAS= StorageHelper.Instance.CreateAppendBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, Constants.RUNCOMMAND_ERROR_OUTPUT_FILE_NAME, this._testCaseSetting.TestScenarioStroageFolderPrefix + "/" + this.runCommandSetting.runCommandName);
+            this.runCommandSetting.outputBlobSAS = StorageHelper.Instance.CreateAppendBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, Constants.RUNCOMMAND_OUTPUT_FILE_NAME, this._testCaseSetting.TestScenarioStorageFolderPrefix + "/" + this.runCommandSetting.runCommandName);
+            this.runCommandSetting.errorBlobSAS= StorageHelper.Instance.CreateAppendBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, Constants.RUNCOMMAND_ERROR_OUTPUT_FILE_NAME, this._testCaseSetting.TestScenarioStorageFolderPrefix + "/" + this.runCommandSetting.runCommandName);
 
             if(this.runCommandSetting.customOutputSAS != null && this.runCommandSetting.customOutputSAS.Count() > 0) 
             {

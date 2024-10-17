@@ -314,12 +314,12 @@ pub fn lookup_bpf_audit_map(
             };
 
             // query by source port.
-            let key = sock_addr_aduit_key_t::from_source_port(source_port);
+            let key = sock_addr_audit_key_t::from_source_port(source_port);
             let value = AuditEntry::empty();
 
             let result = match bpf_map_lookup_elem(
                 map_fd,
-                &key as *const sock_addr_aduit_key_t as *const c_void,
+                &key as *const sock_addr_audit_key_t as *const c_void,
                 &value as *const AuditEntry as *mut c_void,
             ) {
                 Ok(r) => r,

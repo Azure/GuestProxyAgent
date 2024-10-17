@@ -414,7 +414,7 @@ fn get_path_and_canonicalized_parameters(url: &Uri) -> (String, String) {
         for (key, value) in query_pairs {
             let key = key.to_lowercase();
             pairs.insert(
-                // add the query paramter value for sorting,
+                // add the query parameter value for sorting,
                 // just in case of duplicate keys by value lexicographically in ascending order.
                 format!("{}{}", key, value),
                 (key.to_lowercase(), value.to_string()),

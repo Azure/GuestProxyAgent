@@ -7,7 +7,7 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::commom::constants;
+//! use proxy_agent::common::constants;
 //! use proxy_agent::host_clients::imds_client;
 //! use proxy_agent::shared_state::SharedState;
 //! use std::sync::{Arc, Mutex};

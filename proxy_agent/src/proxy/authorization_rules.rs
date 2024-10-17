@@ -208,7 +208,7 @@ impl ComputedAuthorizationItem {
                     Connection::write_information(
                         connection_id,
                         format!(
-                            "Reqeust matched privilege '{}' but no identity assigned.",
+                            "Request matched privilege '{}' but no identity assigned.",
                             privilege_name
                         ),
                     );
@@ -216,7 +216,7 @@ impl ComputedAuthorizationItem {
             } else {
                 Connection::write_information(
                     connection_id,
-                    format!("Reqeust does not match privilege '{}'.", privilege_name),
+                    format!("Request does not match privilege '{}'.", privilege_name),
                 );
             }
         }

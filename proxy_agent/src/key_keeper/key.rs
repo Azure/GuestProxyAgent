@@ -219,52 +219,49 @@ impl Privilege {
                 format!("Matched privilege path '{}'", self.path),
             );
 
-            match &self.queryParameters {
-                Some(query_parameters) => {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Start to match query_parameters from privilege '{}'",
-                            self.name
-                        ),
-                    );
+            if let Some(query_parameters) = &self.queryParameters {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Start to match query_parameters from privilege '{}'",
+                        self.name
+                    ),
+                );
 
-                    for (key, value) in query_parameters {
-                        match hyper_client::query_pairs(request_url)
-                            .into_iter()
-                            .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
-                        {
-                            Some((_, v)) => {
-                                if v.to_lowercase() == value.to_lowercase() {
-                                    Connection::write_information(
-                                        connection_id,
-                                        format!(
-                                            "Matched query_parameters '{}:{}' from privilege '{}'",
-                                            key, v, self.name
-                                        ),
-                                    );
-                                } else {
-                                    Connection::write_information(
-                                        connection_id,
-                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
-                                    );
-                                    return false;
-                                }
-                            }
-                            None => {
+                for (key, value) in query_parameters {
+                    match hyper_client::query_pairs(request_url)
+                        .into_iter()
+                        .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
+                    {
+                        Some((_, v)) => {
+                            if v.to_lowercase() == value.to_lowercase() {
                                 Connection::write_information(
                                     connection_id,
                                     format!(
-                                        "Not matched query_parameters key '{}' from privilege '{}'",
-                                        key, self.name
+                                        "Matched query_parameters '{}:{}' from privilege '{}'",
+                                        key, v, self.name
                                     ),
                                 );
+                            } else {
+                                Connection::write_information(
+                                        connection_id,
+                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
+                                    );
                                 return false;
                             }
                         }
+                        None => {
+                            Connection::write_information(
+                                connection_id,
+                                format!(
+                                    "Not matched query_parameters key '{}' from privilege '{}'",
+                                    key, self.name
+                                ),
+                            );
+                            return false;
+                        }
                     }
                 }
-                None => {}
             }
             return true;
         }

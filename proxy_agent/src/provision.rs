@@ -99,7 +99,7 @@ bitflags::bitflags! {
 /// errorMessage - provision error message
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
-pub struct ProivsionState {
+pub struct ProvisionState {
     finished: bool,
     errorMessage: String,
 }
@@ -286,8 +286,8 @@ fn get_provision_failed_state_message(shared_state: Arc<Mutex<SharedState>>) -> 
 /// Get provision state
 /// It returns the current GPA serice provision state (from shared_state) for GPA service
 /// This function is designed and invoked in GPA service
-pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionState {
-    ProivsionState {
+pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProvisionState {
+    ProvisionState {
         finished: provision_wrapper::get_provision_finished(shared_state.clone()),
         errorMessage: get_provision_failed_state_message(shared_state),
     }
@@ -327,7 +327,7 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
-async fn get_current_provision_status(port: u16) -> Result<ProivsionState> {
+async fn get_current_provision_status(port: u16) -> Result<ProvisionState> {
     let provision_url: String = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
