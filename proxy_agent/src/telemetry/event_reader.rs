@@ -205,7 +205,7 @@ async fn process_events_and_clean(
 ) -> usize {
     let mut num_events_logged = 0;
     for file in files {
-        match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
+        match misc_helpers::json_read_from_file::<Vec<Event>>(&file) {
             Ok(events) => {
                 num_events_logged += events.len();
                 send_events(events, wire_server_client, shared_state.clone()).await;
@@ -382,7 +382,7 @@ mod tests {
         misc_helpers::try_create_folder(events_dir.to_path_buf()).unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, file_path.to_path_buf()).unwrap();
+        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
 
         // Check the events processed
         let files = misc_helpers::get_files(&events_dir).unwrap();

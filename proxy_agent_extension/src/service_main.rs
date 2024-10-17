@@ -311,7 +311,7 @@ fn report_proxy_agent_aggregate_status(
 
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
     match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        aggregate_status_file_path,
+        &aggregate_status_file_path,
     ) {
         Ok(ok) => {
             write_state_event(
@@ -763,10 +763,9 @@ mod tests {
                 &mut status_state_obj,
             );
 
-            let handler_status = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-                expected_status_file.to_path_buf(),
-            )
-            .unwrap();
+            let handler_status =
+                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                    .unwrap();
             assert_eq!(handler_status.len(), 1);
             assert_eq!(handler_status[0].status.code, 0);
 
@@ -786,10 +785,9 @@ mod tests {
                 &mut status,
                 &mut status_state_obj,
             );
-            let handler_status_bad = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-                expected_status_file_bad.to_path_buf(),
-            )
-            .unwrap();
+            let handler_status_bad =
+                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(expected_status_file_bad)
+                    .unwrap();
             assert_eq!(handler_status_bad.len(), 1);
             assert_eq!(handler_status_bad[0].status.code, 1);
 

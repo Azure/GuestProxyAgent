@@ -18,7 +18,7 @@
 //! authorize.authorize(1, url, shared_state.clone());
 //!  
 
-use super::authorization_rules::{AuthorizationMode, AuthorizationRules};
+use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;
 use crate::key_keeper::key::AuthorizationItem;
@@ -32,7 +32,7 @@ pub fn set_wireserver_rules(
     shared_state: Arc<Mutex<SharedState>>,
     authorization_item: Option<AuthorizationItem>,
 ) {
-    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
+    let rules = authorization_item.map(ComputedAuthorizationItem::from_authorization_item);
     proxy_authenticator_wrapper::set_wireserver_rules(shared_state, rules);
 }
 
@@ -40,7 +40,7 @@ pub fn set_imds_rules(
     shared_state: Arc<Mutex<SharedState>>,
     authorization_item: Option<AuthorizationItem>,
 ) {
-    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
+    let rules = authorization_item.map(ComputedAuthorizationItem::from_authorization_item);
     proxy_authenticator_wrapper::set_imds_rules(shared_state, rules);
 }
 

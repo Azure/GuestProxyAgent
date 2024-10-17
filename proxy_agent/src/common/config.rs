@@ -118,7 +118,7 @@ impl Default for Config {
 
 impl Config {
     pub fn from_json_file(file_path: PathBuf) -> Self {
-        misc_helpers::json_read_from_file::<Config>(file_path.to_path_buf()).unwrap_or_else(|_| {
+        misc_helpers::json_read_from_file::<Config>(&file_path).unwrap_or_else(|_| {
             panic!(
                 "Error in reading Config from Json file: {}",
                 misc_helpers::path_to_string(file_path.to_path_buf())

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::provision::ProvisionFlags;
-use crate::proxy::authorization_rules::AuthorizationRules;
+use crate::proxy::authorization_rules::ComputedAuthorizationItem;
 use crate::redirector;
 use crate::telemetry::event_reader::VMMetaData;
 use crate::{key_keeper::key::Key, proxy::User};
@@ -60,9 +60,9 @@ pub struct SharedState {
 
     // proxy_authenticator
     /// The authorization rules for the WireServer endpoints
-    wireserver_rules: Option<AuthorizationRules>,
+    wireserver_rules: Option<ComputedAuthorizationItem>,
     /// The authorization rules for the IMDS endpoints
-    imds_rules: Option<AuthorizationRules>,
+    imds_rules: Option<ComputedAuthorizationItem>,
 
     // provision
     /// The provision state, it is a bitflag field
@@ -397,30 +397,32 @@ pub mod proxy_listener_wrapper {
 
 pub mod proxy_authenticator_wrapper {
     use super::SharedState;
-    use crate::proxy::authorization_rules::AuthorizationRules;
+    use crate::proxy::authorization_rules::ComputedAuthorizationItem;
     use std::sync::{Arc, Mutex};
 
     pub fn set_wireserver_rules(
         shared_state: Arc<Mutex<SharedState>>,
-        rules: Option<AuthorizationRules>,
+        rules: Option<ComputedAuthorizationItem>,
     ) {
         shared_state.lock().unwrap().wireserver_rules = rules;
     }
 
     pub fn get_wireserver_rules(
         shared_state: Arc<Mutex<SharedState>>,
-    ) -> Option<AuthorizationRules> {
+    ) -> Option<ComputedAuthorizationItem> {
         shared_state.lock().unwrap().wireserver_rules.clone()
     }
 
     pub fn set_imds_rules(
         shared_state: Arc<Mutex<SharedState>>,
-        rules: Option<AuthorizationRules>,
+        rules: Option<ComputedAuthorizationItem>,
     ) {
         shared_state.lock().unwrap().imds_rules = rules;
     }
 
-    pub fn get_imds_rules(shared_state: Arc<Mutex<SharedState>>) -> Option<AuthorizationRules> {
+    pub fn get_imds_rules(
+        shared_state: Arc<Mutex<SharedState>>,
+    ) -> Option<ComputedAuthorizationItem> {
         shared_state.lock().unwrap().imds_rules.clone()
     }
 }

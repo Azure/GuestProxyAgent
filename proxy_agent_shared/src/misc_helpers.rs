@@ -1,8 +1,13 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::{fs, fs::File, path::PathBuf, process::Command};
+use std::{
+    fs::{self, File},
+    path::{Path, PathBuf},
+    process::Command,
+};
 use thread_id;
 use time::{format_description, OffsetDateTime};
 
@@ -61,7 +66,7 @@ pub fn try_create_folder(dir: PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn json_write_to_file<T>(obj: &T, file_path: PathBuf) -> std::io::Result<()>
+pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> std::io::Result<()>
 where
     T: ?Sized + Serialize,
 {
@@ -71,7 +76,7 @@ where
     Ok(())
 }
 
-pub fn json_read_from_file<T>(file_path: PathBuf) -> std::io::Result<T>
+pub fn json_read_from_file<T>(file_path: &Path) -> std::io::Result<T>
 where
     T: DeserializeOwned,
 {
@@ -149,8 +154,8 @@ pub fn get_current_version() -> String {
     VERSION.to_string()
 }
 
-pub fn get_files(dir: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
-    // search log files
+pub fn get_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    // search files
     let mut files: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -160,6 +165,53 @@ pub fn get_files(dir: &PathBuf) -> std::io::Result<Vec<PathBuf>> {
             continue;
         }
         files.push(file_full_path);
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Search files in a directory with a regex pattern
+/// # Arguments
+/// * `dir` - The directory to search
+/// * `search_regex_pattern` - The regex pattern to search
+/// # Returns
+/// A vector of PathBufs that match the search pattern in ascending order
+/// # Errors
+/// Returns an error if the regex pattern is invalid or if there is an IO error
+/// # Example
+/// ```rust
+/// use std::path::PathBuf;
+/// use proxy_agent_shared::misc_helpers;
+/// let dir = PathBuf::from("C:\\");
+/// let search_regex_pattern = r"^(.*\.log)$";  // search for files with .log extension
+/// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
+///
+/// let search_regex_pattern = r"^MyFile.*\.json$"; // Regex pattern to match "MyFile*.json"
+/// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
+/// ```
+pub fn search_files(dir: &Path, search_regex_pattern: &str) -> std::io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    let regex = match Regex::new(search_regex_pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create regex with error {}", e),
+            ));
+        }
+    };
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_full_path = entry.path();
+        let metadata = fs::metadata(&file_full_path)?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let file_name = get_file_name(file_full_path.clone());
+        if regex.is_match(file_name.as_bytes()) {
+            files.push(file_full_path);
+        }
     }
     files.sort();
     Ok(files)
@@ -240,8 +292,8 @@ mod tests {
             current_exe_dir: super::get_current_exe_dir().to_str().unwrap().to_string(),
         };
 
-        super::json_write_to_file(&test, json_file.clone()).unwrap();
-        let json = super::json_read_from_file::<TestStruct>(json_file.clone()).unwrap();
+        super::json_write_to_file(&test, &json_file).unwrap();
+        let json = super::json_read_from_file::<TestStruct>(&json_file).unwrap();
 
         assert_eq!(test.thread_id, json.thread_id);
         assert_eq!(
@@ -327,6 +379,59 @@ mod tests {
         let path = PathBuf::new();
         let file_name = super::get_file_name(path);
         assert_eq!("InvalidPath", file_name, "file_name mismatch");
+    }
+
+    #[test]
+    fn search_files_test() {
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("search_files_test");
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+        super::try_create_folder(temp_test_path.clone()).unwrap();
+
+        let test = TestStruct {
+            thread_id: super::get_thread_identity(),
+            date_time_string_with_milliseconds: super::get_date_time_string_with_milliseconds(),
+            date_time_string: super::get_date_time_string(),
+            date_time_rfc1123_string: super::get_date_time_rfc1123_string(),
+            date_time_unix_nano: super::get_date_time_unix_nano(),
+            long_os_version: super::get_long_os_version(),
+            current_exe_dir: super::get_current_exe_dir().to_str().unwrap().to_string(),
+        };
+
+        // write 2 json files to the temp_test_path
+        let json_file = temp_test_path.as_path();
+        let json_file = json_file.join("test.json");
+        super::json_write_to_file(&test, &json_file).unwrap();
+        let json_file = temp_test_path.as_path();
+        let json_file = json_file.join("test_1.json");
+        super::json_write_to_file(&test, &json_file).unwrap();
+
+        let files = super::search_files(&temp_test_path, "test.json").unwrap();
+        assert_eq!(
+            1,
+            files.len(),
+            "file count mismatch with 'test.json' search"
+        );
+
+        let files = super::search_files(&temp_test_path, r"^test.*\.json$").unwrap();
+        assert_eq!(
+            2,
+            files.len(),
+            "file count mismatch with 'test*.json' search"
+        );
+        assert_eq!(
+            "test.json",
+            super::get_file_name(files[0].clone()),
+            "First file name mismatch"
+        );
+        assert_eq!(
+            "test_1.json",
+            super::get_file_name(files[1].clone()),
+            "Second file name mismatch"
+        );
+
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 
     #[test]

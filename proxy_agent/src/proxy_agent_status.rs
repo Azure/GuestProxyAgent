@@ -144,7 +144,7 @@ fn write_aggregate_status_to_file(
     let full_file_path = dir_path.clone();
     let full_file_path = full_file_path.join("status.json");
 
-    if let Err(e) = misc_helpers::json_write_to_file(&status, full_file_path.clone()) {
+    if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
         logger::write_error(format!("Error writing status to status file: {}", e));
     }
 
@@ -178,9 +178,8 @@ mod tests {
         let file_path = temp_test_path.join("status.json");
         assert!(file_path.exists(), "File does not exist in the directory");
 
-        let file_content = misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-            file_path.clone().to_path_buf(),
-        );
+        let file_content =
+            misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(&file_path);
         assert!(file_content.is_ok(), "Failed to read file content");
 
         //Check if field were written
