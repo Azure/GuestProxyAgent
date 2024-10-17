@@ -141,7 +141,7 @@ pub fn get_processor_arch() -> String {
 pub fn path_to_string(path: &Path) -> String {
     path.display().to_string()
 }
-    
+
 pub fn get_file_name(path: &Path) -> String {
     match path.file_name() {
         Some(s) => s.to_str().unwrap_or("InvalidPath").to_string(),
