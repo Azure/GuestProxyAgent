@@ -34,7 +34,7 @@ namespace GuestProxyAgentTest.Utilities
         }
 
         /// <summary>
-        /// Instance of StroageHelper, need to call Init before using
+        /// Instance of StorageHelper, need to call Init before using
         /// The storageHelper will operate the pre-created storage account 'e2etestsharedstorage'
         /// </summary>
         public static StorageHelper Instance

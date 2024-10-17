@@ -40,7 +40,7 @@ namespace GuestProxyAgentTest.Settings
             }
         }
 
-        public string TestScenarioStroageFolderPrefix
+        public string TestScenarioStorageFolderPrefix
         {
             get
             {

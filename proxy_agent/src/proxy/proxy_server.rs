@@ -105,7 +105,7 @@ pub async fn start(
             result = listener.accept() => {
                 match result {
                     Ok((stream, client_addr)) =>{
-                        accept_one_reqeust(stream, client_addr, shared_state.clone()).await;
+                        accept_one_request(stream, client_addr, shared_state.clone()).await;
                     },
                     Err(e) => {
                         logger::write_error(format!("Failed to accept connection: {}", e));
@@ -116,7 +116,7 @@ pub async fn start(
     }
 }
 
-async fn accept_one_reqeust(
+async fn accept_one_request(
     stream: TcpStream,
     client_addr: std::net::SocketAddr,
     shared_state: Arc<Mutex<SharedState>>,
@@ -205,9 +205,9 @@ fn set_stream_read_time_out(
     let cloned_std_stream = std_stream.try_clone()?;
 
     // Convert the std stream back
-    let streamd = TcpStream::from_std(std_stream)?;
+    let tokio_tcp_stream = TcpStream::from_std(std_stream)?;
 
-    Ok((streamd, cloned_std_stream))
+    Ok((tokio_tcp_stream, cloned_std_stream))
 }
 
 async fn handle_request(

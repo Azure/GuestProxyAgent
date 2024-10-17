@@ -222,7 +222,7 @@ namespace GuestProxyAgentTest.TestScenarios
         {
             var logZipPath = Path.Combine(Path.GetTempPath(), _testScenarioSetting.testGroupName + "_" + _testScenarioSetting.testScenarioName + "_VMAgentLogs.zip");
             using (File.CreateText(logZipPath)) ConsoleLog("Created empty VMAgentLogs.zip file.");
-            var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStroageFolderPrefix); ;
+            var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStorageFolderPrefix); ;
             
             var runCommandRes = await RunCommandRunner.ExecuteRunCommandOnVM(vmr, new RunCommandSettingBuilder()
                     .TestScenarioSetting(_testScenarioSetting)

@@ -25,12 +25,12 @@ pub fn get_handler_environment(exe_path: &Path) -> HandlerEnvironment {
             Ok(temp) => temp,
             Err(e) => {
                 eprintln!("Error in reading handler env file: {e}");
-                process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+                process::exit(constants::EXIT_CODE_HANDLER_ENV_ERR);
             }
         };
     if handler_env_file.is_empty() {
         eprintln!("Handler environment file is empty");
-        process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+        process::exit(constants::EXIT_CODE_HANDLER_ENV_ERR);
     }
 
     handler_env_file[0].handlerEnvironment.clone()
@@ -189,7 +189,7 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        // linux service harded to this location
+        // linux service hard-coded to this location
         PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent")
     }
 }

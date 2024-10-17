@@ -192,7 +192,7 @@ mod tests {
                 "userData": "Zm9vYmFy",
                 "version": "15.05.22",
                 "virtualMachineScaleSet": {
-                    "id": "/subscriptions/xxxxxxxx-xxxxx-xxx-xxx-xxxx/resourceGroups/resource-group-name/providers/Microsoft.Compute/virtualMachineScaleSets/virtual-machine-scale-set-name"
+                    "id": "/subscriptions/xxxxxxxx-xxxx-xxx-xxx-xxxxxxxxxxx/resourceGroups/resource-group-name/providers/Microsoft.Compute/virtualMachineScaleSets/virtual-machine-scale-set-name"
                 },
                 "vmId": "02aab8a4-74ef-476e-8182-f6d2ba4166a6",
                 "vmScaleSetName": "crpteste9vflji9",

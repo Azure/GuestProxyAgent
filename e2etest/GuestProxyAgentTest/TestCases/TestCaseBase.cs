@@ -55,7 +55,7 @@ namespace GuestProxyAgentTest.TestCases
             {
                 var custJsonPath = Path.Combine(Path.GetTempPath(), $"{testScenarioSetting.testGroupName}_{testScenarioSetting.testScenarioName}_{TestCaseName}.json");
                 using (File.CreateText(custJsonPath)) ConsoleLog("Created empty test file for customized json output file.");
-                custJsonSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, custJsonPath, "customOutputJson.json", testScenarioSetting.TestScenarioStroageFolderPrefix);
+                custJsonSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, custJsonPath, "customOutputJson.json", testScenarioSetting.TestScenarioStorageFolderPrefix);
             }
             return await RunCommandRunner.ExecuteRunCommandOnVM(context.VirtualMachineResource, new RunCommandSettingBuilder()
                     .TestScenarioSetting(testScenarioSetting)

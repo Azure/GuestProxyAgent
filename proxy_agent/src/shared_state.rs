@@ -35,7 +35,7 @@ pub struct SharedState {
     cancellation_token: CancellationToken,
 
     // key_keeper
-    /// The key is used to compute sinature for the data between the agent and the host endpoints
+    /// The key is used to compute signature for the data between the agent and the host endpoints
     key: Option<Key>,
     /// The current secure channel state
     current_secure_channel_state: String,
@@ -52,11 +52,11 @@ pub struct SharedState {
 
     // proxy_listener
     /// The flag to indicate if the proxy listener is shutdown
-    proxy_listner_shutdown: bool,
-    /// The proxyied connection count for the listener
+    proxy_listener_shutdown: bool,
+    /// The proxied connection count for the listener
     connection_count: u128,
     /// The status message for the proxy listener module
-    proxy_listner_status_message: String,
+    proxy_listener_status_message: String,
 
     // proxy_authenticator
     /// The authorization rules for the WireServer endpoints
@@ -135,9 +135,9 @@ impl Default for SharedState {
             key_keeper_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
             key_keeper_notify: Arc::new(Notify::new()),
             // proxy_listener
-            proxy_listner_shutdown: false,
+            proxy_listener_shutdown: false,
             connection_count: 0,
-            proxy_listner_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
+            proxy_listener_status_message: UNKNOWN_STATUS_MESSAGE.to_string(),
             // proxy_authenticator
             wireserver_rules: None,
             imds_rules: None,
@@ -358,11 +358,11 @@ pub mod proxy_listener_wrapper {
     use std::sync::{Arc, Mutex};
 
     pub fn set_shutdown(shared_state: Arc<Mutex<SharedState>>, shutdown: bool) {
-        shared_state.lock().unwrap().proxy_listner_shutdown = shutdown;
+        shared_state.lock().unwrap().proxy_listener_shutdown = shutdown;
     }
 
     pub fn get_shutdown(shared_state: Arc<Mutex<SharedState>>) -> bool {
-        shared_state.lock().unwrap().proxy_listner_shutdown
+        shared_state.lock().unwrap().proxy_listener_shutdown
     }
 
     /// Increase the connection count
@@ -383,14 +383,14 @@ pub mod proxy_listener_wrapper {
     }
 
     pub fn set_status_message(shared_state: Arc<Mutex<SharedState>>, status_message: String) {
-        shared_state.lock().unwrap().proxy_listner_status_message = status_message;
+        shared_state.lock().unwrap().proxy_listener_status_message = status_message;
     }
 
     pub fn get_status_message(shared_state: Arc<Mutex<SharedState>>) -> String {
         shared_state
             .lock()
             .unwrap()
-            .proxy_listner_status_message
+            .proxy_listener_status_message
             .to_string()
     }
 }
