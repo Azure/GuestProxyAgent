@@ -25,7 +25,7 @@ pub struct ConnectionContext {
 
 impl ConnectionContext {
     pub fn should_skip_sig(&self) -> bool {
-        hyper_client::should_skip_sig(self.method.clone(), &self.url)
+        hyper_client::should_skip_sig(&self.method, &self.url)
     }
 
     /// Get the target server ip address in string for logging purpose.

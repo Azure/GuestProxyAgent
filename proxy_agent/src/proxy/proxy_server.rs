@@ -146,7 +146,7 @@ async fn accept_one_reqeust(
             let low_limited_tower_service = tower::ServiceBuilder::new().layer(low_limit_layer);
             let large_limited_tower_service = tower::ServiceBuilder::new().layer(large_limit_layer);
             let tower_service_layer =
-                if crate::common::hyper_client::should_skip_sig(req.method().clone(), req.uri()) {
+                if crate::common::hyper_client::should_skip_sig(req.method(), req.uri()) {
                     // skip signature check for large request
                     large_limited_tower_service.clone()
                 } else {
