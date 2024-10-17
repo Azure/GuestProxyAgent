@@ -184,7 +184,7 @@ pub fn get_processor_arch() -> String {
     }
 }
 
-pub fn ensure_service_running(service_name: String) -> (bool, String) {
+pub fn ensure_service_running(service_name: &str) -> (bool, String) {
     let mut message = String::new();
     let service_manager =
         match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
@@ -198,7 +198,7 @@ pub fn ensure_service_running(service_name: String) -> (bool, String) {
         };
 
     let service = match service_manager.open_service(
-        &service_name,
+        service_name,
         ServiceAccess::QUERY_STATUS | ServiceAccess::START,
     ) {
         Ok(s) => s,

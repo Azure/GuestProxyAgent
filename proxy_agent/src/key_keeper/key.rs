@@ -672,8 +672,8 @@ impl Display for KeyAction {
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
         Error::key(KeyErrorType::ParseKeyUrl(
@@ -685,14 +685,14 @@ pub async fn get_status(base_url: Uri) -> Result<KeyStatus> {
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let status: KeyStatus =
-        hyper_client::get(url, &headers, None, None, logger::write_warning).await?;
+        hyper_client::get(&url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
 }
 
-pub async fn acquire_key(base_url: Uri) -> Result<Key> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
         Error::key(KeyErrorType::ParseKeyUrl(
@@ -702,14 +702,14 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
         ))
     })?;
 
-    let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
+    let (host, port) = hyper_client::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
     let request = hyper_client::build_request(
         hyper::Method::POST,
-        url.clone(),
+        &url,
         &headers,
         Some(body.as_bytes()),
         None,
@@ -734,9 +734,9 @@ pub async fn acquire_key(base_url: Uri) -> Result<Key> {
     hyper_client::read_response_body(response).await
 }
 
-pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
+pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!(
         "http://{}:{}{}/{}/key-attestation",
         host, port, KEY_URL, key.guid
@@ -749,7 +749,7 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> Result<()> {
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let request = hyper_client::build_request(
         Method::POST,
-        url,
+        &url,
         &headers,
         None,
         Some(key.guid.to_string()),

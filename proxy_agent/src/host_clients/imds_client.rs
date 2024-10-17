@@ -51,7 +51,7 @@ impl ImdsClient {
         headers.insert("Metadata".to_string(), "true".to_string());
 
         hyper_client::get(
-            url,
+            &url,
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),

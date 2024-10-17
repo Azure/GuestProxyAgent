@@ -66,7 +66,7 @@ impl WireServerClient {
 
         let request = hyper_client::build_request(
             Method::POST,
-            url.clone(),
+            &url,
             &headers,
             Some(xml_data.as_bytes()),
             None, // post telemetry data does not require signing
@@ -106,7 +106,7 @@ impl WireServerClient {
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
         hyper_client::get(
-            url,
+            &url,
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
@@ -122,7 +122,7 @@ impl WireServerClient {
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
         hyper_client::get(
-            url,
+            &url,
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),

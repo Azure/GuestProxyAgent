@@ -53,14 +53,18 @@ pub fn get_date_time_unix_nano() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }
 
-pub fn try_create_folder(dir: PathBuf) -> std::io::Result<()> {
+pub fn try_create_folder(dir: &Path) -> std::io::Result<()> {
     match dir.try_exists() {
         Ok(exists) => {
             if !exists {
                 fs::create_dir_all(dir)?; // Recursively create a directory and all of its parent components if they are missing
             }
         }
-        Err(error) => panic!("Problem check the directory exists: {:?}", error),
+        Err(error) => panic!(
+            "Problem check the directory '{}' exists: {:?}",
+            dir.display(),
+            error
+        ),
     };
 
     Ok(())
@@ -134,14 +138,11 @@ pub fn get_processor_arch() -> String {
     arch
 }
 
-pub fn path_to_string(path: PathBuf) -> String {
-    match path.to_str() {
-        Some(s) => s.to_string(),
-        None => "InvalidPath".to_string(),
-    }
+pub fn path_to_string(path: &Path) -> String {
+    path.display().to_string()
 }
 
-pub fn get_file_name(path: PathBuf) -> String {
+pub fn get_file_name(path: &Path) -> String {
     match path.file_name() {
         Some(s) => s.to_str().unwrap_or("InvalidPath").to_string(),
         None => "InvalidPath".to_string(),
@@ -208,7 +209,7 @@ pub fn search_files(dir: &Path, search_regex_pattern: &str) -> std::io::Result<V
         if !metadata.is_file() {
             continue;
         }
-        let file_name = get_file_name(file_full_path.clone());
+        let file_name = get_file_name(&file_full_path);
         if regex.is_match(file_name.as_bytes()) {
             files.push(file_full_path);
         }
@@ -237,7 +238,7 @@ pub fn execute_command(
     }
 }
 
-pub fn get_proxy_agent_version(proxy_agent_exe: PathBuf) -> String {
+pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> String {
     if !proxy_agent_exe.exists() {
         return "Unknown".to_string();
     }
@@ -277,7 +278,7 @@ mod tests {
         temp_test_path.push("json_Write_read_from_file_test");
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        super::try_create_folder(temp_test_path.clone()).unwrap();
+        super::try_create_folder(&temp_test_path).unwrap();
 
         let json_file = temp_test_path.as_path();
         let json_file = json_file.join("test.json");
@@ -312,7 +313,7 @@ mod tests {
     #[test]
     fn path_to_string_test() {
         let path = "path_to_string_test";
-        let path_str = super::path_to_string(PathBuf::from(path));
+        let path_str = super::path_to_string(&PathBuf::from(path));
         assert_eq!(path_str, path, "path_str mismatch");
     }
 
@@ -322,7 +323,7 @@ mod tests {
         temp_test_path.push("execute_command_test");
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        super::try_create_folder(temp_test_path.clone()).unwrap();
+        super::try_create_folder(&temp_test_path).unwrap();
 
         let program: &str;
         let script_content: &str;
@@ -353,7 +354,7 @@ mod tests {
         let default_error_code = -1;
         let output = super::execute_command(
             program,
-            vec![&super::path_to_string(script_file_path)],
+            vec![&super::path_to_string(&script_file_path)],
             default_error_code,
         );
         assert_eq!(1, output.0, "exit code mismatch");
@@ -373,11 +374,11 @@ mod tests {
     #[test]
     fn get_file_name_test() {
         let path = PathBuf::from("test.txt");
-        let file_name = super::get_file_name(path);
+        let file_name = super::get_file_name(&path);
         assert_eq!("test.txt", file_name, "file_name mismatch");
 
         let path = PathBuf::new();
-        let file_name = super::get_file_name(path);
+        let file_name = super::get_file_name(&path);
         assert_eq!("InvalidPath", file_name, "file_name mismatch");
     }
 
@@ -387,7 +388,7 @@ mod tests {
         temp_test_path.push("search_files_test");
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        super::try_create_folder(temp_test_path.clone()).unwrap();
+        super::try_create_folder(&temp_test_path).unwrap();
 
         let test = TestStruct {
             thread_id: super::get_thread_identity(),
@@ -422,12 +423,12 @@ mod tests {
         );
         assert_eq!(
             "test.json",
-            super::get_file_name(files[0].clone()),
+            super::get_file_name(&files[0]),
             "First file name mismatch"
         );
         assert_eq!(
             "test_1.json",
-            super::get_file_name(files[1].clone()),
+            super::get_file_name(&files[1]),
             "Second file name mismatch"
         );
 

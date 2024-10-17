@@ -79,16 +79,16 @@ pub async fn poll_secure_channel_status(
         ));
     }
 
-    if let Err(e) = misc_helpers::try_create_folder(key_dir.to_path_buf()) {
+    if let Err(e) = misc_helpers::try_create_folder(&key_dir) {
         logger::write_warning(format!(
             "key folder {} created failed with error {}.",
-            misc_helpers::path_to_string(key_dir.to_path_buf()),
+            misc_helpers::path_to_string(&key_dir),
             e
         ));
     } else {
         logger::write(format!(
             "key folder {} created if not exists before.",
-            misc_helpers::path_to_string(key_dir.to_path_buf())
+            misc_helpers::path_to_string(&key_dir)
         ));
     }
 
@@ -96,13 +96,13 @@ pub async fn poll_secure_channel_status(
         Ok(()) => {
             logger::write(format!(
                 "key folder {} ACLed if has not before.",
-                misc_helpers::path_to_string(key_dir.to_path_buf())
+                misc_helpers::path_to_string(&key_dir)
             ));
         }
         Err(e) => {
             logger::write_warning(format!(
                 "key folder {} ACLed failed with error {}.",
-                misc_helpers::path_to_string(key_dir.to_path_buf()),
+                misc_helpers::path_to_string(&key_dir),
                 e
             ));
         }
@@ -202,7 +202,7 @@ async fn loop_poll(
             started_event_threads = true;
         }
 
-        let status = match key::get_status(base_url.clone()).await {
+        let status = match key::get_status(&base_url).await {
             Ok(s) => s,
             Err(e) => {
                 let message: String = format!("Failed to get key status - {}", e);
@@ -317,7 +317,7 @@ async fn loop_poll(
             // or could not read locally,
             // try fetch from server
             if !key_found {
-                let key = match key::acquire_key(base_url.clone()).await {
+                let key = match key::acquire_key(&base_url).await {
                     Ok(k) => k,
                     Err(e) => {
                         logger::write_warning(format!("Failed to acquire key details: {:?}", e));
@@ -346,7 +346,7 @@ async fn loop_poll(
 
                 // double check the key details saved correctly to local disk
                 if check_local_key(key_dir.to_path_buf(), &key) {
-                    match key::attest_key(base_url.clone(), &key).await {
+                    match key::attest_key(&base_url, &key).await {
                         Ok(()) => {
                             // update in memory
                             key_keeper_wrapper::set_key(shared_state.clone(), key.clone());
@@ -506,7 +506,7 @@ mod tests {
             200,
             6,
         );
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let key_str = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",        

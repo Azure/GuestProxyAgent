@@ -63,7 +63,7 @@ impl RollingLogger {
     }
 
     fn open_file(&mut self) -> std::io::Result<()> {
-        misc_helpers::try_create_folder(self.log_dir.to_path_buf())?;
+        misc_helpers::try_create_folder(&self.log_dir)?;
 
         let file_full_path = self.get_current_file_full_path(None);
         let f = if file_full_path.exists() {

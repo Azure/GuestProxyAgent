@@ -379,7 +379,7 @@ mod tests {
             ));
         }
         logger::write("10 events created.".to_string());
-        misc_helpers::try_create_folder(events_dir.to_path_buf()).unwrap();
+        misc_helpers::try_create_folder(&events_dir).unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
         misc_helpers::json_write_to_file(&events, &file_path).unwrap();

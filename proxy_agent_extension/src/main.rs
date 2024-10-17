@@ -61,7 +61,7 @@ fn main() {
     } else {
         // no arguments, start it as a service
         let exe_path = misc_helpers::get_current_exe_dir();
-        let log_folder = common::get_handler_environment(exe_path)
+        let log_folder = common::get_handler_environment(&exe_path)
             .logFolder
             .to_string();
         logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);

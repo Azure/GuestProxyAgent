@@ -158,17 +158,17 @@ mod tests {
             Ok(cgroup2_path) => {
                 println!(
                     "Got cgroup2 mount path: '{}'",
-                    misc_helpers::path_to_string(cgroup2_path.to_path_buf())
+                    misc_helpers::path_to_string(&cgroup2_path)
                 );
                 assert!(
                     cgroup2_path.is_dir(),
                     "cgroup2_path {} must be a dir",
-                    misc_helpers::path_to_string(cgroup2_path.to_path_buf())
+                    misc_helpers::path_to_string(&cgroup2_path)
                 );
                 assert!(
                     cgroup2_path.exists(),
                     "cgroup2_path {} must be exists",
-                    misc_helpers::path_to_string(cgroup2_path.to_path_buf())
+                    misc_helpers::path_to_string(&cgroup2_path)
                 );
             }
             Err(e) => {

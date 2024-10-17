@@ -540,7 +540,7 @@ mod tests {
                 print!("Failed to remove_dir_all with error {}.", e);
             }
         }
-        misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
+        misc_helpers::try_create_folder(&temp_test_path).unwrap();
 
         // init main logger
         logger_manager::init_logger(

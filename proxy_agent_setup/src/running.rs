@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 use crate::logger;
 use proxy_agent_shared::misc_helpers;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 use proxy_agent_shared::service;
@@ -34,7 +34,7 @@ pub fn proxy_agent_parent_folder() -> PathBuf {
     }
 }
 
-pub fn proxy_agent_version_target_folder(proxy_agent_exe: PathBuf) -> PathBuf {
+pub fn proxy_agent_version_target_folder(proxy_agent_exe: &Path) -> PathBuf {
     let proxy_agent_version = misc_helpers::get_proxy_agent_version(proxy_agent_exe);
     logger::write(format!("Proxy agent version: {}", &proxy_agent_version));
     #[cfg(windows)]

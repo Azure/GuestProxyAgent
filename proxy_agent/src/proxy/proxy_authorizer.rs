@@ -59,7 +59,7 @@ mod default {
 
     pub fn is_platform_process(claims: &Claims) -> bool {
         let process_name =
-            misc_helpers::get_file_name(PathBuf::from(&claims.processName)).to_lowercase();
+            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
         if process_name == VM_APPLICATION_MANAGER_FILE_NAME
             || process_name == WINDOWS_AZURE_GUEST_AGENT_FILE_NAME
             || process_name == WAAPPAGENT_FILE_NAME
@@ -89,7 +89,7 @@ mod default {
 
     pub fn is_platform_process(claims: &Claims) -> bool {
         let process_name =
-            misc_helpers::get_file_name(PathBuf::from(&claims.processName)).to_lowercase();
+            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
         if process_name == VM_APPLICATION_MANAGER_FILE_NAME
             || process_name == IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME
         {

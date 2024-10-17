@@ -39,10 +39,10 @@ Return Value:
 pub fn load_bpf_object(bpf_file_path: PathBuf, shared_state: Arc<Mutex<SharedState>>) -> i32 {
     logger::write_information(format!(
         "Starting redirector with ebpf file {}",
-        misc_helpers::path_to_string(bpf_file_path.to_path_buf())
+        misc_helpers::path_to_string(&bpf_file_path)
     ));
     close_bpf_object(shared_state.clone());
-    let obj = match bpf_object__open(&misc_helpers::path_to_string(bpf_file_path.to_path_buf())) {
+    let obj = match bpf_object__open(&misc_helpers::path_to_string(&bpf_file_path)) {
         Ok(obj) => obj,
         Err(e) => {
             logger::write_error(format!("{}", e));

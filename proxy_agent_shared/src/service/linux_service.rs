@@ -83,7 +83,7 @@ fn delete_service_config_file(service_name: &str) {
             let message = format!(
                 "delete_service_config_file: {}  failed to delete service config file '{}': {}",
                 service_name,
-                misc_helpers::path_to_string(config_file_path),
+                misc_helpers::path_to_string(&config_file_path),
                 e
             );
             logger_manager::write_info(message);

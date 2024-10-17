@@ -62,15 +62,15 @@ pub fn get_long_os_version() -> String {
     CURRENT_OS_INFO.1.to_string()
 }
 
-pub fn compute_signature(hex_encoded_key: String, input_to_sign: &[u8]) -> Result<String> {
-    match hex::decode(&hex_encoded_key) {
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+    match hex::decode(hex_encoded_key) {
         Ok(key) => {
             let mut mac = hmac_sha256::HMAC::new(key);
             mac.update(input_to_sign);
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => Err(Error::hex(hex_encoded_key, e)),
+        Err(e) => Err(Error::hex(hex_encoded_key.to_string(), e)),
     }
 }
 
@@ -116,13 +116,11 @@ mod tests {
     fn compute_signature_test() {
         let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
         let message = "Hello world";
-        let result =
-            super::compute_signature(hex_encoded_key.to_string(), message.as_bytes()).unwrap();
+        let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
         println!("compute_signature: {result}");
         let invalid_hex_encoded_key =
             "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
-        let result =
-            super::compute_signature(invalid_hex_encoded_key.to_string(), message.as_bytes());
+        let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());
         assert!(result.is_err(), "invalid key should fail.");
 
         let e = result.unwrap_err();
