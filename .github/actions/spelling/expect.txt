@@ -35,7 +35,6 @@ codeofconduct
 codeql
 collectguestlogs
 commandline
-commom
 comspec
 consoleloggerparameters
 CPlat
