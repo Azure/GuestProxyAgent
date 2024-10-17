@@ -28,10 +28,10 @@ typedef struct _destination_entry
     uint32_t protocol;
 } destination_entry_t;
 
-typedef struct _sock_addr_aduit_key{
+typedef struct _sock_addr_audit_key{
     uint32_t protocol;
     uint16_t source_port;
-}sock_addr_aduit_key_t;
+}sock_addr_audit_key_t;
 
 typedef struct _sock_addr_audit_entry{
     uint64_t logon_id;

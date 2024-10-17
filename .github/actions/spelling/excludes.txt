@@ -1,0 +1,4 @@
+doc/GPA Arch Diagram.vsdx
+doc/GuestProxyAgent.png
+Cargo.lock
+e2etest/GuestProxyAgentTest/Resources/GuestProxyAgentLoadedModulesBaseline.txt

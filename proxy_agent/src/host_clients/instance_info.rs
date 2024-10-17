@@ -108,7 +108,7 @@ mod tests {
                 ],
                 "publisher": "RDFE-Test-Microsoft-Windows-Server-Group",
                 "resourceGroupName": "macikgo-test-may-23",
-                "resourceId": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/virtualMachines/examplevmname",
+                "resourceId": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/virtualMachines/examplevmname",
                 "securityProfile": {
                     "secureBootEnabled": "true",
                     "virtualTpmEnabled": "false",
@@ -130,7 +130,7 @@ mod tests {
                         "isUltraDisk": "true",
                         "lun": "0",
                         "managedDisk": {
-                          "id": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampledatadiskname",
+                          "id": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampledatadiskname",
                           "storageAccountType": "StandardSSD_LRS"
                         },
                         "name": "exampledatadiskname",
@@ -160,20 +160,20 @@ mod tests {
                             "sourceVault": {
                               "id": "/subscriptions/test-source-guid/resourceGroups/testrg/providers/Microsoft.KeyVault/vaults/test-kv"
                             },
-                            "secretUrl": "https://test-disk.vault.azure.net/secrets/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+                            "secretUrl": "https://test-disk.vault.azure.net/secrets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
                           },
                           "keyEncryptionKey": {
                             "sourceVault": {
                               "id": "/subscriptions/test-key-guid/resourceGroups/testrg/providers/Microsoft.KeyVault/vaults/test-kv"
                             },
-                            "keyUrl": "https://test-key.vault.azure.net/secrets/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+                            "keyUrl": "https://test-key.vault.azure.net/secrets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
                           }
                         },
                         "image": {
                             "uri": ""
                         },
                         "managedDisk": {
-                            "id": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampleosdiskname",
+                            "id": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampleosdiskname",
                             "storageAccountType": "StandardSSD_LRS"
                         },
                         "name": "exampleosdiskname",
