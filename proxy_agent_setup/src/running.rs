@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use proxy_agent_shared::service;
 
-pub fn proxy_agent_running_folder(_ervice_name: &str) -> PathBuf {
+pub fn proxy_agent_running_folder(_service_name: &str) -> PathBuf {
     let path;
     #[cfg(windows)]
     {
-        path = match service::query_service_executable_path(_ervice_name).parent() {
+        path = match service::query_service_executable_path(_service_name).parent() {
             Some(p) => p.to_path_buf(),
             None => PathBuf::from("C:\\WindowsAzure\\ProxyAgent\\Package"),
         };

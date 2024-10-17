@@ -187,7 +187,7 @@ mod tests {
                         "size": "4096"
                     }
                 },
-                "subscriptionId": "xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
+                "subscriptionId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
                 "tags": "baz:bash;foo:bar",
                 "userData": "Zm9vYmFy",
                 "version": "15.05.22",
@@ -222,7 +222,7 @@ mod tests {
 
         let instance_info = serde_json::from_str::<InstanceInfo>(instance_string).unwrap();
         assert_eq!(
-            "xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
+            "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
             instance_info.get_subscription_id(),
             "subscription_id mismatch"
         );

@@ -13,16 +13,16 @@ namespace GuestProxyAgentTest.TestCases
     public class GuestProxyAgentValidationCase : TestCaseBase
     {
 
-        private static readonly string EXPECTEDGUESTPROXYAGENTSERVICESTATUS;
+        private static readonly string EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS;
         static GuestProxyAgentValidationCase()
         {
             if (Constants.IS_WINDOWS())
             {
-                EXPECTEDGUESTPROXYAGENTSERVICESTATUS = "Running";
+                EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS = "Running";
             }
             else
             {
-                EXPECTEDGUESTPROXYAGENTSERVICESTATUS = "enabled";
+                EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS = "enabled";
             }
         }
         public GuestProxyAgentValidationCase() : base("GuestProxyAgentValidationCase")
@@ -38,7 +38,7 @@ namespace GuestProxyAgentTest.TestCases
                 // then consider it as succeed, otherwise fail the case.
                 if (validationDetails != null
                     && validationDetails.GuestProxyAgentServiceInstalled
-                    && validationDetails.GuestProxyAgentServiceStatus.Equals(EXPECTEDGUESTPROXYAGENTSERVICESTATUS, StringComparison.OrdinalIgnoreCase)
+                    && validationDetails.GuestProxyAgentServiceStatus.Equals(EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS, StringComparison.OrdinalIgnoreCase)
                     && validationDetails.GuestProxyProcessStarted
                     && validationDetails.GuestProxyAgentLogGenerated)
                 {

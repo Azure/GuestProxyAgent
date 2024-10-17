@@ -14,7 +14,7 @@ echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Starting guest proxy agent extension va
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Get Extension Folder and Version"
 timeout=300
 interval=5
-elpased=0
+elapsed=0
 while :; do
     directories=$(find /var/lib/waagent -type d -name '*Microsoft.CPlat.ProxyAgent.ProxyAgentLinux*')
     found=0
@@ -71,7 +71,7 @@ fi
 
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Check that status file is regenerated"
 timeout=900
-elpased=0
+elapsed=0
 while :; do 
     statusFolder=$(find "$PIRExtensionFolderPath" -type d -name 'status')
 	statusFile=$(ls $statusFolder/*.status)
@@ -95,7 +95,7 @@ echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - TEST: Check that status file is success
 guestProxyAgentExtensionStatusObjGenerated=false
 guestProxyAgentExtensionServiceStatus=false
 timeout=300
-elpased=0
+elapsed=0
 if [[ "$statusExists" == "true" ]]; then
 	while :; do 
     extensionStatus=$(cat "$statusFile" | jq -r '.[0].status.status')

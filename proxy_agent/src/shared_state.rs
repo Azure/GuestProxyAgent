@@ -573,10 +573,10 @@ pub mod agent_status_wrapper {
     pub fn add_one_connection_summary(
         shared_state: Arc<Mutex<SharedState>>,
         summary: ProxySummary,
-        add_to_failed_authenticate_summry: bool,
+        add_to_failed_authenticate_summary: bool,
     ) {
         let mut shared_state = shared_state.lock().unwrap();
-        let summary_map = if add_to_failed_authenticate_summry {
+        let summary_map = if add_to_failed_authenticate_summary {
             &mut shared_state.proxy_summary
         } else {
             &mut shared_state.failed_authenticate_summary

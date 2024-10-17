@@ -84,7 +84,7 @@ namespace GuestProxyAgentTest.TestCases
             {
                 return "null";
             }
-            return string.Format("Name: {0}, ExntesionType:{1}, ExtensionVersion:{2} Statuses: {3}, Substatuses: {4}", instanceView.Name,
+            return string.Format("Name: {0}, ExtensionType:{1}, ExtensionVersion:{2} Statuses: {3}, Substatuses: {4}", instanceView.Name,
                 instanceView.VirtualMachineExtensionInstanceViewType, instanceView.TypeHandlerVersion
                 , FormatVMInstanceViewStatus(instanceView.Statuses), FormatVMInstanceViewStatus(instanceView.Substatuses));
         }

@@ -4,7 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs;
-use crate::ExensionCommand;
+use crate::ExtensionCommand;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::version::Version;
@@ -35,7 +35,7 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     common::get_handler_environment(&exe_path)
 });
 
-pub fn program_start(command: ExensionCommand, config_seq_no: Option<String>) {
+pub fn program_start(command: ExtensionCommand, config_seq_no: Option<String>) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
     logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
@@ -161,17 +161,17 @@ fn get_exe_parent() -> PathBuf {
     exe_parent.to_path_buf()
 }
 
-fn handle_command(command: ExensionCommand, config_seq_no: &Option<String>) {
+fn handle_command(command: ExtensionCommand, config_seq_no: &Option<String>) {
     logger::write(format!("entering handle command: {:?}", command));
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = PathBuf::from(&status_folder);
     match command {
-        ExensionCommand::Install => install_handler(),
-        ExensionCommand::Uninstall => uninstall_handler(),
-        ExensionCommand::Enable => enable_handler(status_folder_path, config_seq_no),
-        ExensionCommand::Disable => disable_handler(),
-        ExensionCommand::Reset => reset_handler(),
-        ExensionCommand::Update => update_handler(),
+        ExtensionCommand::Install => install_handler(),
+        ExtensionCommand::Uninstall => uninstall_handler(),
+        ExtensionCommand::Enable => enable_handler(status_folder_path, config_seq_no),
+        ExtensionCommand::Disable => disable_handler(),
+        ExtensionCommand::Reset => reset_handler(),
+        ExtensionCommand::Update => update_handler(),
     }
 }
 
@@ -363,8 +363,8 @@ fn update_handler() {
         };
 
         let extension_dir = get_exe_parent();
-        let extesion_dir = extension_dir.join(version);
-        service_ext::update_extension_service(extesion_dir);
+        let extension_dir = extension_dir.join(version);
+        service_ext::update_extension_service(extension_dir);
     }
 
     let update_tag_file = get_update_tag_file();
