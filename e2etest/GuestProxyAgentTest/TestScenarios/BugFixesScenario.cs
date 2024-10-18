@@ -10,8 +10,8 @@ namespace GuestProxyAgentTest.TestScenarios
         {
             AddTestCase(new InstallOrUpdateGuestProxyAgentCase());
             AddTestCase(new GuestProxyAgentValidationCase());
-            AddTestCase(new TCPPortScalabilityCase(false));
-            //AddTestCase(new LocalIPBindingCase(false));
+            AddTestCase(new EnableProxyAgentCase());
+            AddTestCase(new TCPPortScalabilityCase(true));
         }
     }
 }
