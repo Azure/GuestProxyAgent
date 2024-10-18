@@ -7,7 +7,6 @@ use crate::common::{
     result::Result,
 };
 use proxy_agent_shared::misc_helpers;
-// use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 use winapi::um::winnt::PSID;
 use windows_acl::acl::{AceType, ACL};

@@ -292,10 +292,10 @@ pub fn lookup_bpf_audit_map(
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(obj) => {
             let audit_map = bpf_object__find_map_by_name(obj.lock().unwrap().0, "audit_map")
-                .map_err(|e| Error::bpf(BpfErrorType::FindBpfMap(e.to_string())))?;
+                .map_err(|e| Error::bpf(BpfErrorType::GetBpfMap(e.to_string())))?;
 
             if audit_map.is_null() {
-                return Err(Error::bpf(BpfErrorType::FindBpfMap(
+                return Err(Error::bpf(BpfErrorType::GetBpfMap(
                     "bpf_object__find_map_by_name 'audit_map' returns null pointer".to_string(),
                 )));
             }

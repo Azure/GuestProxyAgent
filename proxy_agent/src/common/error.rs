@@ -52,6 +52,10 @@ impl Error {
     pub fn windows_api(error: WindowsApiErrorType) -> Self {
         Self::new(ErrorType::WindowsApi(error))
     }
+
+    pub fn invalid(error: String) -> Self {
+        Self::new(ErrorType::Invalid(error))
+    }
 }
 
 impl Display for Error {
@@ -90,6 +94,9 @@ enum ErrorType {
 
     #[error("{0}")]
     WindowsApi(WindowsApiErrorType),
+
+    #[error("{0} is invalid")]
+    Invalid(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -157,17 +164,23 @@ pub enum BpfErrorType {
     #[error("Failed to retrieve file descriptor of the BPF map 'audit_map' with error: {0}")]
     MapFileDescriptor(String),
 
-    #[error("Failed to find valid map 'audit_map' in BPF object with error: {0}")]
-    FindBpfMap(String),
+    #[error("Failed to get valid map 'audit_map' in BPF object with error: {0}")]
+    GetBpfMap(String),
 
     #[error("Failed to get eBPF API: API is not loaded")]
     GetBpfApi,
 
+    #[error("Failed to get BPF object: Object is not initialized")]
+    GetBpfObject,
+
     #[error("Loading eBPF API from file path '{0}' failed with error: {1}")]
-    LoadBpfApi(String, libloading::Error),
+    LoadBpfApi(String, String),
 
     #[error("Loading BPF API function '{0}' failed with error: {1}")]
-    LoadBpfApiFunction(String, libloading::Error),
+    LoadBpfApiFunction(String, String),
+
+    #[error("Failed to load HashMap 'audit_map' with error: {0}")]
+    LoadBpfMapHashMap(String),
 
     #[error("CString initialization failed with error: {0}")]
     CString(std::ffi::NulError),
@@ -176,7 +189,7 @@ pub enum BpfErrorType {
 #[derive(Debug, thiserror::Error)]
 pub enum WindowsApiErrorType {
     #[error("Loading NetUserGetLocalGroups failed with error: {0}")]
-    LoadNetUserGetLocalGroups(libloading::Error),
+    LoadNetUserGetLocalGroups(String),
 
     #[error("LsaGetLogonSessionData {0}")]
     LsaGetLogonSessionData(String),

@@ -14,7 +14,6 @@ use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use std::env;
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
-//use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 static EBPF_API: Lazy<Option<Library>> = Lazy::new(init_ebpf_lib);
@@ -67,7 +66,7 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
     unsafe { Library::new(bpf_api_file_path.as_path()) }.map_err(|e| {
         Error::bpf(BpfErrorType::LoadBpfApi(
             misc_helpers::path_to_string(&bpf_api_file_path),
-            e,
+            e.to_string(),
         ))
     })
 }
@@ -81,8 +80,12 @@ fn get_ebpf_api() -> Result<&'static Library> {
 
 // function name must null terminated with '\0'.
 fn get_ebpf_api_fun<'a, T>(ebpf_api: &'a Library, name: &str) -> Result<Symbol<'a, T>> {
-    unsafe { ebpf_api.get(name.as_bytes()) }
-        .map_err(|e| Error::bpf(BpfErrorType::LoadBpfApiFunction(name.to_string(), e)))
+    unsafe { ebpf_api.get(name.as_bytes()) }.map_err(|e| {
+        Error::bpf(BpfErrorType::LoadBpfApiFunction(
+            name.to_string(),
+            e.to_string(),
+        ))
+    })
 }
 
 // Object

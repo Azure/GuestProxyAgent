@@ -66,9 +66,12 @@ fn net_user_get_local_groups(
 ) -> Result<u32> {
     unsafe {
         let fun_name = "NetUserGetLocalGroups\0";
-        let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> = NETAPI32_DLL
-            .get(fun_name.as_bytes())
-            .map_err(|e| Error::windows_api(WindowsApiErrorType::LoadNetUserGetLocalGroups(e)))?;
+        let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> =
+            NETAPI32_DLL.get(fun_name.as_bytes()).map_err(|e| {
+                Error::windows_api(WindowsApiErrorType::LoadNetUserGetLocalGroups(
+                    e.to_string(),
+                ))
+            })?;
         let status = net_user_get_local_groups(
             servername,
             username,
@@ -255,10 +258,7 @@ pub fn query_basic_process_info(handler: isize) -> Result<PROCESS_BASIC_INFORMAT
 }
 pub fn get_process_handler(pid: u32) -> Result<HANDLE> {
     if pid == 0 {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "pid 0 is not a valid process id",
-        ));
+        return Err(Error::invalid("pid 0".to_string()));
     }
     let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
 
