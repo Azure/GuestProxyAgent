@@ -197,7 +197,7 @@ pub enum WindowsApiErrorType {
     #[error("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT: {0}")]
     WSAIoctl(i32),
 
-    #[error("GlobalMemoryStatusExfailed: {0}")]
+    #[error("GlobalMemoryStatusEx failed: {0}")]
     GlobalMemoryStatusEx(String),
 
     #[error("{0}")]
