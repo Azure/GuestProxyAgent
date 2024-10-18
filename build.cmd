@@ -78,7 +78,9 @@ xcopy /Y %out_dir%\redirect.bpf.pdb %out_package_proxyagent_dir%\
 
 echo ======= cargo fmt and clippy
 rustup update stable
+echo call cargo fmt --all
 cargo fmt --all
+echo call cargo clippy -- -D warnings
 cargo clippy -- -D warnings
 if  %ERRORLEVEL% NEQ 0 (
     echo cargo clippy failed with exit-code: %errorlevel%
