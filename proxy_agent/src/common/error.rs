@@ -40,6 +40,14 @@ impl Error {
     pub fn wire_server(error_type: WireServerErrorType, message: String) -> Self {
         Self::new(ErrorType::WireServer(error_type, message))
     }
+
+    pub fn acl(error: AclErrorType, error_code: u32) -> Self {
+        Self::new(ErrorType::Acl(error, error_code))
+    }
+
+    pub fn bpf(error: BpfErrorType) -> Self {
+        Self::new(ErrorType::Bpf(error))
+    }
 }
 
 impl Display for Error {
@@ -69,6 +77,12 @@ enum ErrorType {
 
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),
+
+    #[error("acl_directory: {0} with error: {1}")]
+    Acl(AclErrorType, u32),
+
+    #[error("{0}")]
+    Bpf(BpfErrorType),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -111,6 +125,45 @@ pub enum KeyErrorType {
 
     #[error("Failed to join {0} and {1} with error: {2}")]
     ParseKeyUrl(String, String, InvalidUri),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AclErrorType {
+    #[error("Failed to get ACL object for folder '{0}'")]
+    AclObject(String),
+
+    #[error("Failed to get SID for '{0}'")]
+    Sid(String),
+
+    #[error("Failed to get ACL entries for folder '{0}'")]
+    AclEntries(String),
+
+    #[error("Failed to add entry for SID '{0}'")]
+    AddEntry(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BpfErrorType {
+    #[error("Failed to lookup element '{0}' in BPF map 'audit_map'. {1}")]
+    MapLookupElem(String, String),
+
+    #[error("Failed to retrieve file descriptor of the BPF map 'audit_map' with error: {0}")]
+    MapFileDescriptor(String),
+
+    #[error("Failed to find valid map 'audit_map' in BPF object with error: {0}")]
+    FindBpfMap(String),
+
+    #[error("Failed to get eBPF API: API is not loaded")]
+    GetBpfApi,
+
+    #[error("Loading eBPF API from file path '{0}' failed with error: {1}")]
+    LoadBpfApi(String, libloading::Error),
+
+    #[error("Loading BPF API function '{0}' failed with error: {1}")]
+    LoadBpfApiFunction(String, libloading::Error),
+
+    #[error("CString initialization failed with error: {0}")]
+    CString(std::ffi::NulError),
 }
 
 #[cfg(test)]

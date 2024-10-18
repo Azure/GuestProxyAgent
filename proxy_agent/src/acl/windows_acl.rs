@@ -1,9 +1,13 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::logger;
+use crate::common::{
+    error::{AclErrorType, Error},
+    logger,
+    result::Result,
+};
 use proxy_agent_shared::misc_helpers;
-use std::io::{Error, ErrorKind};
+// use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 use winapi::um::winnt::PSID;
 use windows_acl::acl::{AceType, ACL};
@@ -15,52 +19,23 @@ const LOCAL_SYSTEM_SID: &str = "S-1-5-18";
 const BUILDIN_ADMIN_SID: &str = "S-1-5-32-544";
 const FULL_CONTROL: u32 = 2032127;
 
-pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
+pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     let dir_str = misc_helpers::path_to_string(&dir_to_acl);
-    let mut acl;
-    match ACL::from_file_path(&dir_str, true) {
-        Ok(a) => acl = a,
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to get ACL object for folder {}, error: {}",
-                    dir_str, e
-                ),
-            ));
-        }
-    }
 
-    let system_sid = match helper::string_to_sid(LOCAL_SYSTEM_SID) {
-        Ok(sid) => sid,
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to get sid for {}, error: {}",
-                    LOCAL_SYSTEM_SID, e
-                ),
-            ));
-        }
-    };
+    let mut acl = ACL::from_file_path(&dir_str, true)
+        .map_err(|e| Error::acl(AclErrorType::AclObject(dir_str.to_string()), e))?;
 
-    let admin_sid = match helper::string_to_sid(BUILDIN_ADMIN_SID) {
-        Ok(sid) => sid,
-        Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to get sid for {}, error: {}",
-                    BUILDIN_ADMIN_SID, e
-                ),
-            ));
-        }
-    };
+    let system_sid = helper::string_to_sid(LOCAL_SYSTEM_SID)
+        .map_err(|e| Error::acl(AclErrorType::Sid(LOCAL_SYSTEM_SID.to_string()), e))?;
+
+    let admin_sid = helper::string_to_sid(BUILDIN_ADMIN_SID)
+        .map_err(|e| Error::acl(AclErrorType::Sid(BUILDIN_ADMIN_SID.to_string()), e))?;
 
     logger::write(format!(
         "acl_directory: removing all the remaining access rules for folder {}.",
         dir_str
     ));
+
     match acl.all() {
         Ok(entries) => {
             logger::write(format!(
@@ -94,13 +69,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
             }
         }
         Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to get ACL entries for folder {}, error: {}",
-                    dir_str, e
-                ),
-            ));
+            return Err(Error::acl(AclErrorType::AclEntries(dir_str), e));
         }
     }
 
@@ -123,12 +92,9 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
             ));
         }
         Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to add_entry for sid {}, error: {}",
-                    LOCAL_SYSTEM_SID, e
-                ),
+            return Err(Error::acl(
+                AclErrorType::AddEntry(LOCAL_SYSTEM_SID.to_string()),
+                e,
             ));
         }
     }
@@ -145,12 +111,9 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
             ));
         }
         Err(e) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "acl_directory: failed to add_entry for sid {}, error: {}",
-                    BUILDIN_ADMIN_SID, e
-                ),
+            return Err(Error::acl(
+                AclErrorType::AddEntry(LOCAL_SYSTEM_SID.to_string()),
+                e,
             ));
         }
     }
