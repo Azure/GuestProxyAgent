@@ -48,6 +48,10 @@ impl Error {
     pub fn bpf(error: BpfErrorType) -> Self {
         Self::new(ErrorType::Bpf(error))
     }
+
+    pub fn windows_api(error: WindowsApiErrorType) -> Self {
+        Self::new(ErrorType::WindowsApi(error))
+    }
 }
 
 impl Display for Error {
@@ -83,6 +87,9 @@ enum ErrorType {
 
     #[error("{0}")]
     Bpf(BpfErrorType),
+
+    #[error("{0}")]
+    WindowsApi(WindowsApiErrorType),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -164,6 +171,24 @@ pub enum BpfErrorType {
 
     #[error("CString initialization failed with error: {0}")]
     CString(std::ffi::NulError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WindowsApiErrorType {
+    #[error("Loading NetUserGetLocalGroups failed with error: {0}")]
+    LoadNetUserGetLocalGroups(libloading::Error),
+
+    #[error("LsaGetLogonSessionData {0}")]
+    LsaGetLogonSessionData(String),
+
+    #[error("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT: {0}")]
+    WSAIoctl(i32),
+
+    #[error("GlobalMemoryStatusExfailed: {0}")]
+    GlobalMemoryStatusEx(String),
+
+    #[error("{0}")]
+    WindowsOsError(std::io::Error),
 }
 
 #[cfg(test)]
