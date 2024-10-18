@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use std::io::{Error, ErrorKind};
+use crate::common::{
+    error::{Error, WindowsApiErrorType},
+    result::Result,
+};
 use std::mem::MaybeUninit;
 use windows_sys::Win32::Networking::WinSock;
 use windows_sys::Win32::System::SystemInformation::{
@@ -19,15 +22,16 @@ pub fn get_processor_count() -> usize {
     data.dwNumberOfProcessors as usize
 }
 
-pub fn get_memory_in_mb() -> Result<u64, String> {
+pub fn get_memory_in_mb() -> Result<u64> {
     let mut data = MaybeUninit::<MEMORYSTATUSEX>::uninit();
     let data = data.as_mut_ptr();
     unsafe {
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(data) == 0 {
-            return Err(format!(
-                "GlobalMemoryStatusEx failed: {}",
-                Error::last_os_error()
+            return Err(Error::windows_api(
+                WindowsApiErrorType::GlobalMemoryStatusEx(
+                    std::io::Error::last_os_error().to_string(),
+                ),
             ));
         }
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
@@ -35,11 +39,10 @@ pub fn get_memory_in_mb() -> Result<u64, String> {
     }
 }
 
-pub fn check_winsock_last_error(caller: &str) -> std::io::Result<()> {
+pub fn check_winsock_last_error() -> Result<()> {
     let error = unsafe { WinSock::WSAGetLastError() };
-    let message = format!("{caller} : {error}");
     if error != 0 {
-        return Err(Error::new(ErrorKind::InvalidInput, message));
+        return Err(Error::windows_api(WindowsApiErrorType::WSAIoctl(error)));
     }
 
     Ok(())

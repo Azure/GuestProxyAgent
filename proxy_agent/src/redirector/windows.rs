@@ -5,7 +5,7 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
-use crate::common::{self, config, constants, helpers, logger};
+use crate::common::{self, config, constants, helpers, logger, result::Result};
 use crate::key_keeper;
 use crate::provision;
 use crate::redirector::AuditEntry;
@@ -166,14 +166,11 @@ pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
     redirector_wrapper::get_is_started(shared_state.clone())
 }
 
-pub fn lookup_audit(
-    source_port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> std::io::Result<AuditEntry> {
+pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     bpf_prog::lookup_bpf_audit_map(source_port, shared_state)
 }
 
-pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
+pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntry> {
     // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
     let value = AuditEntry::empty();
     let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
@@ -191,9 +188,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> std::io::Result<
             None,
         )
     };
-    common::windows::check_winsock_last_error(
-        "WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT",
-    )?;
+    common::windows::check_winsock_last_error()?;
 
     Ok(value)
 }
