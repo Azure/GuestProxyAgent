@@ -270,9 +270,13 @@ async fn handle_request(
                 ) {
                     Ok(data) => entry = Some(data),
                     Err(e) => {
-                        Connection::write_warning(
-                            connection_id,
-                            format!("Failed to get lookup_audit_from_stream_socket: {}", e),
+                        let err = format!("Failed to get lookup_audit_from_stream: {}", e);
+                        event_logger::write_event(
+                            event_logger::WARN_LEVEL,
+                            err,
+                            "handle_request",
+                            "proxy_listener",
+                            Connection::CONNECTION_LOGGER_KEY,
                         );
                     }
                 }
