@@ -41,6 +41,7 @@ pub mod proxy_summary;
 #[cfg(windows)]
 mod windows;
 
+use crate::common::result::Result;
 use crate::shared_state::SharedState;
 use crate::{redirector::AuditEntry, shared_state::proxy_wrapper};
 use serde_derive::{Deserialize, Serialize};
@@ -81,7 +82,7 @@ pub struct User {
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
 
-fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> std::io::Result<User> {
+fn get_user(logon_id: u64, shared_state: Arc<Mutex<SharedState>>) -> Result<User> {
     // cache the logon_id -> user_name
     match proxy_wrapper::get_user(shared_state.clone(), logon_id) {
         Some(user) => Ok(user),
@@ -131,7 +132,7 @@ impl Claims {
         entry: &AuditEntry,
         client_ip: IpAddr,
         shared_state: Arc<Mutex<SharedState>>,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self> {
         let p = Process::from_pid(entry.process_id);
         let u = get_user(entry.logon_id, shared_state)?;
         Ok(Claims {
@@ -209,7 +210,7 @@ impl Process {
 }
 
 impl User {
-    pub fn from_logon_id(logon_id: u64) -> std::io::Result<Self> {
+    pub fn from_logon_id(logon_id: u64) -> Result<Self> {
         let user_name;
         let mut user_groups: Vec<String> = Vec::new();
 

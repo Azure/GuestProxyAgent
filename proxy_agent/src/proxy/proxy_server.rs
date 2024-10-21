@@ -19,7 +19,9 @@
 //! tokio::spawn(proxy_server::start(port, shared_state.clone()));
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger, result::Result};
+use crate::common::{
+    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::{
@@ -188,11 +190,15 @@ async fn accept_one_request(
 }
 
 // Set the read timeout for the stream
-fn set_stream_read_time_out(
-    stream: TcpStream,
-) -> std::io::Result<(TcpStream, std::net::TcpStream)> {
+fn set_stream_read_time_out(stream: TcpStream) -> Result<(TcpStream, std::net::TcpStream)> {
     // Convert the stream to a std stream
-    let std_stream = stream.into_std()?;
+    let std_stream = stream.into_std().map_err(|e| {
+        Error::io(
+            "Failed to convert Tokio stream into std equivalent".to_string(),
+            e,
+        )
+    })?;
+
     // Set the read timeout
     if let Err(e) = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
         Connection::write_warning(
@@ -202,10 +208,17 @@ fn set_stream_read_time_out(
     }
 
     // Clone the stream for the service_fn
-    let cloned_std_stream = std_stream.try_clone()?;
+    let cloned_std_stream = std_stream
+        .try_clone()
+        .map_err(|e| Error::io("Failed to clone TCP stream".to_string(), e))?;
 
     // Convert the std stream back
-    let tokio_tcp_stream = TcpStream::from_std(std_stream)?;
+    let tokio_tcp_stream = TcpStream::from_std(std_stream).map_err(|e| {
+        Error::io(
+            "Failed to convert std stream into Tokio equivalent".to_string(),
+            e,
+        )
+    })?;
 
     Ok((tokio_tcp_stream, cloned_std_stream))
 }
@@ -257,16 +270,14 @@ async fn handle_request(
                 ) {
                     Ok(data) => entry = Some(data),
                     Err(e) => {
-                        if e.kind() != std::io::ErrorKind::Unsupported {
-                            let err = format!("Failed to get lookup_audit_from_stream: {}", e);
-                            event_logger::write_event(
-                                event_logger::WARN_LEVEL,
-                                err,
-                                "handle_request",
-                                "proxy_listener",
-                                Connection::CONNECTION_LOGGER_KEY,
-                            );
-                        }
+                        let err = format!("Failed to get lookup_audit_from_stream: {}", e);
+                        event_logger::write_event(
+                            event_logger::WARN_LEVEL,
+                            err,
+                            "handle_request",
+                            "proxy_listener",
+                            Connection::CONNECTION_LOGGER_KEY,
+                        );
                     }
                 }
             }

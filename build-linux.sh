@@ -38,13 +38,21 @@ then
     runthis rm -rf $out_dir
 fi
 
-echo "======= rustup component add rust-std-x86_64-unknown-linux-musl"
-rustup component add rust-std-x86_64-unknown-linux-musl
-rustup update stable
+echo "======= rustup update to a particular version"
+rustup_version=1.80.0
+rustup update $rustup_version
+
+# This command sets a specific Rust toolchain version for the current directory. 
+# It means that whenever you are in this directory, Rust commands will use the specified toolchain version, regardless of the global default.
+rustup override set $rustup_version
+rustup target install $build_target
+
 cargo install cargo-deb
 
 echo "======= cargo fmt & clippy"
+runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu rustfmt
 cargo fmt --all
+runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu clippy
 cargo clippy -- -D warnings
 error_code=$?
 if [ $error_code -ne 0 ]

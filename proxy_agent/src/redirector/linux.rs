@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 mod ebpf_obj;
 
-use crate::common::{config, constants, helpers, logger};
+use crate::common::{
+    config, constants,
+    error::{BpfErrorType, Error},
+    helpers, logger,
+    result::Result,
+};
 use crate::provision;
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::{redirector_wrapper, SharedState};
@@ -22,8 +27,8 @@ pub type BpfObject = Bpf;
 
 pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
     let mut bpf = match open_ebpf_file(super::get_ebpf_file_path(), shared_state.clone()) {
-        Ok(value) => value,
-        Err(value) => return value,
+        Some(value) => value,
+        None => return false,
     };
 
     for (name, _map) in bpf.maps() {
@@ -97,17 +102,14 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
     true
 }
 
-fn open_ebpf_file(
-    bpf_file_path: PathBuf,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Bpf, bool> {
-    let bpf: Bpf = match BpfLoader::new()
+fn open_ebpf_file(bpf_file_path: PathBuf, shared_state: Arc<Mutex<SharedState>>) -> Option<Bpf> {
+    match BpfLoader::new()
         // load the BTF data from /sys/kernel/btf/vmlinux
         .btf(Btf::from_sys_fs().ok().as_ref())
         // finally load the code
         .load_file(&bpf_file_path)
     {
-        Ok(b) => b,
+        Ok(b) => Some(b),
         Err(err) => {
             set_error_status(
                 format!(
@@ -117,10 +119,9 @@ fn open_ebpf_file(
                 ),
                 shared_state.clone(),
             );
-            return Err(false);
+            None
         }
-    };
-    Ok(bpf)
+    }
 }
 
 fn update_skip_process_map(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>) -> bool {
@@ -451,20 +452,14 @@ pub fn close(shared_state: Arc<Mutex<SharedState>>) {
     redirector_wrapper::clear_bpf_object(shared_state);
 }
 
-pub fn lookup_audit(
-    source_port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> std::io::Result<AuditEntry> {
+pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap(), source_port),
-        None => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "BPF object is not initialized",
-        )),
+        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
     }
 }
 
-fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEntry> {
+fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> Result<AuditEntry> {
     match bpf.map("audit_map") {
         Some(map) => match HashMap::try_from(map) {
             Ok(audit_map) => {
@@ -480,27 +475,17 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> std::io::Result<AuditEn
                             destination_port: audit_value.destination_port as u16,
                         })
                     }
-                    Err(err) => Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to lookup audit entry {}: {}", source_port, err),
-                    )),
+                    Err(err) => Err(Error::bpf(BpfErrorType::MapLookupElem(
+                        source_port.to_string(),
+                        err.to_string(),
+                    ))),
                 }
             }
-            Err(err) => {
-                let message = format!("Failed to load HashMap 'audit_map' with error: {}", err);
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    message.to_string(),
-                ))
-            }
+            Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
         },
-        None => {
-            let message = "Failed to get map 'audit_map'.";
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                message.to_string(),
-            ))
-        }
+        None => Err(Error::bpf(BpfErrorType::GetBpfMap(
+            "Map does not exist".to_string(),
+        ))),
     }
 }
 
@@ -635,15 +620,15 @@ mod tests {
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");
         let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
-        assert!(!bpf.is_ok(), "open_ebpf_file should not return Ok");
+        assert!(!bpf.is_some(), "open_ebpf_file should not return Some");
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push(config::get_ebpf_program_name());
         let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
         match bpf {
-            Ok(_) => {}
-            Err(err) => {
-                println!("open_ebpf_file error: {}", err);
+            Some(_) => {}
+            None => {
+                println!("open_ebpf_file error");
                 if std::fs::metadata("/.dockerenv").is_ok() {
                     println!("This docker image does not have BPF capacity, skip this test.");
                     return;
@@ -652,7 +637,7 @@ mod tests {
                 }
             }
         }
-        assert!(bpf.is_ok(), "open_ebpf_file should return Ok");
+        assert!(bpf.is_some(), "open_ebpf_file should return Some");
         let mut bpf = bpf.unwrap();
 
         let result = super::update_skip_process_map(&mut bpf, shared_state.clone());

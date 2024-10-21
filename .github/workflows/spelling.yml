@@ -2,22 +2,9 @@ name: Check Spelling
 
 on:
   push:
-    branches:
-    - "**"
-    tags-ignore:
-    - "**"
+    branches: ["main", "dev"]
   pull_request:
     branches: ["main", "dev"]
-  pull_request_target:
-    branches:
-    - "**"
-    types:
-    - 'opened'
-    - 'reopened'
-    - 'synchronize'
-  issue_comment:
-    types:
-    - 'created'
 
 jobs:
   spelling:

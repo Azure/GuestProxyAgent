@@ -4,12 +4,15 @@ use super::bpf_api::*;
 use super::bpf_obj::*;
 use crate::common::constants;
 use crate::common::logger;
+use crate::common::{
+    error::{BpfErrorType, Error},
+    result::Result,
+};
 use crate::redirector::AuditEntry;
 use crate::shared_state::redirector_wrapper;
 use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
-use std::io::{Error, ErrorKind};
 use std::mem::size_of_val;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -285,66 +288,50 @@ Return Value:
 pub fn lookup_bpf_audit_map(
     source_port: u16,
     shared_state: Arc<Mutex<SharedState>>,
-) -> std::io::Result<AuditEntry> {
+) -> Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(obj) => {
-            let audit_map = match bpf_object__find_map_by_name(obj.lock().unwrap().0, "audit_map") {
-                Ok(m) => m,
-                Err(e) => {
-                    let message = format!(
-                        "Failed to find audit map in bpf object with error: {error}.",
-                        error = e
-                    );
-                    return Err(Error::new(ErrorKind::InvalidInput, message));
-                }
-            };
+            let audit_map = bpf_object__find_map_by_name(obj.lock().unwrap().0, "audit_map")
+                .map_err(|e| Error::bpf(BpfErrorType::GetBpfMap(e.to_string())))?;
+
             if audit_map.is_null() {
-                let message = "bpf_object__find_map_by_name 'audit_map' return null.".to_string();
-                return Err(Error::new(ErrorKind::InvalidInput, message));
+                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                    "bpf_object__find_map_by_name 'audit_map' returns null pointer".to_string(),
+                )));
             }
-            let map_fd = match bpf_map__fd(audit_map) {
-                Ok(fd) => fd,
-                Err(e) => {
-                    let message = format!(
-                        "Failed to get audit map fd in bpf object with error: {error}.",
-                        error = e
-                    );
-                    return Err(Error::new(ErrorKind::InvalidInput, message));
-                }
-            };
+
+            let map_fd = bpf_map__fd(audit_map)
+                .map_err(|e| Error::bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
 
             // query by source port.
             let key = sock_addr_audit_key_t::from_source_port(source_port);
             let value = AuditEntry::empty();
 
-            let result = match bpf_map_lookup_elem(
+            let result = bpf_map_lookup_elem(
                 map_fd,
                 &key as *const sock_addr_audit_key_t as *const c_void,
                 &value as *const AuditEntry as *mut c_void,
-            ) {
-                Ok(r) => r,
-                Err(e) => {
-                    let message =
-                        format!("Failed to lookup {source_port} in bpf audit map with error: {e}.");
-                    return Err(Error::new(ErrorKind::InvalidInput, message));
-                }
-            };
+            )
+            .map_err(|e| {
+                Error::bpf(BpfErrorType::MapLookupElem(
+                    source_port.to_string(),
+                    format!("Error: {}", e),
+                ))
+            })?;
 
             if result != 0 {
-                let message = format!(
-                    "Failed to lookup {source_port} in bpf audit map with result: {result}."
-                );
-                return Err(Error::new(ErrorKind::InvalidInput, message));
+                return Err(Error::bpf(BpfErrorType::MapLookupElem(
+                    source_port.to_string(),
+                    format!("Result: {}", result),
+                )));
             }
 
             Ok(value)
         }
-        None => {
-            let message = format!(
-                "Failed to lookup {source_port} in bpf audit map because bpf has not loaded."
-            );
-            Err(Error::new(ErrorKind::InvalidInput, message))
-        }
+        None => Err(Error::bpf(BpfErrorType::MapLookupElem(
+            source_port.to_string(),
+            "BPF has not loaded".to_string(),
+        ))),
     }
 }
 

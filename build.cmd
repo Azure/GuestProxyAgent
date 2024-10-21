@@ -16,8 +16,6 @@ SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\
 SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 
-SET rustup_version=1.80.0
-
 if "%CleanBuild%"=="clean" (
     echo ======= delete old files
     echo RD /S /Q %out_dir%
@@ -34,8 +32,12 @@ if  %ERRORLEVEL% NEQ 0 (
     exit /b %errorlevel%
 )
 
-echo ======= rustup update to a particular version
+echo ======= rustup update to a particular version of the Rust toolchain
+SET rustup_version=1.80.0
 call rustup update %rustup_version%
+REM This command sets a specific Rust toolchain version for the current directory. 
+REM It means that whenever you are in this directory, Rust commands will use the specified toolchain version, regardless of the global default.
+call rustup override set %rustup_version%
 
 echo ======= create out path folder and subfolder
 if not exist "%out_path%" (md "%out_path%")
@@ -77,9 +79,12 @@ xcopy /Y %out_dir%\redirect.bpf.sys %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\redirect.bpf.pdb %out_package_proxyagent_dir%\
 
 echo ======= cargo fmt and clippy
-rustup update stable
+echo call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc rustfmt
+call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc rustfmt
 echo call cargo fmt --all
 cargo fmt --all
+echo call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc clippy
+call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc clippy
 echo call cargo clippy -- -D warnings
 cargo clippy -- -D warnings
 if  %ERRORLEVEL% NEQ 0 (
@@ -91,8 +96,8 @@ set cargo_toml=%root_path%proxy_agent_shared\Cargo.toml
 SET release_flag=
 if "%Configuration%"=="release" (SET release_flag=--release)
 echo cargo_toml=%cargo_toml%
-echo call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
-call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+echo call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent_shared failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -105,8 +110,8 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configura
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configuration%\
 
 echo ======= run rust proxy_agent_shared tests
-echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent_shared with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -121,8 +126,8 @@ set cargo_toml=%root_path%proxy_agent\Cargo.toml
 SET release_flag=
 if "%Configuration%"=="release" (SET release_flag=--release)
 echo cargo_toml=%cargo_toml%
-echo call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
-call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+echo call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -137,8 +142,8 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 
 echo ======= run rust proxy_agent tests
-echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -149,8 +154,8 @@ SET extension_root_path=%root_path%proxy_agent_extension
 SET extension_src_path=%root_path%proxy_agent_extension\src\windows
 set cargo_toml=%extension_root_path%\Cargo.toml
 echo cargo_toml=%cargo_toml%
-echo call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
-call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+echo call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent_extension failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -163,8 +168,8 @@ echo xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Config
 xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Configuration%\
 
 echo ======= run rust proxy_agent_extension tests
-echo call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
-call cargo +%rustup_version% test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
+call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% -- --test-threads=1
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo test proxy_agent_extension with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -175,8 +180,8 @@ set cargo_toml=%root_path%proxy_agent_setup\Cargo.toml
 SET release_flag=
 if "%Configuration%"=="release" (SET release_flag=--release)
 echo cargo_toml=%cargo_toml%
-echo call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
-call cargo +%rustup_version% build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+echo call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
+call cargo build %release_flag% --manifest-path %cargo_toml% --target-dir %out_path%
 if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent_setup failed with exit-code: %errorlevel%
     exit /b %errorlevel%

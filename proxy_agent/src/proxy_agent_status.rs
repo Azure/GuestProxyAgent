@@ -56,9 +56,7 @@ async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) 
     loop {
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
-        if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
-            logger::write_error(format!("Error writing aggregate status to file: {}", e));
-        }
+        write_aggregate_status_to_file(dir_path.clone(), aggregate_status);
 
         let elapsed_time = start_time.elapsed();
 
@@ -137,18 +135,16 @@ fn guest_proxy_agent_aggregate_status_new(
     }
 }
 
-fn write_aggregate_status_to_file(
-    dir_path: PathBuf,
-    status: GuestProxyAgentAggregateStatus,
-) -> std::io::Result<()> {
+fn write_aggregate_status_to_file(dir_path: PathBuf, status: GuestProxyAgentAggregateStatus) {
     let full_file_path = dir_path.clone();
     let full_file_path = full_file_path.join("status.json");
 
     if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
-        logger::write_error(format!("Error writing status to status file: {}", e));
+        logger::write_error(format!(
+            "Error writing aggregate status to status file: {}",
+            e
+        ));
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -173,7 +169,7 @@ mod tests {
         let shared_state = SharedState::new();
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
-        _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
+        write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
         let file_path = temp_test_path.join("status.json");
         assert!(file_path.exists(), "File does not exist in the directory");
