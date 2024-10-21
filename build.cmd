@@ -79,8 +79,12 @@ xcopy /Y %out_dir%\redirect.bpf.sys %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\redirect.bpf.pdb %out_package_proxyagent_dir%\
 
 echo ======= cargo fmt and clippy
+echo call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc rustfmt
+call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc rustfmt
 echo call cargo fmt --all
 cargo fmt --all
+echo call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc clippy
+call rustup component add --toolchain %rustup_version%-x86_64-pc-windows-msvc clippy
 echo call cargo clippy -- -D warnings
 cargo clippy -- -D warnings
 if  %ERRORLEVEL% NEQ 0 (

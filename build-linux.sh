@@ -38,9 +38,7 @@ then
     runthis rm -rf $out_dir
 fi
 
-
-
-echo "======= rustup update to a particular version of the Rust toolchain"
+echo "======= rustup update to a particular version"
 rustup_version=1.80.0
 rustup update $rustup_version
 
@@ -52,7 +50,9 @@ rustup target install $build_target
 cargo install cargo-deb
 
 echo "======= cargo fmt & clippy"
+runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu rustfmt
 cargo fmt --all
+runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu clippy
 cargo clippy -- -D warnings
 error_code=$?
 if [ $error_code -ne 0 ]
