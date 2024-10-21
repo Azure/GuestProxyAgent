@@ -9,6 +9,7 @@ namespace GuestProxyAgentTest.TestScenarios
     {
         public override void TestScenarioSetup()
         {
+            var secureChannelEnabled = false;
             if (!Constants.IS_WINDOWS())
             {
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
@@ -20,10 +21,17 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 AddTestCase(new GuestProxyAgentLoadedModulesValidationCase());
             }
-            AddTestCase(new EnableProxyAgentCase());
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", true));
+            else
+            {
+                // do not enable proxy agent for Windows VM,
+                // it will add GPA VM Extension and overwrite the private GPA package
+                AddTestCase(new EnableProxyAgentCase());
+                secureChannelEnabled = true;
+            }
+
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", secureChannelEnabled));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterInstallOrUpdateGuestProxyAgent"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", true));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", secureChannelEnabled));
         }
     }
 }
