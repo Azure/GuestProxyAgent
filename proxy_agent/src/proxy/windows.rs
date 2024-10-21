@@ -1,11 +1,14 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::logger;
+use crate::common::{
+    error::{Error, WindowsApiErrorType},
+    logger,
+    result::Result,
+};
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
@@ -60,15 +63,14 @@ fn net_user_get_local_groups(
     prefmaxlen: u32,
     entriesread: *mut u32,
     totalentries: *mut u32,
-) -> std::io::Result<u32> {
+) -> Result<u32> {
     unsafe {
         let fun_name = "NetUserGetLocalGroups\0";
         let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> =
             NETAPI32_DLL.get(fun_name.as_bytes()).map_err(|e| {
-                Error::new(
-                    ErrorKind::Other,
-                    format!("Loading {} failed with error: {}", fun_name, e),
-                )
+                Error::windows_api(WindowsApiErrorType::LoadNetUserGetLocalGroups(
+                    e.to_string(),
+                ))
             })?;
         let status = net_user_get_local_groups(
             servername,
@@ -99,7 +101,7 @@ fn load_users() -> HashMap<u64, &'static str> {
 /*
     Get user name and user group names
 */
-pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
+pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     let mut user_name;
     let luid = LUID {
         LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
@@ -109,13 +111,9 @@ pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
     let mut data = MaybeUninit::<*mut SECURITY_LOGON_SESSION_DATA>::uninit();
     let status = unsafe { Identity::LsaGetLogonSessionData(&luid, data.as_mut_ptr()) };
     if status != 0 {
-        let e = Error::from_raw_os_error(status as i32);
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!(
-                "LsaGetLogonSessionData failed ({}) with os error: {}",
-                status, e
-            ),
+        let e = std::io::Error::from_raw_os_error(status as i32);
+        return Err(Error::windows_api(
+            WindowsApiErrorType::LsaGetLogonSessionData(format!("failed with os error: {}", e)),
         ));
     }
 
@@ -123,10 +121,12 @@ pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
     } else {
-        let e = Error::last_os_error();
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("LsaGetLogonSessionData could not get the user name: {}", e),
+        let e = std::io::Error::last_os_error();
+        return Err(Error::windows_api(
+            WindowsApiErrorType::LsaGetLogonSessionData(format!(
+                "could not get the user name: {}",
+                e
+            )),
         ));
     }
     let mut domain_user_name = user_name.clone();
@@ -165,7 +165,7 @@ pub fn get_user(logon_id: u64) -> std::io::Result<(String, Vec<String>)> {
             user_groups.push(group_name);
         }
     } else {
-        let e = Error::from_raw_os_error(status as i32);
+        let e = std::io::Error::from_raw_os_error(status as i32);
         logger::write_warning(format!(
             "NetUserGetLocalGroups '{}' failed ({}) with os error: {}",
             domain_user_name, status, e
@@ -236,7 +236,7 @@ const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = -1073741820;
 const PROCESS_BASIC_INFORMATION_CLASS: PROCESSINFOCLASS = 0;
 const PROCESS_COMMAND_LINE_INFORMATION_CLASS: PROCESSINFOCLASS = 60;
 
-pub fn query_basic_process_info(handler: isize) -> std::io::Result<PROCESS_BASIC_INFORMATION> {
+pub fn query_basic_process_info(handler: isize) -> Result<PROCESS_BASIC_INFORMATION> {
     unsafe {
         let mut process_basic_information = std::mem::zeroed::<PROCESS_BASIC_INFORMATION>();
         let mut return_length = 0;
@@ -249,30 +249,31 @@ pub fn query_basic_process_info(handler: isize) -> std::io::Result<PROCESS_BASIC
         );
 
         if status != 0 {
-            return Err(Error::from_raw_os_error(status));
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::from_raw_os_error(status),
+            )));
         }
         Ok(process_basic_information)
     }
 }
-pub fn get_process_handler(pid: u32) -> std::io::Result<HANDLE> {
+pub fn get_process_handler(pid: u32) -> Result<HANDLE> {
     if pid == 0 {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "pid 0 is not a valid process id",
-        ));
+        return Err(Error::invalid("pid 0".to_string()));
     }
     let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
 
     unsafe {
         let handler = OpenProcess(options, FALSE, pid);
         if handler == 0 {
-            return Err(Error::last_os_error());
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::last_os_error(),
+            )));
         }
         Ok(handler)
     }
 }
 
-pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
+pub fn get_process_cmd(handler: isize) -> Result<String> {
     unsafe {
         let mut return_length = 0;
         let status: NTSTATUS = NtQueryInformationProcess(
@@ -287,7 +288,9 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
             && status != STATUS_BUFFER_TOO_SMALL
             && status != STATUS_INFO_LENGTH_MISMATCH
         {
-            return Err(Error::from_raw_os_error(status));
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::from_raw_os_error(status),
+            )));
         }
         println!("return_length: {}", return_length);
 
@@ -304,7 +307,9 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
         );
         if status < 0 {
             eprintln!("NtQueryInformationProcess failed with status: {}", status);
-            return Err(Error::from_raw_os_error(status));
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::from_raw_os_error(status),
+            )));
         }
         buffer.set_len(buf_len);
         buffer.push(0);
@@ -321,24 +326,28 @@ pub fn get_process_cmd(handler: isize) -> std::io::Result<String> {
 }
 
 #[allow(dead_code)]
-pub fn get_process_name(handler: isize) -> std::io::Result<String> {
+pub fn get_process_name(handler: isize) -> Result<String> {
     unsafe {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleBaseNameW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(Error::last_os_error());
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::last_os_error(),
+            )));
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)
     }
 }
 
-pub fn get_process_full_name(handler: isize) -> std::io::Result<String> {
+pub fn get_process_full_name(handler: isize) -> Result<String> {
     unsafe {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleFileNameExW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
         if size == 0 {
-            return Err(Error::last_os_error());
+            return Err(Error::windows_api(WindowsApiErrorType::WindowsOsError(
+                std::io::Error::last_os_error(),
+            )));
         }
         let name = String::from_utf16_lossy(&buffer[..size as usize]);
         Ok(name)
