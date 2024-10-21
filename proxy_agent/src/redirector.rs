@@ -35,7 +35,7 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::{config, logger};
+use crate::common::{config, logger, result::Result};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
@@ -182,10 +182,7 @@ pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
     }
 }
 
-pub fn lookup_audit(
-    source_port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> std::io::Result<AuditEntry> {
+pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     #[cfg(windows)]
     {
         windows::lookup_audit(source_port, shared_state)
@@ -197,24 +194,8 @@ pub fn lookup_audit(
 }
 
 #[cfg(windows)]
-pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> std::io::Result<AuditEntry> {
+pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> Result<AuditEntry> {
     windows::get_audit_from_redirect_context(raw_socket_id)
-}
-
-pub fn get_audit_from_stream(_tcp_stream: &std::net::TcpStream) -> std::io::Result<AuditEntry> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawSocket;
-
-        windows::get_audit_from_redirect_context(_tcp_stream.as_raw_socket() as usize)
-    }
-    #[cfg(not(windows))]
-    {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "get_audit_from_redirect_context for linux is not supported",
-        ))
-    }
 }
 
 pub fn ip_to_string(ip: u32) -> String {
