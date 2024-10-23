@@ -41,6 +41,15 @@ namespace GuestProxyAgentTest.Settings
         internal string linuxInVmWireServerAccessControlProfileReferenceId = null!;
         internal string linuxInVmIMDSAccessControlProfileReferenceId = null!;
 
+        internal string InVmWireServerAccessControlProfileReferenceId
+        {
+            get => Constants.IS_WINDOWS() ? windowsInVmWireServerAccessControlProfileReferenceId : linuxInVmWireServerAccessControlProfileReferenceId;
+        }
+
+        internal string InVmIMDSAccessControlProfileReferenceId
+        {
+            get => Constants.IS_WINDOWS() ? windowsInVmIMDSAccessControlProfileReferenceId : linuxInVmIMDSAccessControlProfileReferenceId;
+        }
 
         private TestSetting() { }
 

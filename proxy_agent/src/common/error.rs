@@ -56,6 +56,10 @@ impl Error {
     pub fn invalid(error: String) -> Self {
         Self::new(ErrorType::Invalid(error))
     }
+
+    pub fn general(error: String) -> Self {
+        Self::new(ErrorType::General(error))
+    }
 }
 
 impl Display for Error {
@@ -97,6 +101,9 @@ enum ErrorType {
 
     #[error("{0} is invalid")]
     Invalid(String),
+
+    #[error("{0}")]
+    General(String),
 }
 
 #[derive(Debug, thiserror::Error)]

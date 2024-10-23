@@ -23,19 +23,22 @@ use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-pub type BpfObject = Bpf;
+pub struct BpfObject(Bpf);
 
 pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let mut bpf = match open_ebpf_file(super::get_ebpf_file_path(), shared_state.clone()) {
-        Some(value) => value,
-        None => return false,
+    let mut bpf_object = match BpfObject::from_ebpf_file(super::get_ebpf_file_path()) {
+        Ok(value) => value,
+        Err(e) => {
+            set_error_status(format!("{}", e), shared_state.clone());
+            return false;
+        }
     };
 
-    for (name, _map) in bpf.maps() {
+    for (name, _map) in bpf_object.0.maps() {
         logger::write(format!("found map '{}'", name));
     }
 
-    for (name, prog) in bpf.programs() {
+    for (name, prog) in bpf_object.0.programs() {
         logger::write(format!(
             "found program '{}' with type '{:?}'",
             name,
@@ -44,14 +47,16 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
     }
 
     // maps
-    if !update_skip_process_map(&mut bpf, shared_state.clone()) {
+    if let Err(e) = bpf_object.update_skip_process_map() {
+        set_error_status(format!("{}", e), shared_state.clone());
         return false;
     }
-    if !update_policy_map(&mut bpf, local_port, shared_state.clone()) {
+    if let Err(e) = bpf_object.update_policy_map(local_port) {
+        set_error_status(format!("{}", e), shared_state.clone());
         return false;
     }
-
-    if !attach_kprobe_program(&mut bpf, shared_state.clone()) {
+    if let Err(e) = bpf_object.attach_kprobe_program() {
+        set_error_status(format!("{}", e), shared_state.clone());
         return false;
     }
 
@@ -74,8 +79,10 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
             config::get_cgroup_root()
         }
     };
-    if !attach_cgroup_program(&mut bpf, cgroup2_path, shared_state.clone()) {
-        let message = "Failed to attach cgroup program for redirection.";
+    if let Err(e) = bpf_object.attach_cgroup_program(cgroup2_path) {
+        let message = format!("Failed to attach cgroup program for redirection. {}", e);
+        set_error_status(message.to_string(), shared_state.clone());
+
         event_logger::write_event(
             event_logger::WARN_LEVEL,
             message.to_string(),
@@ -86,7 +93,7 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
         return false;
     }
 
-    redirector_wrapper::set_bpf_object(shared_state.clone(), bpf);
+    redirector_wrapper::set_bpf_object(shared_state.clone(), bpf_object);
     redirector_wrapper::set_is_started(shared_state.clone(), true);
     redirector_wrapper::set_local_port(shared_state.clone(), local_port);
 
@@ -102,138 +109,68 @@ pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) ->
     true
 }
 
-fn open_ebpf_file(bpf_file_path: PathBuf, shared_state: Arc<Mutex<SharedState>>) -> Option<Bpf> {
-    match BpfLoader::new()
-        // load the BTF data from /sys/kernel/btf/vmlinux
-        .btf(Btf::from_sys_fs().ok().as_ref())
-        // finally load the code
-        .load_file(&bpf_file_path)
-    {
-        Ok(b) => Some(b),
-        Err(err) => {
-            set_error_status(
-                format!(
-                    "Failed to load eBPF program from file {}: {}",
-                    misc_helpers::path_to_string(&bpf_file_path),
-                    err
-                ),
-                shared_state.clone(),
-            );
-            None
+impl BpfObject {
+    pub fn new(bpf: Bpf) -> Self {
+        BpfObject(bpf)
+    }
+
+    pub fn get_bpf(&self) -> &Bpf {
+        &self.0
+    }
+
+    pub fn from_ebpf_file(bpf_file_path: PathBuf) -> Result<BpfObject> {
+        match BpfLoader::new()
+            // load the BTF data from /sys/kernel/btf/vmlinux
+            .btf(Btf::from_sys_fs().ok().as_ref())
+            // finally load the code
+            .load_file(&bpf_file_path)
+        {
+            Ok(bpf) => Ok(BpfObject::new(bpf)),
+            Err(err) => Err(Error::general(format!(
+                "Failed to load eBPF program from file {}: {}",
+                misc_helpers::path_to_string(&bpf_file_path),
+                err
+            ))),
         }
     }
-}
 
-fn update_skip_process_map(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    match bpf.map_mut("skip_process_map") {
-        Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
-            Ok(mut skip_process_map) => {
-                let pid = std::process::id();
-                let key = sock_addr_skip_process_entry::from_pid(pid);
-                let value = sock_addr_skip_process_entry::from_pid(pid);
-                match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
-                    Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
-                    Err(err) => {
-                        set_error_status(
-                            format!(
+    pub fn update_skip_process_map(&mut self) -> Result<()> {
+        match self.0.map_mut("skip_process_map") {
+            Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
+                Ok(mut skip_process_map) => {
+                    let pid = std::process::id();
+                    let key = sock_addr_skip_process_entry::from_pid(pid);
+                    let value = sock_addr_skip_process_entry::from_pid(pid);
+                    match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
+                        Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
+                        Err(err) => {
+                            return Err(Error::general(format!(
                                 "Failed to insert pid {} to skip_process_map with error: {}",
                                 pid, err
-                            ),
-                            shared_state.clone(),
-                        );
-                        return false;
+                            )));
+                        }
                     }
                 }
-            }
-            Err(err) => {
-                set_error_status(
-                    format!(
+                Err(err) => {
+                    return Err(Error::general(format!(
                         "Failed to load HashMap 'skip_process_map' with error: {}",
                         err
-                    ),
-                    shared_state.clone(),
-                );
-                return false;
-            }
-        },
-        None => {
-            set_error_status(
-                "Failed to get map 'skip_process_map'.".to_string(),
-                shared_state.clone(),
-            );
-            return false;
-        }
-    }
-    true
-}
-
-/* // This function is not used in the code
-fn get_local_ip() -> Option<String> {
-    let network_interfaces = match nix::ifaddrs::getifaddrs() {
-        Ok(interfaces) => interfaces,
-        Err(err) => {
-            set_error_status(
-                format!("Failed to get local ip with error: {}", err),
-                shared_state.clone(),
-            );
-            return None;
-        }
-    };
-
-    for nic in network_interfaces {
-        if nic
-            .flags
-            .contains(nix::net::if_::InterfaceFlags::IFF_LOOPBACK)
-        {
-            continue;
-        }
-        if !nic.flags.contains(nix::net::if_::InterfaceFlags::IFF_UP) {
-            continue;
-        }
-        if !nic
-            .flags
-            .contains(nix::net::if_::InterfaceFlags::IFF_RUNNING)
-        {
-            continue;
-        }
-        if !nic
-            .flags
-            .contains(nix::net::if_::InterfaceFlags::IFF_BROADCAST)
-        {
-            continue;
-        }
-        // need to filter out the bridge interface
-        let bridge_path = PathBuf::from("/sys/class/net/")
-            .join(&nic.interface_name)
-            .join("bridge");
-        if bridge_path.exists() {
-            continue;
-        }
-
-        if let Some(addr) = nic.address {
-            if let Some(socket_addr) = addr.as_sockaddr_in() {
-                return Some(socket_addr.ip().to_string());
+                    )));
+                }
+            },
+            None => {
+                return Err(Error::general(
+                    "Failed to get map 'skip_process_map'.".to_string(),
+                ));
             }
         }
+        Ok(())
     }
 
-    None
-}
-*/
-
-fn update_policy_map(
-    bpf: &mut Bpf,
-    local_port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> bool {
-    match bpf.map_mut("policy_map") {
-        Some(map) => {
-            match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
+    fn update_policy_map(&mut self, local_port: u16) -> Result<()> {
+        match self.0.map_mut("policy_map") {
+            Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
-                    // let local_ip = match get_local_ip() {
-                    //     Some(ip) => ip,
-                    //     None => constants::PROXY_AGENT_IP.to_string(),
-                    // };
                     let local_ip = constants::PROXY_AGENT_IP.to_string();
                     event_logger::write_event(
                         event_logger::WARN_LEVEL,
@@ -253,8 +190,7 @@ fn update_policy_map(
                             logger::write("policy_map updated for WireServer endpoints".to_string())
                         }
                         Err(err) => {
-                            set_error_status(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err), shared_state.clone());
-                            return false;
+                            return Err(Error::general(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err)));
                         }
                     }
 
@@ -265,14 +201,10 @@ fn update_policy_map(
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write("policy_map updated for IMDS endpoints".to_string()),
                         Err(err) => {
-                            set_error_status(
-                                format!(
-                                    "Failed to insert IMDS endpoints to policy_map with error: {}",
-                                    err
-                                ),
-                                shared_state.clone(),
-                            );
-                            return false;
+                            return Err(Error::general(format!(
+                                "Failed to insert IMDS endpoints to policy_map with error: {}",
+                                err
+                            )));
                         }
                     }
 
@@ -285,236 +217,166 @@ fn update_policy_map(
                             "policy_map updated for HostGAPlugin endpoints".to_string(),
                         ),
                         Err(err) => {
-                            set_error_status( format!(
-                                "Failed to insert HostGAPlugin endpoints to policy_map with error: {}",
-                                err
-                            ), shared_state.clone());
-                            return false;
+                            return Err(Error::general( format!(
+                                 "Failed to insert HostGAPlugin endpoints to policy_map with error: {}",
+                                    err
+                                )));
                         }
                     }
                 }
                 Err(err) => {
-                    set_error_status(
-                        format!("Failed to load HashMap 'policy_map' with error: {}", err),
-                        shared_state.clone(),
-                    );
-                    return false;
+                    return Err(Error::general(format!(
+                        "Failed to load HashMap 'policy_map' with error: {}",
+                        err
+                    )));
                 }
+            },
+            None => {
+                return Err(Error::general(
+                    "Failed to get map 'policy_map'.".to_string(),
+                ));
             }
         }
-        None => {
-            set_error_status(
-                "Failed to get map 'policy_map'.".to_string(),
-                shared_state.clone(),
-            );
-            return false;
-        }
+        Ok(())
     }
-    true
-}
 
-fn attach_cgroup_program(
-    bpf: &mut Bpf,
-    cgroup2_root_path: PathBuf,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> bool {
-    match std::fs::File::open(cgroup2_root_path) {
-        Ok(cgroup) => match bpf.program_mut("connect4") {
-            Some(program) => match program.try_into() {
-                Ok(p) => {
-                    let program: &mut CgroupSockAddr = p;
-                    match program.load() {
-                        Ok(_) => logger::write("connect4 program loaded.".to_string()),
-                        Err(err) => {
-                            let message =
-                                format!("Failed to load program 'connect4' with error: {}", err);
-                            set_error_status(message.to_string(), shared_state.clone());
-                            return false;
+    pub fn attach_cgroup_program(&mut self, cgroup2_root_path: PathBuf) -> Result<()> {
+        match std::fs::File::open(cgroup2_root_path) {
+            Ok(cgroup) => match self.0.program_mut("connect4") {
+                Some(program) => match program.try_into() {
+                    Ok(p) => {
+                        let program: &mut CgroupSockAddr = p;
+                        match program.load() {
+                            Ok(_) => logger::write("connect4 program loaded.".to_string()),
+                            Err(err) => {
+                                return Err(Error::general(format!(
+                                    "Failed to load program 'connect4' with error: {}",
+                                    err
+                                )));
+                            }
+                        }
+                        match program.attach(cgroup) {
+                            Ok(link_id) => {
+                                logger::write(format!(
+                                    "connect4 program attached with id {:?}.",
+                                    link_id
+                                ));
+                            }
+                            Err(err) => {
+                                return Err(Error::general(format!(
+                                    "Failed to attach program 'connect4' with error: {}",
+                                    err
+                                )));
+                            }
                         }
                     }
-                    match program.attach(cgroup) {
+                    Err(err) => {
+                        return Err(Error::general(format!(
+                            "Failed to convert program to CgroupSockAddr with error: {}",
+                            err
+                        )));
+                    }
+                },
+                None => {
+                    return Err(Error::general(
+                        "Failed to get program 'connect4'".to_string(),
+                    ));
+                }
+            },
+            Err(err) => {
+                return Err(Error::general(format!(
+                    "Failed to open cgroup with error: {}",
+                    err
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn attach_kprobe_program(&mut self) -> Result<()> {
+        match self.0.program_mut("tcp_v4_connect") {
+            Some(program) => match program.try_into() {
+                Ok(p) => {
+                    let program: &mut KProbe = p;
+                    match program.load() {
+                        Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
+                        Err(err) => {
+                            return Err(Error::general(format!(
+                                "Failed to load program 'tcp_v4_connect' with error: {}",
+                                err
+                            )));
+                        }
+                    }
+                    match program.attach("tcp_connect", 0) {
                         Ok(link_id) => {
                             logger::write(format!(
-                                "connect4 program attached with id {:?}.",
+                                "tcp_v4_connect program attached with id {:?}.",
                                 link_id
                             ));
                         }
                         Err(err) => {
-                            let message =
-                                format!("Failed to attach program 'connect4' with error: {}", err);
-                            set_error_status(message.to_string(), shared_state.clone());
-                            return false;
+                            return Err(Error::general(format!(
+                                "Failed to attach program 'tcp_v4_connect' with error: {}",
+                                err
+                            )));
                         }
                     }
                 }
                 Err(err) => {
-                    let message = format!(
-                        "Failed to convert program to CgroupSockAddr with error: {}",
+                    return Err(Error::general(format!(
+                        "Failed to convert program to KProbe with error: {}",
                         err
-                    );
-                    set_error_status(message.to_string(), shared_state.clone());
-                    return false;
+                    )));
                 }
             },
             None => {
-                let message = "Failed to get program 'connect4'";
-                set_error_status(message.to_string(), shared_state.clone());
-                return false;
+                return Err(Error::general(
+                    "Failed to get program 'tcp_v4_connect'".to_string(),
+                ));
             }
-        },
-        Err(err) => {
-            let message = format!("Failed to open cgroup with error: {}", err);
-            set_error_status(message.to_string(), shared_state.clone());
-            return false;
+        }
+        Ok(())
+    }
+
+    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+        match self.0.map("audit_map") {
+            Some(map) => match HashMap::try_from(map) {
+                Ok(audit_map) => {
+                    let key = sock_addr_audit_key::from_source_port(source_port);
+                    match audit_map.get(&key.to_array(), 0) {
+                        Ok(value) => {
+                            let audit_value = sock_addr_audit_entry::from_array(value);
+                            Ok(AuditEntry {
+                                logon_id: audit_value.logon_id as u64,
+                                process_id: audit_value.process_id,
+                                is_admin: audit_value.is_root as i32,
+                                destination_ipv4: audit_value.destination_ipv4,
+                                destination_port: audit_value.destination_port as u16,
+                            })
+                        }
+                        Err(err) => Err(Error::bpf(BpfErrorType::MapLookupElem(
+                            source_port.to_string(),
+                            err.to_string(),
+                        ))),
+                    }
+                }
+                Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
+            },
+            None => Err(Error::bpf(BpfErrorType::GetBpfMap(
+                "Map does not exist".to_string(),
+            ))),
         }
     }
 
-    true
-}
-
-fn attach_kprobe_program(bpf: &mut Bpf, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    match bpf.program_mut("tcp_v4_connect") {
-        Some(program) => match program.try_into() {
-            Ok(p) => {
-                let program: &mut KProbe = p;
-                match program.load() {
-                    Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
-                    Err(err) => {
-                        set_error_status(
-                            format!(
-                                "Failed to load program 'tcp_v4_connect' with error: {}",
-                                err
-                            ),
-                            shared_state.clone(),
-                        );
-                        return false;
-                    }
-                }
-                match program.attach("tcp_connect", 0) {
-                    Ok(link_id) => {
-                        logger::write(format!(
-                            "tcp_v4_connect program attached with id {:?}.",
-                            link_id
-                        ));
-                    }
-                    Err(err) => {
-                        set_error_status(
-                            format!(
-                                "Failed to attach program 'tcp_v4_connect' with error: {}",
-                                err
-                            ),
-                            shared_state.clone(),
-                        );
-                        return false;
-                    }
-                }
-            }
-            Err(err) => {
-                set_error_status(
-                    format!("Failed to convert program to KProbe with error: {}", err),
-                    shared_state.clone(),
-                );
-                return false;
-            }
-        },
-        None => {
-            set_error_status(
-                "Failed to get program 'tcp_v4_connect'".to_string(),
-                shared_state.clone(),
-            );
-            return false;
-        }
-    }
-    true
-}
-
-pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
-    redirector_wrapper::get_is_started(shared_state)
-}
-
-fn set_error_status(message: String, shared_state: Arc<Mutex<SharedState>>) {
-    redirector_wrapper::set_status_message(shared_state, message.to_string());
-    event_logger::write_event(
-        event_logger::ERROR_LEVEL,
-        message,
-        "start",
-        "redirector/linux",
-        logger::AGENT_LOGGER_KEY,
-    );
-}
-
-pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
-    redirector_wrapper::get_status_message(shared_state)
-}
-
-pub fn close(shared_state: Arc<Mutex<SharedState>>) {
-    // reset ebpf object
-    redirector_wrapper::clear_bpf_object(shared_state);
-}
-
-pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
-    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap(), source_port),
-        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
-    }
-}
-
-fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> Result<AuditEntry> {
-    match bpf.map("audit_map") {
-        Some(map) => match HashMap::try_from(map) {
-            Ok(audit_map) => {
-                let key = sock_addr_audit_key::from_source_port(source_port);
-                match audit_map.get(&key.to_array(), 0) {
-                    Ok(value) => {
-                        let audit_value = sock_addr_audit_entry::from_array(value);
-                        Ok(AuditEntry {
-                            logon_id: audit_value.logon_id as u64,
-                            process_id: audit_value.process_id,
-                            is_admin: audit_value.is_root as i32,
-                            destination_ipv4: audit_value.destination_ipv4,
-                            destination_port: audit_value.destination_port as u16,
-                        })
-                    }
-                    Err(err) => Err(Error::bpf(BpfErrorType::MapLookupElem(
-                        source_port.to_string(),
-                        err.to_string(),
-                    ))),
-                }
-            }
-            Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
-        },
-        None => Err(Error::bpf(BpfErrorType::GetBpfMap(
-            "Map does not exist".to_string(),
-        ))),
-    }
-}
-
-pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
-    update_redirect_policy_internal(
-        constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
-        constants::WIRE_SERVER_PORT,
-        redirect,
-        shared_state.clone(),
-    );
-}
-
-pub fn update_imds_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
-    update_redirect_policy_internal(
-        constants::IMDS_IP_NETWORK_BYTE_ORDER,
-        constants::IMDS_PORT,
-        redirect,
-        shared_state.clone(),
-    );
-}
-
-fn update_redirect_policy_internal(
-    dest_ipv4: u32,
-    dest_port: u16,
-    redirect: bool,
-    shared_state: Arc<Mutex<SharedState>>,
-) {
-    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        Some(bpf) => match bpf.lock().unwrap().map_mut("policy_map") {
+    pub fn update_redirect_policy(
+        &mut self,
+        dest_ipv4: u32,
+        dest_port: u16,
+        local_port: u16,
+        redirect: bool,
+    ) {
+        match self.0.map_mut("policy_map") {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
@@ -538,12 +400,7 @@ fn update_redirect_policy_internal(
                             }
                         };
                     } else {
-                        // let local_ip = match get_local_ip(shared_state.clone()) {
-                        //    Some(ip) => ip,
-                        //    None => constants::PROXY_AGENT_IP.to_string(),
-                        // };
                         let local_ip = constants::PROXY_AGENT_IP.to_string();
-                        let local_port = redirector_wrapper::get_local_port(shared_state.clone());
                         event_logger::write_event(
                             event_logger::WARN_LEVEL,
                             format!(
@@ -584,10 +441,62 @@ fn update_redirect_policy_internal(
             None => {
                 logger::write("Failed to get map 'policy_map'.".to_string());
             }
-        },
-        None => {
-            logger::write("BPF object is not initialized.".to_string());
         }
+    }
+}
+
+pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
+    redirector_wrapper::get_is_started(shared_state)
+}
+
+fn set_error_status(message: String, shared_state: Arc<Mutex<SharedState>>) {
+    redirector_wrapper::set_status_message(shared_state, message.to_string());
+    event_logger::write_event(
+        event_logger::ERROR_LEVEL,
+        message,
+        "start",
+        "redirector/linux",
+        logger::AGENT_LOGGER_KEY,
+    );
+}
+
+pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
+    redirector_wrapper::get_status_message(shared_state)
+}
+
+pub fn close(shared_state: Arc<Mutex<SharedState>>) {
+    // reset ebpf object
+    redirector_wrapper::clear_bpf_object(shared_state);
+}
+
+pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
+    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
+        Some(ref bpf) => bpf.lock().unwrap().lookup_audit(source_port),
+        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
+    }
+}
+
+pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
+    if let Some(bpf_object) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
+        let local_port = redirector_wrapper::get_local_port(shared_state.clone());
+        bpf_object.lock().unwrap().update_redirect_policy(
+            constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+            constants::WIRE_SERVER_PORT,
+            local_port,
+            redirect,
+        );
+    }
+}
+
+pub fn update_imds_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
+    if let Some(bpf_object) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
+        let local_port = redirector_wrapper::get_local_port(shared_state.clone());
+        bpf_object.lock().unwrap().update_redirect_policy(
+            constants::IMDS_IP_NETWORK_BYTE_ORDER,
+            constants::IMDS_PORT,
+            local_port,
+            redirect,
+        );
     }
 }
 
@@ -619,43 +528,53 @@ mod tests {
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");
-        let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
-        assert!(!bpf.is_some(), "open_ebpf_file should not return Some");
+        let bpf = super::BpfObject::from_ebpf_file(bpf_file_path);
+        assert!(
+            bpf.is_err(),
+            "BpfObject::from_ebpf_file should return error from invalid file path"
+        );
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push(config::get_ebpf_program_name());
-        let bpf = super::open_ebpf_file(bpf_file_path, shared_state.clone());
-        match bpf {
-            Some(_) => {}
-            None => {
-                println!("open_ebpf_file error");
-                if std::fs::metadata("/.dockerenv").is_ok() {
-                    println!("This docker image does not have BPF capacity, skip this test.");
-                    return;
-                } else {
-                    assert!(false, "open_ebpf_file should not return Err");
-                }
+        let bpf = super::BpfObject::from_ebpf_file(bpf_file_path);
+        if bpf.is_err() {
+            println!("BpfObject::from_ebpf_file error");
+            if std::fs::metadata("/.dockerenv").is_ok() {
+                println!("This docker image does not have BPF capacity, skip this test.");
+                return;
+            } else {
+                assert!(false, "open_ebpf_file should not return Err");
             }
         }
-        assert!(bpf.is_some(), "open_ebpf_file should return Some");
         let mut bpf = bpf.unwrap();
 
-        let result = super::update_skip_process_map(&mut bpf, shared_state.clone());
-        assert!(result, "update_skip_process_map should return true");
-        let result = super::update_policy_map(&mut bpf, 80, shared_state.clone());
-        assert!(result, "update_policy_map should return true");
+        let result = bpf.update_skip_process_map();
+        assert!(
+            result.is_ok(),
+            "update_skip_process_map should return success"
+        );
+        let result = bpf.update_policy_map(80);
+        assert!(result.is_ok(), "update_policy_map should return success");
 
         // Do not attach the program to real cgroup2 path
         // it should fail for both attach
-        let result = super::attach_kprobe_program(&mut bpf, shared_state.clone());
-        assert!(result, "attach_kprobe_program should return true");
-        let result =
-            super::attach_cgroup_program(&mut bpf, temp_test_path.clone(), shared_state.clone());
-        assert!(!result, "attach_connect4_program should not return true");
+        let result = bpf.attach_kprobe_program();
+        assert!(
+            result.is_ok(),
+            "attach_kprobe_program should return success"
+        );
+        let result = bpf.attach_cgroup_program(temp_test_path.clone());
+        assert!(
+            result.is_err(),
+            "attach_connect4_program should return error for invalid cgroup2 path"
+        );
 
         let source_port = 1;
-        let audit = super::lookup_audit_internal(&bpf, source_port);
-        assert!(!audit.is_ok(), "lookup_audit should not return Ok");
+        let audit = bpf.lookup_audit(source_port);
+        assert!(
+            audit.is_err(),
+            "lookup_audit should return error for invalid source port"
+        );
         // insert to map an then look up
         let key = sock_addr_audit_key::from_source_port(source_port);
         let value = sock_addr_audit_entry {
@@ -669,14 +588,14 @@ mod tests {
             // drop map_mut("audit_map") within this scope
             let mut audit_map: HashMap<&mut aya::maps::MapData, [u32; 2], [u32; 5]> =
                 HashMap::<&mut aya::maps::MapData, [u32; 2], [u32; 5]>::try_from(
-                    bpf.map_mut("audit_map").unwrap(),
+                    bpf.0.map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
             audit_map
                 .insert(key.to_array(), value.to_array(), 0)
                 .unwrap();
         }
-        let audit = super::lookup_audit_internal(&bpf, source_port);
+        let audit = bpf.lookup_audit(source_port);
         match audit {
             Ok(entry) => {
                 assert_eq!(
