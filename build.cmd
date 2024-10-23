@@ -188,7 +188,7 @@ if  %ERRORLEVEL% NEQ 0 (
 )
 
 echo ======= restore e2e test project dependencies
-echo call dotnet.exe restore %root_path%\e2etest\GuestProxyAgentTest.sln
+echo call dotnet.exe restore %root_path%\e2etest\GuestProxyAgentTest.sln -v normal
 call dotnet.exe restore %root_path%\e2etest\GuestProxyAgentTest.sln
 if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe restore failed with exit-code: %errorlevel%
