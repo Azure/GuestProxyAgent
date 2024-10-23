@@ -19,7 +19,7 @@ namespace GuestProxyAgentTest.TestScenarios
         private TestScenarioSetting _testScenarioSetting = null!;
         private JunitTestResultBuilder _junitTestResultBuilder = null!;
         private List<TestCaseBase> _testCases = new List<TestCaseBase>();
-        protected bool EnableProxyAgent { get; set; }
+        protected bool EnableProxyAgentForNewVM { get; set; }
 
 
         public TestScenarioBase()
@@ -131,7 +131,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 testScenarioStatusDetails.Status = ScenarioTestStatus.Running;
                 PreCheck();
 
-                var vmr = await new VMBuilder().LoadTestCaseSetting(_testScenarioSetting).Build(EnableProxyAgent);
+                var vmr = await new VMBuilder().LoadTestCaseSetting(_testScenarioSetting).Build(this.EnableProxyAgentForNewVM);
                 ConsoleLog("VM created");
 
                 ConsoleLog("Running scenario test: " + _testScenarioSetting.testScenarioName);
