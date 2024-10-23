@@ -163,7 +163,7 @@ runthis cp -f $out_dir/* $out_dir/deps/
 runthis cp -f -r $out_dir/* $root_path/proxy_agent_setup/target/$Configuration/
 
 echo "======= build e2e test solution"
-runthis dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest
+runthis dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest -v normal
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
