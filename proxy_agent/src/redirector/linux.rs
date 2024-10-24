@@ -126,16 +126,16 @@ impl BpfObject {
             .load_file(&bpf_file_path)
         {
             Ok(bpf) => Ok(BpfObject::new(bpf)),
-            Err(err) => Err(Error::general(format!(
-                "Failed to load eBPF program from file {}: {}",
+            Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfApi(
                 misc_helpers::path_to_string(&bpf_file_path),
-                err
+                err.to_string(),
             ))),
         }
     }
 
     pub fn update_skip_process_map(&mut self) -> Result<()> {
-        match self.0.map_mut("skip_process_map") {
+        let skip_process_map_name = "skip_process_map";
+        match self.0.map_mut(skip_process_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
                 Ok(mut skip_process_map) => {
                     let pid = std::process::id();
@@ -144,31 +144,34 @@ impl BpfObject {
                     match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
                         Err(err) => {
-                            return Err(Error::general(format!(
-                                "Failed to insert pid {} to skip_process_map with error: {}",
-                                pid, err
+                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                                skip_process_map_name.to_string(),
+                                format!("insert pid: {}", pid),
+                                err.to_string(),
                             )));
                         }
                     }
                 }
                 Err(err) => {
-                    return Err(Error::general(format!(
-                        "Failed to load HashMap 'skip_process_map' with error: {}",
-                        err
+                    return Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                        skip_process_map_name.to_string(),
+                        err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::general(
-                    "Failed to get map 'skip_process_map'.".to_string(),
-                ));
+                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                    skip_process_map_name.to_string(),
+                    "Map does not exist".to_string(),
+                )));
             }
         }
         Ok(())
     }
 
     fn update_policy_map(&mut self, local_port: u16) -> Result<()> {
-        match self.0.map_mut("policy_map") {
+        let policy_map_name = "policy_map";
+        match self.0.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let local_ip = constants::PROXY_AGENT_IP.to_string();
@@ -190,7 +193,11 @@ impl BpfObject {
                             logger::write("policy_map updated for WireServer endpoints".to_string())
                         }
                         Err(err) => {
-                            return Err(Error::general(format!("Failed to insert WireServer endpoints to policy_map with error: {}", err)));
+                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                                policy_map_name.to_string(),
+                                "WireServer endpoints".to_string(),
+                                err.to_string(),
+                            )));
                         }
                     }
 
@@ -201,9 +208,10 @@ impl BpfObject {
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write("policy_map updated for IMDS endpoints".to_string()),
                         Err(err) => {
-                            return Err(Error::general(format!(
-                                "Failed to insert IMDS endpoints to policy_map with error: {}",
-                                err
+                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                                policy_map_name.to_string(),
+                                "IMDS endpoints".to_string(),
+                                err.to_string(),
                             )));
                         }
                     }
@@ -217,41 +225,44 @@ impl BpfObject {
                             "policy_map updated for HostGAPlugin endpoints".to_string(),
                         ),
                         Err(err) => {
-                            return Err(Error::general( format!(
-                                 "Failed to insert HostGAPlugin endpoints to policy_map with error: {}",
-                                    err
-                                )));
+                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                                policy_map_name.to_string(),
+                                "HostGAPlugin endpoints".to_string(),
+                                err.to_string(),
+                            )));
                         }
                     }
                 }
                 Err(err) => {
-                    return Err(Error::general(format!(
-                        "Failed to load HashMap 'policy_map' with error: {}",
-                        err
+                    return Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                        policy_map_name.to_string(),
+                        err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::general(
-                    "Failed to get map 'policy_map'.".to_string(),
-                ));
+                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                    policy_map_name.to_string(),
+                    "Map does not exist".to_string(),
+                )));
             }
         }
         Ok(())
     }
 
     pub fn attach_cgroup_program(&mut self, cgroup2_root_path: PathBuf) -> Result<()> {
-        match std::fs::File::open(cgroup2_root_path) {
-            Ok(cgroup) => match self.0.program_mut("connect4") {
+        let program_name = "connect4";
+        match std::fs::File::open(cgroup2_root_path.clone()) {
+            Ok(cgroup) => match self.0.program_mut(program_name) {
                 Some(program) => match program.try_into() {
                     Ok(p) => {
                         let program: &mut CgroupSockAddr = p;
                         match program.load() {
                             Ok(_) => logger::write("connect4 program loaded.".to_string()),
                             Err(err) => {
-                                return Err(Error::general(format!(
-                                    "Failed to load program 'connect4' with error: {}",
-                                    err
+                                return Err(Error::bpf(BpfErrorType::LoadBpfProgram(
+                                    program_name.to_string(),
+                                    err.to_string(),
                                 )));
                             }
                         }
@@ -263,30 +274,31 @@ impl BpfObject {
                                 ));
                             }
                             Err(err) => {
-                                return Err(Error::general(format!(
-                                    "Failed to attach program 'connect4' with error: {}",
-                                    err
+                                return Err(Error::bpf(BpfErrorType::AttachBpfProgram(
+                                    program_name.to_string(),
+                                    err.to_string(),
                                 )));
                             }
                         }
                     }
                     Err(err) => {
-                        return Err(Error::general(format!(
-                            "Failed to convert program to CgroupSockAddr with error: {}",
-                            err
+                        return Err(Error::bpf(BpfErrorType::ConvertBpfProgram(
+                            "CgroupSockAddr".to_string(),
+                            err.to_string(),
                         )));
                     }
                 },
                 None => {
-                    return Err(Error::general(
-                        "Failed to get program 'connect4'".to_string(),
-                    ));
+                    return Err(Error::bpf(BpfErrorType::GetBpfProgram(
+                        program_name.to_string(),
+                        "Program does not exist".to_string(),
+                    )));
                 }
             },
             Err(err) => {
-                return Err(Error::general(format!(
-                    "Failed to open cgroup with error: {}",
-                    err
+                return Err(Error::bpf(BpfErrorType::OpenCgroup(
+                    cgroup2_root_path.display().to_string(),
+                    err.to_string(),
                 )));
             }
         }
@@ -376,7 +388,8 @@ impl BpfObject {
         local_port: u16,
         redirect: bool,
     ) {
-        match self.0.map_mut("policy_map") {
+        let policy_map_name = "policy_map";
+        match self.0.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
@@ -524,7 +537,6 @@ mod tests {
             10 * 1024 * 1024,
             20,
         );
-        let shared_state = crate::shared_state::SharedState::new();
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");

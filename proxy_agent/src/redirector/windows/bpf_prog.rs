@@ -284,11 +284,15 @@ impl BpfObject {
             )));
         }
 
-        let audit_map = bpf_object__find_map_by_name(self.0, "audit_map")
-            .map_err(|e| Error::bpf(BpfErrorType::GetBpfMap(e.to_string())))?;
+        let audit_map = bpf_object__find_map_by_name(self.0, "audit_map").map_err(|e| {
+            Error::bpf(BpfErrorType::GetBpfMap(
+                "audit_map".to_string(),
+                e.to_string(),
+            ))
+        })?;
         if audit_map.is_null() {
-            return Err(Error::bpf(BpfErrorType::GetBpfMap(
-                "bpf_object__find_map_by_name 'audit_map' returns null pointer".to_string(),
+            return Err(Error::bpf(BpfErrorType::GetBpfMap("audit_map".to_string(),
+                "bpf_object__find_map_by_name returns null pointer".to_string(),
             )));
         }
 
