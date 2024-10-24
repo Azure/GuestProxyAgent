@@ -307,16 +307,17 @@ impl BpfObject {
     }
 
     pub fn attach_kprobe_program(&mut self) -> Result<()> {
-        match self.0.program_mut("tcp_v4_connect") {
+        let program_name = "tcp_v4_connect";
+        match self.0.program_mut(program_name) {
             Some(program) => match program.try_into() {
                 Ok(p) => {
                     let program: &mut KProbe = p;
                     match program.load() {
                         Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
                         Err(err) => {
-                            return Err(Error::general(format!(
-                                "Failed to load program 'tcp_v4_connect' with error: {}",
-                                err
+                            return Err(Error::bpf(BpfErrorType::LoadBpfProgram(
+                                program_name.to_string(),
+                                err.to_string(),
                             )));
                         }
                     }
@@ -328,31 +329,33 @@ impl BpfObject {
                             ));
                         }
                         Err(err) => {
-                            return Err(Error::general(format!(
-                                "Failed to attach program 'tcp_v4_connect' with error: {}",
-                                err
+                            return Err(Error::bpf(BpfErrorType::AttachBpfProgram(
+                                program_name.to_string(),
+                                err.to_string(),
                             )));
                         }
                     }
                 }
                 Err(err) => {
-                    return Err(Error::general(format!(
-                        "Failed to convert program to KProbe with error: {}",
-                        err
+                    return Err(Error::bpf(BpfErrorType::ConvertBpfProgram(
+                        "KProbe".to_string(),
+                        err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::general(
-                    "Failed to get program 'tcp_v4_connect'".to_string(),
-                ));
+                return Err(Error::bpf(BpfErrorType::GetBpfProgram(
+                    program_name.to_string(),
+                    "Program does not exist".to_string(),
+                )));
             }
         }
         Ok(())
     }
 
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
-        match self.0.map("audit_map") {
+        let audit_map_name = "audit_map";
+        match self.0.map(audit_map_name) {
             Some(map) => match HashMap::try_from(map) {
                 Ok(audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
@@ -373,9 +376,13 @@ impl BpfObject {
                         ))),
                     }
                 }
-                Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
+                Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                    audit_map_name.to_string(),
+                    err.to_string(),
+                ))),
             },
             None => Err(Error::bpf(BpfErrorType::GetBpfMap(
+                audit_map_name.to_string(),
                 "Map does not exist".to_string(),
             ))),
         }
