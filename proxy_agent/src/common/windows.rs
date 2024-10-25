@@ -28,7 +28,7 @@ pub fn get_memory_in_mb() -> Result<u64> {
     unsafe {
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(data) == 0 {
-            return Err(Error::windows_api(
+            return Err(Error::WindowsApi(
                 WindowsApiErrorType::GlobalMemoryStatusEx(
                     std::io::Error::last_os_error().to_string(),
                 ),
@@ -42,7 +42,7 @@ pub fn get_memory_in_mb() -> Result<u64> {
 pub fn check_winsock_last_error() -> Result<()> {
     let error = unsafe { WinSock::WSAGetLastError() };
     if error != 0 {
-        return Err(Error::windows_api(WindowsApiErrorType::WSAIoctl(error)));
+        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(error)));
     }
 
     Ok(())

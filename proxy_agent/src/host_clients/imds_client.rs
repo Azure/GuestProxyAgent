@@ -46,7 +46,9 @@ impl ImdsClient {
     pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
         let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
 
-        let url: Uri = url.parse().map_err(|e| Error::parse_url(url, e))?;
+        let url: Uri = url
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 
