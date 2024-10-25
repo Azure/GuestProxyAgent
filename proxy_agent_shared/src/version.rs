@@ -1,7 +1,8 @@
-use std::fmt::{Display, Formatter};
+use std::{fmt::{Display, Formatter}};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use std::io::{Error, ErrorKind};
+use crate::error::Error;
+use crate::result::Result;
 
 pub struct Version {
     pub major: u32,
@@ -33,12 +34,11 @@ impl Version {
         }
     }
 
-    pub fn from_string(version_string: String) -> std::io::Result<Version> {
+    pub fn from_string(version_string: String) -> Result<Version> {
         let version_parts = version_string.split('.').collect::<Vec<&str>>();
         if version_parts.len() < 2 {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Invalid version string",
+            return Err(Error::parse_version(
+                "Invalid version string".to_string(),
             ));
         }
 
@@ -46,9 +46,8 @@ impl Version {
         match version_parts[0].parse::<u32>() {
             Ok(u) => major = u,
             Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Cannot read Major build",
+                return Err(Error::parse_version(
+                    "Cannot read Major build".to_string(),
                 ))
             }
         };
@@ -57,9 +56,8 @@ impl Version {
         match version_parts[1].parse::<u32>() {
             Ok(u) => minor = u,
             Err(_) => {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Cannot read Minor build",
+                return Err(Error::parse_version(
+                    "Cannot read Minor build".to_string()
                 ))
             }
         };
@@ -67,9 +65,8 @@ impl Version {
             return Ok(Version::from_major_minor(major, minor));
         }
         if version_parts.len() > 4 {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Invalid version string",
+            return Err(Error::parse_version(
+                "Invalid version string".to_string(),
             ));
         }
 

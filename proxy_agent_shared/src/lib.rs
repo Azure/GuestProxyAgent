@@ -8,6 +8,8 @@ pub mod rolling_logger;
 pub mod service;
 pub mod telemetry;
 pub mod version;
+pub mod error;
+pub mod result;
 #[cfg(windows)]
 pub mod windows;
 

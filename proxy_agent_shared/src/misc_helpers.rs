@@ -10,6 +10,7 @@ use std::{
 };
 use thread_id;
 use time::{format_description, OffsetDateTime};
+use crate::result::Result;
 
 #[cfg(windows)]
 use super::windows;
@@ -53,7 +54,7 @@ pub fn get_date_time_unix_nano() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }
 
-pub fn try_create_folder(dir: &Path) -> std::io::Result<()> {
+pub fn try_create_folder(dir: &Path) -> Result<()> {
     match dir.try_exists() {
         Ok(exists) => {
             if !exists {
@@ -70,7 +71,7 @@ pub fn try_create_folder(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> std::io::Result<()>
+pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> Result<()>
 where
     T: ?Sized + Serialize,
 {
@@ -80,7 +81,7 @@ where
     Ok(())
 }
 
-pub fn json_read_from_file<T>(file_path: &Path) -> std::io::Result<T>
+pub fn json_read_from_file<T>(file_path: &Path) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -90,18 +91,12 @@ where
     Ok(obj)
 }
 
-pub fn json_clone<T>(obj: &T) -> std::io::Result<T>
+pub fn json_clone<T>(obj: &T) -> Result<T>
 where
     T: Serialize + DeserializeOwned,
 {
     let json = serde_json::to_string(obj)?;
-    match serde_json::from_str(&json) {
-        Ok(obj) => Ok(obj),
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        )),
-    }
+    serde_json::from_str(&json).map_err(Into::into)
 }
 
 pub fn get_current_exe_dir() -> PathBuf {
@@ -155,7 +150,7 @@ pub fn get_current_version() -> String {
     VERSION.to_string()
 }
 
-pub fn get_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
     // search files
     let mut files: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -190,17 +185,9 @@ pub fn get_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// let search_regex_pattern = r"^MyFile.*\.json$"; // Regex pattern to match "MyFile*.json"
 /// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
 /// ```
-pub fn search_files(dir: &Path, search_regex_pattern: &str) -> std::io::Result<Vec<PathBuf>> {
+pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    let regex = match Regex::new(search_regex_pattern) {
-        Ok(re) => re,
-        Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create regex with error {}", e),
-            ));
-        }
-    };
+    let regex = Regex::new(search_regex_pattern)?;
 
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
