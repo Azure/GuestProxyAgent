@@ -5,7 +5,7 @@ pub enum Error {
     WindowsService(#[from] windows_service::Error),
 
     #[error(transparent)]
-    IO(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
@@ -18,4 +18,16 @@ pub enum Error {
 
     #[error("Findmnt command {0}")]
     FindMnt(String),
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Error, KeyErrorType, WireServerErrorType};
+    use http::StatusCode;
+
+    #[test]
+    fn error_formatting_test() {
+        let metadata = fs::metadata(&file_full_path)?;
+        
+    }
 }
