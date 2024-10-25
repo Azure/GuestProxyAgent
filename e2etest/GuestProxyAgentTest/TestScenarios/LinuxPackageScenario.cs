@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.TestCases;
-using GuestProxyAgentTest.Utilities;
 
 namespace GuestProxyAgentTest.TestScenarios
 {
@@ -13,9 +12,10 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
             AddTestCase(new InstallOrUpdateGuestProxyAgentPackageCase());
             AddTestCase(new GuestProxyAgentValidationCase());
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", false));
+            AddTestCase(new EnableProxyAgentCase());
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", true));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterInstallOrUpdateGuestProxyAgent"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", false));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", true));
         }
     }
 }

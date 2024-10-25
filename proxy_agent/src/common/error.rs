@@ -166,8 +166,8 @@ pub enum BpfErrorType {
     #[error("Failed to retrieve file descriptor of the BPF map 'audit_map' with error: {0}")]
     MapFileDescriptor(String),
 
-    #[error("Failed to get valid map 'audit_map' in BPF object with error: {0}")]
-    GetBpfMap(String),
+    #[error("Failed to get valid map '{0}' in BPF object with error: {1}")]
+    GetBpfMap(String, String),
 
     #[error("Failed to get eBPF API: API is not loaded")]
     GetBpfApi,
@@ -181,8 +181,26 @@ pub enum BpfErrorType {
     #[error("Loading BPF API function '{0}' failed with error: {1}")]
     LoadBpfApiFunction(String, String),
 
-    #[error("Failed to load HashMap 'audit_map' with error: {0}")]
-    LoadBpfMapHashMap(String),
+    #[error("Failed to load HashMap '{0}' with error: {1}")]
+    LoadBpfMapHashMap(String, String),
+
+    #[error("Failed to update HashMap '{0}' for '{1}' with error: {2}")]
+    UpdateBpfMapHashMap(String, String, String),
+
+    #[error("Failed to get program '{0}' with error: {1}")]
+    GetBpfProgram(String, String),
+
+    #[error("Failed to load program '{0}' with error: {1}")]
+    LoadBpfProgram(String, String),
+
+    #[error("Failed to attach program '{0}' with error: {1}")]
+    AttachBpfProgram(String, String),
+
+    #[error("Failed to convert program to '{0}' with error: {1}")]
+    ConvertBpfProgram(String, String),
+
+    #[error("Failed to open cgroup '{0}' with error: {1}")]
+    OpenCgroup(String, String),
 
     #[error("CString initialization failed with error: {0}")]
     CString(std::ffi::NulError),

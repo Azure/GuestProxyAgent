@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Utilities;
-using GuestProxyAgentTest.Settings;
 using System.Diagnostics;
-using System.IO;
 using System.IO.Compression;
 
 namespace GuestProxyAgentTest.TestScenarios
@@ -18,7 +16,6 @@ namespace GuestProxyAgentTest.TestScenarios
             string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
             string proxyAgentVersion = "";
             string exePath = "";
-            bool imdsSecureChannelEnabled = false;
             try
             {
                 ZipFile.ExtractToDirectory(zipFile, extractPath);
@@ -33,15 +30,13 @@ namespace GuestProxyAgentTest.TestScenarios
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
                 AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
+                AddTestCase(new EnableProxyAgentCase());
                 exePath = extractPath + "/ProxyAgent/ProxyAgent/azure-proxy-agent";
             }
             else
             {
-                EnableProxyAgent = true;
+                EnableProxyAgentForNewVM = true;
                 exePath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
-                // currently when enable msp, it only enforce WS "secureChannelState: WireServer Enforce -  IMDS Disabled, version: 2.0."
-                // TODO: when the preview SDK is available, we need change the code to enforce both WS and IMDS and set the imdsSecureChannelEnabled to true
-                imdsSecureChannelEnabled = false;
             }
             var process = new Process()
             {
@@ -63,9 +58,9 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", imdsSecureChannelEnabled));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", true));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
-            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", imdsSecureChannelEnabled));
+            AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", true));
         }
     }
 }
