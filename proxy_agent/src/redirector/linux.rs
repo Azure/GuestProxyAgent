@@ -455,7 +455,7 @@ pub fn close(shared_state: Arc<Mutex<SharedState>>) {
 pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(ref bpf) => lookup_audit_internal(&bpf.lock().unwrap(), source_port),
-        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
+        None => Err(Error::Bpf(BpfErrorType::GetBpfObject)),
     }
 }
 
@@ -475,15 +475,15 @@ fn lookup_audit_internal(bpf: &Bpf, source_port: u16) -> Result<AuditEntry> {
                             destination_port: audit_value.destination_port as u16,
                         })
                     }
-                    Err(err) => Err(Error::bpf(BpfErrorType::MapLookupElem(
+                    Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
                         source_port.to_string(),
                         err.to_string(),
                     ))),
                 }
             }
-            Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
+            Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(err.to_string()))),
         },
-        None => Err(Error::bpf(BpfErrorType::GetBpfMap(
+        None => Err(Error::Bpf(BpfErrorType::GetBpfMap(
             "Map does not exist".to_string(),
         ))),
     }

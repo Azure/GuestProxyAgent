@@ -292,16 +292,16 @@ pub fn lookup_bpf_audit_map(
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(obj) => {
             let audit_map = bpf_object__find_map_by_name(obj.lock().unwrap().0, "audit_map")
-                .map_err(|e| Error::bpf(BpfErrorType::GetBpfMap(e.to_string())))?;
+                .map_err(|e| Error::Bpf(BpfErrorType::GetBpfMap(e.to_string())))?;
 
             if audit_map.is_null() {
-                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                return Err(Error::Bpf(BpfErrorType::GetBpfMap(
                     "bpf_object__find_map_by_name 'audit_map' returns null pointer".to_string(),
                 )));
             }
 
             let map_fd = bpf_map__fd(audit_map)
-                .map_err(|e| Error::bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
+                .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
 
             // query by source port.
             let key = sock_addr_audit_key_t::from_source_port(source_port);
@@ -313,14 +313,14 @@ pub fn lookup_bpf_audit_map(
                 &value as *const AuditEntry as *mut c_void,
             )
             .map_err(|e| {
-                Error::bpf(BpfErrorType::MapLookupElem(
+                Error::Bpf(BpfErrorType::MapLookupElem(
                     source_port.to_string(),
                     format!("Error: {}", e),
                 ))
             })?;
 
             if result != 0 {
-                return Err(Error::bpf(BpfErrorType::MapLookupElem(
+                return Err(Error::Bpf(BpfErrorType::MapLookupElem(
                     source_port.to_string(),
                     format!("Result: {}", result),
                 )));
@@ -328,7 +328,7 @@ pub fn lookup_bpf_audit_map(
 
             Ok(value)
         }
-        None => Err(Error::bpf(BpfErrorType::MapLookupElem(
+        None => Err(Error::Bpf(BpfErrorType::MapLookupElem(
             source_port.to_string(),
             "BPF has not loaded".to_string(),
         ))),

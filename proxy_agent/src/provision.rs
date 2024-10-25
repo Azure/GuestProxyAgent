@@ -47,6 +47,7 @@ use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
 use crate::{key_keeper, proxy_agent_status, redirector};
+use http::uri::InvalidUri;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
@@ -337,7 +338,7 @@ async fn get_current_provision_status(port: u16) -> Result<ProvisionState> {
 
     let provision_url: hyper::Uri = provision_url
         .parse()
-        .map_err(|e| Error::parse_url(provision_url, e))?;
+        .map_err(|e: InvalidUri| Error::ParseUrl(provision_url, e.to_string()))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());

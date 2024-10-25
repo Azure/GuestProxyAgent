@@ -22,6 +22,7 @@
 use super::instance_info::InstanceInfo;
 use crate::common::{error::Error, hyper_client, logger, result::Result};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
+use http::uri::InvalidUri;
 use hyper::Uri;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -46,7 +47,9 @@ impl ImdsClient {
     pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
         let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
 
-        let url: Uri = url.parse().map_err(|e| Error::parse_url(url, e))?;
+        let url: Uri = url
+            .parse()
+            .map_err(|e: InvalidUri| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 

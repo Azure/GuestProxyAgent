@@ -64,7 +64,7 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
     //     search path is modified.
     // We satisfy the this requirement by providing the absolute path to the library.
     unsafe { Library::new(bpf_api_file_path.as_path()) }.map_err(|e| {
-        Error::bpf(BpfErrorType::LoadBpfApi(
+        Error::Bpf(BpfErrorType::LoadBpfApi(
             misc_helpers::path_to_string(&bpf_api_file_path),
             e.to_string(),
         ))
@@ -74,14 +74,14 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
 fn get_ebpf_api() -> Result<&'static Library> {
     match EBPF_API.as_ref() {
         Some(api) => Ok(api),
-        None => Err(Error::bpf(BpfErrorType::GetBpfApi)),
+        None => Err(Error::Bpf(BpfErrorType::GetBpfApi)),
     }
 }
 
 // function name must null terminated with '\0'.
 fn get_ebpf_api_fun<'a, T>(ebpf_api: &'a Library, name: &str) -> Result<Symbol<'a, T>> {
     unsafe { ebpf_api.get(name.as_bytes()) }.map_err(|e| {
-        Error::bpf(BpfErrorType::LoadBpfApiFunction(
+        Error::Bpf(BpfErrorType::LoadBpfApiFunction(
             name.to_string(),
             e.to_string(),
         ))
@@ -128,7 +128,7 @@ type BpfMapLookupElem =
 type BpfMapDeleteElem = unsafe extern "C" fn(map_fd: c_int, key: *const c_void) -> c_int;
 
 fn get_cstring(s: &str) -> Result<CString> {
-    CString::new(s).map_err(|e| Error::bpf(BpfErrorType::CString(e)))
+    CString::new(s).map_err(|e| Error::Bpf(BpfErrorType::CString(e)))
 }
 
 pub fn bpf_object__open(path: &str) -> Result<*mut bpf_object> {
