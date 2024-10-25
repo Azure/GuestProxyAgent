@@ -49,6 +49,7 @@ impl Error {
         Self::new(ErrorType::Bpf(error))
     }
 
+    #[cfg(windows)]
     pub fn windows_api(error: WindowsApiErrorType) -> Self {
         Self::new(ErrorType::WindowsApi(error))
     }
@@ -92,6 +93,7 @@ enum ErrorType {
     #[error("{0}")]
     Bpf(BpfErrorType),
 
+    #[cfg(windows)]
     #[error("{0}")]
     WindowsApi(WindowsApiErrorType),
 
@@ -187,9 +189,10 @@ pub enum BpfErrorType {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[cfg(windows)]
 pub enum WindowsApiErrorType {
     #[error("Loading NetUserGetLocalGroups failed with error: {0}")]
-    LoadNetUserGetLocalGroups(String),
+    LoadNetUserGetLocalGroups(libloading::Error),
 
     #[error("LsaGetLogonSessionData {0}")]
     LsaGetLogonSessionData(String),
@@ -198,7 +201,7 @@ pub enum WindowsApiErrorType {
     WSAIoctl(i32),
 
     #[error("GlobalMemoryStatusEx failed: {0}")]
-    GlobalMemoryStatusEx(String),
+    GlobalMemoryStatusEx(std::io::Error),
 
     #[error("{0}")]
     WindowsOsError(std::io::Error),

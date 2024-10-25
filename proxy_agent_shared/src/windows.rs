@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::error::Error;
+use crate::result::Result;
 use crate::version::Version;
 use std::ffi::OsStr;
 use std::mem::MaybeUninit;
@@ -9,8 +11,6 @@ use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_sys::Win32::System::SystemInformation::SYSTEM_INFO;
 use winreg::enums::*;
 use winreg::RegKey;
-use crate::error::Error;
-use crate::result::Result;
 
 fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) -> Option<u32> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
@@ -65,11 +65,10 @@ pub fn get_os_version() -> Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => major = u,
                 Err(_) => {
-                    return Err(Error::parse_version(
-                        format!(
-                            "Cannot read Major build from {}", CURRENT_MAJOR_VERSION_NUMBER_STRING
-                        ),
-                    ));
+                    return Err(Error::ParseVersion(format!(
+                        "Cannot read Major build from {}",
+                        CURRENT_MAJOR_VERSION_NUMBER_STRING
+                    )));
                 }
             }
         }
@@ -91,11 +90,10 @@ pub fn get_os_version() -> Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => minor = u,
                 Err(_) => {
-                    return Err(Error::parse_version(
-                        format!(
-                            "Cannot read Minor build from {}", CURRENT_MINOR_VERSION_NUMBER_STRING
-                        ),
-                    ));
+                    return Err(Error::ParseVersion(format!(
+                        "Cannot read Minor build from {}",
+                        CURRENT_MINOR_VERSION_NUMBER_STRING
+                    )));
                 }
             }
         }

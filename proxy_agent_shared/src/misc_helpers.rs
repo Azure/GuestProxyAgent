@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::result::Result;
 use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -10,7 +11,6 @@ use std::{
 };
 use thread_id;
 use time::{format_description, OffsetDateTime};
-use crate::result::Result;
 
 #[cfg(windows)]
 use super::windows;

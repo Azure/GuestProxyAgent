@@ -29,9 +29,7 @@ pub fn get_memory_in_mb() -> Result<u64> {
         (*data).dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(data) == 0 {
             return Err(Error::windows_api(
-                WindowsApiErrorType::GlobalMemoryStatusEx(
-                    std::io::Error::last_os_error().to_string(),
-                ),
+                WindowsApiErrorType::GlobalMemoryStatusEx(std::io::Error::last_os_error()),
             ));
         }
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;

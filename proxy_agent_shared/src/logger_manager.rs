@@ -35,7 +35,9 @@ pub fn init_logger(
 pub fn get_logger(logger_key: &str) -> Arc<Mutex<RollingLogger>> {
     unsafe {
         if !LOGGERS.contains_key(logger_key) {
-            panic!("Logger '{logger_key}' has not been initialized, please call 'init_logger' first.");
+            panic!(
+                "Logger '{logger_key}' has not been initialized, please call 'init_logger' first."
+            );
         }
 
         let logger = &LOGGERS[logger_key];

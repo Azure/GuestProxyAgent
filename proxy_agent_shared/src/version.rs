@@ -1,4 +1,4 @@
-use std::{fmt::{Display, Formatter}};
+use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::error::Error;
@@ -37,37 +37,25 @@ impl Version {
     pub fn from_string(version_string: String) -> Result<Version> {
         let version_parts = version_string.split('.').collect::<Vec<&str>>();
         if version_parts.len() < 2 {
-            return Err(Error::parse_version(
-                "Invalid version string".to_string(),
-            ));
+            return Err(Error::ParseVersion("Invalid version string".to_string()));
         }
 
         let major;
         match version_parts[0].parse::<u32>() {
             Ok(u) => major = u,
-            Err(_) => {
-                return Err(Error::parse_version(
-                    "Cannot read Major build".to_string(),
-                ))
-            }
+            Err(_) => return Err(Error::ParseVersion("Cannot read Major build".to_string())),
         };
 
         let minor;
         match version_parts[1].parse::<u32>() {
             Ok(u) => minor = u,
-            Err(_) => {
-                return Err(Error::parse_version(
-                    "Cannot read Minor build".to_string()
-                ))
-            }
+            Err(_) => return Err(Error::ParseVersion("Cannot read Minor build".to_string())),
         };
         if version_parts.len() == 2 {
             return Ok(Version::from_major_minor(major, minor));
         }
         if version_parts.len() > 4 {
-            return Err(Error::parse_version(
-                "Invalid version string".to_string(),
-            ));
+            return Err(Error::ParseVersion("Invalid version string".to_string()));
         }
 
         let mut build = None;

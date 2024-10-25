@@ -136,22 +136,19 @@ pub fn install_or_update_service(
 ) -> Result<()> {
     // if query_service returns Ok, then the service needs to be updated otherwise create a service
     match query_service_status(service_name) {
-        Ok(_service) => {
-            update_service(
-                service_name,
-                service_display_name,
-                service_dependencies,
-                service_exe_path,
-            )
-        }
-        Err(_e) => {
-            create_service(
-                service_name,
-                service_display_name,
-                service_dependencies,
-                service_exe_path,
-            ).map(|_| ())
-        }
+        Ok(_service) => update_service(
+            service_name,
+            service_display_name,
+            service_dependencies,
+            service_exe_path,
+        ),
+        Err(_e) => create_service(
+            service_name,
+            service_display_name,
+            service_dependencies,
+            service_exe_path,
+        )
+        .map(|_| ()),
     }
 }
 
@@ -229,7 +226,9 @@ fn create_service(
         account_name: None, // run as System
         account_password: None,
     };
-    service_manager.create_service(&service_info, ServiceAccess::QUERY_STATUS).map_err(Into::into)
+    service_manager
+        .create_service(&service_info, ServiceAccess::QUERY_STATUS)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

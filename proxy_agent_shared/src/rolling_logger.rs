@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::misc_helpers;
+use crate::result::Result;
 use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
-use crate::result::Result;
 
 pub struct RollingLogger {
     log_dir: PathBuf,
@@ -104,7 +104,11 @@ impl RollingLogger {
             .as_mut()
             .unwrap()
             .write_all(message.as_bytes())?;
-        self.log_writer.as_mut().unwrap().write_all(b"\n").map_err(Into::into)
+        self.log_writer
+            .as_mut()
+            .unwrap()
+            .write_all(b"\n")
+            .map_err(Into::into)
     }
 
     fn archive_file(&mut self) -> Result<()> {
