@@ -270,7 +270,7 @@ where
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
         Err(e) => {
-            return Err(Error::IO(
+            return Err(Error::Io(
                 format!("Failed to open TCP connection to {}", addr),
                 e,
             ))

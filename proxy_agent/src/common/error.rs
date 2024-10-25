@@ -6,7 +6,7 @@ use http::{uri::InvalidUri, StatusCode};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("IO error: {0}: {1}")]
-    IO(String, std::io::Error),
+    Io(String, std::io::Error),
 
     #[error("{0}")]
     Hyper(HyperErrorType),
