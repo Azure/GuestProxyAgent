@@ -22,7 +22,6 @@
 use super::instance_info::InstanceInfo;
 use crate::common::{error::Error, hyper_client, logger, result::Result};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
-use http::uri::InvalidUri;
 use hyper::Uri;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

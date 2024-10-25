@@ -27,7 +27,7 @@ use crate::common::{
 };
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
-use http::{uri::InvalidUri, Method};
+use http::Method;
 use hyper::Uri;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
