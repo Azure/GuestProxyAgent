@@ -41,6 +41,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyAgentDetailStatus;
 use proxy_agent_shared::telemetry::event_logger;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tower::Service;
@@ -68,6 +69,38 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
     }
 }
 
+/// start listener at the given address with retry logic if the address is in use
+async fn start_listener_with_retry(addr: &str, retry_count: u16) -> std::io::Result<TcpListener> {
+    let sleep_duration = Duration::from_secs(1);
+    for i in 0..retry_count {
+        let listener = TcpListener::bind(addr).await;
+        match listener {
+            Ok(l) => {
+                return Ok(l);
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::AddrInUse => {
+                    let message =
+                        format!(
+                        "Failed bind to '{}' with error 'AddrInUse', wait '{:#?}' and retrying {}.",
+                        addr, sleep_duration, (i+1)
+                    );
+                    logger::write_warning(message);
+                    tokio::time::sleep(sleep_duration).await;
+                    continue;
+                }
+                _ => {
+                    // other error, return it
+                    return Err(e);
+                }
+            },
+        }
+    }
+
+    // one more effort try bind to the addr
+    TcpListener::bind(addr).await
+}
+
 pub async fn start(
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
@@ -77,7 +110,7 @@ pub async fn start(
     let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
-    let listener = match TcpListener::bind(&addr).await {
+    let listener = match start_listener_with_retry(&addr, 5).await {
         Ok(listener) => listener,
         Err(e) => {
             let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
