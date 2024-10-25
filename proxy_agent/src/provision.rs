@@ -337,8 +337,8 @@ async fn get_current_provision_status(port: u16) -> Result<ProvisionState> {
     );
 
     let provision_url: hyper::Uri = provision_url
-        .parse()
-        .map_err(|e: InvalidUri| Error::ParseUrl(provision_url, e.to_string()))?;
+        .parse::<hyper::Uri>()
+        .map_err(|e| Error::ParseUrl(provision_url, e.to_string()))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());

@@ -48,8 +48,8 @@ impl ImdsClient {
         let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
 
         let url: Uri = url
-            .parse()
-            .map_err(|e: InvalidUri| Error::ParseUrl(url, e.to_string()))?;
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 

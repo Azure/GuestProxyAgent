@@ -57,8 +57,8 @@ impl WireServerClient {
 
         let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
         let url: Uri = url
-            .parse()
-            .map_err(|e: InvalidUri| Error::ParseUrl(url, e.to_string()))?;
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
         headers.insert(
@@ -104,8 +104,8 @@ impl WireServerClient {
     pub async fn get_goalstate(&self) -> Result<GoalState> {
         let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
         let url = url
-            .parse()
-            .map_err(|e: InvalidUri| Error::ParseUrl(url, e.to_string()))?;
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
@@ -123,8 +123,8 @@ impl WireServerClient {
     pub async fn get_shared_config(&self, url: String) -> Result<SharedConfig> {
         let mut headers = HashMap::new();
         let url = url
-            .parse()
-            .map_err(|e: InvalidUri| Error::ParseUrl(url, e.to_string()))?;
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
         hyper_client::get(
