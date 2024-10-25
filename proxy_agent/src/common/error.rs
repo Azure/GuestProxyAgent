@@ -9,7 +9,7 @@ pub enum Error {
     IO(String, std::io::Error),
 
     #[error("{0}")]
-    Hyper(Box<HyperErrorType>),
+    Hyper(HyperErrorType),
 
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
@@ -166,10 +166,10 @@ mod test {
 
     #[test]
     fn error_formatting_test() {
-        let mut error = Error::Hyper(Box::new(super::HyperErrorType::ServerError(
+        let mut error = Error::Hyper(super::HyperErrorType::ServerError(
             "testurl.com".to_string(),
             StatusCode::from_u16(500).unwrap(),
-        )));
+        ));
         assert_eq!(
             error.to_string(),
             "Failed to get response from testurl.com, status code: 500 Internal Server Error"

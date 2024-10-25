@@ -73,10 +73,10 @@ where
     let response = send_request(&host, port, request, log_fun).await?;
     let status = response.status();
     if !status.is_success() {
-        return Err(Error::Hyper(Box::new(HyperErrorType::ServerError(
+        return Err(Error::Hyper(HyperErrorType::ServerError(
             full_url.to_string(),
             status,
-        ))));
+        )));
     }
 
     read_response_body(response).await
@@ -128,10 +128,10 @@ where
         let frame = match next {
             Ok(f) => f,
             Err(e) => {
-                return Err(Error::Hyper(Box::new(HyperErrorType::Custom(
+                return Err(Error::Hyper(HyperErrorType::Custom(
                     "Failed to get next frame from response".to_string(),
                     e,
-                ))))
+                )))
             }
         };
         if let Some(chunk) = frame.data_ref() {
@@ -148,9 +148,9 @@ where
                     body_string.push_str(&String::from_utf16_lossy(&u16_vec));
                 }
                 "utf-32" => {
-                    return Err(Error::Hyper(Box::new(HyperErrorType::Deserialize(
+                    return Err(Error::Hyper(HyperErrorType::Deserialize(
                         "utf-32 charset is not supported".to_string(),
-                    ))))
+                    )))
                 }
                 _ => {
                     // default to utf-8
@@ -163,26 +163,26 @@ where
     match content_type {
         "xml" => match serde_xml_rs::from_str(&body_string) {
             Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(Box::new(
+            Err(e) => Err(Error::Hyper(
                 HyperErrorType::Deserialize(
                     format!(
                         "Failed to xml deserialize response body with content_type {} from: {} with error {}",
                         content_type, body_string, e
                     )
                 ),
-            ))),
+            )),
         },
         // default to json
         _ => match serde_json::from_str(&body_string) {
             Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(Box::new(
+            Err(e) => Err(Error::Hyper(
                 HyperErrorType::Deserialize(
                     format!(
                         "Failed to json deserialize response body with {} from: {} with error {}",
                         content_type, body_string, e
                     )
                 ),
-            ))),
+            )),
         },
     }
 }
@@ -245,8 +245,9 @@ pub fn build_request(
     };
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
-        Err(e) => Err(Error::Hyper(Box::new(HyperErrorType::RequestBuilder(
-            format!("Failed to build request body: {}", e),
+        Err(e) => Err(Error::Hyper(HyperErrorType::RequestBuilder(format!(
+            "Failed to build request body: {}",
+            e
         )))),
     }
 }
@@ -281,10 +282,10 @@ where
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
         .map_err(|e| {
-            Error::Hyper(Box::new(HyperErrorType::Custom(
+            Error::Hyper(HyperErrorType::Custom(
                 format!("Failed to establish connection to {}", addr),
                 e,
-            )))
+            ))
         })?;
 
     tokio::task::spawn(async move {
@@ -294,10 +295,10 @@ where
     });
 
     sender.send_request(request).await.map_err(|e| {
-        Error::Hyper(Box::new(HyperErrorType::Custom(
+        Error::Hyper(HyperErrorType::Custom(
             format!("Failed to send request to {}", full_url),
             e,
-        )))
+        ))
     })
 }
 
@@ -342,9 +343,9 @@ fn request_to_sign_input(request_builder: &Builder, body: Option<Vec<u8>>) -> Re
     let mut data: Vec<u8> = match request_builder.method_ref() {
         Some(m) => m.as_str().as_bytes().to_vec(),
         None => {
-            return Err(Error::Hyper(Box::new(HyperErrorType::RequestBuilder(
+            return Err(Error::Hyper(HyperErrorType::RequestBuilder(
                 "Failed to get method from request builder".to_string(),
-            ))))
+            )))
         }
     };
     data.extend(LF.as_bytes());
@@ -370,9 +371,9 @@ fn request_to_sign_input(request_builder: &Builder, body: Option<Vec<u8>>) -> Re
             data.extend(path_para.1.as_bytes());
         }
         None => {
-            return Err(Error::Hyper(Box::new(HyperErrorType::RequestBuilder(
+            return Err(Error::Hyper(HyperErrorType::RequestBuilder(
                 "Failed to get method from request builder".to_string(),
-            ))))
+            )))
         }
     }
 
