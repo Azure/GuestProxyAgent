@@ -40,10 +40,12 @@ mod test {
     #[test]
     fn error_formatting_test() {
         let mut error: Error = fs::metadata("file.txt").map_err(Into::into).unwrap_err();
-        assert_eq!(
-            error.to_string(),
+        let expected_err = if cfg!(windows) {
             "The system cannot find the file specified. (os error 2)"
-        );
+        } else {
+            "No such file or directory (os error 2)"
+        };
+        assert_eq!(error.to_string(), expected_err);
 
         error = regex::Regex::new(r"abc(").map_err(Into::into).unwrap_err();
         assert!(error
