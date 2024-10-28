@@ -14,22 +14,32 @@ pub enum Error {
     Regex(#[from] regex::Error),
 
     #[error("{0}")]
-    ParseVersion(String),
+    ParseVersion(ParseVersionErrorType),
 
     #[error("Findmnt command {0}")]
-    FindMnt(String),
+    Findmnt(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseVersionErrorType {
+    #[error("Invalid version string")]
+    InvalidString,
+
+    #[error("Cannot read Major build from {0}")]
+    MajorBuild(String),
+
+    #[error("Cannot read Minor build from {0}")]
+    MinorBuild(String),
 }
 
 #[cfg(test)]
 mod test {
-    use super::Error;
+    use super::{Error, ParseVersionErrorType};
     use std::fs;
 
     #[test]
     fn error_formatting_test() {
-        let mut error: Error = fs::metadata("nonexistentfile.txt")
-            .map_err(Into::into)
-            .unwrap_err();
+        let mut error: Error = fs::metadata("file.txt").map_err(Into::into).unwrap_err();
         assert_eq!(
             error.to_string(),
             "The system cannot find the file specified. (os error 2)"
@@ -40,7 +50,10 @@ mod test {
             .to_string()
             .contains("Failed to create regex with error: regex parse error:"));
 
-        error = Error::FindMnt(format!("failed with exit code: {}", 5));
+        error = Error::ParseVersion(ParseVersionErrorType::MajorBuild("1.5.0".to_string()));
+        assert_eq!(error.to_string(), "Cannot read Major build from 1.5.0");
+
+        error = Error::Findmnt(format!("failed with exit code: {}", 5));
         assert_eq!(
             error.to_string(),
             "Findmnt command failed with exit code: 5"

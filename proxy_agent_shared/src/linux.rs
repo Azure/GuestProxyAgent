@@ -99,7 +99,7 @@ pub fn get_processor_arch() -> String {
 pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1);
     if output.0 != 0 {
-        return Err(Error::FindMnt(format!(
+        return Err(Error::Findmnt(format!(
             "failed with exit code '{}', stdout :{}, stderr: {}.",
             output.0, output.1, output.2
         )));
@@ -111,7 +111,7 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
         return Ok(PathBuf::from(cgroup2_path));
     }
 
-    Err(Error::FindMnt(format!(
+    Err(Error::Findmnt(format!(
         "cannot find cgroup2 file mount: {}.",
         output.1
     )))

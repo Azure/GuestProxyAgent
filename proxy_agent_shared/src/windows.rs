@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::error::Error;
+use crate::error::{Error, ParseVersionErrorType};
 use crate::result::Result;
 use crate::version::Version;
 use std::ffi::OsStr;
@@ -65,9 +65,8 @@ pub fn get_os_version() -> Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => major = u,
                 Err(_) => {
-                    return Err(Error::ParseVersion(format!(
-                        "Cannot read Major build from {}",
-                        CURRENT_MAJOR_VERSION_NUMBER_STRING
+                    return Err(Error::ParseVersion(ParseVersionErrorType::MajorBuild(
+                        format!("{} ({})", major_str, CURRENT_MAJOR_VERSION_NUMBER_STRING),
                     )));
                 }
             }
@@ -90,9 +89,8 @@ pub fn get_os_version() -> Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => minor = u,
                 Err(_) => {
-                    return Err(Error::ParseVersion(format!(
-                        "Cannot read Minor build from {}",
-                        CURRENT_MINOR_VERSION_NUMBER_STRING
+                    return Err(Error::ParseVersion(ParseVersionErrorType::MinorBuild(
+                        format!("{} ({})", major_str, CURRENT_MINOR_VERSION_NUMBER_STRING),
                     )));
                 }
             }

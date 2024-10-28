@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::error::Error;
+use crate::error::{Error, ParseVersionErrorType};
 use crate::result::Result;
 
 pub struct Version {
@@ -36,26 +36,24 @@ impl Version {
 
     pub fn from_string(version_string: String) -> Result<Version> {
         let version_parts = version_string.split('.').collect::<Vec<&str>>();
-        if version_parts.len() < 2 {
-            return Err(Error::ParseVersion("Invalid version string".to_string()));
+        if version_parts.len() < 2 || version_parts.len() > 4 {
+            return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString));
         }
 
-        let major;
-        match version_parts[0].parse::<u32>() {
-            Ok(u) => major = u,
-            Err(_) => return Err(Error::ParseVersion("Cannot read Major build".to_string())),
-        };
+        let major = version_parts[0].parse::<u32>().map_err(|_| {
+            Error::ParseVersion(ParseVersionErrorType::MajorBuild(
+                version_string.to_string(),
+            ))
+        })?;
 
-        let minor;
-        match version_parts[1].parse::<u32>() {
-            Ok(u) => minor = u,
-            Err(_) => return Err(Error::ParseVersion("Cannot read Minor build".to_string())),
-        };
+        let minor = version_parts[1].parse::<u32>().map_err(|_| {
+            Error::ParseVersion(ParseVersionErrorType::MinorBuild(
+                version_string.to_string(),
+            ))
+        })?;
+
         if version_parts.len() == 2 {
             return Ok(Version::from_major_minor(major, minor));
-        }
-        if version_parts.len() > 4 {
-            return Err(Error::ParseVersion("Invalid version string".to_string()));
         }
 
         let mut build = None;
