@@ -10,7 +10,6 @@ use std::path::PathBuf;
 #[cfg(windows)]
 use crate::logger_manager;
 use crate::result::Result;
-use std::io;
 
 pub fn install_service(
     service_name: &str,

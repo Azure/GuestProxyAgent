@@ -3,7 +3,6 @@
 use crate::logger_manager;
 use crate::result::Result;
 use std::ffi::OsString;
-use std::io;
 use std::path::PathBuf;
 use std::str;
 use std::thread;

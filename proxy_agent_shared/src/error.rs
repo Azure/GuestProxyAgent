@@ -22,12 +22,28 @@ pub enum Error {
 
 #[cfg(test)]
 mod test {
-    use super::{Error, KeyErrorType, WireServerErrorType};
-    use http::StatusCode;
+    use super::Error;
+    use std::fs;
 
     #[test]
     fn error_formatting_test() {
-        let metadata = fs::metadata(&file_full_path)?;
-        
+        let mut error: Error = fs::metadata("nonexistentfile.txt")
+            .map_err(Into::into)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "The system cannot find the file specified. (os error 2)"
+        );
+
+        error = regex::Regex::new(r"abc(").map_err(Into::into).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Failed to create regex with error: regex parse error:"));
+
+        error = Error::FindMnt(format!("failed with exit code: {}", 5));
+        assert_eq!(
+            error.to_string(),
+            "Findmnt command failed with exit code: 5"
+        );
     }
 }

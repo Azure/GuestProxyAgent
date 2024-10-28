@@ -66,12 +66,9 @@ fn net_user_get_local_groups(
 ) -> Result<u32> {
     unsafe {
         let fun_name = "NetUserGetLocalGroups\0";
-        let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> =
-            NETAPI32_DLL.get(fun_name.as_bytes()).map_err(|e| {
-                Error::WindowsApi(WindowsApiErrorType::LoadNetUserGetLocalGroups(
-                    e,
-                ))
-            })?;
+        let net_user_get_local_groups: Symbol<NetUserGetLocalGroups> = NETAPI32_DLL
+            .get(fun_name.as_bytes())
+            .map_err(|e| Error::WindowsApi(WindowsApiErrorType::LoadNetUserGetLocalGroups(e)))?;
         let status = net_user_get_local_groups(
             servername,
             username,
