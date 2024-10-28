@@ -41,6 +41,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyAgentDetailStatus;
 use proxy_agent_shared::telemetry::event_logger;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tower::Service;
@@ -68,29 +69,71 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
     }
 }
 
-pub async fn start(
-    port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// start listener at the given address with retry logic if the address is in use
+async fn start_listener_with_retry(addr: &str, retry_count: u16) -> Result<TcpListener> {
+    let sleep_duration = Duration::from_secs(1);
+    for i in 0..retry_count {
+        let listener = TcpListener::bind(addr).await;
+        match listener {
+            Ok(l) => {
+                return Ok(l);
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::AddrInUse => {
+                    let message =
+                        format!(
+                        "Failed bind to '{}' with error 'AddrInUse', wait '{:#?}' and retrying {}.",
+                        addr, sleep_duration, (i+1)
+                    );
+                    logger::write_warning(message);
+                    tokio::time::sleep(sleep_duration).await;
+                    continue;
+                }
+                _ => {
+                    // other error, return it
+                    return Err(Error::Io(
+                        format!("Failed to bind TcpListener '{}'", addr),
+                        e,
+                    ));
+                }
+            },
+        }
+    }
+
+    // one more effort try bind to the addr
+    TcpListener::bind(addr)
+        .await
+        .map_err(|e| Error::Io(format!("Failed to bind TcpListener '{}'", addr), e))
+}
+
+pub async fn start(port: u16, shared_state: Arc<Mutex<SharedState>>) {
     Connection::init_logger(config::get_logs_dir());
 
     let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
-    let listener = match TcpListener::bind(&addr).await {
+    let listener = match start_listener_with_retry(&addr, 5).await {
         Ok(listener) => listener,
         Err(e) => {
-            let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
+            let message = format!("{}", e);
             proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
-            logger::write_error(message);
-            return Err(Box::new(e));
+            // send this critical error to event logger
+            event_logger::write_event(
+                event_logger::WARN_LEVEL,
+                message,
+                "start",
+                "proxy_server",
+                Connection::CONNECTION_LOGGER_KEY,
+            );
+
+            return;
         }
     };
 
     let message = helpers::write_startup_event(
         "Started proxy listener, ready to accept request",
         "start",
-        "proxy_listener",
+        "proxy_server",
         logger::AGENT_LOGGER_KEY,
     );
     proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
@@ -102,7 +145,7 @@ pub async fn start(
         tokio::select! {
             _ = cancellation_token.cancelled() => {
                 logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                return Ok(());
+                return;
             }
             result = listener.accept() => {
                 match result {
@@ -255,7 +298,7 @@ async fn handle_request(
                 event_logger::WARN_LEVEL,
                 err,
                 "handle_request",
-                "proxy_listener",
+                "proxy_server",
                 Connection::CONNECTION_LOGGER_KEY,
             );
             #[cfg(windows)]
@@ -275,7 +318,7 @@ async fn handle_request(
                             event_logger::WARN_LEVEL,
                             err,
                             "handle_request",
-                            "proxy_listener",
+                            "proxy_server",
                             Connection::CONNECTION_LOGGER_KEY,
                         );
                     }
@@ -533,7 +576,7 @@ fn log_connection_summary(
             event_logger::INFO_LEVEL,
             json,
             "log_connection_summary",
-            "proxy_listener",
+            "proxy_server",
             Connection::CONNECTION_LOGGER_KEY,
         );
     };
