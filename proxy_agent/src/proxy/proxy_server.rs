@@ -50,6 +50,8 @@ use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
 const INITIAL_CONNECTION_ID: u128 = 0;
 const REQUEST_BODY_LOW_LIMIT_SIZE: usize = 1024 * 100; // 100KB
 const REQUEST_BODY_LARGE_LIMIT_SIZE: usize = 1024 * REQUEST_BODY_LOW_LIMIT_SIZE; // 100MB
+const START_LISTENER_RETRY_COUNT: u16 = 5;
+const START_LISTENER_RETRY_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
 pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
@@ -70,8 +72,11 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
 }
 
 /// start listener at the given address with retry logic if the address is in use
-async fn start_listener_with_retry(addr: &str, retry_count: u16) -> Result<TcpListener> {
-    let sleep_duration = Duration::from_secs(1);
+async fn start_listener_with_retry(
+    addr: &str,
+    retry_count: u16,
+    sleep_duration: Duration,
+) -> Result<TcpListener> {
     for i in 0..retry_count {
         let listener = TcpListener::bind(addr).await;
         match listener {
@@ -112,10 +117,16 @@ pub async fn start(port: u16, shared_state: Arc<Mutex<SharedState>>) {
     let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
-    let listener = match start_listener_with_retry(&addr, 5).await {
+    let listener = match start_listener_with_retry(
+        &addr,
+        START_LISTENER_RETRY_COUNT,
+        START_LISTENER_RETRY_SLEEP_DURATION,
+    )
+    .await
+    {
         Ok(listener) => listener,
         Err(e) => {
-            let message = format!("{}", e);
+            let message = e.to_string();
             proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
             // send this critical error to event logger
             event_logger::write_event(
