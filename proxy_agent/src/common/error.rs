@@ -2,75 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 use http::{uri::InvalidUri, StatusCode};
-use std::error::Error as StdError;
-use std::fmt::Display;
-
-#[derive(Debug)]
-pub struct Error(Box<ErrorType>);
-
-impl Error {
-    fn new(error: ErrorType) -> Self {
-        Self(Box::new(error))
-    }
-
-    pub fn io(message: String, error: std::io::Error) -> Self {
-        Self::new(ErrorType::IO(message, error))
-    }
-
-    pub fn hyper(error: HyperErrorType) -> Self {
-        Self::new(ErrorType::Hyper(error))
-    }
-
-    pub fn hex(message: String, error: hex::FromHexError) -> Self {
-        Self::new(ErrorType::Hex(message, error))
-    }
-
-    pub fn key(error: KeyErrorType) -> Self {
-        Self::new(ErrorType::Key(error))
-    }
-
-    pub fn parse_url(url: String, error: InvalidUri) -> Self {
-        Self::new(ErrorType::ParseUrl(url, error.to_string()))
-    }
-
-    pub fn parse_url_message(url: String, message: String) -> Self {
-        Self::new(ErrorType::ParseUrl(url, message))
-    }
-
-    pub fn wire_server(error_type: WireServerErrorType, message: String) -> Self {
-        Self::new(ErrorType::WireServer(error_type, message))
-    }
-
-    pub fn acl(error: AclErrorType, error_code: u32) -> Self {
-        Self::new(ErrorType::Acl(error, error_code))
-    }
-
-    pub fn bpf(error: BpfErrorType) -> Self {
-        Self::new(ErrorType::Bpf(error))
-    }
-
-    #[cfg(windows)]
-    pub fn windows_api(error: WindowsApiErrorType) -> Self {
-        Self::new(ErrorType::WindowsApi(error))
-    }
-
-    pub fn invalid(error: String) -> Self {
-        Self::new(ErrorType::Invalid(error))
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl StdError for Error {}
 
 #[derive(Debug, thiserror::Error)]
-enum ErrorType {
+pub enum Error {
     #[error("IO error: {0}: {1}")]
-    IO(String, std::io::Error),
+    Io(String, std::io::Error),
 
     #[error("{0}")]
     Hyper(HyperErrorType),
@@ -232,7 +168,7 @@ mod test {
 
     #[test]
     fn error_formatting_test() {
-        let mut error = Error::hyper(super::HyperErrorType::ServerError(
+        let mut error = Error::Hyper(super::HyperErrorType::ServerError(
             "testurl.com".to_string(),
             StatusCode::from_u16(500).unwrap(),
         ));
@@ -241,7 +177,7 @@ mod test {
             "Failed to get response from testurl.com, status code: 500 Internal Server Error"
         );
 
-        error = Error::wire_server(
+        error = Error::WireServer(
             WireServerErrorType::Telemetry,
             "Invalid response".to_string(),
         );
@@ -250,7 +186,7 @@ mod test {
             "Telemetry call to wire server failed with the error: Invalid response"
         );
 
-        error = Error::key(KeyErrorType::SendKeyRequest(
+        error = Error::Key(KeyErrorType::SendKeyRequest(
             "acquire".to_string(),
             error.to_string(),
         ));

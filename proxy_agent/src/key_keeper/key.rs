@@ -456,7 +456,7 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::key(KeyErrorType::KeyStatusValidation(
+            return Err(Error::Key(KeyErrorType::KeyStatusValidation(
                 validate_message,
             )));
         }
@@ -673,7 +673,7 @@ pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::key(KeyErrorType::ParseKeyUrl(
+        Error::Key(KeyErrorType::ParseKeyUrl(
             base_url.to_string(),
             STATUS_URL.to_string(),
             e,
@@ -692,7 +692,7 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::key(KeyErrorType::ParseKeyUrl(
+        Error::Key(KeyErrorType::ParseKeyUrl(
             base_url.to_string(),
             KEY_URL.to_string(),
             e,
@@ -716,14 +716,14 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                return Err(Error::Key(KeyErrorType::SendKeyRequest(
                     format!("{}", KeyAction::Acquire),
                     e.to_string(),
                 )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::key(KeyErrorType::KeyResponse(
+        return Err(Error::Key(KeyErrorType::KeyResponse(
             format!("{}", KeyAction::Acquire),
             response.status(),
         )));
@@ -740,7 +740,7 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
     );
     let url: Uri = url
         .parse()
-        .map_err(|e| Error::key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
+        .map_err(|e| Error::Key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
@@ -756,14 +756,14 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::key(KeyErrorType::SendKeyRequest(
+                return Err(Error::Key(KeyErrorType::SendKeyRequest(
                     format!("{}", KeyAction::Attest),
                     e.to_string(),
                 )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::key(KeyErrorType::KeyResponse(
+        return Err(Error::Key(KeyErrorType::KeyResponse(
             format!("{}", KeyAction::Attest),
             response.status(),
         )));

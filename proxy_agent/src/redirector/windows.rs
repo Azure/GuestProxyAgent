@@ -178,7 +178,7 @@ pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
 pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(bpf_object) => bpf_object.lock().unwrap().lookup_bpf_audit_map(source_port),
-        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
+        None => Err(Error::Bpf(BpfErrorType::GetBpfObject)),
     }
 }
 

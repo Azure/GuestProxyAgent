@@ -22,13 +22,13 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     let dir_str = misc_helpers::path_to_string(&dir_to_acl);
 
     let mut acl = ACL::from_file_path(&dir_str, true)
-        .map_err(|e| Error::acl(AclErrorType::AclObject(dir_str.to_string()), e))?;
+        .map_err(|e| Error::Acl(AclErrorType::AclObject(dir_str.to_string()), e))?;
 
     let system_sid = helper::string_to_sid(LOCAL_SYSTEM_SID)
-        .map_err(|e| Error::acl(AclErrorType::Sid(LOCAL_SYSTEM_SID.to_string()), e))?;
+        .map_err(|e| Error::Acl(AclErrorType::Sid(LOCAL_SYSTEM_SID.to_string()), e))?;
 
     let admin_sid = helper::string_to_sid(BUILDIN_ADMIN_SID)
-        .map_err(|e| Error::acl(AclErrorType::Sid(BUILDIN_ADMIN_SID.to_string()), e))?;
+        .map_err(|e| Error::Acl(AclErrorType::Sid(BUILDIN_ADMIN_SID.to_string()), e))?;
 
     logger::write(format!(
         "acl_directory: removing all the remaining access rules for folder {}.",
@@ -68,7 +68,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
             }
         }
         Err(e) => {
-            return Err(Error::acl(AclErrorType::AclEntries(dir_str), e));
+            return Err(Error::Acl(AclErrorType::AclEntries(dir_str), e));
         }
     }
 
@@ -91,7 +91,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
             ));
         }
         Err(e) => {
-            return Err(Error::acl(
+            return Err(Error::Acl(
                 AclErrorType::AddEntry(LOCAL_SYSTEM_SID.to_string()),
                 e,
             ));
@@ -110,7 +110,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
             ));
         }
         Err(e) => {
-            return Err(Error::acl(
+            return Err(Error::Acl(
                 AclErrorType::AddEntry(LOCAL_SYSTEM_SID.to_string()),
                 e,
             ));

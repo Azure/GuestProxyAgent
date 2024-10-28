@@ -126,7 +126,7 @@ impl BpfObject {
             .load_file(&bpf_file_path)
         {
             Ok(bpf) => Ok(BpfObject::new(bpf)),
-            Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfApi(
+            Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfApi(
                 misc_helpers::path_to_string(&bpf_file_path),
                 err.to_string(),
             ))),
@@ -144,7 +144,7 @@ impl BpfObject {
                     match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                                 skip_process_map_name.to_string(),
                                 format!("insert pid: {}", pid),
                                 err.to_string(),
@@ -153,14 +153,14 @@ impl BpfObject {
                     }
                 }
                 Err(err) => {
-                    return Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
                         skip_process_map_name.to_string(),
                         err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                return Err(Error::Bpf(BpfErrorType::GetBpfMap(
                     skip_process_map_name.to_string(),
                     "Map does not exist".to_string(),
                 )));
@@ -193,7 +193,7 @@ impl BpfObject {
                             logger::write("policy_map updated for WireServer endpoints".to_string())
                         }
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                                 policy_map_name.to_string(),
                                 "WireServer endpoints".to_string(),
                                 err.to_string(),
@@ -208,7 +208,7 @@ impl BpfObject {
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
                         Ok(_) => logger::write("policy_map updated for IMDS endpoints".to_string()),
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                                 policy_map_name.to_string(),
                                 "IMDS endpoints".to_string(),
                                 err.to_string(),
@@ -225,7 +225,7 @@ impl BpfObject {
                             "policy_map updated for HostGAPlugin endpoints".to_string(),
                         ),
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::UpdateBpfMapHashMap(
+                            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                                 policy_map_name.to_string(),
                                 "HostGAPlugin endpoints".to_string(),
                                 err.to_string(),
@@ -234,14 +234,14 @@ impl BpfObject {
                     }
                 }
                 Err(err) => {
-                    return Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
                         policy_map_name.to_string(),
                         err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::bpf(BpfErrorType::GetBpfMap(
+                return Err(Error::Bpf(BpfErrorType::GetBpfMap(
                     policy_map_name.to_string(),
                     "Map does not exist".to_string(),
                 )));
@@ -260,7 +260,7 @@ impl BpfObject {
                         match program.load() {
                             Ok(_) => logger::write("connect4 program loaded.".to_string()),
                             Err(err) => {
-                                return Err(Error::bpf(BpfErrorType::LoadBpfProgram(
+                                return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                     program_name.to_string(),
                                     err.to_string(),
                                 )));
@@ -274,7 +274,7 @@ impl BpfObject {
                                 ));
                             }
                             Err(err) => {
-                                return Err(Error::bpf(BpfErrorType::AttachBpfProgram(
+                                return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                                     program_name.to_string(),
                                     err.to_string(),
                                 )));
@@ -282,21 +282,21 @@ impl BpfObject {
                         }
                     }
                     Err(err) => {
-                        return Err(Error::bpf(BpfErrorType::ConvertBpfProgram(
+                        return Err(Error::Bpf(BpfErrorType::ConvertBpfProgram(
                             "CgroupSockAddr".to_string(),
                             err.to_string(),
                         )));
                     }
                 },
                 None => {
-                    return Err(Error::bpf(BpfErrorType::GetBpfProgram(
+                    return Err(Error::Bpf(BpfErrorType::GetBpfProgram(
                         program_name.to_string(),
                         "Program does not exist".to_string(),
                     )));
                 }
             },
             Err(err) => {
-                return Err(Error::bpf(BpfErrorType::OpenCgroup(
+                return Err(Error::Bpf(BpfErrorType::OpenCgroup(
                     cgroup2_root_path.display().to_string(),
                     err.to_string(),
                 )));
@@ -315,7 +315,7 @@ impl BpfObject {
                     match program.load() {
                         Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::LoadBpfProgram(
+                            return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                 program_name.to_string(),
                                 err.to_string(),
                             )));
@@ -329,7 +329,7 @@ impl BpfObject {
                             ));
                         }
                         Err(err) => {
-                            return Err(Error::bpf(BpfErrorType::AttachBpfProgram(
+                            return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                                 program_name.to_string(),
                                 err.to_string(),
                             )));
@@ -337,14 +337,14 @@ impl BpfObject {
                     }
                 }
                 Err(err) => {
-                    return Err(Error::bpf(BpfErrorType::ConvertBpfProgram(
+                    return Err(Error::Bpf(BpfErrorType::ConvertBpfProgram(
                         "KProbe".to_string(),
                         err.to_string(),
                     )));
                 }
             },
             None => {
-                return Err(Error::bpf(BpfErrorType::GetBpfProgram(
+                return Err(Error::Bpf(BpfErrorType::GetBpfProgram(
                     program_name.to_string(),
                     "Program does not exist".to_string(),
                 )));
@@ -370,18 +370,18 @@ impl BpfObject {
                                 destination_port: audit_value.destination_port as u16,
                             })
                         }
-                        Err(err) => Err(Error::bpf(BpfErrorType::MapLookupElem(
+                        Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
                             source_port.to_string(),
                             err.to_string(),
                         ))),
                     }
                 }
-                Err(err) => Err(Error::bpf(BpfErrorType::LoadBpfMapHashMap(
+                Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
                     audit_map_name.to_string(),
                     err.to_string(),
                 ))),
             },
-            None => Err(Error::bpf(BpfErrorType::GetBpfMap(
+            None => Err(Error::Bpf(BpfErrorType::GetBpfMap(
                 audit_map_name.to_string(),
                 "Map does not exist".to_string(),
             ))),
@@ -492,7 +492,7 @@ pub fn close(shared_state: Arc<Mutex<SharedState>>) {
 pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
     match redirector_wrapper::get_bpf_object(shared_state.clone()) {
         Some(ref bpf) => bpf.lock().unwrap().lookup_audit(source_port),
-        None => Err(Error::bpf(BpfErrorType::GetBpfObject)),
+        None => Err(Error::Bpf(BpfErrorType::GetBpfObject)),
     }
 }
 

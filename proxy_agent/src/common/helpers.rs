@@ -70,7 +70,7 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
             let result = mac.finalize();
             Ok(hex::encode(result))
         }
-        Err(e) => Err(Error::hex(hex_encoded_key.to_string(), e)),
+        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
     }
 }
 
