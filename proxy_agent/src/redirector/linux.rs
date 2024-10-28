@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 pub struct BpfObject(Bpf);
 
 pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let mut bpf_object = match BpfObject::from_ebpf_file(super::get_ebpf_file_path()) {
+    let mut bpf_object = match BpfObject::from_ebpf_file(&super::get_ebpf_file_path()) {
         Ok(value) => value,
         Err(e) => {
             set_error_status(format!("{}", e), shared_state.clone());
@@ -118,16 +118,23 @@ impl BpfObject {
         &self.0
     }
 
-    pub fn from_ebpf_file(bpf_file_path: PathBuf) -> Result<BpfObject> {
+    pub fn from_ebpf_file(bpf_file_path: &PathBuf) -> Result<BpfObject> {
+        if !bpf_file_path.exists() || !bpf_file_path.is_file(){
+            return Err(Error::Bpf(BpfErrorType::LoadBpfApi(
+                misc_helpers::path_to_string(bpf_file_path),
+                "File does not exist".to_string(),
+            )));
+        }
+
         match BpfLoader::new()
             // load the BTF data from /sys/kernel/btf/vmlinux
             .btf(Btf::from_sys_fs().ok().as_ref())
             // finally load the code
-            .load_file(&bpf_file_path)
+            .load_file(bpf_file_path)
         {
             Ok(bpf) => Ok(BpfObject::new(bpf)),
             Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfApi(
-                misc_helpers::path_to_string(&bpf_file_path),
+                misc_helpers::path_to_string(bpf_file_path),
                 err.to_string(),
             ))),
         }
@@ -547,7 +554,7 @@ mod tests {
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");
-        let bpf = super::BpfObject::from_ebpf_file(bpf_file_path);
+        let bpf = super::BpfObject::from_ebpf_file(&bpf_file_path);
         assert!(
             bpf.is_err(),
             "BpfObject::from_ebpf_file should return error from invalid file path"
@@ -555,18 +562,27 @@ mod tests {
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push(config::get_ebpf_program_name());
-        let bpf = super::BpfObject::from_ebpf_file(bpf_file_path);
+        let bpf = super::BpfObject::from_ebpf_file(&bpf_file_path);
         if bpf.is_err() {
-            println!("BpfObject::from_ebpf_file error");
-            if std::fs::metadata("/.dockerenv").is_ok() {
-                println!("This docker image does not have BPF capacity, skip this test.");
-                return;
-            } else {
-                assert!(false, "open_ebpf_file should not return Err");
+            println!(
+                "BpfObject::from_ebpf_file '{}' error: {}",
+                bpf_file_path.display(),
+                bpf.err().unwrap()
+            );
+            match std::fs::metadata("/.dockerenv") {
+                Ok(_) => {
+                    println!("This docker image does not have BPF capacity, skip this test.");
+                    return;
+                }
+                Err(e) => {
+                    println!("Failed to check /.dockerenv: {}", e);
+                    assert!(false, "BpfObject::from_ebpf_file should not return Err");
+                    return;
+                }
             }
         }
-        let mut bpf = bpf.unwrap();
 
+        let mut bpf = bpf.unwrap();
         let result = bpf.update_skip_process_map();
         assert!(
             result.is_ok(),
