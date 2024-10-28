@@ -226,7 +226,7 @@ async fn accept_one_request(
 fn set_stream_read_time_out(stream: TcpStream) -> Result<(TcpStream, std::net::TcpStream)> {
     // Convert the stream to a std stream
     let std_stream = stream.into_std().map_err(|e| {
-        Error::io(
+        Error::Io(
             "Failed to convert Tokio stream into std equivalent".to_string(),
             e,
         )
@@ -243,11 +243,11 @@ fn set_stream_read_time_out(stream: TcpStream) -> Result<(TcpStream, std::net::T
     // Clone the stream for the service_fn
     let cloned_std_stream = std_stream
         .try_clone()
-        .map_err(|e| Error::io("Failed to clone TCP stream".to_string(), e))?;
+        .map_err(|e| Error::Io("Failed to clone TCP stream".to_string(), e))?;
 
     // Convert the std stream back
     let tokio_tcp_stream = TcpStream::from_std(std_stream).map_err(|e| {
-        Error::io(
+        Error::Io(
             "Failed to convert std stream into Tokio equivalent".to_string(),
             e,
         )
