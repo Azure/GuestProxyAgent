@@ -119,7 +119,7 @@ impl BpfObject {
     }
 
     pub fn from_ebpf_file(bpf_file_path: &PathBuf) -> Result<BpfObject> {
-        if !bpf_file_path.exists() || !bpf_file_path.is_file(){
+        if !bpf_file_path.exists() || !bpf_file_path.is_file() {
             return Err(Error::Bpf(BpfErrorType::LoadBpfApi(
                 misc_helpers::path_to_string(bpf_file_path),
                 "File does not exist".to_string(),
@@ -539,6 +539,11 @@ mod tests {
     use proxy_agent_shared::misc_helpers;
     use std::env;
 
+    /// Test the Linux BpfObject struct
+    /// This test requires root permission and BPF capability to run
+    /// This test will fail if the current user does not have root permission
+    /// So far, we know some container build environments do not have BPF capability
+    /// This test will skip if the current envioronment does not have the capability to load BPF programs
     #[test]
     fn linux_ebpf_test() {
         let logger_key = "linux_ebpf_test";
@@ -569,17 +574,16 @@ mod tests {
                 bpf_file_path.display(),
                 bpf.err().unwrap()
             );
-            match std::fs::metadata("/.dockerenv") {
-                Ok(_) => {
-                    println!("This docker image does not have BPF capacity, skip this test.");
-                    return;
-                }
-                Err(e) => {
-                    println!("Failed to check /.dockerenv: {}", e);
-                    assert!(false, "BpfObject::from_ebpf_file should not return Err");
-                    return;
-                }
+            let envriorment = env::var("Environment")
+                .unwrap_or("normal".to_string())
+                .to_lowercase();
+            if envriorment == "onebranch/cbl-mariner" {
+                println!("This is known: onebranch/cbl-mariner container image does not have the BPF capabilty, skip this test.");
+                return;
             }
+
+            assert!(false, "BpfObject::from_ebpf_file should not return Err");
+            return;
         }
 
         let mut bpf = bpf.unwrap();
