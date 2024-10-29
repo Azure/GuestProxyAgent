@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation
+// SPDX-License-Identifier: MIT
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[cfg(windows)]
@@ -16,14 +19,14 @@ pub enum Error {
     #[error("{0}")]
     ParseVersion(ParseVersionErrorType),
 
-    #[error("Findmnt command {0}")]
-    Findmnt(String),
+    #[error("{0} command: {1}")]
+    Command(CommandErrorType, String),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseVersionErrorType {
-    #[error("Invalid version string")]
-    InvalidString,
+    #[error("Invalid version string '{0}'")]
+    InvalidString(String),
 
     #[error("Cannot read Major build from {0}")]
     MajorBuild(String),
@@ -32,9 +35,15 @@ pub enum ParseVersionErrorType {
     MinorBuild(String),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CommandErrorType {
+    #[error("Findmnt")]
+    Findmnt,
+}
+
 #[cfg(test)]
 mod test {
-    use super::{Error, ParseVersionErrorType};
+    use super::{CommandErrorType, Error, ParseVersionErrorType};
     use std::fs;
 
     #[test]
@@ -55,10 +64,13 @@ mod test {
         error = Error::ParseVersion(ParseVersionErrorType::MajorBuild("1.5.0".to_string()));
         assert_eq!(error.to_string(), "Cannot read Major build from 1.5.0");
 
-        error = Error::Findmnt(format!("failed with exit code: {}", 5));
+        error = Error::Command(
+            CommandErrorType::Findmnt,
+            format!("Failed with exit code: {}", 5),
+        );
         assert_eq!(
             error.to_string(),
-            "Findmnt command failed with exit code: 5"
+            "Findmnt command: Failed with exit code: 5"
         );
     }
 }

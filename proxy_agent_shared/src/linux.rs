@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::error::Error;
+use crate::error::{CommandErrorType, Error};
 use crate::logger_manager;
 use crate::misc_helpers;
 use crate::result::Result;
@@ -99,10 +99,13 @@ pub fn get_processor_arch() -> String {
 pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1);
     if output.0 != 0 {
-        return Err(Error::Findmnt(format!(
-            "failed with exit code '{}', stdout :{}, stderr: {}.",
-            output.0, output.1, output.2
-        )));
+        return Err(Error::Command(
+            CommandErrorType::Findmnt,
+            format!(
+                "Failed with exit code '{}', stdout :{}, stderr: {}.",
+                output.0, output.1, output.2
+            ),
+        ));
     }
 
     let mount: FileMount = serde_json::from_str(&output.1)?;
@@ -111,10 +114,10 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
         return Ok(PathBuf::from(cgroup2_path));
     }
 
-    Err(Error::Findmnt(format!(
-        "cannot find cgroup2 file mount: {}.",
-        output.1
-    )))
+    Err(Error::Command(
+        CommandErrorType::Findmnt,
+        format!("Cannot find cgroup2 file mount: {}.", output.1),
+    ))
 }
 
 #[cfg(test)]

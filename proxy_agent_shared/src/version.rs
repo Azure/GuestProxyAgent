@@ -37,7 +37,9 @@ impl Version {
     pub fn from_string(version_string: String) -> Result<Version> {
         let version_parts = version_string.split('.').collect::<Vec<&str>>();
         if version_parts.len() < 2 || version_parts.len() > 4 {
-            return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString));
+            return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
+                version_string,
+            )));
         }
 
         let major = version_parts[0].parse::<u32>().map_err(|_| {
