@@ -543,7 +543,7 @@ mod tests {
     /// This test requires root permission and BPF capability to run
     /// This test will fail if the current user does not have root permission
     /// So far, we know some container build environments do not have BPF capability
-    /// This test will skip if the current envioronment does not have the capability to load BPF programs
+    /// This test will skip if the current environment does not have the capability to load BPF programs
     #[test]
     fn linux_ebpf_test() {
         let logger_key = "linux_ebpf_test";
@@ -574,11 +574,11 @@ mod tests {
                 bpf_file_path.display(),
                 bpf.err().unwrap()
             );
-            let envriorment = env::var("Environment")
+            let environment = env::var("Environment")
                 .unwrap_or("normal".to_string())
                 .to_lowercase();
-            if envriorment == "onebranch/cbl-mariner" {
-                println!("This is known: onebranch/cbl-mariner container image does not have the BPF capabilty, skip this test.");
+            if environment == "onebranch/cbl-mariner" {
+                println!("This is known: onebranch/cbl-mariner container image does not have the BPF capability, skip this test.");
                 return;
             }
 
