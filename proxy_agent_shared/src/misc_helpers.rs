@@ -75,8 +75,11 @@ pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> Result<()>
 where
     T: ?Sized + Serialize,
 {
-    let file = File::create(file_path)?;
+    // write to a temp file and rename to avoid corrupted file
+    let temp_file_path = file_path.with_extension("tmp");    
+    let file = File::create(temp_file_path.to_path_buf())?;
     serde_json::to_writer_pretty(file, obj)?;
+    std::fs::rename(temp_file_path, file_path)?;
 
     Ok(())
 }
