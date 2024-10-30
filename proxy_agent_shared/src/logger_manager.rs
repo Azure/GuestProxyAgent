@@ -3,7 +3,6 @@
 use crate::rolling_logger::RollingLogger;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -34,20 +33,15 @@ pub fn init_logger(
 }
 
 pub fn get_logger(logger_key: &str) -> Arc<Mutex<RollingLogger>> {
-    get_logger_arc(logger_key).unwrap()
-}
-
-fn get_logger_arc(logger_key: &str) -> std::io::Result<Arc<Mutex<RollingLogger>>> {
     unsafe {
         if !LOGGERS.contains_key(logger_key) {
-            return Err(Error::new(
-                ErrorKind::Unsupported,
-                format!("Logger '{logger_key}' has not init, please call 'init_logger' first."),
-            ));
+            panic!(
+                "Logger '{logger_key}' has not been initialized, please call 'init_logger' first."
+            );
         }
 
         let logger = &LOGGERS[logger_key];
-        Ok(Arc::clone(logger))
+        Arc::clone(logger)
     }
 }
 
