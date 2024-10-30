@@ -36,6 +36,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -178,7 +179,7 @@ pub fn get_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> VMMetaData {
 }
 
 async fn process_events(
-    dir_path: &PathBuf,
+    dir_path: &Path,
     wire_server_client: &WireServerClient,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> usize {
@@ -187,7 +188,7 @@ async fn process_events(
     match misc_helpers::search_files(dir_path, r"^(.*\.json)$") {
         Ok(files) => {
             let file_count = files.len();
-            event_count = process_events_and_clean(files, &wire_server_client, shared_state).await;
+            event_count = process_events_and_clean(files, wire_server_client, shared_state).await;
             let message = format!("Send {} events from {} files", event_count, file_count);
             event_logger::write_event(
                 event_logger::INFO_LEVEL,
@@ -206,7 +207,7 @@ async fn process_events(
             event_count = 0;
         }
     }
-    return event_count;
+    event_count
 }
 
 async fn process_events_and_clean(
@@ -415,7 +416,10 @@ mod tests {
             process_events(&events_dir, &wire_server_client, shared_state.clone()).await;
         assert_eq!(0, events_processed, "events_processed must be 0.");
         let files = misc_helpers::get_files(&events_dir).unwrap();
-        assert!(!files.is_empty(), ".notjson files should not been cleaned up.");
+        assert!(
+            !files.is_empty(),
+            ".notjson files should not been cleaned up."
+        );
 
         server_mock::stop(shared_state.clone());
         _ = fs::remove_dir_all(&temp_dir);

@@ -76,8 +76,8 @@ where
     T: ?Sized + Serialize,
 {
     // write to a temp file and rename to avoid corrupted file
-    let temp_file_path = file_path.with_extension("tmp");    
-    let file = File::create(temp_file_path.to_path_buf())?;
+    let temp_file_path = file_path.with_extension("tmp");
+    let file = File::create(&temp_file_path)?;
     serde_json::to_writer_pretty(file, obj)?;
     std::fs::rename(temp_file_path, file_path)?;
 
