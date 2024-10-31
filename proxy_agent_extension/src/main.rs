@@ -26,6 +26,8 @@ use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
 
+const CONFIG_SEQ_NO_ENV_VAR: &str = "ConfigSequenceNumber";
+
 #[derive(Parser)]
 #[command()]
 struct Cli {
@@ -56,8 +58,8 @@ fn main() {
     if let Some(command) = cli.command {
         // extension commands
         let config_seq_no =
-            env::var("ConfigSequenceNumber").unwrap_or_else(|_e| "no seq no".to_string());
-        handler_main::program_start(command, Some(config_seq_no));
+            env::var(CONFIG_SEQ_NO_ENV_VAR).unwrap_or_else(|_e| "no seq no".to_string());
+        handler_main::program_start(command, config_seq_no);
     } else {
         // no arguments, start it as a service
         let exe_path = misc_helpers::get_current_exe_dir();

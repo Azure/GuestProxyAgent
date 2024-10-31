@@ -8,7 +8,6 @@ use crate::structs::HandlerEnvironment;
 use crate::structs::TopLevelStatus;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use std::fs;
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
@@ -67,28 +66,21 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
 
 pub fn get_file_path(
     status_folder: PathBuf,
-    config_seq_no: &Option<String>,
+    config_seq_no: &String,
     file_extension: &str,
 ) -> PathBuf {
     let mut file: PathBuf = status_folder;
     if let Err(e) = misc_helpers::try_create_folder(&file) {
         logger::write(format!("Error in creating folder: {:?}", e));
     }
-    match config_seq_no {
-        Some(config_seq_no) => {
-            file.push(config_seq_no);
-        }
-        None => {
-            file.push("");
-        }
-    }
+    file.push(config_seq_no);
     file.set_extension(file_extension);
     file
 }
 
 pub fn report_status(
     status_folder_path: PathBuf,
-    config_seq_no: &Option<String>,
+    config_seq_no: &String,
     status_obj: &structs::StatusObj,
 ) {
     //Status Instance
@@ -126,45 +118,36 @@ pub fn report_status(
 }
 
 pub fn update_current_seq_no(
-    config_seq_no: &Option<String>,
+    config_seq_no: &String,
     exe_path: PathBuf,
 ) -> std::io::Result<bool> {
     let mut should_report_status = true;
-    match config_seq_no {
-        Some(new_seq_no) => {
-            logger::write(format!("enable command with new seq no: {new_seq_no}"));
-            let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
-            match fs::read_to_string(&current_seq_no_stored_file) {
-                Ok(seq_no) => {
-                    if seq_no != *new_seq_no {
-                        logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
-                        if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
-                            logger::write(format!("Error in writing seq no to file: {:?}", e));
-                        }
-                    } else {
-                        logger::write("no update on seq no".to_string());
-                        should_report_status = false;
-                    }
+
+    logger::write(format!("enable command with new seq no: {config_seq_no}"));
+    let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
+    match fs::read_to_string(&current_seq_no_stored_file) {
+        Ok(seq_no) => {
+            if seq_no != *config_seq_no {
+                logger::write(format!("updating seq no from {} to {}", seq_no, config_seq_no));
+                if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
+                    logger::write(format!("Error in writing seq no to file: {:?}", e));
                 }
-                Err(_e) => {
-                    logger::write(format!(
-                        "no seq no found, writing seq no {} to file",
-                        new_seq_no
-                    ));
-                    if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
-                        logger::write(format!("Error in writing seq no to file: {:?}", e));
-                    }
-                }
+            } else {
+                logger::write("no update on seq no".to_string());
+                should_report_status = false;
             }
         }
-        None => {
-            logger::write("No config seq no found for enable command".to_string());
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "No config seq no found for enable command",
+        Err(_e) => {
+            logger::write(format!(
+                "no seq no found, writing seq no {} to file",
+                config_seq_no
             ));
+            if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
+                logger::write(format!("Error in writing seq no to file: {:?}", e));
+            }
         }
     }
+
     Ok(should_report_status)
 }
 
@@ -212,7 +195,7 @@ pub fn get_proxy_agent_exe_path() -> PathBuf {
 
 pub fn report_status_enable_command(
     status_folder: PathBuf,
-    config_seq_no: &Option<String>,
+    config_seq_no: &String,
     status: Option<String>,
 ) {
     let message: &str = "Enabling the ProxyAgent Extension...";
@@ -408,7 +391,7 @@ mod tests {
             },
             substatus: Default::default(),
         };
-        common::report_status(status_folder, &Some(seq_no.to_string()), &handler_status);
+        common::report_status(status_folder, &seq_no.to_string(), &handler_status);
         let status_obj =
             misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
                 .unwrap();
@@ -432,7 +415,7 @@ mod tests {
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
         let status_file =
-            common::get_file_path(status_folder, &Some(config_seq_no.to_string()), "status");
+            common::get_file_path(status_folder, &config_seq_no.to_string(), "status");
         assert_eq!(status_file, *expected_status_file);
 
         _ = fs::remove_dir_all(&temp_test_path);
@@ -450,18 +433,10 @@ mod tests {
         super::logger::init_logger(log_folder, "log.txt");
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
-        let config_seq_no = None;
         let exe_path = &temp_test_path;
-
-        let should_report_status: Error =
-            common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf()).unwrap_err();
-        assert_eq!(should_report_status.kind(), ErrorKind::InvalidInput);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
-        assert_eq!(seq_no, "".to_string());
-
         let config_seq_no = "0";
         let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
                 .unwrap();
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -469,7 +444,7 @@ mod tests {
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
                 .unwrap();
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -477,7 +452,7 @@ mod tests {
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
                 .unwrap();
         assert!(!should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -500,7 +475,7 @@ mod tests {
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
-        super::report_status_enable_command(status_folder, &Some(config_seq_no.to_string()), None);
+        super::report_status_enable_command(status_folder, &config_seq_no.to_string(), None);
         let status_obj =
             misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
                 .unwrap();
