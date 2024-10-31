@@ -1,9 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::error::{Error, ParseVersionErrorType};
+use crate::result::Result;
 use crate::version::Version;
 use std::ffi::OsStr;
-use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
@@ -47,7 +48,7 @@ const CURRENT_MINOR_VERSION_NUMBER_STRING: &str = "CurrentMinorVersionNumber";
 const CURRENT_BUILD_NUMBER_STRING: &str = "CurrentBuildNumber";
 const UBRSTRING: &str = "UBR";
 
-pub fn get_os_version() -> std::io::Result<Version> {
+pub fn get_os_version() -> Result<Version> {
     let major;
     match read_reg_int(
         OS_VERSION_REGISTRY_KEY,
@@ -64,13 +65,9 @@ pub fn get_os_version() -> std::io::Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => major = u,
                 Err(_) => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidInput,
-                        format!(
-                            "Cannot read Major build from {}",
-                            CURRENT_MAJOR_VERSION_NUMBER_STRING
-                        ),
-                    ));
+                    return Err(Error::ParseVersion(ParseVersionErrorType::MajorBuild(
+                        format!("{} ({})", major_str, CURRENT_MAJOR_VERSION_NUMBER_STRING),
+                    )));
                 }
             }
         }
@@ -92,13 +89,9 @@ pub fn get_os_version() -> std::io::Result<Version> {
             match major_str.parse::<u32>() {
                 Ok(u) => minor = u,
                 Err(_) => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidInput,
-                        format!(
-                            "Cannot read Minor build from {}",
-                            CURRENT_MINOR_VERSION_NUMBER_STRING
-                        ),
-                    ));
+                    return Err(Error::ParseVersion(ParseVersionErrorType::MinorBuild(
+                        format!("{} ({})", major_str, CURRENT_MINOR_VERSION_NUMBER_STRING),
+                    )));
                 }
             }
         }

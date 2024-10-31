@@ -1,15 +1,14 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::error::{CommandErrorType, Error};
 use crate::logger_manager;
 use crate::misc_helpers;
+use crate::result::Result;
 use once_cell::sync::Lazy;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::{fs, str};
-use std::{
-    io::{Error, ErrorKind},
-    path::PathBuf,
-};
 
 pub const SERVICE_CONFIG_FOLDER_PATH: &str = "/usr/lib/systemd/system/";
 pub const EXE_FOLDER_PATH: &str = "/usr/sbin";
@@ -97,13 +96,13 @@ pub fn get_processor_arch() -> String {
     }
 }
 
-pub fn get_cgroup2_mount_path() -> std::io::Result<PathBuf> {
+pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1);
     if output.0 != 0 {
-        return Err(Error::new(
-            ErrorKind::Other,
+        return Err(Error::Command(
+            CommandErrorType::Findmnt,
             format!(
-                "findmnt command failed with exit code '{}', stdout :{}, stderr: {}.",
+                "Failed with exit code '{}', stdout :{}, stderr: {}.",
                 output.0, output.1, output.2
             ),
         ));
@@ -115,12 +114,9 @@ pub fn get_cgroup2_mount_path() -> std::io::Result<PathBuf> {
         return Ok(PathBuf::from(cgroup2_path));
     }
 
-    Err(Error::new(
-        ErrorKind::Other,
-        format!(
-            "findmnt command cannot find cgroup2 file mount: {}.",
-            output.1
-        ),
+    Err(Error::Command(
+        CommandErrorType::Findmnt,
+        format!("Cannot find cgroup2 file mount: {}.", output.1),
     ))
 }
 
