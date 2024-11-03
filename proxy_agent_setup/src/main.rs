@@ -17,6 +17,14 @@ use std::process;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] std::io::Error)
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
+
 #[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";
 const SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";

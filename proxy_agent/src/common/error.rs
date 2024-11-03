@@ -35,6 +35,10 @@ pub enum Error {
 
     #[error("{0} is invalid")]
     Invalid(String),
+
+    #[cfg(windows)]
+    #[error(transparent)]
+    WindowsService(#[from] windows_service::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

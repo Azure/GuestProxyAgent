@@ -4,6 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::service_main;
+use crate::Result;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
@@ -18,7 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
 };
 
-pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
+pub fn run_service(_args: Vec<OsString>) -> Result<()> {
     let service_state = super::service_state::ServiceState::new();
     let service_state_cloned = service_state.clone();
 
@@ -84,7 +85,7 @@ pub fn run_service(_args: Vec<OsString>) -> windows_service::Result<()> {
 }
 
 #[cfg(windows)]
-pub fn get_file_version(file: PathBuf) -> std::io::Result<String> {
+pub fn get_file_version(file: PathBuf) -> Result<String> {
     logger::write(format!("get_file_version: {:?}", file.to_path_buf()));
     let file = file
         .as_os_str()
@@ -93,13 +94,13 @@ pub fn get_file_version(file: PathBuf) -> std::io::Result<String> {
         .collect::<Vec<_>>();
     let size = unsafe { GetFileVersionInfoSizeW(file.as_ptr(), null_mut()) };
     if size == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(std::io::Error::last_os_error().into());
     }
     let mut buffer = vec![0u8; size as usize];
     let buffer_ptr = buffer.as_mut_ptr() as *mut _;
     let result = unsafe { GetFileVersionInfoW(file.as_ptr(), 0, size, buffer_ptr) };
     if result == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(std::io::Error::last_os_error().into());
     }
     let mut version = null_mut();
     let mut version_len = 0;
@@ -116,7 +117,7 @@ pub fn get_file_version(file: PathBuf) -> std::io::Result<String> {
         )
     };
     if result == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(std::io::Error::last_os_error().into());
     }
 
     let version_info = unsafe { &*(version as *const VS_FIXEDFILEINFO) };

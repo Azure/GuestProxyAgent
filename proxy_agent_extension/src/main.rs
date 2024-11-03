@@ -28,6 +28,18 @@ define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_
 
 const CONFIG_SEQ_NO_ENV_VAR: &str = "ConfigSequenceNumber";
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[cfg(windows)]
+    #[error(transparent)]
+    WindowsService(#[from] windows_service::Error),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error)
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
+
 #[derive(Parser)]
 #[command()]
 struct Cli {

@@ -27,7 +27,7 @@ pub async fn start(
     ip: String,
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
-) -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) {
     logger::write_information("Mock Server starting...".to_string());
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();
@@ -38,7 +38,7 @@ pub async fn start(
         tokio::select! {
             _ = cancellation_token.cancelled() => {
                 logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                return Ok(());
+                return;
             }
             result = listener.accept() => {
                 match result {

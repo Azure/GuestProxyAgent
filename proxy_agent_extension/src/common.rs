@@ -120,7 +120,7 @@ pub fn report_status(
 pub fn update_current_seq_no(
     config_seq_no: &String,
     exe_path: PathBuf,
-) -> std::io::Result<bool> {
+) -> bool {
     let mut should_report_status = true;
 
     logger::write(format!("enable command with new seq no: {config_seq_no}"));
@@ -148,7 +148,7 @@ pub fn update_current_seq_no(
         }
     }
 
-    Ok(should_report_status)
+    should_report_status
 }
 
 pub fn get_current_seq_no(exe_path: PathBuf) -> String {
@@ -436,24 +436,24 @@ mod tests {
         let exe_path = &temp_test_path;
         let config_seq_no = "0";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
-                .unwrap();
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "0".to_string());
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
-                .unwrap();
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf())
-                .unwrap();
+            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+
         assert!(!should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
         assert_eq!(seq_no, "1".to_string());
