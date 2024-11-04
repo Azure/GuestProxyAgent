@@ -23,11 +23,7 @@ static GUID: Lazy<String> = Lazy::new(|| Uuid::new_v4().to_string());
 static mut CURRENT_STATE: Lazy<String> =
     Lazy::new(|| String::from(key_keeper::MUST_SIG_WIRESERVER));
 
-pub async fn start(
-    ip: String,
-    port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) {
+pub async fn start(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) {
     logger::write_information("Mock Server starting...".to_string());
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();

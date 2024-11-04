@@ -117,10 +117,7 @@ pub fn report_status(
     }
 }
 
-pub fn update_current_seq_no(
-    config_seq_no: &String,
-    exe_path: PathBuf,
-) -> bool {
+pub fn update_current_seq_no(config_seq_no: &String, exe_path: PathBuf) -> bool {
     let mut should_report_status = true;
 
     logger::write(format!("enable command with new seq no: {config_seq_no}"));
@@ -128,7 +125,10 @@ pub fn update_current_seq_no(
     match fs::read_to_string(&current_seq_no_stored_file) {
         Ok(seq_no) => {
             if seq_no != *config_seq_no {
-                logger::write(format!("updating seq no from {} to {}", seq_no, config_seq_no));
+                logger::write(format!(
+                    "updating seq no from {} to {}",
+                    seq_no, config_seq_no
+                ));
                 if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
                     logger::write(format!("Error in writing seq no to file: {:?}", e));
                 }

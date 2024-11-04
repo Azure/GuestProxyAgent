@@ -712,16 +712,16 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
         None,
         None,
     )?;
-    let response =
-        match hyper_client::send_request(&host, port, request, logger::write_warning).await {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(Error::Key(KeyErrorType::SendKeyRequest(
-                    format!("{}", KeyAction::Acquire),
-                    e.to_string(),
-                )));
-            }
-        };
+
+    let response = hyper_client::send_request(&host, port, request, logger::write_warning)
+        .await
+        .map_err(|e| {
+            Error::Key(KeyErrorType::SendKeyRequest(
+                format!("{}", KeyAction::Acquire),
+                e.to_string(),
+            ))
+        })?;
+
     if response.status() != StatusCode::OK {
         return Err(Error::Key(KeyErrorType::KeyResponse(
             format!("{}", KeyAction::Acquire),
@@ -752,16 +752,16 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
         Some(key.guid.to_string()),
         Some(key.key.to_string()),
     )?;
-    let response =
-        match hyper_client::send_request(&host, port, request, logger::write_warning).await {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(Error::Key(KeyErrorType::SendKeyRequest(
-                    format!("{}", KeyAction::Attest),
-                    e.to_string(),
-                )));
-            }
-        };
+
+    let response = hyper_client::send_request(&host, port, request, logger::write_warning)
+        .await
+        .map_err(|e| {
+            Error::Key(KeyErrorType::SendKeyRequest(
+                format!("{}", KeyAction::Attest),
+                e.to_string(),
+            ))
+        })?;
+
     if response.status() != StatusCode::OK {
         return Err(Error::Key(KeyErrorType::KeyResponse(
             format!("{}", KeyAction::Attest),

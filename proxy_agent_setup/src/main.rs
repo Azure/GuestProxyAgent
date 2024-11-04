@@ -20,7 +20,7 @@ use std::{fs, path::PathBuf};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

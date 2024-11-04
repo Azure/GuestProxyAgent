@@ -35,7 +35,7 @@ pub enum Error {
     WindowsService(#[from] windows_service::Error),
 
     #[error(transparent)]
-    Io(#[from] std::io::Error)
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
