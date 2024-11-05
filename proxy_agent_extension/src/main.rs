@@ -4,8 +4,10 @@
 
 pub mod common;
 pub mod constants;
+pub mod error;
 pub mod handler_main;
 pub mod logger;
+pub mod result;
 pub mod service_main;
 pub mod structs;
 
@@ -27,18 +29,6 @@ use windows_service::{define_windows_service, service_dispatcher};
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
 
 const CONFIG_SEQ_NO_ENV_VAR: &str = "ConfigSequenceNumber";
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[cfg(windows)]
-    #[error(transparent)]
-    WindowsService(#[from] windows_service::Error),
-
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-}
-
-pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Parser)]
 #[command()]

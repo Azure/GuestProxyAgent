@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(not(windows))]
 
-use crate::{backup, logger, running, Result};
+use crate::{backup, logger, result::Result, running};
 use proxy_agent_shared::misc_helpers;
 use std::{fs, path::PathBuf};
 

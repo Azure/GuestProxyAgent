@@ -3,7 +3,9 @@
 
 mod args;
 pub mod backup;
+pub mod error;
 pub mod logger;
+pub mod result;
 pub mod running;
 pub mod setup;
 
@@ -16,14 +18,6 @@ use proxy_agent_shared::service;
 use std::process;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-}
-
-pub type Result<T> = core::result::Result<T, Error>;
 
 #[cfg(windows)]
 const SERVICE_NAME: &str = "GuestProxyAgent";

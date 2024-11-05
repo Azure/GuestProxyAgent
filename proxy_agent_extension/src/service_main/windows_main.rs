@@ -3,8 +3,8 @@
 use crate::common;
 use crate::constants;
 use crate::logger;
+use crate::result::Result;
 use crate::service_main;
-use crate::Result;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;

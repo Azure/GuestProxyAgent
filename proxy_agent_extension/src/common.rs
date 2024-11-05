@@ -64,11 +64,7 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
     }
 }
 
-pub fn get_file_path(
-    status_folder: PathBuf,
-    config_seq_no: &String,
-    file_extension: &str,
-) -> PathBuf {
+pub fn get_file_path(status_folder: PathBuf, config_seq_no: &str, file_extension: &str) -> PathBuf {
     let mut file: PathBuf = status_folder;
     if let Err(e) = misc_helpers::try_create_folder(&file) {
         logger::write(format!("Error in creating folder: {:?}", e));
@@ -80,7 +76,7 @@ pub fn get_file_path(
 
 pub fn report_status(
     status_folder_path: PathBuf,
-    config_seq_no: &String,
+    config_seq_no: &str,
     status_obj: &structs::StatusObj,
 ) {
     //Status Instance
@@ -117,7 +113,7 @@ pub fn report_status(
     }
 }
 
-pub fn update_current_seq_no(config_seq_no: &String, exe_path: PathBuf) -> bool {
+pub fn update_current_seq_no(config_seq_no: &str, exe_path: PathBuf) -> bool {
     let mut should_report_status = true;
 
     logger::write(format!("enable command with new seq no: {config_seq_no}"));
@@ -195,7 +191,7 @@ pub fn get_proxy_agent_exe_path() -> PathBuf {
 
 pub fn report_status_enable_command(
     status_folder: PathBuf,
-    config_seq_no: &String,
+    config_seq_no: &str,
     status: Option<String>,
 ) {
     let message: &str = "Enabling the ProxyAgent Extension...";
@@ -414,8 +410,7 @@ mod tests {
         let status_folder: PathBuf = temp_test_path.join("status");
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
-        let status_file =
-            common::get_file_path(status_folder, &config_seq_no.to_string(), "status");
+        let status_file = common::get_file_path(status_folder, config_seq_no, "status");
         assert_eq!(status_file, *expected_status_file);
 
         _ = fs::remove_dir_all(&temp_test_path);
@@ -436,7 +431,7 @@ mod tests {
         let exe_path = &temp_test_path;
         let config_seq_no = "0";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
 
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -444,7 +439,7 @@ mod tests {
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
 
         assert!(should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -452,7 +447,7 @@ mod tests {
 
         let config_seq_no = "1";
         let should_report_status =
-            common::update_current_seq_no(&config_seq_no.to_string(), exe_path.to_path_buf());
+            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
 
         assert!(!should_report_status);
         let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
@@ -475,7 +470,7 @@ mod tests {
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
-        super::report_status_enable_command(status_folder, &config_seq_no.to_string(), None);
+        super::report_status_enable_command(status_folder, config_seq_no, None);
         let status_obj =
             misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
                 .unwrap();
