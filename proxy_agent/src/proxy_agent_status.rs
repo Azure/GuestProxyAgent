@@ -56,9 +56,7 @@ async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) 
     loop {
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
-        if let Err(e) = write_aggregate_status_to_file(dir_path.clone(), aggregate_status) {
-            logger::write_error(format!("Error writing aggregate status to file: {}", e));
-        }
+        write_aggregate_status_to_file(dir_path.clone(), aggregate_status);
 
         let elapsed_time = start_time.elapsed();
 
@@ -78,9 +76,9 @@ async fn loop_status(interval: Duration, shared_state: Arc<Mutex<SharedState>>) 
 
 fn get_telemetry_log_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if telemetry_wrapper::get_logger_shutdown(shared_state.clone()) {
-        ModuleState::STOPPED.to_string()
+        ModuleState::STOPPED
     } else {
-        ModuleState::RUNNING.to_string()
+        ModuleState::RUNNING
     };
 
     ProxyAgentDetailStatus {
@@ -94,20 +92,21 @@ fn proxy_agent_status_new(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentSt
     let key_latch_status = key_keeper::get_status(shared_state.clone());
     let ebpf_status = redirector::get_status(shared_state.clone());
     let proxy_status = proxy_server::get_status(shared_state.clone());
-    let mut status = OverallState::SUCCESS.to_string();
-    if key_latch_status.status != ModuleState::RUNNING
+    let status = if key_latch_status.status != ModuleState::RUNNING
         || ebpf_status.status != ModuleState::RUNNING
         || proxy_status.status != ModuleState::RUNNING
     {
-        status = OverallState::ERROR.to_string();
-    }
+        OverallState::ERROR
+    } else {
+        OverallState::SUCCESS
+    };
 
     ProxyAgentStatus {
         version: misc_helpers::get_current_version(),
         status,
         // monitorStatus is proxy_agent_status itself status
         monitorStatus: ProxyAgentDetailStatus {
-            status: ModuleState::RUNNING.to_string(),
+            status: ModuleState::RUNNING,
             message: "proxy_agent_status thread started.".to_string(),
             states: None,
         },
@@ -136,18 +135,16 @@ fn guest_proxy_agent_aggregate_status_new(
     }
 }
 
-fn write_aggregate_status_to_file(
-    dir_path: PathBuf,
-    status: GuestProxyAgentAggregateStatus,
-) -> std::io::Result<()> {
+fn write_aggregate_status_to_file(dir_path: PathBuf, status: GuestProxyAgentAggregateStatus) {
     let full_file_path = dir_path.clone();
     let full_file_path = full_file_path.join("status.json");
 
-    if let Err(e) = misc_helpers::json_write_to_file(&status, full_file_path.clone()) {
-        logger::write_error(format!("Error writing status to status file: {}", e));
+    if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
+        logger::write_error(format!(
+            "Error writing aggregate status to status file: {}",
+            e
+        ));
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -168,18 +165,17 @@ mod tests {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("write_aggregate_status_test");
         _ = fs::remove_dir_all(&temp_test_path);
-        misc_helpers::try_create_folder(temp_test_path.clone()).unwrap();
+        misc_helpers::try_create_folder(&temp_test_path).unwrap();
         let shared_state = SharedState::new();
         let aggregate_status = guest_proxy_agent_aggregate_status_new(shared_state.clone());
 
-        _ = write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
+        write_aggregate_status_to_file(temp_test_path.clone(), aggregate_status);
 
         let file_path = temp_test_path.join("status.json");
         assert!(file_path.exists(), "File does not exist in the directory");
 
-        let file_content = misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-            file_path.clone().to_path_buf(),
-        );
+        let file_content =
+            misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(&file_path);
         assert!(file_content.is_ok(), "Failed to read file content");
 
         //Check if field were written

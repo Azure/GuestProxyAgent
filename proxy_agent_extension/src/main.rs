@@ -31,11 +31,11 @@ define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_
 struct Cli {
     /// GPA VM Extension commands
     #[command(subcommand)]
-    command: Option<ExensionCommand>,
+    command: Option<ExtensionCommand>,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum ExensionCommand {
+pub enum ExtensionCommand {
     /// enable the GPA VM Extension
     Enable,
     /// disable the GPA VM Extension
@@ -61,7 +61,7 @@ fn main() {
     } else {
         // no arguments, start it as a service
         let exe_path = misc_helpers::get_current_exe_dir();
-        let log_folder = common::get_handler_environment(exe_path)
+        let log_folder = common::get_handler_environment(&exe_path)
             .logFolder
             .to_string();
         logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);

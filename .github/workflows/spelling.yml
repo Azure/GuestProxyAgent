@@ -1,0 +1,65 @@
+name: Check Spelling
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+
+jobs:
+  spelling:
+    name: Check Spelling
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      security-events: write
+    outputs:
+      followup: ${{ steps.spelling.outputs.followup }}
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event_name, 'pull_request') || github.event_name == 'push' }}
+    concurrency:
+      group: spelling-${{ github.event.pull_request.number || github.ref }}
+      # note: If you use only_check_changed_files, you do not want cancel-in-progress
+      cancel-in-progress: true
+    steps:
+    - name: check-spelling
+      id: spelling
+      uses: check-spelling/check-spelling@main
+      with:
+        config: .github/actions/spelling
+        suppress_push_for_open_pull_request: ${{ github.actor != 'dependabot[bot]' && 1 }}
+        checkout: true
+        spell_check_this: Azure/GuestProxyAgent@dev
+        post_comment: 0
+        warnings: bad-regex,binary-file,deprecated-feature,large-file,limited-references,no-newline-at-eof,noisy-file,non-alpha-in-dictionary,token-is-substring,unexpected-line-ending,whitespace-in-dictionary,minified-file,unsupported-configuration,no-files-to-check
+        experimental_apply_changes_via_bot: 1
+        use_sarif: ${{ (!github.event.pull_request || (github.event.pull_request.head.repo.full_name == github.repository)) && 1 }}
+        extra_dictionary_limit: 20
+        extra_dictionaries:
+          cspell:software-terms/dict/softwareTerms.txt
+          cspell:cpp/src/stdlib-cpp.txt
+          cspell:cpp/src/lang-keywords.txt
+          cspell:node/dict/node.txt
+          cspell:python/src/python/python-lib.txt
+          cspell:golang/dict/go.txt
+          cspell:rust/dict/rust.txt
+          cspell:php/dict/php.txt
+          cspell:dotnet/dict/dotnet.txt
+          cspell:filetypes/filetypes.txt
+          cspell:java/src/java.txt
+          cspell:python/src/common/extra.txt
+          cspell:python/src/python/python.txt
+          cspell:k8s/dict/k8s.txt
+          cspell:django/dict/django.txt
+          cspell:npm/dict/npm.txt
+          cspell:aws/aws.txt
+          cspell:scala/dict/scala.txt
+          cspell:fullstack/dict/fullstack.txt
+          cspell:r/src/r.txt
+          cspell:typescript/dict/typescript.txt
+          cspell:cpp/src/ecosystem.txt
+          cspell:powershell/dict/powershell.txt
+          cspell:cpp/src/template-strings.txt
+          cspell:csharp/csharp.txt
+          cspell:cpp/src/stdlib-c.txt

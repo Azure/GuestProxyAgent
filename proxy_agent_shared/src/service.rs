@@ -9,25 +9,22 @@ use std::path::PathBuf;
 
 #[cfg(windows)]
 use crate::logger_manager;
-use std::io;
+use crate::result::Result;
 
 pub fn install_service(
     service_name: &str,
     _service_display_name: &str,
     _service_dependencies: Vec<&str>,
     _exe_path: PathBuf,
-) -> io::Result<()> {
+) -> Result<()> {
     #[cfg(windows)]
     {
-        match windows_service::install_or_update_service(
+        windows_service::install_or_update_service(
             service_name,
             _service_display_name,
             _service_dependencies,
             _exe_path,
-        ) {
-            Ok(_service) => Ok(()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        )
     }
     #[cfg(not(windows))]
     {
@@ -36,13 +33,10 @@ pub fn install_service(
     }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> io::Result<()> {
+pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        match windows_service::stop_and_delete_service(service_name) {
-            Ok(_service) => Ok(()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        windows_service::stop_and_delete_service(service_name)
     }
     #[cfg(not(windows))]
     {
@@ -63,13 +57,10 @@ pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time
     }
 }
 
-pub fn stop_service(service_name: &str) -> io::Result<()> {
+pub fn stop_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        match windows_service::stop_service(service_name) {
-            Ok(_service) => Ok(()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        windows_service::stop_service(service_name).map(|_| ())
     }
     #[cfg(not(windows))]
     {
@@ -83,18 +74,15 @@ pub fn update_service(
     _service_display_name: &str,
     _service_dependencies: Vec<&str>,
     _exe_path: PathBuf,
-) -> io::Result<()> {
+) -> Result<()> {
     #[cfg(windows)]
     {
-        match windows_service::update_service(
+        windows_service::update_service(
             _service_name,
             _service_display_name,
             _service_dependencies,
             _exe_path,
-        ) {
-            Ok(_service) => Ok(()),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        )
     }
     #[cfg(not(windows))]
     {

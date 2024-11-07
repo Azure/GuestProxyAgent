@@ -62,7 +62,7 @@ namespace GuestProxyAgentTest.TestCases
                 context.TestResultDetails.StdErr = ex.ToString();
             }
 
-            // poll the extension isntance view for 5 minutes more
+            // poll the extension instance view for 5 minutes more
             var startTime = DateTime.UtcNow;
             while (true)
             {

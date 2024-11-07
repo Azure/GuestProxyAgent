@@ -49,7 +49,7 @@ namespace GuestProxyAgentTest.Utilities
         /// Build Build and return the VirtualMachine based on the setting
         /// </summary>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(bool EnableProxyAgent)
+        public async Task<VirtualMachineResource> Build(bool enableProxyAgent)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -68,12 +68,12 @@ namespace GuestProxyAgentTest.Utilities
 
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
-            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, EnableProxyAgent))).Value;
+            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent))).Value;
             Console.WriteLine("Virtual machine created, with id: " + vmr.Id);
             return vmr;
         }
 
-        private async Task<VirtualMachineData> DoCreateVMData(ResourceGroupResource rgr, bool EnableProxyAgent)
+        private async Task<VirtualMachineData> DoCreateVMData(ResourceGroupResource rgr, bool enableProxyAgent)
         {
             var vmData = new VirtualMachineData(TestSetting.Instance.location)
             {
@@ -109,7 +109,7 @@ namespace GuestProxyAgentTest.Utilities
                 NetworkProfile = await DoCreateVMNetWorkProfile(rgr),
             };
 
-            if (EnableProxyAgent)
+            if (enableProxyAgent)
             {
                 vmData.SecurityProfile = new SecurityProfile()
                 {
@@ -118,11 +118,11 @@ namespace GuestProxyAgentTest.Utilities
                         Enabled = true,
                         WireServer = new HostEndpointSettings()
                         {
-                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmWireServerAccessControlProfileReferenceId,
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
                         },
                         Imds = new HostEndpointSettings()
                         {
-                            InVmAccessControlProfileReferenceId = TestSetting.Instance.windowsInVmIMDSAccessControlProfileReferenceId,
+                            InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId,
                         },
                     }
                 };

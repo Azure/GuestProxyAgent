@@ -23,17 +23,19 @@
 //! ```
 
 use crate::{
-    common::{constants, hyper_client, logger},
+    common::{
+        constants,
+        error::{Error, KeyErrorType},
+        hyper_client, logger,
+        result::Result,
+    },
     proxy::{proxy_connection::Connection, Claims},
 };
 use http::{Method, StatusCode};
 use hyper::Uri;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::{
-    collections::HashMap,
-    io::{Error, ErrorKind},
-};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -69,7 +71,7 @@ pub struct KeyStatus {
     pub authorizationRules: Option<AuthorizationRules>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct AuthorizationRules {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -206,7 +208,7 @@ impl Clone for Privilege {
 }
 
 impl Privilege {
-    pub fn is_match(&self, connection_id: u128, request_url: Uri) -> bool {
+    pub fn is_match(&self, connection_id: u128, request_url: &Uri) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match privilege '{}'", self.name),
@@ -217,52 +219,49 @@ impl Privilege {
                 format!("Matched privilege path '{}'", self.path),
             );
 
-            match &self.queryParameters {
-                Some(query_parameters) => {
-                    Connection::write_information(
-                        connection_id,
-                        format!(
-                            "Start to match query_parameters from privilege '{}'",
-                            self.name
-                        ),
-                    );
+            if let Some(query_parameters) = &self.queryParameters {
+                Connection::write_information(
+                    connection_id,
+                    format!(
+                        "Start to match query_parameters from privilege '{}'",
+                        self.name
+                    ),
+                );
 
-                    for (key, value) in query_parameters {
-                        match hyper_client::query_pairs(&request_url)
-                            .into_iter()
-                            .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
-                        {
-                            Some((_, v)) => {
-                                if v.to_lowercase() == value.to_lowercase() {
-                                    Connection::write_information(
-                                        connection_id,
-                                        format!(
-                                            "Matched query_parameters '{}:{}' from privilege '{}'",
-                                            key, v, self.name
-                                        ),
-                                    );
-                                } else {
-                                    Connection::write_information(
-                                        connection_id,
-                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
-                                    );
-                                    return false;
-                                }
-                            }
-                            None => {
+                for (key, value) in query_parameters {
+                    match hyper_client::query_pairs(request_url)
+                        .into_iter()
+                        .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
+                    {
+                        Some((_, v)) => {
+                            if v.to_lowercase() == value.to_lowercase() {
                                 Connection::write_information(
                                     connection_id,
                                     format!(
-                                        "Not matched query_parameters key '{}' from privilege '{}'",
-                                        key, self.name
+                                        "Matched query_parameters '{}:{}' from privilege '{}'",
+                                        key, v, self.name
                                     ),
                                 );
+                            } else {
+                                Connection::write_information(
+                                        connection_id,
+                                        format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
+                                    );
                                 return false;
                             }
                         }
+                        None => {
+                            Connection::write_information(
+                                connection_id,
+                                format!(
+                                    "Not matched query_parameters key '{}' from privilege '{}'",
+                                    key, self.name
+                                ),
+                            );
+                            return false;
+                        }
                     }
                 }
-                None => {}
             }
             return true;
         }
@@ -292,7 +291,7 @@ impl Clone for Identity {
 }
 
 impl Identity {
-    pub fn is_match(&self, connection_id: u128, claims: Claims) -> bool {
+    pub fn is_match(&self, connection_id: u128, claims: &Claims) -> bool {
         Connection::write_information(
             connection_id,
             format!("Start to match identity '{}'", self.name),
@@ -398,8 +397,8 @@ impl Clone for RoleAssignment {
 }
 
 impl KeyStatus {
-    fn validate(&self) -> std::io::Result<bool> {
-        let mut validate_message = "key status validate failed: ".to_string();
+    fn validate(&self) -> Result<bool> {
+        let mut validate_message = String::new();
         let mut validate_result = true;
 
         // validate authorizationScheme
@@ -457,7 +456,9 @@ impl KeyStatus {
         }
 
         if !validate_result {
-            return Err(Error::new(ErrorKind::InvalidData, validate_message));
+            return Err(Error::Key(KeyErrorType::KeyStatusValidation(
+                validate_message,
+            )));
         }
 
         Ok(validate_result)
@@ -651,48 +652,61 @@ impl Clone for Key {
     }
 }
 
+enum KeyAction {
+    Acquire,
+    Attest,
+}
+
+impl Display for KeyAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            KeyAction::Acquire => write!(f, "acquire"),
+            KeyAction::Attest => write!(f, "attest"),
+        }
+    }
+}
+
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-pub async fn get_status(base_url: Uri) -> std::io::Result<KeyStatus> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, STATUS_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!(
-                "Failed to join {} and {}, error: {}",
-                base_url, STATUS_URL, e
-            ),
-        )
+        Error::Key(KeyErrorType::ParseKeyUrl(
+            base_url.to_string(),
+            STATUS_URL.to_string(),
+            e,
+        ))
     })?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let status: KeyStatus =
-        hyper_client::get(url, &headers, None, None, logger::write_warning).await?;
+        hyper_client::get(&url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
 }
 
-pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!("http://{}:{}{}", host, port, KEY_URL);
     let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, KEY_URL, e),
-        )
+        Error::Key(KeyErrorType::ParseKeyUrl(
+            base_url.to_string(),
+            KEY_URL.to_string(),
+            e,
+        ))
     })?;
 
-    let (host, port) = hyper_client::host_port_from_uri(url.clone())?;
+    let (host, port) = hyper_client::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
     let request = hyper_client::build_request(
         hyper::Method::POST,
-        url.clone(),
+        &url,
         &headers,
         Some(body.as_bytes()),
         None,
@@ -702,40 +716,37 @@ pub async fn acquire_key(base_url: Uri) -> std::io::Result<Key> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to send acquire key, error: {}", e),
-                ));
+                return Err(Error::Key(KeyErrorType::SendKeyRequest(
+                    format!("{}", KeyAction::Acquire),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Failed to acquire key, status code: {}", response.status()),
-        ));
+        return Err(Error::Key(KeyErrorType::KeyResponse(
+            format!("{}", KeyAction::Acquire),
+            response.status(),
+        )));
     }
     hyper_client::read_response_body(response).await
 }
 
-pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
+pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let (host, port) = hyper_client::host_port_from_uri(base_url.clone())?;
+    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
     let url = format!(
         "http://{}:{}{}/{}/key-attestation",
         host, port, KEY_URL, key.guid
     );
-    let url: Uri = url.parse().map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("Failed to join {} and {}, error: {}", base_url, url, e),
-        )
-    })?;
+    let url: Uri = url
+        .parse()
+        .map_err(|e| Error::Key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
     let request = hyper_client::build_request(
         Method::POST,
-        url,
+        &url,
         &headers,
         None,
         Some(key.guid.to_string()),
@@ -745,17 +756,17 @@ pub async fn attest_key(base_url: Uri, key: &Key) -> std::io::Result<()> {
         match hyper_client::send_request(&host, port, request, logger::write_warning).await {
             Ok(r) => r,
             Err(e) => {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed to send acquire key, error: {}", e),
-                ));
+                return Err(Error::Key(KeyErrorType::SendKeyRequest(
+                    format!("{}", KeyAction::Attest),
+                    e.to_string(),
+                )));
             }
         };
     if response.status() != StatusCode::OK {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("Failed to acquire key, status code: {}", response.status()),
-        ));
+        return Err(Error::Key(KeyErrorType::KeyResponse(
+            format!("{}", KeyAction::Attest),
+            response.status(),
+        )));
     }
 
     Ok(())
@@ -1163,22 +1174,19 @@ mod tests {
         let url: Uri = "http://localhost/test?key1=value1&key2=value2"
             .parse()
             .unwrap();
-        assert!(
-            privilege.is_match(1, url.clone()),
-            "privilege should be matched"
-        );
+        assert!(privilege.is_match(1, &url), "privilege should be matched");
 
         let url = "http://localhost/test?key1=value1&key2=value3"
             .parse()
             .unwrap();
         assert!(
-            !privilege.is_match(1, url),
+            !privilege.is_match(1, &url),
             "privilege should not be matched"
         );
 
         let url = "http://localhost/test?key1=value1".parse().unwrap();
         assert!(
-            !privilege.is_match(1, url),
+            !privilege.is_match(1, &url),
             "privilege should not be matched"
         );
 
@@ -1190,7 +1198,7 @@ mod tests {
         let url = "http://localhost/test?key1=value1&key2=value2"
             .parse()
             .unwrap();
-        assert!(privilege1.is_match(1, url), "privilege should be matched");
+        assert!(privilege1.is_match(1, &url), "privilege should be matched");
 
         let privilege2 = r#"{
             "name": "test",
@@ -1205,7 +1213,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege2.is_match(1, url),
+            !privilege2.is_match(1, &url),
             "privilege should not be matched"
         );
 
@@ -1240,10 +1248,7 @@ mod tests {
             "processName": "test"
         }"#;
         let identity: Identity = serde_json::from_str(identity).unwrap();
-        assert!(
-            identity.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity.is_match(1, &claims), "identity should be matched");
 
         let identity1 = r#"{
             "name": "test",
@@ -1254,7 +1259,7 @@ mod tests {
         }"#;
         let identity1: Identity = serde_json::from_str(identity1).unwrap();
         assert!(
-            !identity1.is_match(1, claims.clone()),
+            !identity1.is_match(1, &claims),
             "identity should not be matched"
         );
 
@@ -1265,7 +1270,7 @@ mod tests {
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
         assert!(
-            !identity2.is_match(1, claims.clone()),
+            !identity2.is_match(1, &claims),
             "identity should not be matched"
         );
 
@@ -1274,10 +1279,7 @@ mod tests {
             "userName": "test"
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
-        assert!(
-            identity2.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity2.is_match(1, &claims), "identity should be matched");
 
         // test processName
         let identity3 = r#"{
@@ -1286,7 +1288,7 @@ mod tests {
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
         assert!(
-            !identity3.is_match(1, claims.clone()),
+            !identity3.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity3 = r#"{
@@ -1294,10 +1296,7 @@ mod tests {
             "processName": "test"
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
-        assert!(
-            identity3.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity3.is_match(1, &claims), "identity should be matched");
 
         // test exePath
         let identity4 = r#"{
@@ -1306,7 +1305,7 @@ mod tests {
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
-            !identity4.is_match(1, claims.clone()),
+            !identity4.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity4 = r#"{
@@ -1314,10 +1313,7 @@ mod tests {
             "exePath": "test"
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
-        assert!(
-            identity4.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity4.is_match(1, &claims), "identity should be matched");
 
         // test groupName
         let identity5 = r#"{
@@ -1326,7 +1322,7 @@ mod tests {
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
         assert!(
-            !identity5.is_match(1, claims.clone()),
+            !identity5.is_match(1, &claims),
             "identity should not be matched"
         );
         let identity5 = r#"{
@@ -1334,10 +1330,7 @@ mod tests {
             "groupName": "test"
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
-        assert!(
-            identity5.is_match(1, claims.clone()),
-            "identity should be matched"
-        );
+        assert!(identity5.is_match(1, &claims), "identity should be matched");
 
         // clean up and ignore the clean up errors
         _ = std::fs::remove_dir_all(temp_test_path);

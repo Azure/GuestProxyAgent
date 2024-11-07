@@ -19,9 +19,10 @@ mod windows_acl;
 #[cfg(not(windows))]
 mod linux_acl;
 
+use crate::common::result::Result;
 use std::path::PathBuf;
 
-pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
+pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     if !dir_to_acl.exists() || !dir_to_acl.is_dir() {
         return Ok(());
     }

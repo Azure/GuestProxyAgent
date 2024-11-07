@@ -25,7 +25,7 @@ typedef struct _destination_entry
     __u32 protocol;
 } destination_entry;
 
-typedef struct _sock_addr_aduit_key
+typedef struct _sock_addr_audit_key
 {
     __u32 protocol;
     __u32 source_port;

@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::misc_helpers;
+use crate::result::Result;
 use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
@@ -53,7 +54,7 @@ impl RollingLogger {
         logger
     }
 
-    fn init(&mut self) -> std::io::Result<()> {
+    fn init(&mut self) -> Result<()> {
         if !self.initialized {
             self.open_file()?;
             self.initialized = true;
@@ -62,8 +63,8 @@ impl RollingLogger {
         Ok(())
     }
 
-    fn open_file(&mut self) -> std::io::Result<()> {
-        misc_helpers::try_create_folder(self.log_dir.to_path_buf())?;
+    fn open_file(&mut self) -> Result<()> {
+        misc_helpers::try_create_folder(&self.log_dir)?;
 
         let file_full_path = self.get_current_file_full_path(None);
         let f = if file_full_path.exists() {
@@ -77,36 +78,40 @@ impl RollingLogger {
         Ok(())
     }
 
-    pub fn write(&mut self, message: String) -> std::io::Result<()> {
+    pub fn write(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[VERB]    ");
         self.write_line(header + &message)
     }
 
-    pub fn write_information(&mut self, message: String) -> std::io::Result<()> {
+    pub fn write_information(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[INFO]    ");
         self.write_line(header + &message)
     }
 
-    pub fn write_warning(&mut self, message: String) -> std::io::Result<()> {
+    pub fn write_warning(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[WARN]    ");
         self.write_line(header + &message)
     }
 
-    pub fn write_error(&mut self, message: String) -> std::io::Result<()> {
+    pub fn write_error(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[ERROR]   ");
         self.write_line(header + &message)
     }
 
-    pub fn write_line(&mut self, message: String) -> std::io::Result<()> {
+    pub fn write_line(&mut self, message: String) -> Result<()> {
         self.roll_if_needed()?;
         self.log_writer
             .as_mut()
             .unwrap()
             .write_all(message.as_bytes())?;
-        self.log_writer.as_mut().unwrap().write_all(b"\n")
+        self.log_writer
+            .as_mut()
+            .unwrap()
+            .write_all(b"\n")
+            .map_err(Into::into)
     }
 
-    fn archive_file(&mut self) -> std::io::Result<()> {
+    fn archive_file(&mut self) -> Result<()> {
         let new_file_name = self.get_current_file_full_path(Some(format!(
             "{}-{}",
             misc_helpers::get_date_time_string_with_milliseconds(),
@@ -135,7 +140,7 @@ impl RollingLogger {
         Ok(())
     }
 
-    pub fn get_log_files(&self) -> std::io::Result<Vec<PathBuf>> {
+    pub fn get_log_files(&self) -> Result<Vec<PathBuf>> {
         // search log files
         let mut log_files: Vec<PathBuf> = Vec::new();
         for entry in fs::read_dir(&self.log_dir)? {
@@ -174,7 +179,7 @@ impl RollingLogger {
         full_path
     }
 
-    fn roll_if_needed(&mut self) -> std::io::Result<()> {
+    fn roll_if_needed(&mut self) -> Result<()> {
         self.init()?;
 
         let file = self.get_current_file_full_path(None);

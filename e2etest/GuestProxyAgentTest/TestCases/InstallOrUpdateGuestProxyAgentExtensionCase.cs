@@ -24,7 +24,7 @@ namespace GuestProxyAgentTest.TestCases
                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME))
                     , (builder) =>
                     {
-                        var devExtensionSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_MSI_CONTAINER_NAME, TestSetting.Instance.zipFilePath, context.ScenarioSetting.TestScenarioStroageFolderPrefix);
+                        var devExtensionSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_MSI_CONTAINER_NAME, TestSetting.Instance.zipFilePath, context.ScenarioSetting.TestScenarioStorageFolderPrefix);
                         return builder.AddParameter("devExtensionSas", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(devExtensionSas)));
                     });
 

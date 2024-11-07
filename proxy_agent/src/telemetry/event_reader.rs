@@ -26,8 +26,7 @@
 
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
-use crate::common::constants;
-use crate::common::logger;
+use crate::common::{constants, logger, result::Result};
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::shared_state::telemetry_wrapper;
@@ -37,6 +36,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -134,29 +134,8 @@ async fn loop_reader(
 
         if telemetry_wrapper::get_vm_metadata(shared_state.clone()).is_some() {
             // vm metadata is updated, process events
-            match misc_helpers::get_files(&dir_path) {
-                Ok(files) => {
-                    let file_count = files.len();
-                    let event_count =
-                        process_events_and_clean(files, &wire_server_client, shared_state.clone())
-                            .await;
-                    let message = format!("Send {} events from {} files", event_count, file_count);
-                    event_logger::write_event(
-                        event_logger::INFO_LEVEL,
-                        message,
-                        "start",
-                        "event_reader",
-                        logger::AGENT_LOGGER_KEY,
-                    )
-                }
-                Err(e) => {
-                    logger::write_warning(format!(
-                        "Event Files not found in directory {}: {}",
-                        dir_path.display(),
-                        e
-                    ));
-                }
-            }
+            let _processed =
+                process_events(&dir_path, &wire_server_client, shared_state.clone()).await;
         }
         tokio::time::sleep(interval).await;
     }
@@ -170,7 +149,7 @@ async fn update_vm_meta_data(
     shared_state: Arc<Mutex<SharedState>>,
     wire_server_client: &WireServerClient,
     imds_client: &ImdsClient,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let goal_state = wire_server_client.get_goalstate().await?;
     let shared_config = wire_server_client
         .get_shared_config(goal_state.get_shared_config_uri())
@@ -199,6 +178,38 @@ pub fn get_vm_meta_data(shared_state: Arc<Mutex<SharedState>>) -> VMMetaData {
     }
 }
 
+async fn process_events(
+    dir_path: &Path,
+    wire_server_client: &WireServerClient,
+    shared_state: Arc<Mutex<SharedState>>,
+) -> usize {
+    let event_count: usize;
+    // get all .json event files in the directory
+    match misc_helpers::search_files(dir_path, r"^(.*\.json)$") {
+        Ok(files) => {
+            let file_count = files.len();
+            event_count = process_events_and_clean(files, wire_server_client, shared_state).await;
+            let message = format!("Send {} events from {} files", event_count, file_count);
+            event_logger::write_event(
+                event_logger::INFO_LEVEL,
+                message,
+                "start",
+                "event_reader",
+                logger::AGENT_LOGGER_KEY,
+            );
+        }
+        Err(e) => {
+            logger::write_warning(format!(
+                "Event Files not found in directory {}: {}",
+                dir_path.display(),
+                e
+            ));
+            event_count = 0;
+        }
+    }
+    event_count
+}
+
 async fn process_events_and_clean(
     files: Vec<PathBuf>,
     wire_server_client: &WireServerClient,
@@ -206,7 +217,7 @@ async fn process_events_and_clean(
 ) -> usize {
     let mut num_events_logged = 0;
     for file in files {
-        match misc_helpers::json_read_from_file::<Vec<Event>>(file.to_path_buf()) {
+        match misc_helpers::json_read_from_file::<Vec<Event>>(&file) {
             Ok(events) => {
                 num_events_logged += events.len();
                 send_events(events, wire_server_client, shared_state.clone()).await;
@@ -380,23 +391,35 @@ mod tests {
             ));
         }
         logger::write("10 events created.".to_string());
-        misc_helpers::try_create_folder(events_dir.to_path_buf()).unwrap();
+        misc_helpers::try_create_folder(&events_dir).unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, file_path.to_path_buf()).unwrap();
+        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
 
         // Check the events processed
-        let files = misc_helpers::get_files(&events_dir).unwrap();
-        let file_count = files.len();
-        logger::write(format!("Get '{}' event files.", file_count));
-        let events_read =
-            process_events_and_clean(files, &wire_server_client, shared_state.clone()).await;
-        logger::write(format!(
-            "Send {} events from {} files",
-            events_read, file_count
-        ));
+        let events_processed =
+            process_events(&events_dir, &wire_server_client, shared_state.clone()).await;
+        logger::write(format!("Send {} events from event files", events_processed));
         //Should be 10 events written and read into events Vector
-        assert_eq!(events_read, 10);
+        assert_eq!(events_processed, 10, "events_processed mismatch.");
+        let files = misc_helpers::get_files(&events_dir).unwrap();
+        assert!(files.is_empty(), "Events files not cleaned up.");
+
+        // Test not processing the non-json files
+        let mut file_path = events_dir.to_path_buf();
+        file_path.push(format!(
+            "{}.notjson",
+            misc_helpers::get_date_time_unix_nano()
+        ));
+        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        let events_processed =
+            process_events(&events_dir, &wire_server_client, shared_state.clone()).await;
+        assert_eq!(0, events_processed, "events_processed must be 0.");
+        let files = misc_helpers::get_files(&events_dir).unwrap();
+        assert!(
+            !files.is_empty(),
+            ".notjson files should not been cleaned up."
+        );
 
         server_mock::stop(shared_state.clone());
         _ = fs::remove_dir_all(&temp_dir);

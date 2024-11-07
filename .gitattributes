@@ -1,0 +1,31 @@
+# Set the default behavior, in case people don't have core.autocrlf set.
+* text=auto
+
+# Use text conventions for commonly used text extensions.
+*.csv text
+*.ini text
+*.json text
+*.txt text
+*.xml text
+*.md text
+*.rs text
+*.lock text
+
+# Exceptions
+Cargo.lock eol=lf
+.run/*.xml eol=lf
+*.sh eol=lf
+*.spec eol=lf
+
+# Denote all files that are truly binary and should not be modified.
+*.dll binary
+*.exe binary
+*.gz binary
+*.ico binary
+*.jpg binary
+*.lib binary
+*.pdb binary
+*.pdf binary
+*.png binary
+*.wim binary
+*.zip binary

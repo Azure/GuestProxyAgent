@@ -50,7 +50,7 @@ pub fn run(service_state: Arc<Mutex<ServiceState>>) {
 
 fn heartbeat_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let handler_environment = common::get_handler_environment(exe_path);
+    let handler_environment = common::get_handler_environment(&exe_path);
     let heartbeat_file_path: PathBuf = handler_environment.heartbeatFile.to_string().into();
     let duration = Duration::from_secs(5 * 60);
     loop {
@@ -69,7 +69,7 @@ fn heartbeat_thread() {
 
 fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let handler_environment = common::get_handler_environment(exe_path.to_path_buf());
+    let handler_environment = common::get_handler_environment(&exe_path);
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
     let mut cache_seq_no = String::new();
     let proxyagent_file_version_in_extension = get_proxy_agent_file_version_in_extension();
@@ -104,7 +104,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
             );
             cache_seq_no = current_seq_no.to_string();
             let proxyagent_service_file_version =
-                misc_helpers::get_proxy_agent_version(common::get_proxy_agent_service_path());
+                misc_helpers::get_proxy_agent_version(&common::get_proxy_agent_service_path());
             if proxyagent_file_version_in_extension != proxyagent_service_file_version {
                 // Call setup tool to install or update proxy agent service
                 telemetry::event_logger::write_event(
@@ -116,7 +116,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
                     "service_main",
                     logger_key,
                 );
-                let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
+                let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
                 backup_proxyagent(&setup_tool);
                 let mut install_command = Command::new(&setup_tool);
                 // Set the current directory to the directory of the current executable for the setup tool to work properly
@@ -311,7 +311,7 @@ fn report_proxy_agent_aggregate_status(
 
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
     match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        aggregate_status_file_path,
+        &aggregate_status_file_path,
     ) {
         Ok(ok) => {
             write_state_event(
@@ -359,6 +359,15 @@ fn report_proxy_agent_aggregate_status(
                     },
                     SubStatus {
                         name: constants::PLUGIN_STATUS_NAME.to_string(),
+                        status: constants::TRANSITIONING_STATUS.to_string(),
+                        code: constants::STATUS_CODE_NOT_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: error_message.to_string(),
+                        },
+                    },
+                    SubStatus {
+                        name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
                         status: constants::TRANSITIONING_STATUS.to_string(),
                         code: constants::STATUS_CODE_NOT_OK,
                         formattedMessage: FormattedMessage {
@@ -419,6 +428,15 @@ fn extension_substatus(
                         message: version_mismatch_message.to_string(),
                     },
                 },
+                SubStatus {
+                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                    status: constants::TRANSITIONING_STATUS.to_string(),
+                    code: constants::STATUS_CODE_NOT_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: version_mismatch_message.to_string(),
+                    },
+                },
             ]
         };
     }
@@ -461,6 +479,30 @@ fn extension_substatus(
             substatus_proxy_agent_connection_message =
                 "proxy connection summary is empty".to_string();
         }
+        let substatus_failed_auth_message: String;
+        if !proxy_agent_aggregate_status_top_level
+            .failedAuthenticateSummary
+            .is_empty()
+        {
+            let proxy_agent_aggregate_failed_auth_status_obj =
+                proxy_agent_aggregate_status_top_level.failedAuthenticateSummary;
+            match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
+                Ok(proxy_agent_aggregate_failed_auth_status) => {
+                    substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
+                }
+                Err(e) => {
+                    let error_message = format!(
+                        "Error in serializing proxy agent aggregate failed auth status: {}",
+                        e
+                    );
+                    logger::write(error_message.to_string());
+                    substatus_failed_auth_message = error_message;
+                }
+            }
+        } else {
+            logger::write("proxy failed auth summary is empty".to_string());
+            substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
+        }
 
         status.substatus = {
             vec![
@@ -482,6 +524,15 @@ fn extension_substatus(
                         message: substatus_proxy_agent_message.to_string(),
                     },
                 },
+                SubStatus {
+                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                    status: constants::SUCCESS_STATUS.to_string(),
+                    code: constants::STATUS_CODE_OK,
+                    formattedMessage: FormattedMessage {
+                        lang: constants::LANG_EN_US.to_string(),
+                        message: substatus_failed_auth_message.to_string(),
+                    },
+                },
             ]
         };
         status.status = status_state_obj.update_state(true);
@@ -499,7 +550,7 @@ fn extension_substatus(
 }
 
 fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
-    let setup_tool = misc_helpers::path_to_string(common::setup_tool_exe_path());
+    let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
     if status.status == *constants::ERROR_STATUS {
         let output = Command::new(&setup_tool).arg("restore").output();
         match output {
@@ -637,11 +688,11 @@ fn report_proxy_agent_service_status(
 fn get_proxy_agent_file_version_in_extension() -> String {
     // File version of proxy agent service already downloaded by VM Agent
     let path = common::get_proxy_agent_exe_path();
-    let version = misc_helpers::get_proxy_agent_version(path.to_path_buf());
+    let version = misc_helpers::get_proxy_agent_version(&path);
     logger::write(format!(
         "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
         version,
-        misc_helpers::path_to_string(path.to_path_buf())
+        misc_helpers::path_to_string(&path)
     ));
     version
 }
@@ -674,7 +725,7 @@ mod tests {
 
             //Clean up and ignore the clean up errors
             _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+            _ = misc_helpers::try_create_folder(&temp_test_path);
             let status_folder: PathBuf = temp_test_path.join("status");
             let log_folder: String = temp_test_path.to_str().unwrap().to_string();
             logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
@@ -712,10 +763,9 @@ mod tests {
                 &mut status_state_obj,
             );
 
-            let handler_status = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-                expected_status_file.to_path_buf(),
-            )
-            .unwrap();
+            let handler_status =
+                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                    .unwrap();
             assert_eq!(handler_status.len(), 1);
             assert_eq!(handler_status[0].status.code, 0);
 
@@ -735,10 +785,9 @@ mod tests {
                 &mut status,
                 &mut status_state_obj,
             );
-            let handler_status_bad = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-                expected_status_file_bad.to_path_buf(),
-            )
-            .unwrap();
+            let handler_status_bad =
+                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(expected_status_file_bad)
+                    .unwrap();
             assert_eq!(handler_status_bad.len(), 1);
             assert_eq!(handler_status_bad[0].status.code, 1);
 
@@ -755,35 +804,35 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
         logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
 
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
-            status: OverallState::SUCCESS.to_string(),
+            status: OverallState::SUCCESS,
             monitorStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::RUNNING,
                 message: "test".to_string(),
                 states: None,
             },
             keyLatchStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::RUNNING,
                 message: "test".to_string(),
                 states: None,
             },
             ebpfProgramStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::RUNNING,
                 message: "test".to_string(),
                 states: None,
             },
             proxyListenerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::RUNNING,
                 message: "test".to_string(),
                 states: None,
             },
             telemetryLoggerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING.to_string(),
+                status: ModuleState::RUNNING,
                 message: "test".to_string(),
                 states: None,
             },
@@ -801,11 +850,22 @@ mod tests {
             userGroups: Some(vec!["test".to_string()]),
         };
 
+        let proxy_failedAuthenticateSummary_obj = ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        };
+
         let toplevel_status = GuestProxyAgentAggregateStatus {
             timestamp: misc_helpers::get_date_time_string(),
             proxyAgentStatus: proxy_agent_status_obj,
             proxyConnectionSummary: vec![proxy_connection_summary_obj],
-            failedAuthenticateSummary: vec![],
+            failedAuthenticateSummary: vec![proxy_failedAuthenticateSummary_obj],
         };
 
         let mut status = StatusObj {
@@ -849,7 +909,7 @@ mod tests {
 
             //Clean up and ignore the clean up errors
             _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+            _ = misc_helpers::try_create_folder(&temp_test_path);
             let log_folder: String = temp_test_path.to_str().unwrap().to_string();
             logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
 
@@ -883,6 +943,15 @@ mod tests {
                                 message: "test".to_string(),
                             },
                         },
+                        SubStatus {
+                            name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                            status: constants::SUCCESS_STATUS.to_string(),
+                            code: constants::STATUS_CODE_OK,
+                            formattedMessage: FormattedMessage {
+                                lang: constants::LANG_EN_US.to_string(),
+                                message: "test".to_string(),
+                            },
+                        },
                     ]
                 },
             };
@@ -898,6 +967,10 @@ mod tests {
             );
             assert_eq!(
                 status.substatus[2].name,
+                constants::PLUGIN_FAILED_AUTH_NAME.to_string()
+            );
+            assert_eq!(
+                status.substatus[3].name,
                 constants::EBPF_SUBSTATUS_NAME.to_string()
             );
 

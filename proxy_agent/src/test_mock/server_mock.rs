@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{hyper_client, logger};
+use crate::common::{hyper_client, logger, result::Result};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
 use crate::shared_state::{tokio_wrapper, SharedState};
@@ -27,7 +27,7 @@ pub async fn start(
     ip: String,
     port: u16,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     logger::write_information("Mock Server starting...".to_string());
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();
@@ -70,7 +70,7 @@ async fn handle_request(
     ip: String,
     port: u16,
     request: Request<hyper::body::Incoming>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     logger::write_information("WireServer processing request.".to_string());
 
     let path: String = request.uri().path_and_query().unwrap().to_string();
@@ -222,7 +222,7 @@ async fn handle_request(
                     ],
                     "publisher": "RDFE-Test-Microsoft-Windows-Server-Group",
                     "resourceGroupName": "macikgo-test-may-23",
-                    "resourceId": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/virtualMachines/examplevmname",
+                    "resourceId": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/virtualMachines/examplevmname",
                     "securityProfile": {
                         "secureBootEnabled": "true",
                         "virtualTpmEnabled": "false",
@@ -244,7 +244,7 @@ async fn handle_request(
                             "isUltraDisk": "true",
                             "lun": "0",
                             "managedDisk": {
-                              "id": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampledatadiskname",
+                              "id": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampledatadiskname",
                               "storageAccountType": "StandardSSD_LRS"
                             },
                             "name": "exampledatadiskname",
@@ -274,20 +274,20 @@ async fn handle_request(
                                 "sourceVault": {
                                   "id": "/subscriptions/test-source-guid/resourceGroups/testrg/providers/Microsoft.KeyVault/vaults/test-kv"
                                 },
-                                "secretUrl": "https://test-disk.vault.azure.net/secrets/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+                                "secretUrl": "https://test-disk.vault.azure.net/secrets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
                               },
                               "keyEncryptionKey": {
                                 "sourceVault": {
                                   "id": "/subscriptions/test-key-guid/resourceGroups/testrg/providers/Microsoft.KeyVault/vaults/test-kv"
                                 },
-                                "keyUrl": "https://test-key.vault.azure.net/secrets/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+                                "keyUrl": "https://test-key.vault.azure.net/secrets/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx"
                               }
                             },
                             "image": {
                                 "uri": ""
                             },
                             "managedDisk": {
-                                "id": "/subscriptions/xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampleosdiskname",
+                                "id": "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx/resourceGroups/macikgo-test-may-23/providers/Microsoft.Compute/disks/exampleosdiskname",
                                 "storageAccountType": "StandardSSD_LRS"
                             },
                             "name": "exampleosdiskname",
@@ -301,12 +301,12 @@ async fn handle_request(
                             "size": "4096"
                         }
                     },
-                    "subscriptionId": "xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
+                    "subscriptionId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxx",
                     "tags": "baz:bash;foo:bar",
                     "userData": "Zm9vYmFy",
                     "version": "15.05.22",
                     "virtualMachineScaleSet": {
-                        "id": "/subscriptions/xxxxxxxx-xxxxx-xxx-xxx-xxxx/resourceGroups/resource-group-name/providers/Microsoft.Compute/virtualMachineScaleSets/virtual-machine-scale-set-name"
+                        "id": "/subscriptions/xxxxxxxx-xxxx-xxx-xxx-xxxx/resourceGroups/resource-group-name/providers/Microsoft.Compute/virtualMachineScaleSets/virtual-machine-scale-set-name"
                     },
                     "vmId": "02aab8a4-74ef-476e-8182-f6d2ba4166a6",
                     "vmScaleSetName": "crpteste9vflji9",

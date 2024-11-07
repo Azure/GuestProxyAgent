@@ -1,14 +1,14 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::logger;
+use crate::common::{logger, result::Result};
 use nix::unistd::{chown, Gid, Uid};
 use proxy_agent_shared::misc_helpers;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-pub fn acl_directory(dir_to_acl: PathBuf) -> std::io::Result<()> {
-    let dir_str = misc_helpers::path_to_string(dir_to_acl.to_path_buf());
+pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
+    let dir_str = misc_helpers::path_to_string(&dir_to_acl);
     logger::write(format!(
         "acl_directory: start to set root-only permission to folder {}.",
         dir_str

@@ -48,7 +48,7 @@ fn backup_service_config_file(backup_folder: PathBuf) {
 
 fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
     if let Some(p) = dst_file.parent() {
-        if let Err(e) = misc_helpers::try_create_folder(p.to_path_buf()) {
+        if let Err(e) = misc_helpers::try_create_folder(p) {
             logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
         }
     }

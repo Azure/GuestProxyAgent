@@ -76,8 +76,8 @@ namespace GuestProxyAgentTest.Utilities
                 rgs.Get(testCaseSetting.ResourceGroupName).Value.Delete(Azure.WaitUntil.Completed);
             }
 
-            StorageHelper.Instance.CleanSharedBlobFolder(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, testCaseSetting.TestScenarioStroageFolderPrefix);
-            StorageHelper.Instance.CleanSharedBlobFolder(Constants.SHARED_MSI_CONTAINER_NAME, testCaseSetting.TestScenarioStroageFolderPrefix);
+            StorageHelper.Instance.CleanSharedBlobFolder(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, testCaseSetting.TestScenarioStorageFolderPrefix);
+            StorageHelper.Instance.CleanSharedBlobFolder(Constants.SHARED_MSI_CONTAINER_NAME, testCaseSetting.TestScenarioStorageFolderPrefix);
         }
 
         public async Task CleanupOldTestResourcesAndForget()
