@@ -243,7 +243,11 @@ pub fn start_event_logger(logger_key: &str) {
         interval,
         max_event_file_count,
         logger_key,
-        |_s| {}, // empty fn
+        |_| {
+            async {
+                // do nothing
+            }
+        },
     );
 }
 

@@ -35,6 +35,16 @@ pub enum Error {
 
     #[error("{0} is invalid")]
     Invalid(String),
+
+    #[cfg(windows)]
+    #[error(transparent)]
+    WindowsService(#[from] windows_service::Error),
+
+    #[error("Failed to send '{0}' action response with error {1}")]
+    SendError(String, String),
+
+    #[error("Failed to receive '{0}' action response with error {1}")]
+    RecvError(String, tokio::sync::oneshot::error::RecvError),
 }
 
 #[derive(Debug, thiserror::Error)]

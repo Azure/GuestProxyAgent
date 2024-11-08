@@ -5,48 +5,52 @@
 //! The GPA service is implemented as a Windows service using the windows_service crate.
 //! It is started, stopped, and controlled by the Windows service manager.
 
-use crate::common::{constants, logger};
-use crate::shared_state::service_wrapper;
+use crate::common::{constants, logger, result::Result};
 use crate::{service, shared_state::SharedState};
 use std::time::Duration;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
 };
-use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
+use windows_service::service_control_handler::{
+    self, ServiceControlHandlerResult, ServiceStatusHandle,
+};
 
-pub fn run_service() -> windows_service::Result<()> {
-    let shared_state = SharedState::new();
+// The private global variable to store the windows service status handle.
+// It is used to set the windows service status to Running and Stopped.
+// Its event handler does not support async + await, which it is not allow to get it via async mpsc.
+static SERVICE_STATUS_HANDLE: tokio::sync::OnceCell<ServiceStatusHandle> =
+    tokio::sync::OnceCell::const_new();
+
+pub async fn run_service() -> Result<()> {
+    let shared_state = SharedState::start_all();
     let cloned_shared_state = shared_state.clone();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
                 service::stop_service(cloned_shared_state.clone());
-                match service_wrapper::get_service_status_handle(cloned_shared_state.clone()) {
-                    Some(status_handle) => {
-                        let stop_state = ServiceStatus {
-                            service_type: ServiceType::OWN_PROCESS,
-                            current_state: ServiceState::Stopped,
-                            controls_accepted: ServiceControlAccept::STOP,
-                            exit_code: ServiceExitCode::Win32(0),
-                            checkpoint: 0,
-                            wait_hint: Duration::default(),
-                            process_id: None,
-                        };
-                        if let Err(e) = status_handle.set_service_status(stop_state) {
-                            logger::write_error(format!(
-                                "Failed to set service status to Stopped: {}",
-                                e
-                            ));
-                        }
+                if let Some(status_handle) = SERVICE_STATUS_HANDLE.get() {
+                    let stop_state = ServiceStatus {
+                        service_type: ServiceType::OWN_PROCESS,
+                        current_state: ServiceState::Stopped,
+                        controls_accepted: ServiceControlAccept::STOP,
+                        exit_code: ServiceExitCode::Win32(0),
+                        checkpoint: 0,
+                        wait_hint: Duration::default(),
+                        process_id: None,
+                    };
+                    if let Err(e) = status_handle.set_service_status(stop_state) {
+                        logger::write_error(format!(
+                            "Failed to set service status to Stopped: {}",
+                            e
+                        ));
                     }
-                    None => {
-                        // workaround to stop the service by exiting the process
-                        logger::write_warning(
-                            "Force exit the process to stop the service.".to_string(),
-                        );
-                        std::process::exit(0);
-                    }
-                };
+                } else {
+                    // workaround to stop the service by exiting the process
+                    logger::write_warning(
+                        "Force exit the process to stop the service.".to_string(),
+                    );
+                    std::process::exit(0);
+                }
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -71,7 +75,8 @@ pub fn run_service() -> windows_service::Result<()> {
     };
     status_handle.set_service_status(running_state)?;
 
-    service_wrapper::set_service_status_handle(shared_state.clone(), status_handle);
+    // set the windows service status handle
+    SERVICE_STATUS_HANDLE.set(status_handle).unwrap();
 
     Ok(())
 }
