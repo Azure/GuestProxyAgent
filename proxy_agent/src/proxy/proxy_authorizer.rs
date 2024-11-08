@@ -193,7 +193,7 @@ impl Authorizer for GAPlugin {
             return AuthorizeResult::Forbidden;
         }
         if config::get_host_gaplugin_support() == 2 {
-            // only allow VMAgent and patlform vm extensions talk to GAPlugin
+            // only allow VMAgent and platform vm extensions talk to GAPlugin
             if default::is_platform_process(&self.claims) {
                 return AuthorizeResult::Ok;
             } else {

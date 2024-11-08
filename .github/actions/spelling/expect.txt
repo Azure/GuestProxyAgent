@@ -178,6 +178,7 @@ ntdll
 NTSTATUS
 onscreen
 onebranch
+oneshot
 opencode
 opensource
 percpu

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-/// The KeyKeeperState struct is used to send actions to the KeyKeeper module related sahred state fields
+/// The KeyKeeperState struct is used to send actions to the KeyKeeper module related shared state fields
 /// Example:
 /// ```
 /// use crate::shared_state::key_keeper_wrapper::KeyKeeperState;
