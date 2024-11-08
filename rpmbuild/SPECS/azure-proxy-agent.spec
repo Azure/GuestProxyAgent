@@ -12,6 +12,8 @@ Source0:        %{name}_%{version}.tar.gz
 %description
 Microsoft Azure Guest Proxy Agent.
 
+%define _buildshell /bin/bash
+
 %prep
 %setup -n %{name}_%{version}
 
@@ -40,4 +42,6 @@ cp -f ./package/ProxyAgent/azure-proxy-agent %{buildroot}/usr/sbin/
 /usr/lib/azure-proxy-agent/ebpf_cgroup.o
 
 %changelog
-* Initial release 
+* Fri Sep 13 23:43:30 UTC 2024 - ARTProxyAgentVTeam@microsoft.com
+
+- Initial release

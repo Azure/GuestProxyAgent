@@ -18,7 +18,7 @@
 //! authorize.authorize(1, url, shared_state.clone());
 //!  
 
-use super::authorization_rules::AuthorizationRules;
+use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::Connection;
 use super::proxy_summary::ProxySummary;
 use crate::key_keeper::key::AuthorizationItem;
@@ -32,7 +32,7 @@ pub fn set_wireserver_rules(
     shared_state: Arc<Mutex<SharedState>>,
     authorization_item: Option<AuthorizationItem>,
 ) {
-    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
+    let rules = authorization_item.map(ComputedAuthorizationItem::from_authorization_item);
     proxy_authenticator_wrapper::set_wireserver_rules(shared_state, rules);
 }
 
@@ -40,7 +40,7 @@ pub fn set_imds_rules(
     shared_state: Arc<Mutex<SharedState>>,
     authorization_item: Option<AuthorizationItem>,
 ) {
-    let rules = authorization_item.map(AuthorizationRules::from_authorization_item);
+    let rules = authorization_item.map(ComputedAuthorizationItem::from_authorization_item);
     proxy_authenticator_wrapper::set_imds_rules(shared_state, rules);
 }
 
@@ -59,7 +59,7 @@ mod default {
 
     pub fn is_platform_process(claims: &Claims) -> bool {
         let process_name =
-            misc_helpers::get_file_name(PathBuf::from(&claims.processName)).to_lowercase();
+            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
         if process_name == VM_APPLICATION_MANAGER_FILE_NAME
             || process_name == WINDOWS_AZURE_GUEST_AGENT_FILE_NAME
             || process_name == WAAPPAGENT_FILE_NAME
@@ -89,7 +89,7 @@ mod default {
 
     pub fn is_platform_process(claims: &Claims) -> bool {
         let process_name =
-            misc_helpers::get_file_name(PathBuf::from(&claims.processName)).to_lowercase();
+            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
         if process_name == VM_APPLICATION_MANAGER_FILE_NAME
             || process_name == IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME
         {
@@ -159,7 +159,7 @@ impl Authorizer for WireServer {
                         true,
                     );
 
-                    if rules.mode.to_lowercase() == "audit" {
+                    if rules.mode == AuthorizationMode::Audit {
                         Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
                         return true;
                     }
@@ -219,7 +219,7 @@ impl Authorizer for Imds {
                         true,
                     );
 
-                    if rules.mode.to_lowercase() == "audit" {
+                    if rules.mode == AuthorizationMode::Audit {
                         Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
                         return true;
                     }

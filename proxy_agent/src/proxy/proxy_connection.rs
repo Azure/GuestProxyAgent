@@ -3,7 +3,7 @@
 
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
-use crate::common::hyper_client;
+use crate::common::{constants, hyper_client};
 use crate::proxy::Claims;
 use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -25,7 +25,7 @@ pub struct ConnectionContext {
 
 impl ConnectionContext {
     pub fn should_skip_sig(&self) -> bool {
-        hyper_client::should_skip_sig(self.method.clone(), self.url.clone())
+        hyper_client::should_skip_sig(&self.method, &self.url)
     }
 
     /// Get the target server ip address in string for logging purpose.
@@ -45,8 +45,8 @@ impl Connection {
             Connection::CONNECTION_LOGGER_KEY.to_string(),
             log_folder,
             "ProxyAgent.Connection.log".to_string(),
-            20 * 1024 * 1024,
-            30,
+            constants::MAX_LOG_FILE_SIZE,
+            constants::MAX_LOG_FILE_COUNT as u16,
         );
     }
 

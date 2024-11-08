@@ -64,7 +64,7 @@ fn start<F>(
 
     logger_manager::write(logger_key, message.to_string());
 
-    if let Err(e) = misc_helpers::try_create_folder(event_dir.to_path_buf()) {
+    if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {}", e);
         set_status_fn(message.to_string());
     }
@@ -125,13 +125,13 @@ fn start<F>(
         let mut file_path = event_dir.to_path_buf();
 
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        match misc_helpers::json_write_to_file(&events, file_path.to_path_buf()) {
+        match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
                 logger_manager::write(
                     logger_key,
                     format!(
                         "Write events to the file {} successfully",
-                        misc_helpers::path_to_string(file_path)
+                        file_path.display()
                     ),
                 );
             }
@@ -140,7 +140,7 @@ fn start<F>(
                     logger_key,
                     format!(
                         "Failed to write events to the file {} with error: {}",
-                        misc_helpers::path_to_string(file_path),
+                        file_path.display(),
                         e
                     ),
                 );

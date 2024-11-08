@@ -3,6 +3,7 @@
 pub const PLUGIN_NAME: &str = "ProxyAgentVMExtension";
 pub const PLUGIN_CONNECTION_NAME: &str = "ProxyAgentConnectionSummary";
 pub const PLUGIN_STATUS_NAME: &str = "ProxyAgentStatus";
+pub const PLUGIN_FAILED_AUTH_NAME: &str = "ProxyAgentFailedAuthenticationSummary";
 pub const HANDLER_ENVIRONMENT_FILE: &str = "HandlerEnvironment.json";
 pub const HANDLER_LOG_FILE: &str = "ProxyAgentExtension.log";
 pub const SERVICE_LOG_FILE: &str = "ProxyAgentExtensionService.log";
@@ -53,7 +54,7 @@ pub const SERVICE_START_RETRY_COUNT: u32 = 5;
 pub const STATUS_CODE_OK: i32 = 0;
 
 // Non zero exit codes
-pub const EXIT_CODE_HANDLERENV_ERR: i32 = 1;
+pub const EXIT_CODE_HANDLER_ENV_ERR: i32 = 1;
 pub const EXIT_CODE_SERVICE_UPDATE_ERR: i32 = 2;
 pub const EXIT_CODE_SERVICE_INSTALL_ERR: i32 = 3;
 pub const STATUS_CODE_NOT_OK: i32 = 4;

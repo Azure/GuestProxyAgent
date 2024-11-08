@@ -40,7 +40,9 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::common::{
+    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+};
 use crate::proxy::proxy_server;
 use crate::shared_state::{provision_wrapper, telemetry_wrapper, SharedState};
 use crate::telemetry::event_reader;
@@ -97,7 +99,7 @@ bitflags::bitflags! {
 /// errorMessage - provision error message
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
-pub struct ProivsionState {
+pub struct ProvisionState {
     finished: bool,
     errorMessage: String,
 }
@@ -220,7 +222,7 @@ fn write_provision_state(provision_dir: Option<PathBuf>, shared_state: Arc<Mutex
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
 
     let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
-    if let Err(e) = misc_helpers::try_create_folder(provision_dir.to_path_buf()) {
+    if let Err(e) = misc_helpers::try_create_folder(&provision_dir) {
         logger::write_error(format!("Failed to create provision folder with error: {e}"));
         return;
     }
@@ -284,8 +286,8 @@ fn get_provision_failed_state_message(shared_state: Arc<Mutex<SharedState>>) -> 
 /// Get provision state
 /// It returns the current GPA serice provision state (from shared_state) for GPA service
 /// This function is designed and invoked in GPA service
-pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProivsionState {
-    ProivsionState {
+pub fn get_provision_state(shared_state: Arc<Mutex<SharedState>>) -> ProvisionState {
+    ProvisionState {
         finished: provision_wrapper::get_provision_finished(shared_state.clone()),
         errorMessage: get_provision_failed_state_message(shared_state),
     }
@@ -325,24 +327,21 @@ pub async fn get_provision_status_wait(port: u16, duration: Option<Duration>) ->
 // return value
 //  bool - true provision finished; false provision not finished
 //  String - provision error message, empty means provision success or provision failed.
-async fn get_current_provision_status(port: u16) -> std::io::Result<ProivsionState> {
-    let provision_url: hyper::Uri = format!(
+async fn get_current_provision_status(port: u16) -> Result<ProvisionState> {
+    let provision_url: String = format!(
         "http://{}:{}{}",
         Ipv4Addr::LOCALHOST,
         port,
         PROVISION_URL_PATH
-    )
-    .parse()
-    .map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to parse provision url with error: {}", e),
-        )
-    })?;
+    );
+
+    let provision_url: hyper::Uri = provision_url
+        .parse::<hyper::Uri>()
+        .map_err(|e| Error::ParseUrl(provision_url, e.to_string()))?;
 
     let mut headers = HashMap::new();
     headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());
-    hyper_client::get(provision_url, &headers, None, None, logger::write_warning).await
+    hyper_client::get(&provision_url, &headers, None, None, logger::write_warning).await
 }
 
 #[cfg(test)]

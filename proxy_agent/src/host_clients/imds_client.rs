@@ -7,7 +7,7 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::commom::constants;
+//! use proxy_agent::common::constants;
 //! use proxy_agent::host_clients::imds_client;
 //! use proxy_agent::shared_state::SharedState;
 //! use std::sync::{Arc, Mutex};
@@ -20,11 +20,10 @@
 //! ```
 
 use super::instance_info::InstanceInfo;
-use crate::common::{hyper_client, logger};
+use crate::common::{error::Error, hyper_client, logger, result::Result};
 use crate::shared_state::{key_keeper_wrapper, SharedState};
 use hyper::Uri;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 
 pub struct ImdsClient {
@@ -44,20 +43,17 @@ impl ImdsClient {
         }
     }
 
-    pub async fn get_imds_instance_info(&self) -> std::io::Result<InstanceInfo> {
-        let url: Uri = (format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI))
-            .parse()
-            .map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Failed to parse URL: {}", e),
-                )
-            })?;
+    pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
+        let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
+
+        let url: Uri = url
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 
         hyper_client::get(
-            url,
+            &url,
             &headers,
             key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
             key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),

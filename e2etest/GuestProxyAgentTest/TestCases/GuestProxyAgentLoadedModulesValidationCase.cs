@@ -17,7 +17,7 @@ namespace GuestProxyAgentTest.TestCases
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
             var baseLineModulesFilePath = Path.Combine(TestSetting.Instance.resourcesFolder, "GuestProxyAgentLoadedModulesBaseline.txt");
-            var baseLineModulesSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, baseLineModulesFilePath, context.ScenarioSetting.TestScenarioStroageFolderPrefix);
+            var baseLineModulesSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, baseLineModulesFilePath, context.ScenarioSetting.TestScenarioStorageFolderPrefix);
 
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "GuestProxyAgentLoadedModulesValidation.ps1", new List<(string, string)> 
             {

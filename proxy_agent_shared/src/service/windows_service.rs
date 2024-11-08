@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::logger_manager;
+use crate::result::Result;
 use std::ffi::OsString;
-use std::io;
 use std::path::PathBuf;
 use std::str;
 use std::thread;
@@ -54,7 +54,7 @@ pub fn start_service_with_retry(
     }
 }
 
-fn start_service_once(service_name: &str) -> windows_service::Result<ServiceStatus> {
+fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
     // Start service if it already isn't running
     query_service_status(service_name).and_then(|service| {
         if service.current_state == ServiceState::Running {
@@ -76,22 +76,23 @@ fn start_service_once(service_name: &str) -> windows_service::Result<ServiceStat
                 "Wait for 1 second before querying service status".to_string(),
             );
             thread::sleep(std::time::Duration::from_secs(1));
-            service.query_status()
+            service.query_status().map_err(Into::into)
         }
     })
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> windows_service::Result<()> {
+pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
     stop_service(service_name)?;
     delete_service(service_name)
 }
 
-pub fn stop_service(service_name: &str) -> windows_service::Result<ServiceStatus> {
+pub fn stop_service(service_name: &str) -> Result<ServiceStatus> {
     // Stop service if it already isn't stopped
     query_service_status(service_name).and_then(|service| {
         if service.current_state == ServiceState::Running {
             let service_manager: ServiceManager =
                 ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+
             let service = service_manager.open_service(
                 service_name,
                 ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
@@ -111,19 +112,19 @@ pub fn stop_service(service_name: &str) -> windows_service::Result<ServiceStatus
                     ));
                 }
             }
-            service.query_status()
+            service.query_status().map_err(Into::into)
         } else {
             Ok(service)
         }
     })
 }
 
-fn delete_service(service_name: &str) -> windows_service::Result<()> {
+fn delete_service(service_name: &str) -> Result<()> {
     // Delete the service
     let service_manager: ServiceManager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = service_manager.open_service(service_name, ServiceAccess::DELETE)?;
-    service.delete()
+    service.delete().map_err(Into::into)
 }
 
 pub fn install_or_update_service(
@@ -131,47 +132,38 @@ pub fn install_or_update_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     service_exe_path: PathBuf,
-) -> io::Result<()> {
+) -> Result<()> {
     // if query_service returns Ok, then the service needs to be updated otherwise create a service
     match query_service_status(service_name) {
-        Ok(_service) => {
-            match update_service(
-                service_name,
-                service_display_name,
-                service_dependencies,
-                service_exe_path,
-            ) {
-                Ok(_service) => Ok(()),
-                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-            }
-        }
-        Err(_e) => {
-            match create_service(
-                service_name,
-                service_display_name,
-                service_dependencies,
-                service_exe_path,
-            ) {
-                Ok(_service) => Ok(()),
-                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-            }
-        }
+        Ok(_service) => update_service(
+            service_name,
+            service_display_name,
+            service_dependencies,
+            service_exe_path,
+        ),
+        Err(_e) => create_service(
+            service_name,
+            service_display_name,
+            service_dependencies,
+            service_exe_path,
+        )
+        .map(|_| ()),
     }
 }
 
-fn query_service_status(service_name: &str) -> windows_service::Result<ServiceStatus> {
+fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = service_manager.open_service(service_name, ServiceAccess::QUERY_STATUS)?;
-    service.query_status()
+    service.query_status().map_err(Into::into)
 }
 
 #[allow(dead_code)]
-pub fn query_service_config(service_name: &str) -> windows_service::Result<ServiceConfig> {
+pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = service_manager.open_service(service_name, ServiceAccess::QUERY_CONFIG)?;
-    service.query_config()
+    service.query_config().map_err(Into::into)
 }
 
 pub fn update_service(
@@ -179,7 +171,7 @@ pub fn update_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     service_exe_path: PathBuf,
-) -> windows_service::Result<()> {
+) -> Result<()> {
     // update the service with the new executable path
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
@@ -203,7 +195,7 @@ pub fn update_service(
         account_password: None,
     };
 
-    service.change_config(&service_info)
+    service.change_config(&service_info).map_err(Into::into)
 }
 
 fn create_service(
@@ -211,7 +203,7 @@ fn create_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     exe_path: PathBuf,
-) -> windows_service::Result<Service> {
+) -> Result<Service> {
     let _manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
 
     let service_manager =
@@ -233,7 +225,9 @@ fn create_service(
         account_name: None, // run as System
         account_password: None,
     };
-    service_manager.create_service(&service_info, ServiceAccess::QUERY_STATUS)
+    service_manager
+        .create_service(&service_info, ServiceAccess::QUERY_STATUS)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

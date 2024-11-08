@@ -29,8 +29,8 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
         logger::AGENT_LOGGER_KEY.to_string(),
         config::get_logs_dir(),
         "ProxyAgent.log".to_string(),
-        20 * 1024 * 1024,
-        20,
+        constants::MAX_LOG_FILE_SIZE,
+        constants::MAX_LOG_FILE_COUNT as u16,
     );
     logger::write_information(format!(
         "============== GuestProxyAgent ({}) is starting on {}, elapsed: {}",
@@ -46,6 +46,7 @@ pub fn start_service(shared_state: Arc<Mutex<SharedState>>) {
             .parse()
             .unwrap(),
         config::get_keys_dir(),
+        config::get_logs_dir(),
         config::get_poll_key_status_duration(),
         config_start_redirector,
         shared_state.clone(),

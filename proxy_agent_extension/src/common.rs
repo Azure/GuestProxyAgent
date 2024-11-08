@@ -9,27 +9,28 @@ use crate::structs::TopLevelStatus;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use std::fs;
 use std::io::{Error, ErrorKind};
+use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 
 #[cfg(windows)]
 use proxy_agent_shared::service;
 
-pub fn get_handler_environment(exe_path: PathBuf) -> HandlerEnvironment {
+pub fn get_handler_environment(exe_path: &Path) -> HandlerEnvironment {
     let mut handler_env_path: PathBuf = exe_path.to_path_buf();
     handler_env_path.push(constants::HANDLER_ENVIRONMENT_FILE);
 
     let handler_env_file: Vec<structs::Handler> =
-        match misc_helpers::json_read_from_file(handler_env_path) {
+        match misc_helpers::json_read_from_file(&handler_env_path) {
             Ok(temp) => temp,
             Err(e) => {
                 eprintln!("Error in reading handler env file: {e}");
-                process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+                process::exit(constants::EXIT_CODE_HANDLER_ENV_ERR);
             }
         };
     if handler_env_file.is_empty() {
         eprintln!("Handler environment file is empty");
-        process::exit(constants::EXIT_CODE_HANDLERENV_ERR);
+        process::exit(constants::EXIT_CODE_HANDLER_ENV_ERR);
     }
 
     handler_env_file[0].handlerEnvironment.clone()
@@ -70,7 +71,7 @@ pub fn get_file_path(
     file_extension: &str,
 ) -> PathBuf {
     let mut file: PathBuf = status_folder;
-    if let Err(e) = misc_helpers::try_create_folder(file.clone()) {
+    if let Err(e) = misc_helpers::try_create_folder(&file) {
         logger::write(format!("Error in creating folder: {:?}", e));
     }
     match config_seq_no {
@@ -188,7 +189,7 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        // linux service harded to this location
+        // linux service hard-coded to this location
         PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent")
     }
 }
@@ -196,8 +197,7 @@ pub fn get_proxy_agent_service_path() -> PathBuf {
 pub fn get_proxy_agent_exe_path() -> PathBuf {
     let exe_path = misc_helpers::get_current_exe_dir();
     logger::write(
-        "Current proxy agent exe path: ".to_string()
-            + &misc_helpers::path_to_string(exe_path.clone()),
+        "Current proxy agent exe path: ".to_string() + &misc_helpers::path_to_string(&exe_path),
     );
 
     #[cfg(windows)]
@@ -237,11 +237,7 @@ pub fn start_event_logger(logger_key: &str) {
     let interval: std::time::Duration = std::time::Duration::from_secs(60);
     let max_event_file_count: usize = 50;
     let exe_path = misc_helpers::get_current_exe_dir();
-    let event_folder = PathBuf::from(
-        get_handler_environment(exe_path.to_path_buf())
-            .eventsFolder
-            .to_string(),
-    );
+    let event_folder = PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
     telemetry::event_logger::start_async(
         event_folder,
         interval,
@@ -348,7 +344,7 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         //Add HandlerEnvironment.json in the temp directory
         let handler_env_file = temp_test_path.to_path_buf().join("HandlerEnvironment.json");
@@ -369,9 +365,9 @@ mod tests {
         let handler_env_obj: Vec<Handler> = serde_json::from_str(json_handler_linux).unwrap();
 
         //Write the deserialized json object to HandlerEnvironment.json file
-        _ = misc_helpers::json_write_to_file(&handler_env_obj, handler_env_file);
+        _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
 
-        let handler_env = super::get_handler_environment(temp_test_path.to_path_buf());
+        let handler_env = super::get_handler_environment(&temp_test_path);
         assert_eq!(handler_env.logFolder, "log".to_string());
         assert_eq!(handler_env.configFolder, "config".to_string());
         assert_eq!(handler_env.statusFolder, "status".to_string());
@@ -393,7 +389,7 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let status_folder: PathBuf = temp_test_path.join("status");
 
@@ -413,10 +409,9 @@ mod tests {
             substatus: Default::default(),
         };
         common::report_status(status_folder, &Some(seq_no.to_string()), &handler_status);
-        let status_obj = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-            expected_status_file.to_path_buf(),
-        )
-        .unwrap();
+        let status_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                .unwrap();
         assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.name, "test".to_string());
 
@@ -431,7 +426,7 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let status_folder: PathBuf = temp_test_path.join("status");
         let config_seq_no = "0";
@@ -453,7 +448,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
         super::logger::init_logger(log_folder, "log.txt");
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let config_seq_no = None;
         let exe_path = &temp_test_path;
@@ -499,17 +494,16 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let status_folder: PathBuf = temp_test_path.join("status");
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
         super::report_status_enable_command(status_folder, &Some(config_seq_no.to_string()), None);
-        let status_obj = misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(
-            expected_status_file.to_path_buf(),
-        )
-        .unwrap();
+        let status_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                .unwrap();
         assert_eq!(status_obj.len(), 1);
         assert_eq!(status_obj[0].status.operation, "Enable");
         _ = fs::remove_dir_all(&temp_test_path);
@@ -525,7 +519,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
         super::logger::init_logger(log_folder, "log.txt");
-        _ = misc_helpers::try_create_folder(temp_test_path.to_path_buf());
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let expected_heartbeat_file: PathBuf = temp_test_path.join("heartbeat.json");
         let heartbeat_obj = HeartbeatObj {
@@ -537,10 +531,9 @@ mod tests {
             },
         };
         common::report_heartbeat(expected_heartbeat_file.to_path_buf(), heartbeat_obj);
-        let heartbeat_obj = misc_helpers::json_read_from_file::<Vec<TopLevelHeartbeat>>(
-            expected_heartbeat_file.to_path_buf(),
-        )
-        .unwrap();
+        let heartbeat_obj =
+            misc_helpers::json_read_from_file::<Vec<TopLevelHeartbeat>>(&expected_heartbeat_file)
+                .unwrap();
         assert_eq!(heartbeat_obj.len(), 1);
         assert_eq!(heartbeat_obj[0].heartbeat.status, "test".to_string());
 

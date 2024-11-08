@@ -1,6 +1,8 @@
 # Getting Started with Windows
 
-## Prerequisites
+Required tools can be installed locally, or via a Docker Windows Container build image.
+
+## Local Build Prerequisites
 
 The following must be installed in order to build this project:
 
@@ -34,14 +36,48 @@ You should add the paths to `git.exe` and `nuget.exe` to the Windows PATH enviro
  above have been installed.
 
 ## How to clone and build the project
+
 This section outlines the steps to build, prepare and build this project.
 
 ### Cloning the project
+
 1. ```git clone https://github.com/Azure/GuestProxyAgent.git```.
 By default this will clone the project under the `GuestProxyAgent` directory.
 
 ### Build the project
+
 1. Launch `Developer Command Prompt for VS 2022` with administrators permission.
 2. Navigate to this repo root folder.
 3. ```build.cmd```
 
+## Building with Docker
+
+If you are prefer an isolated build environment, you can use the Windows Container build image.
+
+> Windows Containers don't have full Docker feature support. Additionally, the image is very large at ~30GB.
+> If either of these are concern, use the previous instructions.
+
+```shell
+cd docker/windows
+docker-compose build
+docker-compose up --detach
+docker-compose exec gpawindev cmd
+```
+
+Within the attached container, the full build, all tests, and all packaging can be run with:
+
+```shell
+vs-init
+build
+```
+
+> In certain Windows environments you may notice inordinately slow downloads during
+> the docker image build. If you are in one of these edge cases, consider disabling RCS which [can potentially help](https://github.com/microsoft/Windows-Containers/issues/145):
+> `powershell "Get-NetAdapterRSC | Disable-NetAdapterRSC"`
+
+### Other tips
+
+- If your setup is relying on OpenSSH for container communication, use a modern version of OpenSSH for better performance.
+On Windows, this can be installed with `winget install -e --id Microsoft.OpenSSH.Beta`.
+- Docker Desktop can only manage Windows or Linux containers at one time. Right-click on the Docker icon in the system
+tray and select `Switch to windows containers...` or `Switch to linux containers...` as needed.

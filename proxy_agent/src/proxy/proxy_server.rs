@@ -19,7 +19,9 @@
 //! tokio::spawn(proxy_server::start(port, shared_state.clone()));
 //! ```
 
-use crate::common::{config, constants, helpers, hyper_client, logger};
+use crate::common::{
+    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+};
 use crate::proxy::proxy_connection::{Connection, ConnectionContext};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::{
@@ -39,6 +41,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyAgentDetailStatus;
 use proxy_agent_shared::telemetry::event_logger;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tower::Service;
@@ -47,6 +50,8 @@ use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
 const INITIAL_CONNECTION_ID: u128 = 0;
 const REQUEST_BODY_LOW_LIMIT_SIZE: usize = 1024 * 100; // 100KB
 const REQUEST_BODY_LARGE_LIMIT_SIZE: usize = 1024 * REQUEST_BODY_LOW_LIMIT_SIZE; // 100MB
+const START_LISTENER_RETRY_COUNT: u16 = 5;
+const START_LISTENER_RETRY_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
 pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
     proxy_listener_wrapper::set_shutdown(shared_state.clone(), true);
@@ -54,9 +59,9 @@ pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
 
 pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStatus {
     let status = if proxy_listener_wrapper::get_shutdown(shared_state.clone()) {
-        ModuleState::STOPPED.to_string()
+        ModuleState::STOPPED
     } else {
-        ModuleState::RUNNING.to_string()
+        ModuleState::RUNNING
     };
 
     ProxyAgentDetailStatus {
@@ -66,29 +71,80 @@ pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> ProxyAgentDetailStat
     }
 }
 
-pub async fn start(
-    port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// start listener at the given address with retry logic if the address is in use
+async fn start_listener_with_retry(
+    addr: &str,
+    retry_count: u16,
+    sleep_duration: Duration,
+) -> Result<TcpListener> {
+    for i in 0..retry_count {
+        let listener = TcpListener::bind(addr).await;
+        match listener {
+            Ok(l) => {
+                return Ok(l);
+            }
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::AddrInUse => {
+                    let message =
+                        format!(
+                        "Failed bind to '{}' with error 'AddrInUse', wait '{:#?}' and retrying {}.",
+                        addr, sleep_duration, (i+1)
+                    );
+                    logger::write_warning(message);
+                    tokio::time::sleep(sleep_duration).await;
+                    continue;
+                }
+                _ => {
+                    // other error, return it
+                    return Err(Error::Io(
+                        format!("Failed to bind TcpListener '{}'", addr),
+                        e,
+                    ));
+                }
+            },
+        }
+    }
+
+    // one more effort try bind to the addr
+    TcpListener::bind(addr)
+        .await
+        .map_err(|e| Error::Io(format!("Failed to bind TcpListener '{}'", addr), e))
+}
+
+pub async fn start(port: u16, shared_state: Arc<Mutex<SharedState>>) {
     Connection::init_logger(config::get_logs_dir());
 
     let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, port);
     logger::write(format!("Start proxy listener at '{}'.", &addr));
 
-    let listener = match TcpListener::bind(&addr).await {
+    let listener = match start_listener_with_retry(
+        &addr,
+        START_LISTENER_RETRY_COUNT,
+        START_LISTENER_RETRY_SLEEP_DURATION,
+    )
+    .await
+    {
         Ok(listener) => listener,
         Err(e) => {
-            let message = format!("Failed to bind TcpListener '{}' with error {}.", addr, e);
+            let message = e.to_string();
             proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
-            logger::write_error(message);
-            return Err(Box::new(e));
+            // send this critical error to event logger
+            event_logger::write_event(
+                event_logger::WARN_LEVEL,
+                message,
+                "start",
+                "proxy_server",
+                Connection::CONNECTION_LOGGER_KEY,
+            );
+
+            return;
         }
     };
 
     let message = helpers::write_startup_event(
         "Started proxy listener, ready to accept request",
         "start",
-        "proxy_listener",
+        "proxy_server",
         logger::AGENT_LOGGER_KEY,
     );
     proxy_listener_wrapper::set_status_message(shared_state.clone(), message.to_string());
@@ -100,12 +156,12 @@ pub async fn start(
         tokio::select! {
             _ = cancellation_token.cancelled() => {
                 logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                return Ok(());
+                return;
             }
             result = listener.accept() => {
                 match result {
                     Ok((stream, client_addr)) =>{
-                        accept_one_reqeust(stream, client_addr, shared_state.clone()).await;
+                        accept_one_request(stream, client_addr, shared_state.clone()).await;
                     },
                     Err(e) => {
                         logger::write_error(format!("Failed to accept connection: {}", e));
@@ -116,7 +172,7 @@ pub async fn start(
     }
 }
 
-async fn accept_one_reqeust(
+async fn accept_one_request(
     stream: TcpStream,
     client_addr: std::net::SocketAddr,
     shared_state: Arc<Mutex<SharedState>>,
@@ -145,16 +201,14 @@ async fn accept_one_reqeust(
             let large_limit_layer = RequestBodyLimitLayer::new(REQUEST_BODY_LARGE_LIMIT_SIZE);
             let low_limited_tower_service = tower::ServiceBuilder::new().layer(low_limit_layer);
             let large_limited_tower_service = tower::ServiceBuilder::new().layer(large_limit_layer);
-            let tower_service_layer = if crate::common::hyper_client::should_skip_sig(
-                req.method().clone(),
-                req.uri().clone(),
-            ) {
-                // skip signature check for large request
-                large_limited_tower_service.clone()
-            } else {
-                // use low limit for normal request
-                low_limited_tower_service.clone()
-            };
+            let tower_service_layer =
+                if crate::common::hyper_client::should_skip_sig(req.method(), req.uri()) {
+                    // skip signature check for large request
+                    large_limited_tower_service.clone()
+                } else {
+                    // use low limit for normal request
+                    low_limited_tower_service.clone()
+                };
 
             let shared_state = shared_state.clone();
             let cloned_std_stream = cloned_std_stream.clone();
@@ -190,11 +244,15 @@ async fn accept_one_reqeust(
 }
 
 // Set the read timeout for the stream
-fn set_stream_read_time_out(
-    stream: TcpStream,
-) -> std::io::Result<(TcpStream, std::net::TcpStream)> {
+fn set_stream_read_time_out(stream: TcpStream) -> Result<(TcpStream, std::net::TcpStream)> {
     // Convert the stream to a std stream
-    let std_stream = stream.into_std()?;
+    let std_stream = stream.into_std().map_err(|e| {
+        Error::Io(
+            "Failed to convert Tokio stream into std equivalent".to_string(),
+            e,
+        )
+    })?;
+
     // Set the read timeout
     if let Err(e) = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
         Connection::write_warning(
@@ -204,19 +262,26 @@ fn set_stream_read_time_out(
     }
 
     // Clone the stream for the service_fn
-    let cloned_std_stream = std_stream.try_clone()?;
+    let cloned_std_stream = std_stream
+        .try_clone()
+        .map_err(|e| Error::Io("Failed to clone TCP stream".to_string(), e))?;
 
     // Convert the std stream back
-    let streamd = TcpStream::from_std(std_stream)?;
+    let tokio_tcp_stream = TcpStream::from_std(std_stream).map_err(|e| {
+        Error::Io(
+            "Failed to convert std stream into Tokio equivalent".to_string(),
+            e,
+        )
+    })?;
 
-    Ok((streamd, cloned_std_stream))
+    Ok((tokio_tcp_stream, cloned_std_stream))
 }
 
 async fn handle_request(
     request: Request<Limited<hyper::body::Incoming>>,
     mut connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let connection_id = proxy_listener_wrapper::increase_connection_count(shared_state.clone());
     connection.id = connection_id;
     Connection::write_information(
@@ -244,7 +309,7 @@ async fn handle_request(
                 event_logger::WARN_LEVEL,
                 err,
                 "handle_request",
-                "proxy_listener",
+                "proxy_server",
                 Connection::CONNECTION_LOGGER_KEY,
             );
             #[cfg(windows)]
@@ -259,16 +324,14 @@ async fn handle_request(
                 ) {
                     Ok(data) => entry = Some(data),
                     Err(e) => {
-                        if e.kind() != std::io::ErrorKind::Unsupported {
-                            let err = format!("Failed to get lookup_audit_from_stream: {}", e);
-                            event_logger::write_event(
-                                event_logger::WARN_LEVEL,
-                                err,
-                                "handle_request",
-                                "proxy_listener",
-                                Connection::CONNECTION_LOGGER_KEY,
-                            );
-                        }
+                        let err = format!("Failed to get lookup_audit_from_stream: {}", e);
+                        event_logger::write_event(
+                            event_logger::WARN_LEVEL,
+                            err,
+                            "handle_request",
+                            "proxy_server",
+                            Connection::CONNECTION_LOGGER_KEY,
+                        );
                     }
                 }
             }
@@ -409,7 +472,7 @@ async fn handle_provision_state_check_request(
     connection_id: u128,
     request: Request<Limited<hyper::body::Incoming>>,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     // check MetaData header exists or not
     if request.headers().get(constants::METADATA_HEADER).is_none() {
         Connection::write_warning(
@@ -444,10 +507,10 @@ async fn handle_provision_state_check_request(
 }
 
 async fn forward_response(
-    proxy_response: std::io::Result<Response<Incoming>>,
+    proxy_response: Result<Response<Incoming>>,
     connection: ConnectionContext,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let connection_id = connection.id;
     let proxy_response = match proxy_response {
         Ok(response) => response,
@@ -524,7 +587,7 @@ fn log_connection_summary(
             event_logger::INFO_LEVEL,
             json,
             "log_connection_summary",
-            "proxy_listener",
+            "proxy_server",
             Connection::CONNECTION_LOGGER_KEY,
         );
     };
@@ -544,7 +607,7 @@ async fn handle_request_with_signature(
     connection: ConnectionContext,
     request: Request<Limited<Incoming>>,
     shared_state: Arc<Mutex<SharedState>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     let (head, body) = request.into_parts();
     let whole_body = match body.collect().await {
         Ok(data) => data.to_bytes(),
@@ -578,7 +641,7 @@ async fn handle_request_with_signature(
         key_keeper_wrapper::get_current_key_guid(shared_state.clone()),
     ) {
         let input_to_sign = hyper_client::as_sig_input(head, whole_body);
-        match helpers::compute_signature(key.to_string(), input_to_sign.as_slice()) {
+        match helpers::compute_signature(&key, input_to_sign.as_slice()) {
             Ok(sig) => {
                 let authorization_value =
                     format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
@@ -676,7 +739,7 @@ mod tests {
         let url: hyper::Uri = format!("http://{}:{}/", host, port).parse().unwrap();
         let request = hyper_client::build_request(
             Method::GET,
-            url.clone(),
+            &url,
             &HashMap::new(),
             None,
             key_keeper_wrapper::get_current_key_guid(shared_state.clone()),
@@ -696,7 +759,7 @@ mod tests {
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
         let request = hyper_client::build_request(
             Method::POST,
-            url.clone(),
+            &url,
             &HashMap::new(),
             Some(body.as_slice()),
             key_keeper_wrapper::get_current_key_guid(shared_state.clone()),

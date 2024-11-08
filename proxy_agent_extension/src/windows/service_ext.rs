@@ -100,7 +100,7 @@ pub fn update_extension_service(exe_root_path: PathBuf) {
     logger::write(format!(
         "Updating service {} with exe_path {}",
         constants::EXTENSION_SERVICE_NAME,
-        misc_helpers::path_to_string(service_exe_path.to_path_buf())
+        misc_helpers::path_to_string(&service_exe_path)
     ));
     match service::update_service(
         constants::EXTENSION_SERVICE_NAME,
