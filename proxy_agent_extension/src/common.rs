@@ -311,8 +311,6 @@ mod tests {
     use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs::{self};
-    use std::io::Error;
-    use std::io::ErrorKind;
     use std::path::PathBuf;
 
     #[test]

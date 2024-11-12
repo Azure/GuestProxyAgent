@@ -128,7 +128,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
                 report_proxy_agent_service_status(
                     output,
                     exe_path.join("status"),
-                    &cache_seq_no.to_string(),
+                    &cache_seq_no,
                     &mut status,
                     &mut status_state_obj,
                 );
@@ -623,7 +623,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
 fn report_proxy_agent_service_status(
     output: Result<Output, Error>,
     status_folder: PathBuf,
-    seq_no: &String,
+    seq_no: &str,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
 ) {
@@ -758,7 +758,7 @@ mod tests {
             super::report_proxy_agent_service_status(
                 output,
                 status_folder,
-                &seq_no.to_string(),
+                &seq_no,
                 &mut status,
                 &mut status_state_obj,
             );
@@ -781,7 +781,7 @@ mod tests {
             super::report_proxy_agent_service_status(
                 output,
                 status_folder_bad,
-                &seq_no.to_string(),
+                &seq_no,
                 &mut status,
                 &mut status_state_obj,
             );
