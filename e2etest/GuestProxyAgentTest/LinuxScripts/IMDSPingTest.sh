@@ -2,7 +2,7 @@
 
 # Copyright (c) Microsoft Corporation
 # SPDX-License-Identifier: MIT
-imdsSecureChannelEnabled=$(echo imdsSecureChannelEnabled)
+# imdsSecureChannelEnabled=$(echo imdsSecureChannelEnabled)
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
 
 # make 10 requests if any failed, will failed the test for tcp port scalability config
