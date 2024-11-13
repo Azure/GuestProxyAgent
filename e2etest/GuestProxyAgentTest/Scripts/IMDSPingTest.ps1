@@ -23,7 +23,7 @@ while ($i -lt 10) {
             exit -1
         }
 
-        if ("$imdsSecureChannelEnabled" -eq "true") {
+        if ("$imdsSecureChannelEnabled" -ieq "true") { # case insensitive comparison
             $responseHeaders = $response.Headers
             if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
                 Write-Error "$((Get-Date).ToUniversalTime()) - Ping test failed. Response does not contain x-ms-azure-host-authorization header"
