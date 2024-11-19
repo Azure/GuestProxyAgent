@@ -116,6 +116,7 @@ httpwg
 Iaa
 idstepsrun
 IEnumerable
+ieq
 iex
 ifaddrs
 ifindex
@@ -172,6 +173,7 @@ nmake
 NOCONFIRMATION
 NOERRORUI
 NONINFRINGEMENT
+notjson
 norestart
 ntdll
 NTSTATUS
