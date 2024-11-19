@@ -50,7 +50,7 @@ echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via apt-get $i"
-        sudo apt update
+        sudo apt-get update
         sudo apt-get install -y jq
         sleep 10
         install=$(apt list --installed jq)
