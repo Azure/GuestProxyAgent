@@ -14,8 +14,10 @@ echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - os=$os"
 if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing unzip via apt-get $i"
-        sudo apt update
+        sudo apt-get update
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - apt-get install unzip"
         sudo apt-get install unzip
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - apt-get install unzip with exit code=$?"
         sleep 10
         install=$(apt list --installed unzip)
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
