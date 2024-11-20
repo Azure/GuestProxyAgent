@@ -5,7 +5,7 @@
 //! The GPA service is implemented as a Windows service using the windows_service crate.
 //! It is started, stopped, and controlled by the Windows service manager.
 
-use crate::common::{constants, logger};
+use crate::common::{constants, logger, result::Result};
 use crate::shared_state::service_wrapper;
 use crate::{service, shared_state::SharedState};
 use std::time::Duration;
@@ -14,7 +14,7 @@ use windows_service::service::{
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 
-pub fn run_service() -> windows_service::Result<()> {
+pub fn run_service() -> Result<()> {
     let shared_state = SharedState::new();
     let cloned_shared_state = shared_state.clone();
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
