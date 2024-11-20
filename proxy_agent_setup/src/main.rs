@@ -3,7 +3,9 @@
 
 mod args;
 pub mod backup;
+pub mod error;
 pub mod logger;
+pub mod result;
 pub mod running;
 pub mod setup;
 

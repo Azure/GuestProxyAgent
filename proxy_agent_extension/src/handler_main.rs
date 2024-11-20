@@ -35,7 +35,7 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     common::get_handler_environment(&exe_path)
 });
 
-pub fn program_start(command: ExtensionCommand, config_seq_no: Option<String>) {
+pub fn program_start(command: ExtensionCommand, config_seq_no: String) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
     logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
@@ -52,7 +52,7 @@ pub fn program_start(command: ExtensionCommand, config_seq_no: Option<String>) {
         process::exit(constants::EXIT_CODE_NOT_SUPPORTED_OS_VERSION);
     }
 
-    handle_command(command, &config_seq_no);
+    handle_command(command, config_seq_no);
 }
 
 #[cfg(windows)]
@@ -103,7 +103,7 @@ fn check_linux_os_supported(version: Version) -> bool {
     }
 }
 
-fn report_os_not_supported(config_seq_no: Option<String>) {
+fn report_os_not_supported(config_seq_no: String) {
     // report to status folder if the os version is not supported
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = Path::new(&status_folder).to_path_buf();
@@ -161,7 +161,7 @@ fn get_exe_parent() -> PathBuf {
     exe_parent.to_path_buf()
 }
 
-fn handle_command(command: ExtensionCommand, config_seq_no: &Option<String>) {
+fn handle_command(command: ExtensionCommand, config_seq_no: String) {
     logger::write(format!("entering handle command: {:?}", command));
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = PathBuf::from(&status_folder);
@@ -219,19 +219,13 @@ fn uninstall_handler() {
     }
 }
 
-fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
+fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
     let exe_path = misc_helpers::get_current_exe_dir();
     let should_report_status =
-        match common::update_current_seq_no(config_seq_no, exe_path.to_path_buf()) {
-            Ok(should_report_status) => should_report_status,
-            Err(e) => {
-                eprintln!("Error in updating current seq no: {e}");
-                process::exit(constants::EXIT_CODE_NO_CONFIG_SEQ_NO);
-            }
-        };
+        common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf());
 
     if should_report_status {
-        common::report_status_enable_command(status_folder.to_path_buf(), config_seq_no, None);
+        common::report_status_enable_command(status_folder.to_path_buf(), &config_seq_no, None);
     }
 
     #[cfg(windows)]
@@ -250,7 +244,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: &Option<String>) {
             if count > constants::SERVICE_START_RETRY_COUNT {
                 common::report_status_enable_command(
                     status_folder.to_path_buf(),
-                    config_seq_no,
+                    &config_seq_no,
                     Some(constants::ERROR_STATUS.to_string()),
                 );
                 process::exit(constants::EXIT_CODE_SERVICE_START_ERR);
