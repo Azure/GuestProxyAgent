@@ -122,7 +122,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent_extension
         run: |
-          cargo llvm-cov --manifest-path proxy_agent_extension\Cargo.toml --output-path out\proxy_agent_extension_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs)" -- --test-threads=1
+          cargo llvm-cov --manifest-path proxy_agent_extension\Cargo.toml --output-path out\proxy_agent_extension_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|service_ext.rs)" -- --test-threads=1
           type out\proxy_agent_extension_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent_extension

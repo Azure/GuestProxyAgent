@@ -19,6 +19,7 @@ pub mod test_mock;
 use clap::{Parser, Subcommand};
 use common::constants;
 use common::helpers;
+use provision::ProvisionQuery;
 use proxy_agent_shared::misc_helpers;
 use shared_state::SharedState;
 use std::{process, time::Duration};
@@ -92,10 +93,11 @@ async fn main() {
         // --wait parameter to wait for the provision status until the given time in seconds
         // it is an optional, if not provided then it will query the provision state once by waiting for 0 seconds.
         let wait_time = cli.wait.unwrap_or(0);
-        let (provision_finished, error_message) = provision::get_provision_status_wait(
+        let (provision_finished, error_message) = ProvisionQuery::new(
             constants::PROXY_AGENT_PORT,
             Some(Duration::from_secs(wait_time)),
         )
+        .get_provision_status_wait()
         .await;
         if !provision_finished {
             // exit code 1 means provision not finished yet.
@@ -114,7 +116,7 @@ async fn main() {
 
     if let Some(Commands::Console) = cli.command {
         // console mode - start GPA as long running process
-        let shared_state = SharedState::new();
+        let shared_state = SharedState::start_all();
         service::start_service(shared_state.clone());
         println!("Press Enter to end it.");
         let mut temp = String::new();
@@ -150,7 +152,7 @@ fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
         .get()
         .expect("You must provide the Tokio runtime handle before this function is called");
     handle.block_on(async {
-        if let Err(e) = windows::run_service() {
+        if let Err(e) = windows::run_service().await {
             logger::write_error(format!("Error in running the service: {}", e));
         }
     });

@@ -21,14 +21,16 @@ static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
-pub fn start_async<F>(
+pub fn start_async<F, Fut>(
     event_dir: PathBuf,
     interval: Duration,
     max_event_file_count: usize,
     logger_key: &str,
     set_status_fn: F,
 ) where
-    F: Fn(String) + Send + 'static,
+    F: Fn(String) -> Fut,
+    F: Send + 'static,
+    Fut: std::future::Future<Output = ()>,
 {
     let key = logger_key.to_string();
     if let Err(e) = thread::Builder::new()
@@ -50,14 +52,15 @@ pub fn start_async<F>(
     }
 }
 
-fn start<F>(
+fn start<F, Fut>(
     event_dir: PathBuf,
     mut interval: Duration,
     max_event_file_count: usize,
     logger_key: &str,
     set_status_fn: F,
 ) where
-    F: Fn(String),
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
 {
     let message = "Telemetry event logger thread started.";
     set_status_fn(message.to_string());
@@ -224,7 +227,11 @@ mod tests {
             Duration::from_millis(100),
             3,
             logger_key,
-            |_s| {}, // empty function
+            |_| {
+                async {
+                    // do nothing
+                }
+            },
         );
 
         // write some events to the queue and flush to disk

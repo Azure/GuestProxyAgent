@@ -4,7 +4,6 @@
 use crate::common::{hyper_client, logger, result::Result};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
-use crate::shared_state::{tokio_wrapper, SharedState};
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
@@ -14,8 +13,8 @@ use hyper::Response;
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 static EMPTY_GUID: Lazy<String> = Lazy::new(|| "00000000-0000-0000-0000-000000000000".to_string());
@@ -23,12 +22,11 @@ static GUID: Lazy<String> = Lazy::new(|| Uuid::new_v4().to_string());
 static mut CURRENT_STATE: Lazy<String> =
     Lazy::new(|| String::from(key_keeper::MUST_SIG_WIRESERVER));
 
-pub async fn start(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>) {
+pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken) {
     logger::write_information("Mock Server starting...".to_string());
     let addr = format!("{}:{}", ip, port);
     let listener = TcpListener::bind(&addr).await.unwrap();
     println!("Listening on http://{}", addr);
-    let cancellation_token = tokio_wrapper::get_cancellation_token(shared_state.clone());
 
     loop {
         tokio::select! {
@@ -56,10 +54,6 @@ pub async fn start(ip: String, port: u16, shared_state: Arc<Mutex<SharedState>>)
             }
         }
     }
-}
-
-pub fn stop(shared_state: Arc<Mutex<SharedState>>) {
-    tokio_wrapper::cancel_cancellation_token(shared_state.clone());
 }
 
 async fn handle_request(

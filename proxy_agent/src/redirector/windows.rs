@@ -5,13 +5,13 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
-use crate::common::error::{BpfErrorType, Error};
 use crate::common::{self, config, constants, helpers, logger, result::Result};
-use crate::key_keeper;
-use crate::provision;
+use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::redirector::AuditEntry;
-use crate::shared_state::{key_keeper_wrapper, redirector_wrapper, SharedState};
+use crate::shared_state::agent_status_wrapper::AgentStatusModule;
+use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use core::ffi::c_void;
+use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use std::mem;
 use std::ptr;
 use std::sync::{Arc, Mutex};
@@ -33,152 +33,161 @@ impl Default for BpfObject {
     }
 }
 
-pub fn initialized_success(shared_state: Arc<Mutex<SharedState>>) -> bool {
-    if !bpf_api::ebpf_api_is_loaded() {
-        redirector_wrapper::set_status_message(
-            shared_state.clone(),
-            "Failed to load eBPF API.".to_string(),
-        );
-        return false;
-    }
-    true
-}
-
-pub fn start_internal(local_port: u16, shared_state: Arc<Mutex<SharedState>>) -> bool {
-    let mut bpf_object = BpfObject::new();
-
-    let result = bpf_object.load_bpf_object(super::get_ebpf_file_path());
-    if result != 0 {
-        set_error_status(
-            format!("Failed to load bpf object with result: {result}"),
-            shared_state.clone(),
-        );
-        return false;
-    } else {
-        logger::write("Success loaded bpf object.".to_string());
+// Redirector implementation for Windows platform
+impl super::Redirector {
+    pub async fn initialized_success(&self) -> bool {
+        if !bpf_api::ebpf_api_is_loaded() {
+            self.set_error_status("Failed to load eBPF API.".to_string())
+                .await;
+            return false;
+        }
+        true
     }
 
-    let result = bpf_object.attach_bpf_prog();
-    if result != 0 {
-        set_error_status(
-            format!("Failed to attach bpf prog with result: {result}"),
-            shared_state.clone(),
-        );
-        return false;
-    } else {
-        logger::write("Success attached bpf prog.".to_string());
-    }
+    pub async fn start_internal(&self) -> bool {
+        let mut bpf_object = BpfObject::new();
 
-    let pid = std::process::id();
-    let result = bpf_object.update_bpf_skip_process_map(pid);
-    if result != 0 {
-        set_error_status(
-            format!("Failed to update bpf skip_process map with result: {result}"),
-            shared_state.clone(),
-        );
-        return false;
-    } else {
-        logger::write(format!(
-            "Success updated bpf skip_process map with pid={pid}."
-        ));
-    }
-
-    if (key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
-        != key_keeper::DISABLE_STATE)
-        || (config::get_wire_server_support() > 0)
-    {
-        let result = bpf_object.update_policy_elem_bpf_map(
-            local_port,
-            constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
-            constants::WIRE_SERVER_PORT,
-        );
+        let result = bpf_object.load_bpf_object(super::get_ebpf_file_path());
         if result != 0 {
-            set_error_status(
-                format!("Failed to update bpf map for WireServer support with result: {result}"),
-                shared_state.clone(),
-            );
+            self.set_error_status(format!("Failed to load bpf object with result: {result}"))
+                .await;
             return false;
         } else {
-            logger::write("Success updated bpf map for WireServer support.".to_string());
+            logger::write("Success loaded bpf object.".to_string());
         }
-    }
-    if config::get_host_gaplugin_support() > 0 {
-        let result = bpf_object.update_policy_elem_bpf_map(
-            local_port,
-            constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
-            constants::GA_PLUGIN_PORT,
-        );
+
+        let result = bpf_object.attach_bpf_prog();
         if result != 0 {
-            set_error_status(
-                format!("Failed to update bpf map for Host GAPlugin support with result: {result}"),
-                shared_state.clone(),
-            );
+            self.set_error_status(format!("Failed to attach bpf prog with result: {result}"))
+                .await;
             return false;
         } else {
-            logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
+            logger::write("Success attached bpf prog.".to_string());
         }
-    }
-    if (key_keeper_wrapper::get_current_secure_channel_state(shared_state.clone())
-        == key_keeper::MUST_SIG_WIRESERVER_IMDS)
-        || (config::get_imds_support() > 0)
-    {
-        let result = bpf_object.update_policy_elem_bpf_map(
-            local_port,
-            constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
-            constants::IMDS_PORT,
-        );
+
+        let pid = std::process::id();
+        let result = bpf_object.update_bpf_skip_process_map(pid);
         if result != 0 {
-            set_error_status(
-                format!("Failed to update bpf map for IMDS support with result: {result}"),
-                shared_state.clone(),
-            );
+            self.set_error_status(format!(
+                "Failed to update bpf skip_process map with result: {result}"
+            ))
+            .await;
             return false;
         } else {
-            logger::write("Success updated bpf map for IMDS support.".to_string());
+            logger::write(format!(
+                "Success updated bpf skip_process map with pid={pid}."
+            ));
         }
+
+        let wireserver_mode =
+            if let Ok(Some(rules)) = self.key_keeper_shared_state.get_wireserver_rules().await {
+                rules.mode
+            } else {
+                AuthorizationMode::Audit
+            };
+        if (wireserver_mode != AuthorizationMode::Disabled)
+            || (config::get_wire_server_support() > 0)
+        {
+            let result = bpf_object.update_policy_elem_bpf_map(
+                self.local_port,
+                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
+                constants::WIRE_SERVER_PORT,
+            );
+            if result != 0 {
+                self.set_error_status(format!(
+                    "Failed to update bpf map for WireServer support with result: {result}"
+                ))
+                .await;
+                return false;
+            } else {
+                logger::write("Success updated bpf map for WireServer support.".to_string());
+            }
+        }
+        if config::get_host_gaplugin_support() > 0 {
+            let result = bpf_object.update_policy_elem_bpf_map(
+                self.local_port,
+                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
+                constants::GA_PLUGIN_PORT,
+            );
+            if result != 0 {
+                self.set_error_status(format!(
+                    "Failed to update bpf map for Host GAPlugin support with result: {result}"
+                ))
+                .await;
+                return false;
+            } else {
+                logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
+            }
+        }
+
+        let imds_mode = if let Ok(Some(rules)) = self.key_keeper_shared_state.get_imds_rules().await
+        {
+            rules.mode
+        } else {
+            AuthorizationMode::Audit
+        };
+        if (imds_mode != AuthorizationMode::Disabled) || (config::get_imds_support() > 0) {
+            let result = bpf_object.update_policy_elem_bpf_map(
+                self.local_port,
+                constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
+                constants::IMDS_PORT,
+            );
+            if result != 0 {
+                self.set_error_status(format!(
+                    "Failed to update bpf map for IMDS support with result: {result}"
+                ))
+                .await;
+                return false;
+            } else {
+                logger::write("Success updated bpf map for IMDS support.".to_string());
+            }
+        }
+
+        if let Err(e) = self
+            .redirector_shared_state
+            .update_bpf_object(Arc::new(Mutex::new(bpf_object)))
+            .await
+        {
+            logger::write_error(format!("Failed to update bpf object in shared state: {e}"));
+        }
+        if let Err(e) = self
+            .redirector_shared_state
+            .set_local_port(self.local_port)
+            .await
+        {
+            logger::write_error(format!("Failed to set local port in shared state: {e}"));
+        }
+        let message = helpers::write_startup_event(
+            "Started Redirector with eBPF maps",
+            "start",
+            "redirector",
+            logger::AGENT_LOGGER_KEY,
+        );
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
+            .await
+        {
+            logger::write_error(format!(
+                "Failed to set module status message in shared state: {e}"
+            ));
+        }
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+        {
+            logger::write_error(format!("Failed to set module state in shared state: {e}"));
+        }
+
+        true
     }
-
-    redirector_wrapper::set_is_started(shared_state.clone(), true);
-    redirector_wrapper::set_local_port(shared_state.clone(), local_port);
-    redirector_wrapper::set_bpf_object(shared_state.clone(), bpf_object);
-
-    let message = helpers::write_startup_event(
-        "Started Redirector with eBPF maps",
-        "start",
-        "redirector",
-        logger::AGENT_LOGGER_KEY,
-    );
-    redirector_wrapper::set_status_message(shared_state.clone(), message.clone());
-    provision::redirector_ready(shared_state.clone());
-
-    true
 }
 
-fn set_error_status(message: String, shared_state: Arc<Mutex<SharedState>>) {
-    redirector_wrapper::set_status_message(shared_state.clone(), message.clone());
-    logger::write_error(message);
-}
-
-pub fn get_status(shared_state: Arc<Mutex<SharedState>>) -> String {
-    redirector_wrapper::get_status_message(shared_state.clone())
-}
-
-pub fn close(shared_state: Arc<Mutex<SharedState>>) {
-    if let Some(bpf_object) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
+pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) {
+    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         bpf_object.lock().unwrap().close_bpf_object();
         logger::write("Success closed bpf object.".to_string());
-    }
-    redirector_wrapper::set_is_started(shared_state.clone(), false);
-}
-
-pub fn is_started(shared_state: Arc<Mutex<SharedState>>) -> bool {
-    redirector_wrapper::get_is_started(shared_state.clone())
-}
-
-pub fn lookup_audit(source_port: u16, shared_state: Arc<Mutex<SharedState>>) -> Result<AuditEntry> {
-    match redirector_wrapper::get_bpf_object(shared_state.clone()) {
-        Some(bpf_object) => bpf_object.lock().unwrap().lookup_bpf_audit_map(source_port),
-        None => Err(Error::Bpf(BpfErrorType::GetBpfObject)),
     }
 }
 
@@ -205,26 +214,27 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
     Ok(value)
 }
 
-pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
-    if let Some(bpf_object) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
+pub async fn update_wire_server_redirect_policy(
+    redirect: bool,
+    redirector_shared_state: RedirectorSharedState,
+) {
+    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
-            let local_port = redirector_wrapper::get_local_port(shared_state.clone());
-            let result = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
-                local_port,
-                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
-                constants::WIRE_SERVER_PORT,
-            );
-            if result != 0 {
-                set_error_status(
-                    format!(
+            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
+                let result = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+                    local_port,
+                    constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+                    constants::WIRE_SERVER_PORT,
+                );
+                if result != 0 {
+                    logger::write_error(format!(
                     "Failed to update bpf map for wireserver redirect policy with result: {result}"
-                ),
-                    shared_state.clone(),
-                );
-            } else {
-                logger::write(
-                    "Success updated bpf map for wireserver redirect policy.".to_string(),
-                );
+                ));
+                } else {
+                    logger::write(
+                        "Success updated bpf map for wireserver redirect policy.".to_string(),
+                    );
+                }
             }
         } else {
             let result = bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
@@ -232,12 +242,9 @@ pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mute
                 constants::WIRE_SERVER_PORT,
             );
             if result != 0 {
-                set_error_status(
-                    format!(
+                logger::write_error(format!(
                     "Failed to delete bpf map for wireserver redirect policy with result: {result}"
-                ),
-                    shared_state.clone(),
-                );
+                ));
             } else {
                 logger::write(
                     "Success deleted bpf map for wireserver redirect policy.".to_string(),
@@ -247,24 +254,25 @@ pub fn update_wire_server_redirect_policy(redirect: bool, shared_state: Arc<Mute
     }
 }
 
-pub fn update_imds_redirect_policy(redirect: bool, shared_state: Arc<Mutex<SharedState>>) {
-    if let Some(bpf_object) = redirector_wrapper::get_bpf_object(shared_state.clone()) {
+pub async fn update_imds_redirect_policy(
+    redirect: bool,
+    redirector_shared_state: RedirectorSharedState,
+) {
+    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
-            let local_port = redirector_wrapper::get_local_port(shared_state.clone());
-            let result = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
-                local_port,
-                constants::IMDS_IP_NETWORK_BYTE_ORDER,
-                constants::IMDS_PORT,
-            );
-            if result != 0 {
-                set_error_status(
-                    format!(
-                        "Failed to update bpf map for IMDS redirect policy with result: {result}"
-                    ),
-                    shared_state.clone(),
+            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
+                let result = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+                    local_port,
+                    constants::IMDS_IP_NETWORK_BYTE_ORDER,
+                    constants::IMDS_PORT,
                 );
-            } else {
-                logger::write("Success updated bpf map for IMDS redirect policy.".to_string());
+                if result != 0 {
+                    logger::write_error(format!(
+                        "Failed to update bpf map for IMDS redirect policy with result: {result}"
+                    ));
+                } else {
+                    logger::write("Success updated bpf map for IMDS redirect policy.".to_string());
+                }
             }
         } else {
             let result = bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
@@ -272,12 +280,9 @@ pub fn update_imds_redirect_policy(redirect: bool, shared_state: Arc<Mutex<Share
                 constants::IMDS_PORT,
             );
             if result != 0 {
-                set_error_status(
-                    format!(
-                        "Failed to delete bpf map for IMDS redirect policy with result: {result}"
-                    ),
-                    shared_state.clone(),
-                );
+                logger::write_error(format!(
+                    "Failed to delete bpf map for IMDS redirect policy with result: {result}"
+                ));
             } else {
                 logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
             }

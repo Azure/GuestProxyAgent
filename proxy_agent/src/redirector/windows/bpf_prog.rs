@@ -24,6 +24,7 @@ const EBPF_FIND_MAP_ERROR: i32 = 2027;
 const EBPF_UPDATE_MAP_ERROR: i32 = 2028;
 const EBPF_DELETE_MAP_ERROR: i32 = 2029;
 
+// This module contains the logic to interact with the windows eBPF program & maps.
 impl BpfObject {
     fn is_null(&self) -> bool {
         self.0.is_null()
@@ -276,7 +277,7 @@ impl BpfObject {
 
         0 on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_bpf_audit_map(&self, source_port: u16) -> Result<AuditEntry> {
+    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
                 source_port.to_string(),
