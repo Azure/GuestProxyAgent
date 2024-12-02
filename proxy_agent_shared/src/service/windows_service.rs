@@ -17,7 +17,7 @@ pub fn start_service_with_retry(
     service_name: &str,
     retry_count: u32,
     duration: std::time::Duration,
-) {
+) -> Result<()> {
     for i in 0..retry_count {
         logger_manager::write_info(format!("Starting service {} attempt {}", service_name, i));
 
@@ -28,7 +28,7 @@ pub fn start_service_with_retry(
                         "Service {} is at Running state",
                         service_name
                     ));
-                    return;
+                    return Ok(());
                 }
 
                 logger_manager::write_info(
@@ -47,11 +47,24 @@ pub fn start_service_with_retry(
                     )
                     .to_string(),
                 );
+
+                if (i + 1) == retry_count {
+                    logger_manager::write_info(
+                        format!(
+                            "Service {} failed to start after {} attempts",
+                            service_name, i
+                        )
+                        .to_string(),
+                    );
+                    return Err(e);
+                }
             }
         }
 
         thread::sleep(duration);
     }
+
+    Ok(())
 }
 
 fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
@@ -301,7 +314,12 @@ mod tests {
             !output_str.contains("The specified service does not exist as an installed service")
         );
 
-        super::start_service_with_retry(TEST_SERVICE_NAME, 2, std::time::Duration::from_millis(15));
+        let result = super::start_service_with_retry(
+            TEST_SERVICE_NAME,
+            2,
+            std::time::Duration::from_millis(15),
+        );
+        assert!(result.is_err(), "Test Service should not be able to start");
         let service_status = super::query_service_status(TEST_SERVICE_NAME).unwrap();
         assert_ne!(
             service_status.current_state,

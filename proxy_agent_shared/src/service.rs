@@ -46,14 +46,18 @@ pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
     }
 }
 
-pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
+pub fn start_service(
+    service_name: &str,
+    _retry_count: u32,
+    _duration: std::time::Duration,
+) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::start_service_with_retry(service_name, _retry_count, _duration);
+        windows_service::start_service_with_retry(service_name, _retry_count, _duration)
     }
     #[cfg(not(windows))]
     {
-        linux_service::start_service(service_name);
+        linux_service::start_service(service_name)
     }
 }
 

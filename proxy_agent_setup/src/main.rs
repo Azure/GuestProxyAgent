@@ -248,8 +248,18 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         }
     }
 
-    service::start_service(SERVICE_NAME, 5, Duration::from_secs(15));
-    logger::write(format!("Service {} start successfully", SERVICE_NAME));
+    match service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)) {
+        Ok(_) => {
+            logger::write(format!("Service {} start successfully", SERVICE_NAME));
+        }
+        Err(e) => {
+            logger::write(format!(
+                "Service {} start failed, error: {:?}",
+                SERVICE_NAME, e
+            ));
+            process::exit(1);
+        }
+    }
 }
 
 fn check_backup_exists() -> bool {

@@ -99,10 +99,7 @@ pub fn get_processor_arch() -> String {
 pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1)?;
     if !output.is_success() {
-        return Err(Error::Command(
-            CommandErrorType::Findmnt,
-            output.message(),
-        ));
+        return Err(Error::Command(CommandErrorType::Findmnt, output.message()));
     }
 
     let mount: FileMount = serde_json::from_str(&output.stdout())?;
