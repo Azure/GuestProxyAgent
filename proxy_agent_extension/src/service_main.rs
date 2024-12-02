@@ -103,8 +103,20 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
                 logger_key,
             );
             cache_seq_no = current_seq_no.to_string();
+            let proxy_service_exe_file_path = common::get_proxy_agent_service_path();
             let proxyagent_service_file_version =
-                misc_helpers::get_proxy_agent_version(&common::get_proxy_agent_service_path());
+                match misc_helpers::get_proxy_agent_version(&proxy_service_exe_file_path) {
+                    Ok(version) => version,
+                    Err(e) => {
+                        logger::write(format!(
+                            "Failed to get GuestProxyAgent version from file {} with error: {}",
+                            misc_helpers::path_to_string(&proxy_service_exe_file_path),
+                            e
+                        ));
+                        // return empty string if failed to get version
+                        "".to_string()
+                    }
+                };
             if proxyagent_file_version_in_extension != proxyagent_service_file_version {
                 // Call setup tool to install or update proxy agent service
                 telemetry::event_logger::write_event(
@@ -688,13 +700,18 @@ fn report_proxy_agent_service_status(
 fn get_proxy_agent_file_version_in_extension() -> String {
     // File version of proxy agent service already downloaded by VM Agent
     let path = common::get_proxy_agent_exe_path();
-    let version = misc_helpers::get_proxy_agent_version(&path);
-    logger::write(format!(
-        "get_proxy_agent_file_version_in_extension: get GuestProxyAgent version {} from file {}",
-        version,
-        misc_helpers::path_to_string(&path)
-    ));
-    version
+    match misc_helpers::get_proxy_agent_version(&path) {
+        Ok(version) => version,
+        Err(e) => {
+            logger::write(format!(
+                "Failed to get GuestProxyAgent version from file {} with error: {}",
+                misc_helpers::path_to_string(&path),
+                e
+            ));
+            // return empty string if failed to get version
+            "".to_string()
+        }
+    }
 }
 
 // test report status

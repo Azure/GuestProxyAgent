@@ -97,18 +97,15 @@ pub fn get_processor_arch() -> String {
 }
 
 pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
-    let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1);
-    if output.0 != 0 {
+    let output = misc_helpers::execute_command("findmnt", vec!["-t", "cgroup2", "--json"], -1)?;
+    if !output.is_success() {
         return Err(Error::Command(
             CommandErrorType::Findmnt,
-            format!(
-                "Failed with exit code '{}', stdout :{}, stderr: {}.",
-                output.0, output.1, output.2
-            ),
+            output.message(),
         ));
     }
 
-    let mount: FileMount = serde_json::from_str(&output.1)?;
+    let mount: FileMount = serde_json::from_str(&output.stdout())?;
     if !mount.filesystems.is_empty() {
         let cgroup2_path = mount.filesystems[0].target.to_string();
         return Ok(PathBuf::from(cgroup2_path));
@@ -116,7 +113,7 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
 
     Err(Error::Command(
         CommandErrorType::Findmnt,
-        format!("Cannot find cgroup2 file mount: {}.", output.1),
+        format!("Cannot find cgroup2 file mount: {}.", output.message()),
     ))
 }
 

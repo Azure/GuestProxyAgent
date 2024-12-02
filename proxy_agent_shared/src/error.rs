@@ -39,6 +39,8 @@ pub enum ParseVersionErrorType {
 pub enum CommandErrorType {
     #[error("Findmnt")]
     Findmnt,
+    #[error("{0}")]
+    CommandName(String),
 }
 
 #[cfg(test)]
