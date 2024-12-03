@@ -15,6 +15,7 @@ dependencies = [
  "static_vcruntime",
  "sysinfo 0.29.11",
  "thiserror",
+ "tokio",
  "windows-service",
  "windows-sys 0.42.0",
  "winres",

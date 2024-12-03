@@ -12,8 +12,6 @@ use std::io::Error;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 pub mod service_state;
@@ -24,7 +22,7 @@ use proxy_agent_shared::service;
 
 const MAX_STATE_COUNT: u32 = 120;
 
-pub fn run(service_state: Arc<Mutex<ServiceState>>) {
+pub fn run() {
     let message = format!(
         "==============  GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
         misc_helpers::get_current_version(),
@@ -38,17 +36,19 @@ pub fn run(service_state: Arc<Mutex<ServiceState>>) {
         "service_main",
         &logger::get_logger_key(),
     );
-    let service_state_cloned = service_state.clone();
-    thread::spawn(|| {
-        monitor_thread(service_state_cloned);
+    tokio::spawn({
+        async {
+            monitor_thread().await;
+        }
     });
-
-    thread::spawn(|| {
-        heartbeat_thread();
+    tokio::spawn({
+        async {
+            heartbeat_thread().await;
+        }
     });
 }
 
-fn heartbeat_thread() {
+async fn heartbeat_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(&exe_path);
     let heartbeat_file_path: PathBuf = handler_environment.heartbeatFile.to_string().into();
@@ -63,16 +63,17 @@ fn heartbeat_thread() {
             },
         };
         common::report_heartbeat(heartbeat_file_path.to_path_buf(), heartbeat_obj);
-        thread::sleep(duration);
+        tokio::time::sleep(duration).await;
     }
 }
 
-fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
+async fn monitor_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(&exe_path);
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
     let mut cache_seq_no = String::new();
     let proxyagent_file_version_in_extension = get_proxy_agent_file_version_in_extension();
+    let mut service_state = ServiceState::default();
     let mut status = StatusObj {
         name: constants::PLUGIN_NAME.to_string(),
         operation: constants::ENABLE_OPERATION.to_string(),
@@ -147,7 +148,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
             &mut status,
             &mut status_state_obj,
             &mut restored_in_error,
-            service_state.clone(),
+            &mut service_state,
         );
 
         // Time taken to report success for proxy agent service after update
@@ -173,7 +174,7 @@ fn monitor_thread(service_state: Arc<Mutex<ServiceState>>) {
             &status,
         );
 
-        thread::sleep(Duration::from_secs(15));
+        tokio::time::sleep(Duration::from_secs(15)).await;
     }
 }
 
@@ -184,14 +185,9 @@ fn write_state_event(
     method_name: &str,
     module_name: &str,
     logger_key: &str,
-    service_state: Arc<Mutex<ServiceState>>,
+    service_state: &mut ServiceState,
 ) {
-    if ServiceState::update_service_state_entry(
-        service_state,
-        state_key,
-        state_value,
-        MAX_STATE_COUNT,
-    ) {
+    if service_state.update_service_state_entry(state_key, state_value, MAX_STATE_COUNT) {
         event_logger::write_event(
             event_logger::INFO_LEVEL,
             message,
@@ -304,7 +300,7 @@ fn report_proxy_agent_aggregate_status(
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     restored_in_error: &mut bool,
-    service_state: Arc<Mutex<ServiceState>>,
+    service_state: &mut ServiceState,
 ) {
     let aggregate_status_file_path =
         PathBuf::from(constants::PROXY_AGENT_AGGREGATE_STATUS_FILE.to_string());
@@ -321,7 +317,7 @@ fn report_proxy_agent_aggregate_status(
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
-                service_state.clone(),
+                service_state,
             );
             proxy_agent_aggregate_status_top_level = ok;
             extension_substatus(
@@ -329,7 +325,7 @@ fn report_proxy_agent_aggregate_status(
                 proxyagent_file_version_in_extension,
                 status,
                 status_state_obj,
-                service_state.clone(),
+                service_state,
             );
         }
         Err(e) => {
@@ -342,7 +338,7 @@ fn report_proxy_agent_aggregate_status(
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
-                service_state.clone(),
+                service_state,
             );
             status.status = status_state_obj.update_state(false);
             status.configurationAppliedTime = misc_helpers::get_date_time_string();
@@ -389,7 +385,7 @@ fn extension_substatus(
     proxyagent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
-    service_state: Arc<Mutex<ServiceState>>,
+    service_state: &mut ServiceState,
 ) {
     let proxy_agent_aggregate_status_obj = proxy_agent_aggregate_status_top_level.proxyAgentStatus;
 
@@ -405,7 +401,7 @@ fn extension_substatus(
             "extension_substatus",
             "service_main",
             &logger::get_logger_key(),
-            service_state.clone(),
+            service_state,
         );
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
         status.substatus = {
@@ -544,7 +540,7 @@ fn extension_substatus(
             "extension_substatus",
             "service_main",
             &logger::get_logger_key(),
-            service_state.clone(),
+            service_state,
         );
     }
 }
@@ -884,14 +880,14 @@ mod tests {
         let mut status_state_obj = super::common::StatusState::new();
 
         let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
-        let service_state = super::service_state::ServiceState::new();
+        let mut service_state = super::service_state::ServiceState::default();
 
         super::extension_substatus(
             toplevel_status,
             proxyagent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
-            service_state,
+            &mut service_state,
         );
         assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
 
