@@ -33,10 +33,10 @@ pub fn install_service(
     }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
+pub async fn stop_and_delete_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_and_delete_service(service_name)
+        windows_service::stop_and_delete_service(service_name).await
     }
     #[cfg(not(windows))]
     {
@@ -46,10 +46,10 @@ pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
     }
 }
 
-pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
+pub async fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
     #[cfg(windows)]
     {
-        windows_service::start_service_with_retry(service_name, _retry_count, _duration);
+        windows_service::start_service_with_retry(service_name, _retry_count, _duration).await;
     }
     #[cfg(not(windows))]
     {
@@ -57,10 +57,12 @@ pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time
     }
 }
 
-pub fn stop_service(service_name: &str) -> Result<()> {
+pub async fn stop_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_service(service_name).map(|_| ())
+        windows_service::stop_service(service_name)
+            .await
+            .map(|_| ())
     }
     #[cfg(not(windows))]
     {

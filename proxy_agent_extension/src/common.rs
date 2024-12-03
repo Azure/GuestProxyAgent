@@ -211,23 +211,30 @@ pub fn report_status_enable_command(
     report_status(status_folder, config_seq_no, &handler_status);
 }
 
-pub fn start_event_logger(logger_key: &str) {
+pub async fn start_event_logger(logger_key: &str) {
     logger::write("starting event logger".to_string());
-    let interval: std::time::Duration = std::time::Duration::from_secs(60);
-    let max_event_file_count: usize = 50;
-    let exe_path = misc_helpers::get_current_exe_dir();
-    let event_folder = PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
-    telemetry::event_logger::start_async(
-        event_folder,
-        interval,
-        max_event_file_count,
-        logger_key,
-        |_| {
-            async {
-                // do nothing
-            }
-        },
-    );
+    tokio::spawn({
+        let logger_key = logger_key.to_string();
+        async move {
+            let interval: std::time::Duration = std::time::Duration::from_secs(60);
+            let max_event_file_count: usize = 50;
+            let exe_path = misc_helpers::get_current_exe_dir();
+            let event_folder =
+                PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
+            telemetry::event_logger::start(
+                event_folder,
+                interval,
+                max_event_file_count,
+                &logger_key,
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
+            .await;
+        }
+    });
 }
 
 pub fn stop_event_logger() {

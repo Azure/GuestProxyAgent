@@ -330,20 +330,25 @@ pub async fn start_event_threads(
     }
 
     let cloned_agent_status_shared_state = agent_status_shared_state.clone();
-    event_logger::start_async(
-        config::get_events_dir(),
-        Duration::default(),
-        config::get_max_event_file_count(),
-        logger::AGENT_LOGGER_KEY,
-        move |status: String| {
-            let cloned_agent_status_shared_state = cloned_agent_status_shared_state.clone();
-            async move {
-                let _ = cloned_agent_status_shared_state
-                    .set_module_status_message(status, AgentStatusModule::TelemetryLogger)
-                    .await;
-            }
-        },
-    );
+    tokio::spawn({
+        async {
+            event_logger::start(
+                config::get_events_dir(),
+                Duration::default(),
+                config::get_max_event_file_count(),
+                logger::AGENT_LOGGER_KEY,
+                move |status: String| {
+                    let cloned_agent_status_shared_state = cloned_agent_status_shared_state.clone();
+                    async move {
+                        let _ = cloned_agent_status_shared_state
+                            .set_module_status_message(status, AgentStatusModule::TelemetryLogger)
+                            .await;
+                    }
+                },
+            )
+            .await;
+        }
+    });
     tokio::spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),

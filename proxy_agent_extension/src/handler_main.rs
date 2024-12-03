@@ -168,7 +168,7 @@ async fn handle_command(command: ExtensionCommand, config_seq_no: String) {
         ExtensionCommand::Install => install_handler(),
         ExtensionCommand::Uninstall => uninstall_handler(),
         ExtensionCommand::Enable => enable_handler(status_folder_path, config_seq_no).await,
-        ExtensionCommand::Disable => disable_handler(),
+        ExtensionCommand::Disable => disable_handler().await,
         ExtensionCommand::Reset => reset_handler(),
         ExtensionCommand::Update => update_handler().await,
     }
@@ -229,7 +229,7 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
 
     #[cfg(windows)]
     {
-        service_ext::start_extension_service();
+        service_ext::start_extension_service().await;
     }
     #[cfg(not(windows))]
     {
@@ -297,11 +297,11 @@ fn get_linux_extension_long_running_process() -> Option<i32> {
     None
 }
 
-fn disable_handler() {
+async fn disable_handler() {
     logger::write("Disabling Handler".to_string());
     #[cfg(windows)]
     {
-        service_ext::stop_extension_service();
+        service_ext::stop_extension_service().await;
     }
     #[cfg(not(windows))]
     {

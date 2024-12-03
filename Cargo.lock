@@ -828,6 +828,7 @@ dependencies = [
  "proxy_agent_shared",
  "static_vcruntime",
  "thiserror",
+ "tokio",
  "winres",
 ]
 
@@ -845,6 +846,7 @@ dependencies = [
  "thiserror",
  "thread-id",
  "time",
+ "tokio",
  "windows-service",
  "windows-sys 0.42.0",
  "winreg",
