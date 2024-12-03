@@ -257,11 +257,11 @@ pub fn execute_command(
 ) -> Result<CommandOutput> {
     let output = Command::new(program).args(args).output()?;
 
-    return Ok(CommandOutput::new(
+    Ok(CommandOutput::new(
         output.status.code().unwrap_or(default_error_code),
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
-    ));
+    ))
 }
 
 pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
