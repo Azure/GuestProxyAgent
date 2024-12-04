@@ -214,13 +214,11 @@ pub fn execute_command(
     default_error_code: i32,
 ) -> (i32, String, String) {
     match Command::new(program).args(args).output() {
-        Ok(output) => {
-            return (
-                output.status.code().unwrap_or(default_error_code),
-                String::from_utf8_lossy(&output.stdout).to_string(),
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            );
-        }
+        Ok(output) => (
+            output.status.code().unwrap_or(default_error_code),
+            String::from_utf8_lossy(&output.stdout).to_string(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ),
         Err(e) => {
             let error = format!("Failed to execute command {} with error {}", program, e);
             (default_error_code, String::new(), error)
@@ -240,7 +238,7 @@ pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> String {
     if output.0 != 0 {
         "Unknown".to_string()
     } else {
-        return output.1.trim().to_string();
+        output.1.trim().to_string()
     }
 }
 
