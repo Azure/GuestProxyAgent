@@ -406,7 +406,8 @@ mod tests {
             "logger_key".to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         // start wire_server listener
         let ip = "127.0.0.1";

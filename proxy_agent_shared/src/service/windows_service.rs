@@ -248,7 +248,8 @@ mod tests {
             log_name,
             log_size,
             log_count,
-        );
+        )
+        .await;
 
         // Delete Service if it exists
         _ = super::stop_and_delete_service(TEST_SERVICE_NAME).await;

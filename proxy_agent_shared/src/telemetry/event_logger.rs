@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::logger_manager;
+use crate::logger_manager::LoggerLevel;
 use crate::misc_helpers;
 use crate::telemetry::Event;
 use concurrent_queue::ConcurrentQueue;
@@ -33,7 +34,11 @@ pub async fn start<F, Fut>(
     let message = "Telemetry event logger thread started.";
     set_status_fn(message.to_string());
 
-    logger_manager::write(logger_key, message.to_string());
+    logger_manager::log(
+        logger_key.to_string(),
+        LoggerLevel::Information,
+        message.to_string(),
+    );
 
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {}", e);
@@ -48,7 +53,11 @@ pub async fn start<F, Fut>(
         if EVENT_QUEUE.is_closed() {
             let message = "Event queue already closed, stop processing events.";
             set_status_fn(message.to_string());
-            logger_manager::write_information(logger_key, message.to_string());
+            logger_manager::log(
+                logger_key.to_string(),
+                LoggerLevel::Information,
+                message.to_string(),
+            );
             break;
         }
         tokio::time::sleep(interval).await;
@@ -57,7 +66,11 @@ pub async fn start<F, Fut>(
             let message = "Stop signal received, exiting the event logger thread.";
             set_status_fn(message.to_string());
 
-            logger_manager::write_information(logger_key, message.to_string());
+            logger_manager::log(
+                logger_key.to_string(),
+                LoggerLevel::Information,
+                message.to_string(),
+            );
             EVENT_QUEUE.close();
         }
 
@@ -78,7 +91,7 @@ pub async fn start<F, Fut>(
         match misc_helpers::get_files(&event_dir) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
-                    logger_manager::write_warning(logger_key,format!(
+                    logger_manager::log(logger_key.to_string(), LoggerLevel::Warning,format!(
                         "Event files exceed the max file count {}, drop and skip the write to disk.",
                         max_event_file_count
                     ));
@@ -86,8 +99,9 @@ pub async fn start<F, Fut>(
                 }
             }
             Err(e) => {
-                logger_manager::write(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Warning,
                     format!("Failed to get event files with error: {}", e),
                 );
             }
@@ -98,8 +112,9 @@ pub async fn start<F, Fut>(
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
         match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
-                logger_manager::write(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Verbeose,
                     format!(
                         "Write events to the file {} successfully",
                         file_path.display()
@@ -107,8 +122,9 @@ pub async fn start<F, Fut>(
                 );
             }
             Err(e) => {
-                logger_manager::write_warning(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Warning,
                     format!(
                         "Failed to write events to the file {} with error: {}",
                         file_path.display(),
@@ -136,6 +152,7 @@ pub fn write_event(
     } else {
         message.to_string()
     };
+    let logger_key = logger_key.to_string();
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
@@ -145,16 +162,17 @@ pub fn write_event(
         Ok(()) => {
             // wrap file log within event log
             if level == INFO_LEVEL {
-                logger_manager::write_information(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Information, message);
             } else if level == WARN_LEVEL {
-                logger_manager::write_warning(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Warning, message);
             } else {
-                logger_manager::write_error(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Error, message);
             }
         }
         Err(e) => {
-            logger_manager::write_warning(
+            logger_manager::log(
                 logger_key,
+                LoggerLevel::Warning,
                 format!("Failed to push event to the queue with error: {}", e),
             );
         }
@@ -187,7 +205,8 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let cloned_events_dir = events_dir.to_path_buf();
         tokio::spawn(async {

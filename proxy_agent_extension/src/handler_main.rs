@@ -37,7 +37,7 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
 pub async fn program_start(command: ExtensionCommand, config_seq_no: String) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
-    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
+    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE).await;
 
     logger::write(format!(
         "GuestProxyAgentExtension Version: {}, OS Arch: {}, OS Version: {}",
@@ -398,13 +398,13 @@ mod tests {
     #[cfg(windows)]
     use proxy_agent_shared::version::Version;
 
-    #[test]
-    fn test_check_os_supported() {
+    #[tokio::test]
+    async fn test_check_os_supported() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_check_os_supported");
 
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
 
         #[cfg(windows)]
         {

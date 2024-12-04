@@ -5,7 +5,7 @@
 
 use crate::common::{constants, hyper_client};
 use crate::proxy::Claims;
-use proxy_agent_shared::{logger_manager, rolling_logger::RollingLogger};
+use proxy_agent_shared::logger_manager::{self, LoggerLevel};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -40,57 +40,46 @@ impl ConnectionContext {
 pub struct Connection {}
 impl Connection {
     pub const CONNECTION_LOGGER_KEY: &'static str = "Connection_Logger";
-    pub fn init_logger(log_folder: PathBuf) {
+    pub async fn init_logger(log_folder: PathBuf) {
         logger_manager::init_logger(
             Connection::CONNECTION_LOGGER_KEY.to_string(),
             log_folder,
             "ProxyAgent.Connection.log".to_string(),
             constants::MAX_LOG_FILE_SIZE,
             constants::MAX_LOG_FILE_COUNT as u16,
-        );
-    }
-
-    fn get_connection_logger() -> Arc<Mutex<RollingLogger>> {
-        logger_manager::get_logger(Connection::CONNECTION_LOGGER_KEY)
+        )
+        .await;
     }
 
     pub fn write(connection_id: u128, message: String) {
-        if let Err(e) = Connection::get_connection_logger()
-            .lock()
-            .unwrap()
-            .write(format!("Connection:{} - {}", connection_id, message))
-        {
-            eprintln!("Failed to write to connection logger: {}", e);
-        }
+        logger_manager::log(
+            Connection::CONNECTION_LOGGER_KEY.to_string(),
+            LoggerLevel::Verbeose,
+            format!("Connection:{} - {}", connection_id, message),
+        )
     }
 
     pub fn write_information(connection_id: u128, message: String) {
-        if let Err(e) = Connection::get_connection_logger()
-            .lock()
-            .unwrap()
-            .write_information(format!("Connection:{} - {}", connection_id, message))
-        {
-            eprintln!("Failed to write to connection logger: {}", e);
-        }
+        logger_manager::log(
+            Connection::CONNECTION_LOGGER_KEY.to_string(),
+            LoggerLevel::Information,
+            format!("Connection:{} - {}", connection_id, message),
+        )
     }
 
     pub fn write_warning(connection_id: u128, message: String) {
-        if let Err(e) = Connection::get_connection_logger()
-            .lock()
-            .unwrap()
-            .write_warning(format!("Connection:{} - {}", connection_id, message))
-        {
-            eprintln!("Failed to write to connection logger: {}", e);
-        }
+        logger_manager::log(
+            Connection::CONNECTION_LOGGER_KEY.to_string(),
+            LoggerLevel::Warning,
+            format!("Connection:{} - {}", connection_id, message),
+        )
     }
 
     pub fn write_error(connection_id: u128, message: String) {
-        if let Err(e) = Connection::get_connection_logger()
-            .lock()
-            .unwrap()
-            .write_error(format!("Connection:{} - {}", connection_id, message))
-        {
-            eprintln!("Failed to write to connection logger: {}", e);
-        }
+        logger_manager::log(
+            Connection::CONNECTION_LOGGER_KEY.to_string(),
+            LoggerLevel::Error,
+            format!("Connection:{} - {}", connection_id, message),
+        )
     }
 }

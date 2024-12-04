@@ -81,7 +81,7 @@ async fn main() {
         let log_folder = common::get_handler_environment(&exe_path)
             .logFolder
             .to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
         common::start_event_logger(constants::SERVICE_LOG_FILE).await;
         #[cfg(windows)]
         {

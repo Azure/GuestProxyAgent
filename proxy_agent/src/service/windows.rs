@@ -59,7 +59,7 @@ pub async fn run_service() -> Result<()> {
     };
 
     // start service
-    service::start_service(shared_state.clone());
+    service::start_service(shared_state.clone()).await;
 
     // set the service state to Running
     let status_handle =

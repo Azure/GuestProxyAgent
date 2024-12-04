@@ -161,8 +161,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_install_service() {
+    #[tokio::test]
+    async fn test_install_service() {
         #[cfg(not(windows))]
         {
             let service_name = "test_install_service";

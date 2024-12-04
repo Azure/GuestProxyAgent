@@ -711,89 +711,87 @@ mod tests {
     #[cfg(windows)]
     use std::process::Command;
 
-    #[test]
-    fn report_proxy_agent_service_status() {
-        #[cfg(windows)]
-        {
-            // Create temp directory for status folder
-            let mut temp_test_path = env::temp_dir();
-            temp_test_path.push("test_status_file");
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn report_proxy_agent_service_status() {
+        // Create temp directory for status folder
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("test_status_file");
 
-            //Clean up and ignore the clean up errors
-            _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(&temp_test_path);
-            let status_folder: PathBuf = temp_test_path.join("status");
-            let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-            logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
+        //Clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+        _ = misc_helpers::try_create_folder(&temp_test_path);
+        let status_folder: PathBuf = temp_test_path.join("status");
+        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
 
-            let mut test_good = temp_test_path.clone();
-            test_good.push("test.ps1");
-            let mut file = fs::File::create(&test_good).unwrap();
-            file.write_all(b"\"Hello World\"").unwrap();
+        let mut test_good = temp_test_path.clone();
+        test_good.push("test.ps1");
+        let mut file = fs::File::create(&test_good).unwrap();
+        file.write_all(b"\"Hello World\"").unwrap();
 
-            let output = Command::new("powershell.exe").args(&test_good).output();
+        let output = Command::new("powershell.exe").args(&test_good).output();
 
-            //Set the config_seq_no value
-            let seq_no = "0";
-            let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
+        //Set the config_seq_no value
+        let seq_no = "0";
+        let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
-            let mut status = StatusObj {
-                name: constants::PLUGIN_NAME.to_string(),
-                operation: constants::ENABLE_OPERATION.to_string(),
-                configurationAppliedTime: misc_helpers::get_date_time_string(),
-                code: constants::STATUS_CODE_OK,
-                status: constants::SUCCESS_STATUS.to_string(),
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: "Update Proxy Agent command output successfully".to_string(),
-                },
-                substatus: Default::default(),
-            };
-            let mut status_state_obj = super::common::StatusState::new();
+        let mut status = StatusObj {
+            name: constants::PLUGIN_NAME.to_string(),
+            operation: constants::ENABLE_OPERATION.to_string(),
+            configurationAppliedTime: misc_helpers::get_date_time_string(),
+            code: constants::STATUS_CODE_OK,
+            status: constants::SUCCESS_STATUS.to_string(),
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: "Update Proxy Agent command output successfully".to_string(),
+            },
+            substatus: Default::default(),
+        };
+        let mut status_state_obj = super::common::StatusState::new();
 
-            super::report_proxy_agent_service_status(
-                output,
-                status_folder,
-                &seq_no,
-                &mut status,
-                &mut status_state_obj,
-            );
+        super::report_proxy_agent_service_status(
+            output,
+            status_folder,
+            &seq_no,
+            &mut status,
+            &mut status_state_obj,
+        );
 
-            let handler_status =
-                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
-                    .unwrap();
-            assert_eq!(handler_status.len(), 1);
-            assert_eq!(handler_status[0].status.code, 0);
+        let handler_status =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
+                .unwrap();
+        assert_eq!(handler_status.len(), 1);
+        assert_eq!(handler_status[0].status.code, 0);
 
-            let status_folder_bad = temp_test_path.join("status_bad");
-            let mut test_bad = temp_test_path.clone();
-            test_bad.push("&?@(random)?.ps1");
+        let status_folder_bad = temp_test_path.join("status_bad");
+        let mut test_bad = temp_test_path.clone();
+        test_bad.push("&?@(random)?.ps1");
 
-            let output = Command::new("powershell.exe").args(&test_bad).output();
+        let output = Command::new("powershell.exe").args(&test_bad).output();
 
-            let expected_status_file_bad: &PathBuf =
-                &temp_test_path.join("status_bad").join("0.status");
+        let expected_status_file_bad: &PathBuf =
+            &temp_test_path.join("status_bad").join("0.status");
 
-            super::report_proxy_agent_service_status(
-                output,
-                status_folder_bad,
-                &seq_no,
-                &mut status,
-                &mut status_state_obj,
-            );
-            let handler_status_bad =
-                misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(expected_status_file_bad)
-                    .unwrap();
-            assert_eq!(handler_status_bad.len(), 1);
-            assert_eq!(handler_status_bad[0].status.code, 1);
+        super::report_proxy_agent_service_status(
+            output,
+            status_folder_bad,
+            &seq_no,
+            &mut status,
+            &mut status_state_obj,
+        );
+        let handler_status_bad =
+            misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(expected_status_file_bad)
+                .unwrap();
+        assert_eq!(handler_status_bad.len(), 1);
+        assert_eq!(handler_status_bad[0].status.code, 1);
 
-            //Clean up and ignore the clean up errors
-            _ = fs::remove_dir_all(&temp_test_path);
-        }
+        //Clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_proxyagent_service_success_status() {
+    #[tokio::test]
+    async fn test_proxyagent_service_success_status() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_status_file");
@@ -802,7 +800,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
         _ = misc_helpers::try_create_folder(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
 
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
@@ -895,83 +893,81 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_report_ebpf_status() {
-        #[cfg(windows)]
-        {
-            // Create temp directory for status folder
-            let mut temp_test_path = env::temp_dir();
-            temp_test_path.push("test_status_file");
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_report_ebpf_status() {
+        // Create temp directory for status folder
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("test_status_file");
 
-            //Clean up and ignore the clean up errors
-            _ = fs::remove_dir_all(&temp_test_path);
-            _ = misc_helpers::try_create_folder(&temp_test_path);
-            let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-            logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
+        //Clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+        _ = misc_helpers::try_create_folder(&temp_test_path);
+        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
 
-            let mut status = StatusObj {
-                name: constants::PLUGIN_NAME.to_string(),
-                operation: constants::ENABLE_OPERATION.to_string(),
-                configurationAppliedTime: misc_helpers::get_date_time_string(),
-                code: constants::STATUS_CODE_OK,
-                status: constants::SUCCESS_STATUS.to_string(),
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: "Update Proxy Agent command output successfully".to_string(),
-                },
-                substatus: {
-                    vec![
-                        SubStatus {
-                            name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                            status: constants::SUCCESS_STATUS.to_string(),
-                            code: constants::STATUS_CODE_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: "test".to_string(),
-                            },
+        let mut status = StatusObj {
+            name: constants::PLUGIN_NAME.to_string(),
+            operation: constants::ENABLE_OPERATION.to_string(),
+            configurationAppliedTime: misc_helpers::get_date_time_string(),
+            code: constants::STATUS_CODE_OK,
+            status: constants::SUCCESS_STATUS.to_string(),
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: "Update Proxy Agent command output successfully".to_string(),
+            },
+            substatus: {
+                vec![
+                    SubStatus {
+                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                        status: constants::SUCCESS_STATUS.to_string(),
+                        code: constants::STATUS_CODE_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: "test".to_string(),
                         },
-                        SubStatus {
-                            name: constants::PLUGIN_STATUS_NAME.to_string(),
-                            status: constants::SUCCESS_STATUS.to_string(),
-                            code: constants::STATUS_CODE_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: "test".to_string(),
-                            },
+                    },
+                    SubStatus {
+                        name: constants::PLUGIN_STATUS_NAME.to_string(),
+                        status: constants::SUCCESS_STATUS.to_string(),
+                        code: constants::STATUS_CODE_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: "test".to_string(),
                         },
-                        SubStatus {
-                            name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                            status: constants::SUCCESS_STATUS.to_string(),
-                            code: constants::STATUS_CODE_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: "test".to_string(),
-                            },
+                    },
+                    SubStatus {
+                        name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                        status: constants::SUCCESS_STATUS.to_string(),
+                        code: constants::STATUS_CODE_OK,
+                        formattedMessage: FormattedMessage {
+                            lang: constants::LANG_EN_US.to_string(),
+                            message: "test".to_string(),
                         },
-                    ]
-                },
-            };
+                    },
+                ]
+            },
+        };
 
-            super::report_ebpf_status(&mut status);
-            assert_eq!(
-                status.substatus[0].name,
-                constants::PLUGIN_CONNECTION_NAME.to_string()
-            );
-            assert_eq!(
-                status.substatus[1].name,
-                constants::PLUGIN_STATUS_NAME.to_string()
-            );
-            assert_eq!(
-                status.substatus[2].name,
-                constants::PLUGIN_FAILED_AUTH_NAME.to_string()
-            );
-            assert_eq!(
-                status.substatus[3].name,
-                constants::EBPF_SUBSTATUS_NAME.to_string()
-            );
+        super::report_ebpf_status(&mut status);
+        assert_eq!(
+            status.substatus[0].name,
+            constants::PLUGIN_CONNECTION_NAME.to_string()
+        );
+        assert_eq!(
+            status.substatus[1].name,
+            constants::PLUGIN_STATUS_NAME.to_string()
+        );
+        assert_eq!(
+            status.substatus[2].name,
+            constants::PLUGIN_FAILED_AUTH_NAME.to_string()
+        );
+        assert_eq!(
+            status.substatus[3].name,
+            constants::EBPF_SUBSTATUS_NAME.to_string()
+        );
 
-            //Clean up and ignore the clean up errors
-            _ = fs::remove_dir_all(&temp_test_path);
-        }
+        //Clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 }

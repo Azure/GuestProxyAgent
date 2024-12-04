@@ -596,8 +596,9 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
-        Connection::init_logger(temp_test_path.to_path_buf());
+        )
+        .await;
+        Connection::init_logger(temp_test_path.to_path_buf()).await;
 
         // start listener, the port must different from the one used in production code
         let shared_state = SharedState::start_all();

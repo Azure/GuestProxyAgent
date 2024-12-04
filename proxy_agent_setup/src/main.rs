@@ -28,7 +28,7 @@ const SERVICE_NAME: &str = "azure-proxy-agent";
 
 #[tokio::main]
 async fn main() {
-    logger::init_logger();
+    logger::init_logger().await;
     let cli = args::Cli::parse();
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
