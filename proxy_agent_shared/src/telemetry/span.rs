@@ -83,11 +83,11 @@ impl SimpleSpan {
 
 #[cfg(test)]
 mod tests {
-    use std::thread::sleep;
     use std::time::Duration;
+    use tokio::time::sleep;
 
-    #[test]
-    fn span_test() {
+    #[tokio::test]
+    async fn span_test() {
         let mut span = super::SimpleSpan::new();
         sleep(Duration::from_millis(1));
         let elapsed = span.get_elapsed_time_in_millisec();
