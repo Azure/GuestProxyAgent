@@ -130,8 +130,8 @@ pub fn get_file_version(file: PathBuf) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_get_file_version() {
+    #[tokio::test]
+    async fn test_get_file_version() {
         let exe_path = std::env::current_exe().unwrap();
         let version = super::get_file_version(exe_path).unwrap();
         assert!(version.contains('.'), "version should contain .");

@@ -124,6 +124,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
 mod tests {
     use crate::common::logger;
     use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::path::PathBuf;
@@ -148,6 +149,7 @@ mod tests {
             20,
         )
         .await;
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         // test when dir_to_acl does not exist
         let invalid_path = PathBuf::from("invalid_path");
