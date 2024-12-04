@@ -89,18 +89,18 @@ mod tests {
     #[tokio::test]
     async fn span_test() {
         let mut span = super::SimpleSpan::new();
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(1)).await;
         let elapsed = span.get_elapsed_time_in_millisec();
         assert!(elapsed > 0);
         let duration = Duration::from_millis(100);
-        sleep(duration);
+        sleep(duration).await;
         let message: String = span.get_elapsed_json_message("test");
         let elapsed_message: super::ElapsedMessage = serde_json::from_str(&message).unwrap();
         assert_eq!(elapsed_message.message, "test");
         assert!(elapsed_message.elapsed > duration.as_millis());
 
         span.start_new();
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(1)).await;
         let elapsed = span.get_elapsed_time_in_millisec();
         assert!(elapsed > 0);
         assert!(elapsed < duration.as_millis());
