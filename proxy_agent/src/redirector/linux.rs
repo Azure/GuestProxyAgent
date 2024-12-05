@@ -570,8 +570,8 @@ mod tests {
     /// This test will fail if the current user does not have root permission
     /// So far, we know some container build environments do not have BPF capability
     /// This test will skip if the current environment does not have the capability to load BPF programs
-    #[test]
-    fn linux_ebpf_test() {
+    #[tokio::test]
+    async fn linux_ebpf_test() {
         let logger_key = "linux_ebpf_test";
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push(logger_key);
@@ -581,7 +581,8 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");

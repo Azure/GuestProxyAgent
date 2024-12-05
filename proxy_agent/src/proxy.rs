@@ -276,7 +276,8 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let logon_id;
         let expected_user_name;

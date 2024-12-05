@@ -344,12 +344,12 @@ mod tests {
     use proxy_agent_shared::{logger_manager, misc_helpers};
     use std::str::FromStr;
 
-    #[test]
-    fn test_authorization_rules() {
+    #[tokio::test]
+    async fn test_authorization_rules() {
         let logger_key = "test_authorization_rules";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
+        Connection::init_logger(temp_test_path.to_path_buf()).await;
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
@@ -549,7 +549,8 @@ mod tests {
             "logger_key".to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {

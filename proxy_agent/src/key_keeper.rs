@@ -683,8 +683,8 @@ mod tests {
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
 
-    #[test]
-    fn check_local_key_test() {
+    #[tokio::test]
+    async fn check_local_key_test() {
         let mut temp_test_path = env::temp_dir();
         let logger_key = "check_local_key_test";
         temp_test_path.push(logger_key);
@@ -696,7 +696,8 @@ mod tests {
             logger_key.to_string(),
             200,
             6,
-        );
+        )
+        .await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let key_str = r#"{
@@ -739,7 +740,8 @@ mod tests {
             "logger_key".to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let cancellation_token = CancellationToken::new();
         // start wire_server listener

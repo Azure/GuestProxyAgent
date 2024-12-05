@@ -307,8 +307,8 @@ pub use windows::update_wire_server_redirect_policy;
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn ip_to_string_test() {
+    #[tokio::test]
+    async fn ip_to_string_test() {
         let ip = 0x10813FA8u32;
         let ip_str = super::ip_to_string(ip);
         assert_eq!("168.63.129.16", ip_str, "ip_str mismatch.");

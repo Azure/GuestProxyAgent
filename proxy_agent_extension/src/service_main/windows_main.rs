@@ -14,45 +14,42 @@ use std::time::Duration;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,
 };
-use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
+use windows_service::service_control_handler::{
+    self, ServiceControlHandlerResult, ServiceStatusHandle,
+};
 use windows_sys::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
 };
 
-pub fn run_service(_args: Vec<OsString>) -> Result<()> {
-    let service_state = super::service_state::ServiceState::new();
-    let service_state_cloned = service_state.clone();
+// The private global variable to store the windows service status handle.
+// It is used to set the windows service status to Running and Stopped.
+// Its event handler does not support async + await, which it is not allow to get it via async mpsc.
+static SERVICE_STATUS_HANDLE: tokio::sync::OnceCell<ServiceStatusHandle> =
+    tokio::sync::OnceCell::const_new();
 
+pub async fn run_service(_args: Vec<OsString>) -> Result<()> {
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
                 common::stop_event_logger();
-                match super::service_state::ServiceState::get_service_status_handle(
-                    service_state_cloned.clone(),
-                ) {
-                    Some(status_handle) => {
-                        let stop_state = ServiceStatus {
-                            service_type: ServiceType::OWN_PROCESS,
-                            current_state: ServiceState::Stopped,
-                            controls_accepted: ServiceControlAccept::STOP,
-                            exit_code: ServiceExitCode::Win32(0),
-                            checkpoint: 0,
-                            wait_hint: Duration::default(),
-                            process_id: None,
-                        };
-                        if let Err(e) = status_handle.set_service_status(stop_state) {
-                            logger::write(format!(
-                                "Failed to set service status to Stopped: {}",
-                                e
-                            ));
-                        }
+                if let Some(status_handle) = SERVICE_STATUS_HANDLE.get() {
+                    let stop_state = ServiceStatus {
+                        service_type: ServiceType::OWN_PROCESS,
+                        current_state: ServiceState::Stopped,
+                        controls_accepted: ServiceControlAccept::STOP,
+                        exit_code: ServiceExitCode::Win32(0),
+                        checkpoint: 0,
+                        wait_hint: Duration::default(),
+                        process_id: None,
+                    };
+                    if let Err(e) = status_handle.set_service_status(stop_state) {
+                        logger::write(format!("Failed to set service status to Stopped: {}", e));
                     }
-                    None => {
-                        // workaround to stop the service by exiting the process
-                        logger::write("Force exit the process to stop the service.".to_string());
-                        std::process::exit(0);
-                    }
-                };
+                } else {
+                    // workaround to stop the service by exiting the process
+                    logger::write("Force exit the process to stop the service.".to_string());
+                    std::process::exit(0);
+                }
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -61,7 +58,7 @@ pub fn run_service(_args: Vec<OsString>) -> Result<()> {
     };
 
     // start service
-    service_main::run(service_state.clone());
+    service_main::run();
 
     // set the service state to Running
     let status_handle = service_control_handler::register(constants::PLUGIN_NAME, event_handler)?;
@@ -76,10 +73,8 @@ pub fn run_service(_args: Vec<OsString>) -> Result<()> {
     };
     status_handle.set_service_status(running_state)?;
 
-    super::service_state::ServiceState::set_service_status_handle(
-        service_state.clone(),
-        status_handle,
-    );
+    // set the windows service status handle
+    SERVICE_STATUS_HANDLE.set(status_handle).unwrap();
 
     Ok(())
 }
@@ -135,8 +130,8 @@ pub fn get_file_version(file: PathBuf) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_get_file_version() {
+    #[tokio::test]
+    async fn test_get_file_version() {
         let exe_path = std::env::current_exe().unwrap();
         let version = super::get_file_version(exe_path).unwrap();
         assert!(version.contains('.'), "version should contain .");

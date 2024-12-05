@@ -38,9 +38,9 @@ pub fn install_extension_service() {
     }
 }
 
-pub fn uninstall_extension_service() {
+pub async fn uninstall_extension_service() {
     // Stop and Delete the service given
-    match service::stop_and_delete_service(constants::EXTENSION_SERVICE_NAME) {
+    match service::stop_and_delete_service(constants::EXTENSION_SERVICE_NAME).await {
         Ok(_service) => {
             logger::write(format!(
                 "Service {} successfully uninstalled",
@@ -63,16 +63,17 @@ pub fn uninstall_extension_service() {
     }
 }
 
-pub fn start_extension_service() {
+pub async fn start_extension_service() {
     service::start_service(
         constants::EXTENSION_SERVICE_NAME,
         constants::SERVICE_START_RETRY_COUNT,
         std::time::Duration::from_secs(15),
-    );
+    )
+    .await;
 }
 
-pub fn stop_extension_service() {
-    match service::stop_service(constants::EXTENSION_SERVICE_NAME) {
+pub async fn stop_extension_service() {
+    match service::stop_service(constants::EXTENSION_SERVICE_NAME).await {
         Ok(_service) => {
             logger::write(format!(
                 "Service {} successfully stopped",
