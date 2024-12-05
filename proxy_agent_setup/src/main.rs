@@ -224,7 +224,7 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
         let ebpf_setup_script_file = setup::ebpf_setup_script_file();
         if ebpf_setup_script_file.exists() && ebpf_setup_script_file.is_file() {
             let setup_script_file_str = misc_helpers::path_to_string(&ebpf_setup_script_file);
-            let output = misc_helpers::execute_command(
+            match misc_helpers::execute_command(
                 "powershell.exe",
                 vec![
                     "-ExecutionPolicy",
@@ -233,15 +233,36 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
                     &setup_script_file_str,
                 ],
                 1,
-            );
-            logger::write(format!(
-                "ebpf_setup: invoked script file '{}' with result: '{}'-'{}'-'{}'.",
-                setup_script_file_str, output.0, output.1, output.2
-            ));
+            ) {
+                Ok(output) => {
+                    logger::write(format!(
+                        "ebpf_setup: invoked script file '{}' with result: '{}'.",
+                        setup_script_file_str,
+                        output.message()
+                    ));
+                }
+                Err(e) => {
+                    logger::write(format!(
+                        "ebpf_setup: failed to invoke script file '{}', error: '{:?}'.",
+                        setup_script_file_str, e
+                    ));
+                }
+            }
         }
     }
 
-    service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)).await;
+    match service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)).await {
+        Ok(_) => {
+            logger::write(format!("Service {} start successfully", SERVICE_NAME));
+        }
+        Err(e) => {
+            logger::write(format!(
+                "Service {} start failed, error: {:?}",
+                SERVICE_NAME, e
+            ));
+            process::exit(1);
+        }
+    }
     logger::write(format!("Service {} start successfully", SERVICE_NAME));
 }
 
