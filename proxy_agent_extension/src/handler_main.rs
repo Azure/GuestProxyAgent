@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str;
-use std::thread;
 use std::time::Duration;
 
 #[cfg(windows)]
@@ -35,10 +34,10 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     common::get_handler_environment(&exe_path)
 });
 
-pub fn program_start(command: ExtensionCommand, config_seq_no: String) {
+pub async fn program_start(command: ExtensionCommand, config_seq_no: String) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
-    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
+    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE).await;
 
     logger::write(format!(
         "GuestProxyAgentExtension Version: {}, OS Arch: {}, OS Version: {}",
@@ -52,7 +51,7 @@ pub fn program_start(command: ExtensionCommand, config_seq_no: String) {
         process::exit(constants::EXIT_CODE_NOT_SUPPORTED_OS_VERSION);
     }
 
-    handle_command(command, config_seq_no);
+    handle_command(command, config_seq_no).await;
 }
 
 #[cfg(windows)]
@@ -161,17 +160,17 @@ fn get_exe_parent() -> PathBuf {
     exe_parent.to_path_buf()
 }
 
-fn handle_command(command: ExtensionCommand, config_seq_no: String) {
+async fn handle_command(command: ExtensionCommand, config_seq_no: String) {
     logger::write(format!("entering handle command: {:?}", command));
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = PathBuf::from(&status_folder);
     match command {
         ExtensionCommand::Install => install_handler(),
         ExtensionCommand::Uninstall => uninstall_handler(),
-        ExtensionCommand::Enable => enable_handler(status_folder_path, config_seq_no),
-        ExtensionCommand::Disable => disable_handler(),
+        ExtensionCommand::Enable => enable_handler(status_folder_path, config_seq_no).await,
+        ExtensionCommand::Disable => disable_handler().await,
         ExtensionCommand::Reset => reset_handler(),
-        ExtensionCommand::Update => update_handler(),
+        ExtensionCommand::Update => update_handler().await,
     }
 }
 
@@ -219,7 +218,7 @@ fn uninstall_handler() {
     }
 }
 
-fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
+async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
     let exe_path = misc_helpers::get_current_exe_dir();
     let should_report_status =
         common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf());
@@ -230,7 +229,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
 
     #[cfg(windows)]
     {
-        service_ext::start_extension_service();
+        service_ext::start_extension_service().await;
     }
     #[cfg(not(windows))]
     {
@@ -267,7 +266,7 @@ fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
                 }
             }
             count += 1;
-            thread::sleep(Duration::from_secs(15));
+            tokio::time::sleep(Duration::from_secs(15)).await;
         }
     }
     if update_tag_file_exists() {
@@ -298,11 +297,11 @@ fn get_linux_extension_long_running_process() -> Option<i32> {
     None
 }
 
-fn disable_handler() {
+async fn disable_handler() {
     logger::write("Disabling Handler".to_string());
     #[cfg(windows)]
     {
-        service_ext::stop_extension_service();
+        service_ext::stop_extension_service().await;
     }
     #[cfg(not(windows))]
     {
@@ -345,7 +344,7 @@ fn reset_handler() {
     }
 }
 
-fn update_handler() {
+async fn update_handler() {
     #[cfg(windows)]
     {
         let version = match std::env::var("VERSION") {
@@ -385,7 +384,7 @@ fn update_handler() {
             }
         }
         count += 1;
-        thread::sleep(Duration::from_secs(15));
+        tokio::time::sleep(Duration::from_secs(15)).await;
     }
 }
 
@@ -399,13 +398,13 @@ mod tests {
     #[cfg(windows)]
     use proxy_agent_shared::version::Version;
 
-    #[test]
-    fn test_check_os_supported() {
+    #[tokio::test]
+    async fn test_check_os_supported() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_check_os_supported");
 
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
 
         #[cfg(windows)]
         {

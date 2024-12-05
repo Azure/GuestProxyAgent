@@ -5,7 +5,6 @@ use crate::result::Result;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
-use std::thread;
 use windows_service::service::ServiceDependency;
 use windows_service::service::{
     Service, ServiceAccess, ServiceConfig, ServiceErrorControl, ServiceInfo, ServiceStartType,
@@ -13,22 +12,22 @@ use windows_service::service::{
 };
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
-pub fn start_service_with_retry(
+pub async fn start_service_with_retry(
     service_name: &str,
     retry_count: u32,
     duration: std::time::Duration,
-) -> Result<()> {
+) {
     for i in 0..retry_count {
         logger_manager::write_info(format!("Starting service {} attempt {}", service_name, i));
 
-        match start_service_once(service_name) {
+        match start_service_once(service_name).await {
             Ok(service) => {
                 if service.current_state == ServiceState::Running {
                     logger_manager::write_info(format!(
                         "Service {} is at Running state",
                         service_name
                     ));
-                    return Ok(());
+                    return;
                 }
 
                 logger_manager::write_info(
@@ -47,89 +46,72 @@ pub fn start_service_with_retry(
                     )
                     .to_string(),
                 );
-
-                if (i + 1) == retry_count {
-                    logger_manager::write_info(
-                        format!(
-                            "Service {} failed to start after {} attempts",
-                            service_name, i
-                        )
-                        .to_string(),
-                    );
-                    return Err(e);
-                }
             }
         }
 
-        thread::sleep(duration);
+        tokio::time::sleep(duration).await;
     }
-
-    Ok(())
 }
 
-fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
+async fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
     // Start service if it already isn't running
-    query_service_status(service_name).and_then(|service| {
-        if service.current_state == ServiceState::Running {
-            logger_manager::write_info(format!(
-                "Extension service '{}' is already running",
-                service_name
-            ));
-            Ok(service)
-        } else {
-            let service_manager: ServiceManager =
-                ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-            let service = service_manager.open_service(
-                service_name,
-                ServiceAccess::START | ServiceAccess::QUERY_STATUS,
-            )?;
-            service.start(&[""])?;
-            logger_manager::write_info(format!("Staring Extension service '{}'", service_name));
-            logger_manager::write_info(
-                "Wait for 1 second before querying service status".to_string(),
-            );
-            thread::sleep(std::time::Duration::from_secs(1));
-            service.query_status().map_err(Into::into)
-        }
-    })
+    let service = query_service_status(service_name)?;
+    if service.current_state == ServiceState::Running {
+        logger_manager::write_info(format!(
+            "Extension service '{}' is already running",
+            service_name
+        ));
+        Ok(service)
+    } else {
+        logger_manager::write_info(format!("Staring Extension service '{}'", service_name));
+        let service_manager: ServiceManager =
+            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+        let service = service_manager.open_service(
+            service_name,
+            ServiceAccess::START | ServiceAccess::QUERY_STATUS,
+        )?;
+        service.start(&[""])?;
+        logger_manager::write_info("Wait for 1 second before querying service status".to_string());
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        service.query_status().map_err(Into::into)
+    }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
-    stop_service(service_name)?;
+pub async fn stop_and_delete_service(service_name: &str) -> Result<()> {
+    stop_service(service_name).await?;
     delete_service(service_name)
 }
 
-pub fn stop_service(service_name: &str) -> Result<ServiceStatus> {
+pub async fn stop_service(service_name: &str) -> Result<ServiceStatus> {
     // Stop service if it already isn't stopped
-    query_service_status(service_name).and_then(|service| {
-        if service.current_state == ServiceState::Running {
-            let service_manager: ServiceManager =
-                ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = query_service_status(service_name)?;
+    if service.current_state == ServiceState::Running {
+        let service_manager: ServiceManager =
+            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
 
-            let service = service_manager.open_service(
-                service_name,
-                ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
-            )?;
-            match service.stop() {
-                Ok(service) => {
-                    logger_manager::write_info(format!(
-                        "Stopped service {} successfully with current status {:?}",
-                        service_name, service.current_state
-                    ));
-                    thread::sleep(std::time::Duration::from_secs(1));
-                }
-                Err(e) => {
-                    logger_manager::write_info(format!(
-                        "Stopped service {} failed, error: {:?}",
-                        service_name, e
-                    ));
-                }
+        let service = service_manager.open_service(
+            service_name,
+            ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
+        )?;
+        match service.stop() {
+            Ok(service) => {
+                logger_manager::write_info(format!(
+                    "Stopped service {} successfully with current status {:?}",
+                    service_name, service.current_state
+                ));
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
-            service.query_status().map_err(Into::into)
-        } else {
-            Ok(service)
+            Err(e) => {
+                logger_manager::write_info(format!(
+                    "Stopped service {} failed, error: {:?}",
+                    service_name, e
+                ));
+            }
         }
-    })
+        service.query_status().map_err(Into::into)
+    } else {
+        Ok(service)
+    }
 }
 
 fn delete_service(service_name: &str) -> Result<()> {
@@ -249,8 +231,8 @@ mod tests {
     use std::env;
     use std::{path::PathBuf, process::Command};
 
-    #[test]
-    fn test_install_service() {
+    #[tokio::test]
+    async fn test_install_service() {
         const TEST_SERVICE_NAME: &str = "test_nt_service";
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_install_service");
@@ -266,10 +248,11 @@ mod tests {
             log_name,
             log_size,
             log_count,
-        );
+        )
+        .await;
 
         // Delete Service if it exists
-        _ = super::stop_and_delete_service(TEST_SERVICE_NAME);
+        _ = super::stop_and_delete_service(TEST_SERVICE_NAME).await;
 
         // Install Service
         let service_exe_path: PathBuf = PathBuf::from("notepad.exe");
@@ -314,12 +297,8 @@ mod tests {
             !output_str.contains("The specified service does not exist as an installed service")
         );
 
-        let result = super::start_service_with_retry(
-            TEST_SERVICE_NAME,
-            2,
-            std::time::Duration::from_millis(15),
-        );
-        assert!(result.is_err(), "Test Service should not be able to start");
+        super::start_service_with_retry(TEST_SERVICE_NAME, 2, std::time::Duration::from_millis(15))
+            .await;
         let service_status = super::query_service_status(TEST_SERVICE_NAME).unwrap();
         assert_ne!(
             service_status.current_state,
@@ -328,12 +307,14 @@ mod tests {
         );
 
         // Check if service is stopped
-        let expected_stop_service = super::stop_service(TEST_SERVICE_NAME).unwrap();
+        let expected_stop_service = super::stop_service(TEST_SERVICE_NAME).await.unwrap();
         let actual_stop_service = super::query_service_status(TEST_SERVICE_NAME).unwrap();
         assert_eq!(expected_stop_service, actual_stop_service);
 
         // //Clean up - delete service
-        super::stop_and_delete_service(TEST_SERVICE_NAME).unwrap();
+        super::stop_and_delete_service(TEST_SERVICE_NAME)
+            .await
+            .unwrap();
         //Check if service is running
         let output = Command::new("sc")
             .args(["query", TEST_SERVICE_NAME])
@@ -347,8 +328,8 @@ mod tests {
         assert!(output_str.contains("The specified service does not exist as an installed service"));
     }
 
-    #[test]
-    fn test_create_service() {
+    #[tokio::test]
+    async fn test_create_service() {
         let service_name = "test_create_service";
         let exe_path = PathBuf::from("notepad.exe");
         super::create_service(service_name, service_name, vec![], exe_path).unwrap();
@@ -363,6 +344,6 @@ mod tests {
         // Check if the output contains the desired information indicating the service is running
         assert!(output_str.contains("STOPPED"));
         //Clean up - delete service
-        super::stop_and_delete_service(service_name).unwrap();
+        super::stop_and_delete_service(service_name).await.unwrap();
     }
 }

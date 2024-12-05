@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::logger_manager;
+use crate::logger_manager::LoggerLevel;
 use crate::misc_helpers;
 use crate::telemetry::Event;
 use concurrent_queue::ConcurrentQueue;
@@ -8,7 +9,6 @@ use once_cell::sync::Lazy;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 pub const INFO_LEVEL: &str = "Informational";
@@ -21,38 +21,7 @@ static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
-pub fn start_async<F, Fut>(
-    event_dir: PathBuf,
-    interval: Duration,
-    max_event_file_count: usize,
-    logger_key: &str,
-    set_status_fn: F,
-) where
-    F: Fn(String) -> Fut,
-    F: Send + 'static,
-    Fut: std::future::Future<Output = ()>,
-{
-    let key = logger_key.to_string();
-    if let Err(e) = thread::Builder::new()
-        .name("event_logger".to_string())
-        .spawn(move || {
-            start(
-                event_dir,
-                interval,
-                max_event_file_count,
-                &key,
-                set_status_fn,
-            );
-        })
-    {
-        logger_manager::write_error(
-            logger_key,
-            format!("Failed to start event logger thread with error: {}", e),
-        );
-    }
-}
-
-fn start<F, Fut>(
+pub async fn start<F, Fut>(
     event_dir: PathBuf,
     mut interval: Duration,
     max_event_file_count: usize,
@@ -65,7 +34,11 @@ fn start<F, Fut>(
     let message = "Telemetry event logger thread started.";
     set_status_fn(message.to_string());
 
-    logger_manager::write(logger_key, message.to_string());
+    logger_manager::log(
+        logger_key.to_string(),
+        LoggerLevel::Information,
+        message.to_string(),
+    );
 
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {}", e);
@@ -80,16 +53,24 @@ fn start<F, Fut>(
         if EVENT_QUEUE.is_closed() {
             let message = "Event queue already closed, stop processing events.";
             set_status_fn(message.to_string());
-            logger_manager::write_information(logger_key, message.to_string());
+            logger_manager::log(
+                logger_key.to_string(),
+                LoggerLevel::Information,
+                message.to_string(),
+            );
             break;
         }
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
 
         if shutdown.load(Ordering::Relaxed) {
             let message = "Stop signal received, exiting the event logger thread.";
             set_status_fn(message.to_string());
 
-            logger_manager::write_information(logger_key, message.to_string());
+            logger_manager::log(
+                logger_key.to_string(),
+                LoggerLevel::Information,
+                message.to_string(),
+            );
             EVENT_QUEUE.close();
         }
 
@@ -110,7 +91,7 @@ fn start<F, Fut>(
         match misc_helpers::get_files(&event_dir) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
-                    logger_manager::write_warning(logger_key,format!(
+                    logger_manager::log(logger_key.to_string(), LoggerLevel::Warning,format!(
                         "Event files exceed the max file count {}, drop and skip the write to disk.",
                         max_event_file_count
                     ));
@@ -118,8 +99,9 @@ fn start<F, Fut>(
                 }
             }
             Err(e) => {
-                logger_manager::write(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Warning,
                     format!("Failed to get event files with error: {}", e),
                 );
             }
@@ -130,8 +112,9 @@ fn start<F, Fut>(
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
         match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
-                logger_manager::write(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Verbeose,
                     format!(
                         "Write events to the file {} successfully",
                         file_path.display()
@@ -139,8 +122,9 @@ fn start<F, Fut>(
                 );
             }
             Err(e) => {
-                logger_manager::write_warning(
-                    logger_key,
+                logger_manager::log(
+                    logger_key.to_string(),
+                    LoggerLevel::Warning,
                     format!(
                         "Failed to write events to the file {} with error: {}",
                         file_path.display(),
@@ -168,6 +152,7 @@ pub fn write_event(
     } else {
         message.to_string()
     };
+    let logger_key = logger_key.to_string();
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
@@ -177,16 +162,17 @@ pub fn write_event(
         Ok(()) => {
             // wrap file log within event log
             if level == INFO_LEVEL {
-                logger_manager::write_information(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Information, message);
             } else if level == WARN_LEVEL {
-                logger_manager::write_warning(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Warning, message);
             } else {
-                logger_manager::write_error(logger_key, message);
+                logger_manager::log(logger_key, LoggerLevel::Error, message);
             }
         }
         Err(e) => {
-            logger_manager::write_warning(
+            logger_manager::log(
                 logger_key,
+                LoggerLevel::Warning,
                 format!("Failed to push event to the queue with error: {}", e),
             );
         }
@@ -199,10 +185,10 @@ mod tests {
     use crate::misc_helpers;
     use std::env;
     use std::fs;
-    use std::thread;
     use std::time::Duration;
-    #[test]
-    fn event_logger_test() {
+
+    #[tokio::test]
+    async fn event_logger_test() {
         let mut temp_test_path = env::temp_dir();
         let logger_key = "event_logger_test";
         temp_test_path.push(logger_key);
@@ -219,23 +205,27 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
 
         let cloned_events_dir = events_dir.to_path_buf();
-        super::start_async(
-            cloned_events_dir,
-            Duration::from_millis(100),
-            3,
-            logger_key,
-            |_| {
-                async {
-                    // do nothing
-                }
-            },
-        );
+        tokio::spawn(async {
+            super::start(
+                cloned_events_dir,
+                Duration::from_millis(100),
+                3,
+                logger_key,
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
+            .await;
+        });
 
         // write some events to the queue and flush to disk
-        write_events(logger_key);
+        write_events(logger_key).await;
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
         let file_count = files.len();
@@ -246,7 +236,7 @@ mod tests {
 
         // write some events to the queue and flush to disk 3 times
         for _ in [0; 3] {
-            write_events(logger_key);
+            write_events(logger_key).await;
         }
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
@@ -259,9 +249,9 @@ mod tests {
         // stop it and no more files write to event folder
         super::stop();
         // wait for stop signal responded
-        thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
-        write_events(logger_key);
+        write_events(logger_key).await;
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
         assert_eq!(
@@ -273,7 +263,7 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    fn write_events(logger_key: &str) {
+    async fn write_events(logger_key: &str) {
         for _ in [0; 10] {
             super::write_event(
                 "Informational",
@@ -284,6 +274,6 @@ mod tests {
             );
         }
         // wait for the queue write to event folder
-        thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }

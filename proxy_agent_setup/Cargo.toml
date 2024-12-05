@@ -9,6 +9,7 @@ edition = "2021"
 proxy_agent_shared = { path ="../proxy_agent_shared"}
 clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 
 thiserror = "1.0.64"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"             # Rust Windows resource helper to add file version

@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::{
-    error::{CommandErrorType, Error},
-    result::Result,
-};
+use crate::result::Result;
 use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -211,82 +208,37 @@ pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBu
     Ok(files)
 }
 
-pub struct CommandOutput {
-    exit_code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-impl CommandOutput {
-    pub fn new(exit_code: i32, stdout: String, stderr: String) -> Self {
-        Self {
-            exit_code,
-            stdout,
-            stderr,
-        }
-    }
-
-    pub fn is_success(&self) -> bool {
-        self.exit_code == 0
-    }
-
-    pub fn stdout(&self) -> String {
-        self.stdout.to_string()
-    }
-
-    pub fn stderr(&self) -> String {
-        self.stderr.to_string()
-    }
-
-    pub fn exit_code(&self) -> i32 {
-        self.exit_code
-    }
-
-    pub fn message(&self) -> String {
-        format!(
-            "exit code: '{}', stdout: '{}', stderr: '{}'",
-            self.exit_code, self.stdout, self.stderr
-        )
-    }
-}
-
 pub fn execute_command(
     program: &str,
     args: Vec<&str>,
     default_error_code: i32,
-) -> Result<CommandOutput> {
-    let output = Command::new(program).args(args).output()?;
-
-    Ok(CommandOutput::new(
-        output.status.code().unwrap_or(default_error_code),
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
-    ))
+) -> (i32, String, String) {
+    match Command::new(program).args(args).output() {
+        Ok(output) => (
+            output.status.code().unwrap_or(default_error_code),
+            String::from_utf8_lossy(&output.stdout).to_string(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ),
+        Err(e) => {
+            let error = format!("Failed to execute command {} with error {}", program, e);
+            (default_error_code, String::new(), error)
+        }
+    }
 }
 
-pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
-    let proxy_agent_exe_str = path_to_string(proxy_agent_exe);
+pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> String {
     if !proxy_agent_exe.exists() {
-        return Err(Error::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("File '{}' does not found", proxy_agent_exe_str),
-        )));
+        return "Unknown".to_string();
     }
     if !proxy_agent_exe.is_file() {
-        return Err(Error::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("'{}' is not a file", proxy_agent_exe_str),
-        )));
+        return "Unknown".to_string();
     }
 
-    let output = execute_command(&path_to_string(proxy_agent_exe), vec!["--version"], -1)?;
-    if output.is_success() {
-        Ok(output.stdout().trim().to_string())
+    let output = execute_command(&path_to_string(proxy_agent_exe), vec!["--version"], -1);
+    if output.0 != 0 {
+        "Unknown".to_string()
     } else {
-        Err(Error::Command(
-            CommandErrorType::CommandName(proxy_agent_exe_str),
-            output.message(),
-        ))
+        output.1.trim().to_string()
     }
 }
 
@@ -392,16 +344,15 @@ mod tests {
             program,
             vec![&super::path_to_string(&script_file_path)],
             default_error_code,
-        )
-        .unwrap();
-        assert_eq!(1, output.exit_code(), "exit code mismatch");
+        );
+        assert_eq!(1, output.0, "exit code mismatch");
         assert_eq!(
             "this is stdout message",
-            output.stdout().trim(),
+            output.1.trim(),
             "stdout message mismatch"
         );
         assert!(
-            output.stderr().contains("This is stderr message"),
+            output.2.contains("This is stderr message"),
             "stderr message mismatch"
         );
 

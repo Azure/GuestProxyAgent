@@ -27,6 +27,12 @@ use std::ffi::OsString;
 use windows_service::{define_windows_service, service_dispatcher};
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_extension_windows_service_main);
+// define_windows_service does not accept async function in fffi_service_main,
+// also it does not allow to pass tokio runtime or handle as arguments to the function.
+// we have to use the global variable to set the tokio runtime handle.
+#[cfg(windows)]
+static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
+    tokio::sync::OnceCell::const_new();
 
 const CONFIG_SEQ_NO_ENV_VAR: &str = "ConfigSequenceNumber";
 
@@ -54,22 +60,29 @@ pub enum ExtensionCommand {
     Reset,
 }
 
-fn main() {
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    // set the tokio runtime handle
+    #[cfg(windows)]
+    ASYNC_RUNTIME_HANDLE
+        .set(tokio::runtime::Handle::current())
+        .unwrap();
+
     let cli = Cli::parse();
 
     if let Some(command) = cli.command {
         // extension commands
         let config_seq_no =
             env::var(CONFIG_SEQ_NO_ENV_VAR).unwrap_or_else(|_e| "no seq no".to_string());
-        handler_main::program_start(command, config_seq_no);
+        handler_main::program_start(command, config_seq_no).await;
     } else {
         // no arguments, start it as a service
         let exe_path = misc_helpers::get_current_exe_dir();
         let log_folder = common::get_handler_environment(&exe_path)
             .logFolder
             .to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
-        common::start_event_logger(constants::SERVICE_LOG_FILE);
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
+        common::start_event_logger(constants::SERVICE_LOG_FILE).await;
         #[cfg(windows)]
         {
             if let Err(e) = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main) {
@@ -78,14 +91,20 @@ fn main() {
         }
         #[cfg(not(windows))]
         {
-            linux::start_service_wait();
+            linux::start_service_wait().await;
         }
     }
 }
 
 #[cfg(windows)]
 fn proxy_agent_extension_windows_service_main(args: Vec<OsString>) {
-    if let Err(e) = service_main::windows_main::run_service(args) {
-        logger::write(format!("Failed to start the service: {}", e));
-    }
+    // Pass the tokio runtime handle here to launch the windows service.
+    let handle = ASYNC_RUNTIME_HANDLE
+        .get()
+        .expect("You must provide the Tokio runtime handle before this function is called");
+    handle.block_on(async {
+        if let Err(e) = service_main::windows_main::run_service(args).await {
+            logger::write(format!("Failed to start the service: {}", e));
+        }
+    });
 }

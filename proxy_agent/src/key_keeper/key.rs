@@ -1155,12 +1155,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_privilege_is_match() {
+    #[tokio::test]
+    async fn test_privilege_is_match() {
         let logger_key = "test_privilege_is_match";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
+        Connection::init_logger(temp_test_path.to_path_buf()).await;
 
         let privilege = r#"{
             "name": "test",
@@ -1221,12 +1221,12 @@ mod tests {
         _ = std::fs::remove_dir_all(temp_test_path);
     }
 
-    #[test]
-    fn test_identity_is_match() {
+    #[tokio::test]
+    async fn test_identity_is_match() {
         let logger_key = "test_identity_is_match";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf());
+        Connection::init_logger(temp_test_path.to_path_buf()).await;
 
         let claims = super::Claims {
             userName: "test".to_string(),

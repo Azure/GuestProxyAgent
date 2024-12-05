@@ -125,7 +125,7 @@ impl ProxyServer {
     }
 
     pub async fn start(&self) {
-        Connection::init_logger(config::get_logs_dir());
+        Connection::init_logger(config::get_logs_dir()).await;
 
         let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, self.port);
         logger::write(format!("Start proxy listener at '{}'.", &addr));
@@ -847,8 +847,9 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
-        Connection::init_logger(temp_test_path.to_path_buf());
+        )
+        .await;
+        Connection::init_logger(temp_test_path.to_path_buf()).await;
 
         // start listener, the port must different from the one used in production code
         let host = "127.0.0.1";

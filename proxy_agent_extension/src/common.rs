@@ -211,23 +211,30 @@ pub fn report_status_enable_command(
     report_status(status_folder, config_seq_no, &handler_status);
 }
 
-pub fn start_event_logger(logger_key: &str) {
+pub async fn start_event_logger(logger_key: &str) {
     logger::write("starting event logger".to_string());
-    let interval: std::time::Duration = std::time::Duration::from_secs(60);
-    let max_event_file_count: usize = 50;
-    let exe_path = misc_helpers::get_current_exe_dir();
-    let event_folder = PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
-    telemetry::event_logger::start_async(
-        event_folder,
-        interval,
-        max_event_file_count,
-        logger_key,
-        |_| {
-            async {
-                // do nothing
-            }
-        },
-    );
+    tokio::spawn({
+        let logger_key = logger_key.to_string();
+        async move {
+            let interval: std::time::Duration = std::time::Duration::from_secs(60);
+            let max_event_file_count: usize = 50;
+            let exe_path = misc_helpers::get_current_exe_dir();
+            let event_folder =
+                PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
+            telemetry::event_logger::start(
+                event_folder,
+                interval,
+                max_event_file_count,
+                &logger_key,
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
+            .await;
+        }
+    });
 }
 
 pub fn stop_event_logger() {
@@ -362,8 +369,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_status_file() {
+    #[tokio::test]
+    async fn test_status_file() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_status_file");
@@ -418,8 +425,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_update_current_seq_no() {
+    #[tokio::test]
+    async fn test_update_current_seq_no() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_update_current_seq_no");
@@ -427,7 +434,7 @@ mod tests {
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let exe_path = &temp_test_path;
@@ -458,8 +465,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_report_status_enable_command() {
+    #[tokio::test]
+    async fn test_report_status_enable_command() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_report_status_enable_command");
@@ -481,8 +488,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_heartbeat_file() {
+    #[tokio::test]
+    async fn test_heartbeat_file() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_heartbeat_file");
@@ -490,7 +497,7 @@ mod tests {
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let expected_heartbeat_file: PathBuf = temp_test_path.join("heartbeat.json");

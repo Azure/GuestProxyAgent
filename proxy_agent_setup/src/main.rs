@@ -26,8 +26,9 @@ const SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";
 #[cfg(not(windows))]
 const SERVICE_NAME: &str = "azure-proxy-agent";
 
-fn main() {
-    logger::init_logger();
+#[tokio::main]
+async fn main() {
+    logger::init_logger().await;
     let cli = args::Cli::parse();
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
@@ -44,19 +45,20 @@ fn main() {
                 logger::write("Backup check failed, skip the restore operation.".to_string());
                 return;
             }
-            stop_service();
+            stop_service().await;
             let proxy_agent_target_folder = restore_proxy_agent();
             setup_service(
                 proxy_agent_target_folder,
                 backup::proxy_agent_backup_folder(),
-            );
+            )
+            .await;
 
             if delete_backup {
                 delete_backup_folder();
             }
         }
         args::Command::Uninstall { uninstall_mode } => {
-            let proxy_agent_running_folder = uninstall_service();
+            let proxy_agent_running_folder = uninstall_service().await;
             if uninstall_mode == args::UninstallMode::Package {
                 delete_package(proxy_agent_running_folder);
             }
@@ -65,12 +67,13 @@ fn main() {
             delete_backup_folder();
         }
         args::Command::Install => {
-            stop_service();
+            stop_service().await;
             let proxy_agent_target_folder = copy_proxy_agent();
             setup_service(
                 proxy_agent_target_folder,
                 misc_helpers::get_current_exe_dir(),
-            );
+            )
+            .await;
         }
     }
 }
@@ -156,8 +159,8 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
     }
 }
 
-fn stop_service() {
-    match service::stop_service(SERVICE_NAME) {
+async fn stop_service() {
+    match service::stop_service(SERVICE_NAME).await {
         Ok(_) => {
             logger::write(format!("Stopped service {} successfully", SERVICE_NAME));
         }
@@ -170,7 +173,7 @@ fn stop_service() {
     }
 }
 
-fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path: PathBuf) {
+async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path: PathBuf) {
     #[cfg(windows)]
     {
         // delete the existing proxy agent service folder
@@ -221,7 +224,7 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
         let ebpf_setup_script_file = setup::ebpf_setup_script_file();
         if ebpf_setup_script_file.exists() && ebpf_setup_script_file.is_file() {
             let setup_script_file_str = misc_helpers::path_to_string(&ebpf_setup_script_file);
-            match misc_helpers::execute_command(
+            let output = misc_helpers::execute_command(
                 "powershell.exe",
                 vec![
                     "-ExecutionPolicy",
@@ -230,36 +233,16 @@ fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folder_path
                     &setup_script_file_str,
                 ],
                 1,
-            ) {
-                Ok(output) => {
-                    logger::write(format!(
-                        "ebpf_setup: invoked script file '{}' with result: '{}'.",
-                        setup_script_file_str,
-                        output.message()
-                    ));
-                }
-                Err(e) => {
-                    logger::write(format!(
-                        "ebpf_setup: failed to invoke script file '{}', error: '{:?}'.",
-                        setup_script_file_str, e
-                    ));
-                }
-            }
+            );
+            logger::write(format!(
+                "ebpf_setup: invoked script file '{}' with result: '{}'-'{}'-'{}'.",
+                setup_script_file_str, output.0, output.1, output.2
+            ));
         }
     }
 
-    match service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)) {
-        Ok(_) => {
-            logger::write(format!("Service {} start successfully", SERVICE_NAME));
-        }
-        Err(e) => {
-            logger::write(format!(
-                "Service {} start failed, error: {:?}",
-                SERVICE_NAME, e
-            ));
-            process::exit(1);
-        }
-    }
+    service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)).await;
+    logger::write(format!("Service {} start successfully", SERVICE_NAME));
 }
 
 fn check_backup_exists() -> bool {
@@ -275,10 +258,10 @@ fn check_backup_exists() -> bool {
     true
 }
 
-fn uninstall_service() -> PathBuf {
+async fn uninstall_service() -> PathBuf {
     let proxy_agent_running_folder = running::proxy_agent_running_folder(SERVICE_NAME);
 
-    match service::stop_and_delete_service(SERVICE_NAME) {
+    match service::stop_and_delete_service(SERVICE_NAME).await {
         Ok(_) => {
             logger::write(format!("Uninstall service {} successfully", SERVICE_NAME));
         }

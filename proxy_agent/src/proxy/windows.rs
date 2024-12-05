@@ -357,8 +357,8 @@ mod tests {
     use windows_sys::Win32::Foundation::LUID;
     use windows_sys::Win32::Security::Authentication::Identity;
 
-    #[test]
-    fn get_user_test() {
+    #[tokio::test]
+    async fn get_user_test() {
         unsafe {
             let mut data = MaybeUninit::<*mut LUID>::uninit();
             let mut count: u32 = 10;

@@ -21,16 +21,17 @@ use std::time::Duration;
 /// use proxy_agent::shared_state::SharedState;
 ///
 /// let shared_state = SharedState::start_all();
-/// service::start_service(shared_state);
+/// service::start_service(shared_state).await;
 /// ```
-pub fn start_service(shared_state: SharedState) {
+pub async fn start_service(shared_state: SharedState) {
     logger_manager::init_logger(
         logger::AGENT_LOGGER_KEY.to_string(),
         config::get_logs_dir(),
         "ProxyAgent.log".to_string(),
         constants::MAX_LOG_FILE_SIZE,
         constants::MAX_LOG_FILE_COUNT as u16,
-    );
+    )
+    .await;
     logger::write_information(format!(
         "============== GuestProxyAgent ({}) is starting on {}, elapsed: {}",
         proxy_agent_shared::misc_helpers::get_current_version(),
@@ -71,7 +72,7 @@ pub fn start_service(shared_state: SharedState) {
 #[cfg(not(windows))]
 pub async fn start_service_wait() {
     let shared_state = SharedState::start_all();
-    start_service(shared_state);
+    start_service(shared_state).await;
 
     loop {
         // continue to sleep until the service is stopped

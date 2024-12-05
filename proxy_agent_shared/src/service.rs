@@ -28,45 +28,46 @@ pub fn install_service(
     }
     #[cfg(not(windows))]
     {
-        linux_service::install_or_update_service(service_name)
+        linux_service::install_or_update_service(service_name);
+        Ok(())
     }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
+pub async fn stop_and_delete_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_and_delete_service(service_name)
+        windows_service::stop_and_delete_service(service_name).await
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name)?;
-        linux_service::uninstall_service(service_name)
+        linux_service::stop_service(service_name);
+        linux_service::uninstall_service(service_name);
+        Ok(())
     }
 }
 
-pub fn start_service(
-    service_name: &str,
-    _retry_count: u32,
-    _duration: std::time::Duration,
-) -> Result<()> {
+pub async fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
     #[cfg(windows)]
     {
-        windows_service::start_service_with_retry(service_name, _retry_count, _duration)
+        windows_service::start_service_with_retry(service_name, _retry_count, _duration).await;
     }
     #[cfg(not(windows))]
     {
-        linux_service::start_service(service_name)
+        linux_service::start_service(service_name);
     }
 }
 
-pub fn stop_service(service_name: &str) -> Result<()> {
+pub async fn stop_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_service(service_name).map(|_| ())
+        windows_service::stop_service(service_name)
+            .await
+            .map(|_| ())
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name)
+        linux_service::stop_service(service_name);
+        Ok(())
     }
 }
 
@@ -160,8 +161,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_install_service() {
+    #[tokio::test]
+    async fn test_install_service() {
         #[cfg(not(windows))]
         {
             let service_name = "test_install_service";

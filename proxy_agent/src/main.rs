@@ -117,7 +117,7 @@ async fn main() {
     if let Some(Commands::Console) = cli.command {
         // console mode - start GPA as long running process
         let shared_state = SharedState::start_all();
-        service::start_service(shared_state.clone());
+        service::start_service(shared_state.clone()).await;
         println!("Press Enter to end it.");
         let mut temp = String::new();
         let _read = std::io::stdin().read_line(&mut temp);
