@@ -28,8 +28,7 @@ pub fn install_service(
     }
     #[cfg(not(windows))]
     {
-        linux_service::install_or_update_service(service_name);
-        Ok(())
+        linux_service::install_or_update_service(service_name)
     }
 }
 
@@ -40,20 +39,23 @@ pub async fn stop_and_delete_service(service_name: &str) -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name);
-        linux_service::uninstall_service(service_name);
-        Ok(())
+        linux_service::stop_service(service_name)?;
+        linux_service::uninstall_service(service_name)
     }
 }
 
-pub async fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
+pub async fn start_service(
+    service_name: &str,
+    _retry_count: u32,
+    _duration: std::time::Duration,
+) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::start_service_with_retry(service_name, _retry_count, _duration).await;
+        windows_service::start_service_with_retry(service_name, _retry_count, _duration).await
     }
     #[cfg(not(windows))]
     {
-        linux_service::start_service(service_name);
+        linux_service::start_service(service_name)
     }
 }
 
@@ -66,8 +68,7 @@ pub async fn stop_service(service_name: &str) -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name);
-        Ok(())
+        linux_service::stop_service(service_name)
     }
 }
 
