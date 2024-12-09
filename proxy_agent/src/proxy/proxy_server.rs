@@ -241,7 +241,7 @@ impl ProxyServer {
         };
         tcp_connection_logger.write(
             LoggerLevel::Information,
-            "Accepted new tcp connection.".to_string(),
+            format!("Accepted new tcp connection [{}].", tcp_connection_id),
         );
 
         tokio::spawn({

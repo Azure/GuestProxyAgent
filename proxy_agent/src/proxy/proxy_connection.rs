@@ -227,8 +227,8 @@ impl ConnectionLogger {
             Self::CONNECTION_LOGGER_KEY.to_string(),
             logger_level,
             format!(
-                "Connection:{}_{} - {}",
-                self.tcp_connection_id, self.http_connection_id, message
+                "Connection:{}[{}] - {}",
+                self.http_connection_id, self.tcp_connection_id, message
             ),
         )
     }
