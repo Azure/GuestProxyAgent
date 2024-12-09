@@ -45,6 +45,9 @@ pub enum Error {
 
     #[error("Failed to receive '{0}' action response with error {1}")]
     RecvError(String, tokio::sync::oneshot::error::RecvError),
+
+    #[error("{0}")]
+    FindAuditEntryError(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -109,6 +112,9 @@ pub enum BpfErrorType {
     #[error("Failed to lookup element '{0}' in BPF map 'audit_map'. {1}")]
     MapLookupElem(String, String),
 
+    #[error("Failed to delete element '{0}' in BPF map 'audit_map'. {1}")]
+    MapDeleteElem(String, String),
+
     #[error("Failed to retrieve file descriptor of the BPF map 'audit_map' with error: {0}")]
     MapFileDescriptor(String),
 
@@ -161,8 +167,8 @@ pub enum WindowsApiErrorType {
     #[error("LsaGetLogonSessionData {0}")]
     LsaGetLogonSessionData(String),
 
-    #[error("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT: {0}")]
-    WSAIoctl(i32),
+    #[error("WinSock::WSAIoctl - {0}")]
+    WSAIoctl(String),
 
     #[error("GlobalMemoryStatusEx failed: {0}")]
     GlobalMemoryStatusEx(std::io::Error),

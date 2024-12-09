@@ -49,7 +49,7 @@ use std::{net::IpAddr, path::PathBuf};
 #[cfg(not(windows))]
 use sysinfo::{Pid, PidExt, ProcessExt, System, SystemExt};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct Claims {
     pub userId: u64,
@@ -61,6 +61,7 @@ pub struct Claims {
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub clientIp: String,
+    pub clientPort: u16,
 }
 
 struct Process {
@@ -127,12 +128,14 @@ impl Claims {
             processCmdLine: EMPTY.to_string(),
             runAsElevated: false,
             clientIp: EMPTY.to_string(),
+            clientPort: 0,
         }
     }
 
     pub async fn from_audit_entry(
         entry: &AuditEntry,
         client_ip: IpAddr,
+        client_port: u16,
         proxy_server_shared_state: ProxyServerSharedState,
     ) -> Result<Self> {
         let p = Process::from_pid(entry.process_id);
@@ -147,23 +150,8 @@ impl Claims {
             processCmdLine: p.command_line.to_string(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
+            clientPort: client_port,
         })
-    }
-}
-
-impl Clone for Claims {
-    fn clone(&self) -> Self {
-        Claims {
-            userId: self.userId,
-            userName: self.userName.to_string(),
-            userGroups: self.userGroups.clone(),
-            processId: self.processId,
-            processName: self.processName.to_string(),
-            processFullPath: self.processFullPath.to_string(),
-            processCmdLine: self.processCmdLine.to_string(),
-            runAsElevated: self.runAsElevated,
-            clientIp: self.clientIp.to_string(),
-        }
     }
 }
 
@@ -337,6 +325,7 @@ mod tests {
         let claims = Claims::from_audit_entry(
             &entry,
             IpAddr::from([127, 0, 0, 1]),
+            0, // doesn't matter for this test
             proxy_server_shared_state.clone(),
         )
         .await

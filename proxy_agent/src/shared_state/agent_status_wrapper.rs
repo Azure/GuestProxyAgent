@@ -109,6 +109,9 @@ enum AgentStatusAction {
     IncreaseConnectionCount {
         response: oneshot::Sender<u128>,
     },
+    IncreaseTcpConnectionCount {
+        response: oneshot::Sender<u128>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -144,7 +147,8 @@ impl AgentStatusSharedState {
             let mut failed_authenticate_summary: HashMap<String, ProxyConnectionSummary> =
                 HashMap::new();
             // The proxied connection count for the listener
-            let mut connection_count: u128 = 0;
+            let mut tcp_connection_count: u128 = 0;
+            let mut http_connection_count: u128 = 0;
 
             while let Some(action) = rx.recv().await {
                 match action {
@@ -297,7 +301,7 @@ impl AgentStatusSharedState {
                         }
                     }
                     AgentStatusAction::GetConnectionCount { response } => {
-                        if let Err(count) = response.send(connection_count) {
+                        if let Err(count) = response.send(http_connection_count) {
                             logger::write_warning(format!(
                                 "Failed to send response to AgentStatusAction::GetConnectionCount with count '{:?}'",
                                 count
@@ -306,10 +310,20 @@ impl AgentStatusSharedState {
                     }
                     AgentStatusAction::IncreaseConnectionCount { response } => {
                         // if overflow, reset to 0 and continue increase the count
-                        connection_count = connection_count.overflowing_add(1).0;
-                        if let Err(count) = response.send(connection_count) {
+                        http_connection_count = http_connection_count.overflowing_add(1).0;
+                        if let Err(count) = response.send(http_connection_count) {
                             logger::write_warning(format!(
                                 "Failed to send response to AgentStatusAction::IncreaseConnectionCount with count '{:?}'",
+                                count
+                            ));
+                        }
+                    }
+                    AgentStatusAction::IncreaseTcpConnectionCount { response } => {
+                        // if overflow, reset to 0 and continue increase the count
+                        tcp_connection_count = tcp_connection_count.overflowing_add(1).0;
+                        if let Err(count) = response.send(tcp_connection_count) {
+                            logger::write_warning(format!(
+                                "Failed to send response to AgentStatusAction::IncreaseTcpConnectionCount with count '{:?}'",
                                 count
                             ));
                         }
@@ -584,6 +598,27 @@ impl AgentStatusSharedState {
             })?;
         response_rx.await.map_err(|e| {
             Error::RecvError("AgentStatusAction::IncreaseConnectionCount".to_string(), e)
+        })
+    }
+
+    pub async fn increase_tcp_connection_count(&self) -> Result<u128> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::IncreaseTcpConnectionCount {
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::IncreaseTcpConnectionCount".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx.await.map_err(|e| {
+            Error::RecvError(
+                "AgentStatusAction::IncreaseTcpConnectionCount".to_string(),
+                e,
+            )
         })
     }
 }
