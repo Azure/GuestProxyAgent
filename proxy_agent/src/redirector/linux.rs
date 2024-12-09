@@ -362,6 +362,36 @@ impl BpfObject {
             }
         }
     }
+
+    pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
+        let audit_map_name = "audit_map";
+        match self.0.map_mut(audit_map_name) {
+            Some(map) => match HashMap::<&mut MapData, [u32; 2], [u32; 5]>::try_from(map) {
+                Ok(mut audit_map) => {
+                    let key = sock_addr_audit_key::from_source_port(source_port);
+                    audit_map.remove(&key.to_array()).map_err(|err| {
+                        Error::Bpf(BpfErrorType::MapDeleteElem(
+                            source_port.to_string(),
+                            format!("Error: {}", err),
+                        ))
+                    })?;
+                }
+                Err(err) => {
+                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                        audit_map_name.to_string(),
+                        err.to_string(),
+                    )));
+                }
+            },
+            None => {
+                return Err(Error::Bpf(BpfErrorType::GetBpfMap(
+                    audit_map_name.to_string(),
+                    "Map does not exist".to_string(),
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 // Redirector implementation for Linux platform

@@ -14,6 +14,7 @@ pub struct ProxySummary {
     pub method: String,
     pub url: String,
     pub clientIp: String,
+    pub clientPort: u16,
     pub ip: String,
     pub port: u16,
     pub userId: u64,

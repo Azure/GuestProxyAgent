@@ -431,4 +431,51 @@ impl BpfObject {
             }
         }
     }
+
+    pub fn remove_audit_map_entry(&self, source_port: u16) -> Result<()> {
+        if self.is_null() {
+            return Err(Error::Bpf(BpfErrorType::MapLookupElem(
+                source_port.to_string(),
+                "BPF has not loaded".to_string(),
+            )));
+        }
+
+        let audit_map_name = "audit_map";
+        let audit_map = bpf_object__find_map_by_name(self.0, audit_map_name).map_err(|e| {
+            Error::Bpf(BpfErrorType::GetBpfMap(
+                audit_map_name.to_string(),
+                e.to_string(),
+            ))
+        })?;
+        if audit_map.is_null() {
+            return Err(Error::Bpf(BpfErrorType::GetBpfMap(
+                audit_map_name.to_string(),
+                "bpf_object__find_map_by_name returns null pointer".to_string(),
+            )));
+        }
+
+        let map_fd = bpf_map__fd(audit_map)
+            .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
+
+        let key = sock_addr_audit_key_t::from_source_port(source_port);
+        let result = bpf_map_delete_elem(
+            map_fd,
+            &key as *const sock_addr_audit_key_t as *const c_void,
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::MapDeleteElem(
+                source_port.to_string(),
+                format!("Error: {}", e),
+            ))
+        })?;
+
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
+                source_port.to_string(),
+                format!("Result: {}", result),
+            )));
+        }
+
+        Ok(())
+    }
 }

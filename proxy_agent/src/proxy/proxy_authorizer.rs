@@ -16,11 +16,13 @@
 //! let vm_metadata = proxy_authorizer::get_access_control_rules(constants::WIRE_SERVER_IP.to_string(), key_keeper_shared_state.clone()).await.unwrap();
 //! let authorizer = proxy_authorizer::get_authorizer(constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT, claims);
 //! let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-//! authorizer.authorize(1, url, vm_metadata);
+//! authorizer.authorize(logger, url, vm_metadata);
 //!  
 
+use proxy_agent_shared::logger_manager::LoggerLevel;
+
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
-use super::proxy_connection::Connection;
+use super::proxy_connection::ConnectionLogger;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::{common::config, common::constants, common::result::Result, proxy::Claims};
 
@@ -96,7 +98,7 @@ pub trait Authorizer {
     // authorize the connection
     fn authorize(
         &self,
-        connection_id: u128,
+        logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult;
@@ -112,7 +114,7 @@ struct WireServer {
 impl Authorizer for WireServer {
     fn authorize(
         &self,
-        connection_id: u128,
+        logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -122,11 +124,12 @@ impl Authorizer for WireServer {
 
         if config::get_wire_server_support() == 2 {
             if let Some(rules) = access_control_rules {
-                if rules.is_allowed(connection_id, request_url.clone(), self.claims.clone()) {
+                if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
                     return AuthorizeResult::Ok;
                 } else {
                     if rules.mode == AuthorizationMode::Audit {
-                        Connection::write_information(connection_id, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
+                        logger.write(
+                            LoggerLevel::Information, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
                         return AuthorizeResult::OkWithAudit;
                     }
                     return AuthorizeResult::Forbidden;
@@ -152,17 +155,17 @@ struct Imds {
 impl Authorizer for Imds {
     fn authorize(
         &self,
-        connection_id: u128,
+        logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
         if config::get_imds_support() == 2 {
             if let Some(rules) = access_control_rules {
-                if rules.is_allowed(connection_id, request_url.clone(), self.claims.clone()) {
+                if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
                     return AuthorizeResult::Ok;
                 } else {
                     if rules.mode == AuthorizationMode::Audit {
-                        Connection::write_information(connection_id, format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
+                        logger.write(LoggerLevel::Information,format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
                         return AuthorizeResult::OkWithAudit;
                     }
                     return AuthorizeResult::Forbidden;
@@ -185,7 +188,7 @@ struct GAPlugin {
 impl Authorizer for GAPlugin {
     fn authorize(
         &self,
-        _connection_id: u128,
+        _logger: ConnectionLogger,
         _request_url: hyper::Uri,
         _access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -215,7 +218,7 @@ struct ProxyAgent {}
 impl Authorizer for ProxyAgent {
     fn authorize(
         &self,
-        _connection_id: u128,
+        _logger: ConnectionLogger,
         _request_url: hyper::Uri,
         _access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -232,7 +235,7 @@ struct Default {}
 impl Authorizer for Default {
     fn authorize(
         &self,
-        _connection_id: u128,
+        _logger: ConnectionLogger,
         _request_url: hyper::Uri,
         _access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -272,20 +275,24 @@ pub async fn get_access_control_rules(
 pub fn authorize(
     ip: String,
     port: u16,
-    connection_id: u128,
+    logger: ConnectionLogger,
     request_uri: hyper::Uri,
     claims: Claims,
     access_control_rules: Option<ComputedAuthorizationItem>,
 ) -> AuthorizeResult {
     let auth = get_authorizer(ip, port, claims);
-    Connection::write(connection_id, format!("Got auth: {}", auth.to_string()));
-    auth.authorize(connection_id, request_uri, access_control_rules)
+    logger.write(
+        LoggerLevel::Information,
+        format!("Got auth: {}", auth.to_string()),
+    );
+    auth.authorize(logger, request_uri, access_control_rules)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        key_keeper::key::AuthorizationItem, proxy::proxy_authorizer::AuthorizeResult,
+        key_keeper::key::AuthorizationItem,
+        proxy::{proxy_authorizer::AuthorizeResult, proxy_connection::ConnectionLogger},
         shared_state::key_keeper_wrapper::KeyKeeperSharedState,
     };
     use std::str::FromStr;
@@ -302,6 +309,11 @@ mod tests {
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
+            clientPort: 0, // doesn't matter for this test
+        };
+        let test_logger = ConnectionLogger {
+            tcp_connection_id: 1,
+            http_connection_id: 1,
         };
         let auth: Box<dyn super::Authorizer> = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
@@ -314,7 +326,7 @@ mod tests {
             "WireServer { runAsElevated: true, processName: test }"
         );
         assert!(
-            AuthorizeResult::Ok == auth.authorize(1, test_uri.clone(), None),
+            AuthorizeResult::Ok == auth.authorize(test_logger.clone(), test_uri.clone(), None),
             "WireServer authentication must be Ok"
         );
 
@@ -329,7 +341,7 @@ mod tests {
         );
         assert!(AuthorizeResult::Ok==
             auth.authorize(
-                1,
+                test_logger.clone(),
                 test_uri.clone(),
                 None
             ),          "GAPlugin authentication must be Ok since it has not enabled for builtin processes in the config yet"
@@ -342,7 +354,7 @@ mod tests {
         );
         assert_eq!(auth.to_string(), "IMDS");
         assert!(
-            AuthorizeResult::Ok == auth.authorize(1, test_uri.clone(), None),
+            AuthorizeResult::Ok == auth.authorize(test_logger.clone(), test_uri.clone(), None),
             "IMDS authentication must be Ok"
         );
 
@@ -353,7 +365,8 @@ mod tests {
         );
         assert_eq!(auth.to_string(), "ProxyAgent");
         assert!(
-            AuthorizeResult::Forbidden == auth.authorize(1, test_uri.clone(), None),
+            AuthorizeResult::Forbidden
+                == auth.authorize(test_logger.clone(), test_uri.clone(), None),
             "ProxyAgent authentication must be Forbidden"
         );
 
@@ -377,6 +390,11 @@ mod tests {
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
+            clientPort: 0, // doesn't matter for this test
+        };
+        let test_logger = ConnectionLogger {
+            tcp_connection_id: 1,
+            http_connection_id: 1,
         };
         let auth = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
@@ -402,7 +420,8 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules)
+                == AuthorizeResult::Ok,
             "WireServer authentication must be Ok with disabled rules"
         );
 
@@ -428,7 +447,8 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules)
+                == AuthorizeResult::Ok,
             "WireServer authentication must be Ok with audit allow rules"
         );
         key_keeper_shared_state
@@ -440,7 +460,8 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules) == AuthorizeResult::OkWithAudit,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules)
+                == AuthorizeResult::OkWithAudit,
             "WireServer authentication must be OkWithAudit with audit deny rules"
         );
 
@@ -466,7 +487,8 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules)
+                == AuthorizeResult::Ok,
             "WireServer authentication must be Ok with enforce allow rules"
         );
         key_keeper_shared_state
@@ -478,13 +500,18 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules) == AuthorizeResult::Forbidden,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules)
+                == AuthorizeResult::Forbidden,
             "WireServer authentication must be Forbidden with enforce deny rules"
         );
     }
 
     #[tokio::test]
     async fn imds_authenticate_test() {
+        let test_logger = ConnectionLogger {
+            tcp_connection_id: 1,
+            http_connection_id: 1,
+        };
         let claims = crate::proxy::Claims {
             userId: 0,
             userName: "test".to_string(),
@@ -495,6 +522,7 @@ mod tests {
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
+            clientPort: 0, // doesn't matter for this test
         };
         let auth = super::get_authorizer(
             crate::common::constants::IMDS_IP.to_string(),
@@ -517,7 +545,8 @@ mod tests {
             .unwrap();
         let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules,) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules,)
+                == AuthorizeResult::Ok,
             "IMDS authentication must be Ok with disabled rules"
         );
 
@@ -540,7 +569,8 @@ mod tests {
             .unwrap();
         let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules,) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules,)
+                == AuthorizeResult::Ok,
             "IMDS authentication must be Ok with audit allow rules"
         );
         key_keeper_shared_state
@@ -549,7 +579,8 @@ mod tests {
             .unwrap();
         let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules,) == AuthorizeResult::OkWithAudit,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules,)
+                == AuthorizeResult::OkWithAudit,
             "IMDS authentication must be OkWithAudit with audit deny rules"
         );
 
@@ -572,7 +603,8 @@ mod tests {
             .unwrap();
         let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules,) == AuthorizeResult::Ok,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules,)
+                == AuthorizeResult::Ok,
             "IMDS authentication must be Ok with enforce allow rules"
         );
         key_keeper_shared_state
@@ -581,7 +613,8 @@ mod tests {
             .unwrap();
         let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
         assert!(
-            auth.authorize(1, url.clone(), access_control_rules,) == AuthorizeResult::Forbidden,
+            auth.authorize(test_logger.clone(), url.clone(), access_control_rules,)
+                == AuthorizeResult::Forbidden,
             "IMDS authentication must be Forbidden with enforce deny rules"
         );
     }
@@ -598,6 +631,7 @@ mod tests {
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
+            clientPort: 0, // doesn't matter for this test
         };
 
         #[cfg(windows)]

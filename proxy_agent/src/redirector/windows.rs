@@ -5,7 +5,8 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
-use crate::common::{self, config, constants, helpers, logger, result::Result};
+use crate::common::error::{Error, WindowsApiErrorType};
+use crate::common::{config, constants, helpers, logger, result::Result};
 use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::redirector::AuditEntry;
 use crate::shared_state::agent_status_wrapper::AgentStatusModule;
@@ -196,7 +197,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
     let value = AuditEntry::empty();
     let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
     let mut redirect_context_returned: u32 = 0;
-    unsafe {
+    let result = unsafe {
         WinSock::WSAIoctl(
             raw_socket_id,
             WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
@@ -209,7 +210,22 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
             None,
         )
     };
-    common::windows::check_winsock_last_error()?;
+    if result != 0 {
+        let error = unsafe { WinSock::WSAGetLastError() };
+        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
+            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT result: {}, WSAGetLastError: {}",
+            result, error,
+        ))));
+    }
+
+    // Need to check the returned size to ensure it matches the expected size,
+    // since the result is 0 even if there is no redirect context in this socket stream.
+    if redirect_context_returned != redirect_context_size {
+        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
+            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT returned size: {}, expected size: {}",
+            redirect_context_returned, redirect_context_size,
+        ))));
+    }
 
     Ok(value)
 }

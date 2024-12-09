@@ -7,7 +7,7 @@
 //! Example
 //! ```rust
 //! use proxy_agent::authorization_rules;
-//! use proxy_agent::proxy_connection::Connection;
+//! use proxy_agent::proxy_connection::ConnectionLogger;
 //!
 //! // convert the authorization item to access control rules
 //! let access_control_rules = AccessControlRules::from_authorization_item(authorization_item);
@@ -17,9 +17,10 @@
 //!
 //! ```
 
-use super::{proxy_connection::Connection, Claims};
+use super::{proxy_connection::ConnectionLogger, Claims};
 use crate::common::logger;
 use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, Identity, Privilege, Role};
+use proxy_agent_shared::logger_manager::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -161,10 +162,15 @@ impl ComputedAuthorizationItem {
         }
     }
 
-    pub fn is_allowed(&self, connection_id: u128, request_url: hyper::Uri, claims: Claims) -> bool {
+    pub fn is_allowed(
+        &self,
+        logger: ConnectionLogger,
+        request_url: hyper::Uri,
+        claims: Claims,
+    ) -> bool {
         if self.mode == AuthorizationMode::Disabled {
-            Connection::write_information(
-                connection_id,
+            logger.write(
+                LoggerLevel::Information,
                 "Access control is in disabled state, skip....".to_string(),
             );
 
@@ -174,10 +180,10 @@ impl ComputedAuthorizationItem {
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
-            if privilege.is_match(connection_id, &request_url) {
+            if privilege.is_match(&logger, &request_url) {
                 any_privilege_matched = true;
-                Connection::write_information(
-                    connection_id,
+                logger.write(
+                    LoggerLevel::Information,
                     format!("Request matched privilege '{}'.", privilege_name),
                 );
 
@@ -185,9 +191,9 @@ impl ComputedAuthorizationItem {
                     for assignment in assignments {
                         let identity_name = assignment.clone();
                         if let Some(identity) = self.identities.get(&identity_name) {
-                            if identity.is_match(connection_id, &claims) {
-                                Connection::write_information(
-                                    connection_id,
+                            if identity.is_match(&logger, &claims) {
+                                logger.write(
+                                    LoggerLevel::Information,
                                     format!(
                                         "Request matched privilege '{}' and identity '{}'.",
                                         privilege_name, identity_name
@@ -197,16 +203,16 @@ impl ComputedAuthorizationItem {
                             }
                         }
                     }
-                    Connection::write_information(
-                        connection_id,
+                    logger.write(
+                        LoggerLevel::Information,
                         format!(
                             "Request matched privilege '{}' but no identity matched.",
                             privilege_name
                         ),
                     );
                 } else {
-                    Connection::write_information(
-                        connection_id,
+                    logger.write(
+                        LoggerLevel::Information,
                         format!(
                             "Request matched privilege '{}' but no identity assigned.",
                             privilege_name
@@ -214,24 +220,24 @@ impl ComputedAuthorizationItem {
                     );
                 }
             } else {
-                Connection::write_information(
-                    connection_id,
+                logger.write(
+                    LoggerLevel::Information,
                     format!("Request does not match privilege '{}'.", privilege_name),
                 );
             }
         }
 
         if any_privilege_matched {
-            Connection::write_information(
-                connection_id,
+            logger.write(
+                LoggerLevel::Information,
                 "Privilege matched at least once, but no identity matches, deny the access."
                     .to_string(),
             );
             return false;
         }
 
-        Connection::write_information(
-            connection_id,
+        logger.write(
+            LoggerLevel::Information,
             format!(
                 "No privilege matched, fall back to use the default access: {}.",
                 self.defaultAllowed
@@ -340,7 +346,7 @@ mod tests {
         RoleAssignment,
     };
     use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
-    use crate::proxy::{proxy_connection::Connection, Claims};
+    use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
     use proxy_agent_shared::{logger_manager, misc_helpers};
     use std::str::FromStr;
 
@@ -349,7 +355,11 @@ mod tests {
         let logger_key = "test_authorization_rules";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        Connection::init_logger(temp_test_path.to_path_buf()).await;
+        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
+        let test_logger = ConnectionLogger {
+            tcp_connection_id: 0,
+            http_connection_id: 0,
+        };
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
@@ -395,17 +405,18 @@ mod tests {
             processId: 0,
             processFullPath: "test".to_string(),
             clientIp: "0".to_string(),
+            clientPort: 0, // doesn't matter for this test
             processName: "test".to_string(),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
         };
         // assert the claim is allowed given the rules above
         let url = hyper::Uri::from_str("http://localhost/test/test").unwrap();
-        assert!(rules.is_allowed(0, url, claims.clone()));
+        assert!(rules.is_allowed(test_logger.clone(), url, claims.clone()));
         let relative_url = hyper::Uri::from_str("/test/test").unwrap();
-        assert!(rules.is_allowed(0, relative_url.clone(), claims.clone()));
+        assert!(rules.is_allowed(test_logger.clone(), relative_url.clone(), claims.clone()));
         claims.userName = "test1".to_string();
-        assert!(!rules.is_allowed(0, relative_url, claims.clone()));
+        assert!(!rules.is_allowed(test_logger.clone(), relative_url, claims.clone()));
 
         // Test Audit Mode
         let access_control_rules = AccessControlRules {
@@ -480,9 +491,9 @@ mod tests {
         assert!(!rules.privileges.is_empty());
 
         let url = hyper::Uri::from_str("http://localhost/test/test1").unwrap();
-        assert!(rules.is_allowed(0, url, claims.clone()));
+        assert!(rules.is_allowed(test_logger.clone(), url, claims.clone()));
         let relative_url = hyper::Uri::from_str("/test/test1").unwrap();
-        assert!(rules.is_allowed(0, relative_url, claims.clone()));
+        assert!(rules.is_allowed(test_logger.clone(), relative_url, claims.clone()));
 
         // Test enforce mode, identity not match
         let access_control_rules = AccessControlRules {
@@ -521,9 +532,9 @@ mod tests {
         assert!(!rules.privileges.is_empty());
 
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-        assert!(!rules.is_allowed(0, url, claims.clone()));
+        assert!(!rules.is_allowed(test_logger.clone(), url, claims.clone()));
         let relativeurl = hyper::Uri::from_str("/test?").unwrap();
-        assert!(!rules.is_allowed(0, relativeurl, claims.clone()));
+        assert!(!rules.is_allowed(test_logger.clone(), relativeurl, claims.clone()));
     }
 
     #[tokio::test]

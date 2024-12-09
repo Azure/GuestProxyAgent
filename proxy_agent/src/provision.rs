@@ -573,7 +573,7 @@ impl ProvisionQuery {
 mod tests {
     use crate::common::logger;
     use crate::provision::ProvisionFlags;
-    use crate::proxy::proxy_connection::Connection;
+    use crate::proxy::proxy_connection::ConnectionLogger;
     use crate::proxy::proxy_server;
     use crate::shared_state::SharedState;
     use proxy_agent_shared::logger_manager;
@@ -598,7 +598,7 @@ mod tests {
             20,
         )
         .await;
-        Connection::init_logger(temp_test_path.to_path_buf()).await;
+        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
 
         // start listener, the port must different from the one used in production code
         let shared_state = SharedState::start_all();
