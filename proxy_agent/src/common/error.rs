@@ -90,6 +90,9 @@ pub enum KeyErrorType {
 
     #[error("Failed to join {0} and {1} with error: {2}")]
     ParseKeyUrl(String, String, InvalidUri),
+
+    #[error("Failed to check local key with error: {0}")]
+    CheckLocalKey(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -125,10 +128,16 @@ pub enum BpfErrorType {
     GetBpfApi,
 
     #[error("Failed to get BPF object: Object is not initialized")]
-    GetBpfObject,
+    NullBpfObject,
 
     #[error("Loading eBPF API from file path '{0}' failed with error: {1}")]
     LoadBpfApi(String, String),
+
+    #[error("Openning BPF object from file path '{0}' failed with error: {1}")]
+    OpenBpfObject(String, String),
+
+    #[error("Loading BPF object from file path '{0}' failed with error: {1}")]
+    LoadBpfObject(String, String),
 
     #[error("Loading BPF API function '{0}' failed with error: {1}")]
     LoadBpfApiFunction(String, String),
@@ -156,6 +165,9 @@ pub enum BpfErrorType {
 
     #[error("CString initialization failed with error: {0}")]
     CString(std::ffi::NulError),
+
+    #[error("Failed to start eBPF/redirector with multiple retries")]
+    FailedToStartRedirector,
 }
 
 #[derive(Debug, thiserror::Error)]

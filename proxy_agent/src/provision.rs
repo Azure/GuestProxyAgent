@@ -141,8 +141,17 @@ bitflags::bitflags! {
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ProvisionState {
-    finished: bool,
-    errorMessage: String,
+    pub finished: bool,
+    pub errorMessage: String,
+}
+
+impl ProvisionState {
+    pub fn new(finished: bool, error_message: String) -> Self {
+        ProvisionState {
+            finished,
+            errorMessage: error_message,
+        }
+    }
 }
 
 /// Provision URL path, it is used to query the provision status from GPA service http listener
@@ -519,20 +528,20 @@ impl ProvisionQuery {
 
     /// Get current GPA service provision status and wait until the GPA service provision finished or timeout
     /// This function is designed for GPA command line, serves for --status [--wait seconds] option
-    pub async fn get_provision_status_wait(&self) -> (bool, String) {
+    pub async fn get_provision_status_wait(&self) -> ProvisionState {
         loop {
-            let (finished, message) = match self.get_current_provision_status().await {
-                Ok(state) => (state.finished, state.errorMessage),
+            let state = match self.get_current_provision_status().await {
+                Ok(state) => state,
                 Err(e) => {
                     println!(
                         "Failed to query the current provision state with error: {}.",
                         e
                     );
-                    (false, String::new())
+                    ProvisionState::new(false, String::new())
                 }
             };
-            if finished {
-                return (finished, message);
+            if state.finished {
+                return state;
             }
 
             if let Some(d) = self.wait_duration {
@@ -542,8 +551,8 @@ impl ProvisionQuery {
                 }
             }
 
-            // wait timedout return as 'not finished'
-            return (false, String::new());
+            // wait timedout return as 'not finished' with empty message
+            return ProvisionState::new(false, String::new());
         }
     }
 
@@ -623,10 +632,13 @@ mod tests {
 
         let provision_query = super::ProvisionQuery::new(port, None);
         let provision_status = provision_query.get_provision_status_wait().await;
-        assert!(!provision_status.0, "provision_status.0 must be false");
+        assert!(
+            !provision_status.finished,
+            "provision_status.0 must be false"
+        );
         assert_eq!(
             0,
-            provision_status.1.len(),
+            provision_status.errorMessage.len(),
             "provision_status.1 must be empty"
         );
 
@@ -680,10 +692,10 @@ mod tests {
 
         let provision_query = super::ProvisionQuery::new(port, Some(Duration::from_millis(5)));
         let provision_status = provision_query.get_provision_status_wait().await;
-        assert!(provision_status.0, "provision_status.0 must be true");
+        assert!(provision_status.finished, "provision_status.0 must be true");
         assert_eq!(
             0,
-            provision_status.1.len(),
+            provision_status.errorMessage.len(),
             "provision_status.1 must be empty"
         );
 
@@ -698,10 +710,13 @@ mod tests {
         let provision_state = provision_shared_state.get_state().await.unwrap();
         assert!(!provision_state.contains(ProvisionFlags::KEY_LATCH_READY));
         let provision_status = provision_query.get_provision_status_wait().await;
-        assert!(!provision_status.0, "provision_status.0 must be false");
+        assert!(
+            !provision_status.finished,
+            "provision_status.0 must be false"
+        );
         assert_eq!(
             0,
-            provision_status.1.len(),
+            provision_status.errorMessage.len(),
             "provision_status.1 must be empty"
         );
 
@@ -720,10 +735,10 @@ mod tests {
             "ALL_READY must be true after key_latched again"
         );
         let provision_status = provision_query.get_provision_status_wait().await;
-        assert!(provision_status.0, "provision_status.0 must be true");
+        assert!(provision_status.finished, "provision_status.0 must be true");
         assert_eq!(
             0,
-            provision_status.1.len(),
+            provision_status.errorMessage.len(),
             "provision_status.1 must be empty"
         );
 
