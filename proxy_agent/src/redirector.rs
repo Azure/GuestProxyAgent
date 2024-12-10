@@ -155,7 +155,8 @@ impl Redirector {
     }
 
     async fn start_internal(&self) -> Result<()> {
-        let bpf_object = self.load_bpf_object()?;
+        let mut bpf_object = self.load_bpf_object()?;
+
         logger::write("Success loaded bpf object.".to_string());
 
         // maps
@@ -205,7 +206,7 @@ impl Redirector {
         }
 
         // programs
-        self.attach_bpf_prog(&bpf_object)?;
+        self.attach_bpf_prog(&mut bpf_object)?;
         logger::write("Success attached bpf prog.".to_string());
 
         if let Err(e) = self

@@ -47,7 +47,7 @@ impl super::Redirector {
         Ok(bpf_object)
     }
 
-    pub fn attach_bpf_prog(&self, bpf_object: &BpfObject) -> Result<()> {
+    pub fn attach_bpf_prog(&self, bpf_object: &mut BpfObject) -> Result<()> {
         bpf_object.attach_bpf_prog()
     }
 }

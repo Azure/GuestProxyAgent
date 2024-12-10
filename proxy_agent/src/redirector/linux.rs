@@ -2,29 +2,24 @@
 // SPDX-License-Identifier: MIT
 mod ebpf_obj;
 
-use crate::proxy::authorization_rules::AuthorizationMode;
+use crate::common::{
+    config, constants,
+    error::{BpfErrorType, Error},
+    logger,
+    result::Result,
+};
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::{
-    common::{
-        config, constants,
-        error::{BpfErrorType, Error},
-        helpers, logger,
-        result::Result,
-    },
-    shared_state::agent_status_wrapper::AgentStatusModule,
-};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
+use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
-use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status::ModuleState};
 use std::convert::TryFrom;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 pub struct BpfObject(Bpf);
 
@@ -60,12 +55,11 @@ impl BpfObject {
         }
     }
 
-    pub fn update_skip_process_map(&mut self) -> Result<()> {
+    pub fn update_skip_process_map(&mut self, pid: u32) -> Result<()> {
         let skip_process_map_name = "skip_process_map";
         match self.0.map_mut(skip_process_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
                 Ok(mut skip_process_map) => {
-                    let pid = std::process::id();
                     let key = sock_addr_skip_process_entry::from_pid(pid);
                     let value = sock_addr_skip_process_entry::from_pid(pid);
                     match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
@@ -533,7 +527,7 @@ mod tests {
         }
 
         let mut bpf = bpf.unwrap();
-        let result = bpf.update_skip_process_map();
+        let result = bpf.update_skip_process_map(std::process::id());
         assert!(
             result.is_ok(),
             "update_skip_process_map should return success"
