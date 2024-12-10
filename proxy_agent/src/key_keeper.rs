@@ -66,8 +66,6 @@ pub struct KeyKeeper {
     log_dir: PathBuf,
     /// interval: the interval to poll the secure channel status
     interval: Duration,
-    /// config_start_redirector: boolean to indicate start the redirector when the key keeper task is running
-    config_start_redirector: bool,
     /// cancellation_token: the cancellation token to cancel the key keeper task
     cancellation_token: CancellationToken,
     /// key_keeper_shared_state: the sender for the key details, secure channel state, access control rule
@@ -88,7 +86,6 @@ impl KeyKeeper {
         key_dir: PathBuf,
         log_dir: PathBuf,
         interval: Duration,
-        config_start_redirector: bool,
         shared_state: &SharedState,
     ) -> Self {
         KeyKeeper {
@@ -96,7 +93,6 @@ impl KeyKeeper {
             key_dir,
             log_dir,
             interval,
-            config_start_redirector,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
             telemetry_shared_state: shared_state.get_telemetry_shared_state(),
@@ -119,35 +115,33 @@ impl KeyKeeper {
         logger::write(message.to_string());
 
         // launch redirector initialization when the key keeper task is running
-        if self.config_start_redirector {
-            tokio::spawn({
-                let cancellation_token = self.cancellation_token.clone();
-                let key_keeper_shared_state = self.key_keeper_shared_state.clone();
-                let telemetry_shared_state = self.telemetry_shared_state.clone();
-                let provision_shared_state = self.provision_shared_state.clone();
-                let agent_status_shared_state = self.agent_status_shared_state.clone();
+        tokio::spawn({
+            let cancellation_token = self.cancellation_token.clone();
+            let key_keeper_shared_state = self.key_keeper_shared_state.clone();
+            let telemetry_shared_state = self.telemetry_shared_state.clone();
+            let provision_shared_state = self.provision_shared_state.clone();
+            let agent_status_shared_state = self.agent_status_shared_state.clone();
 
-                let redirector = Redirector::new(
-                    constants::PROXY_AGENT_PORT,
-                    self.redirector_shared_state.clone(),
-                    self.key_keeper_shared_state.clone(),
-                    agent_status_shared_state.clone(),
-                );
-                async move {
-                    redirector.start().await;
-                    if redirector.is_started().await {
-                        provision::redirector_ready(
-                            cancellation_token.clone(),
-                            key_keeper_shared_state.clone(),
-                            telemetry_shared_state.clone(),
-                            provision_shared_state.clone(),
-                            agent_status_shared_state.clone(),
-                        )
-                        .await;
-                    }
+            let redirector = Redirector::new(
+                constants::PROXY_AGENT_PORT,
+                self.redirector_shared_state.clone(),
+                self.key_keeper_shared_state.clone(),
+                agent_status_shared_state.clone(),
+            );
+            async move {
+                redirector.start().await;
+                if redirector.is_started().await {
+                    provision::redirector_ready(
+                        cancellation_token.clone(),
+                        key_keeper_shared_state.clone(),
+                        telemetry_shared_state.clone(),
+                        provision_shared_state.clone(),
+                        agent_status_shared_state.clone(),
+                    )
+                    .await;
                 }
-            });
-        }
+            }
+        });
 
         if let Err(e) = misc_helpers::try_create_folder(&self.key_dir) {
             logger::write_warning(format!(
@@ -764,7 +758,6 @@ mod tests {
             key_dir: cloned_keys_dir.clone(),
             log_dir: cloned_keys_dir.clone(),
             interval: Duration::from_millis(10),
-            config_start_redirector: false,
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
             telemetry_shared_state: key_keeper::TelemetrySharedState::start_new(),
