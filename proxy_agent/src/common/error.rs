@@ -133,7 +133,7 @@ pub enum BpfErrorType {
     #[error("Loading eBPF API from file path '{0}' failed with error: {1}")]
     LoadBpfApi(String, String),
 
-    #[error("Openning BPF object from file path '{0}' failed with error: {1}")]
+    #[error("Opening BPF object from file path '{0}' failed with error: {1}")]
     OpenBpfObject(String, String),
 
     #[error("Loading BPF object from file path '{0}' failed with error: {1}")]
