@@ -93,20 +93,20 @@ async fn main() {
         // --wait parameter to wait for the provision status until the given time in seconds
         // it is an optional, if not provided then it will query the provision state once by waiting for 0 seconds.
         let wait_time = cli.wait.unwrap_or(0);
-        let (provision_finished, error_message) = ProvisionQuery::new(
+        let state = ProvisionQuery::new(
             constants::PROXY_AGENT_PORT,
             Some(Duration::from_secs(wait_time)),
         )
         .get_provision_status_wait()
         .await;
-        if !provision_finished {
+        if !state.finished {
             // exit code 1 means provision not finished yet.
             process::exit(1);
         } else {
             // provision finished
-            if !error_message.is_empty() {
+            if !state.errorMessage.is_empty() {
                 // if there is any error message then print it and exit with exit code 2.
-                println!("{}", error_message);
+                println!("{}", state.errorMessage);
                 process::exit(2);
             }
             // no error message then exit with 0.

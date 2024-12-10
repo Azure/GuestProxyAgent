@@ -2,29 +2,24 @@
 // SPDX-License-Identifier: MIT
 mod ebpf_obj;
 
-use crate::proxy::authorization_rules::AuthorizationMode;
+use crate::common::{
+    config, constants,
+    error::{BpfErrorType, Error},
+    logger,
+    result::Result,
+};
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::{
-    common::{
-        config, constants,
-        error::{BpfErrorType, Error},
-        helpers, logger,
-        result::Result,
-    },
-    shared_state::agent_status_wrapper::AgentStatusModule,
-};
 use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{Bpf, BpfLoader, Btf};
 use ebpf_obj::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
+use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
-use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status::ModuleState};
 use std::convert::TryFrom;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 pub struct BpfObject(Bpf);
 
@@ -60,12 +55,11 @@ impl BpfObject {
         }
     }
 
-    pub fn update_skip_process_map(&mut self) -> Result<()> {
+    pub fn update_skip_process_map(&mut self, pid: u32) -> Result<()> {
         let skip_process_map_name = "skip_process_map";
         match self.0.map_mut(skip_process_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
                 Ok(mut skip_process_map) => {
-                    let pid = std::process::id();
                     let key = sock_addr_skip_process_entry::from_pid(pid);
                     let value = sock_addr_skip_process_entry::from_pid(pid);
                     match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
@@ -396,82 +390,12 @@ impl BpfObject {
 
 // Redirector implementation for Linux platform
 impl super::Redirector {
-    pub async fn start_internal(&self) -> bool {
-        let mut bpf_object = match BpfObject::from_ebpf_file(&super::get_ebpf_file_path()) {
-            Ok(value) => value,
-            Err(e) => {
-                self.set_error_status(format!("{}", e)).await;
-                return false;
-            }
-        };
+    pub fn load_bpf_object(&self) -> Result<BpfObject> {
+        BpfObject::from_ebpf_file(&super::get_ebpf_file_path())
+    }
 
-        for (name, _map) in bpf_object.0.maps() {
-            logger::write(format!("found map '{}'", name));
-        }
-
-        for (name, prog) in bpf_object.0.programs() {
-            logger::write(format!(
-                "found program '{}' with type '{:?}'",
-                name,
-                prog.prog_type()
-            ));
-        }
-
-        // maps
-        if let Err(e) = bpf_object.update_skip_process_map() {
-            self.set_error_status(format!("{}", e)).await;
-            return false;
-        }
-        let wireserver_mode =
-            if let Ok(Some(rules)) = self.key_keeper_shared_state.get_wireserver_rules().await {
-                rules.mode
-            } else {
-                AuthorizationMode::Audit
-            };
-        if wireserver_mode != AuthorizationMode::Disabled {
-            if let Err(e) = bpf_object.update_policy_elem_bpf_map(
-                "WireServer endpoints",
-                self.local_port,
-                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
-                constants::WIRE_SERVER_PORT,
-            ) {
-                self.set_error_status(format!("{}", e)).await;
-                return false;
-            }
-        }
-        let imds_mode = if let Ok(Some(rules)) = self.key_keeper_shared_state.get_imds_rules().await
-        {
-            rules.mode
-        } else {
-            AuthorizationMode::Audit
-        };
-        if imds_mode != AuthorizationMode::Disabled {
-            if let Err(e) = bpf_object.update_policy_elem_bpf_map(
-                "IMDS endpoints",
-                self.local_port,
-                constants::IMDS_IP_NETWORK_BYTE_ORDER,
-                constants::IMDS_PORT,
-            ) {
-                self.set_error_status(format!("{}", e)).await;
-                return false;
-            }
-        }
-        if config::get_host_gaplugin_support() > 0 {
-            if let Err(e) = bpf_object.update_policy_elem_bpf_map(
-                "Host GAPlugin endpoints",
-                self.local_port,
-                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
-                constants::GA_PLUGIN_PORT,
-            ) {
-                self.set_error_status(format!("{}", e)).await;
-                return false;
-            }
-        }
-
-        if let Err(e) = bpf_object.attach_kprobe_program() {
-            self.set_error_status(format!("{}", e)).await;
-            return false;
-        }
+    pub fn attach_bpf_prog(&self, bpf_object: &mut BpfObject) -> Result<()> {
+        bpf_object.attach_kprobe_program()?;
 
         let cgroup2_path = match proxy_agent_shared::linux::get_cgroup2_mount_path() {
             Ok(path) => {
@@ -494,8 +418,6 @@ impl super::Redirector {
         };
         if let Err(e) = bpf_object.attach_cgroup_program(cgroup2_path) {
             let message = format!("Failed to attach cgroup program for redirection. {}", e);
-            self.set_error_status(message.to_string()).await;
-
             event_logger::write_event(
                 event_logger::WARN_LEVEL,
                 message.to_string(),
@@ -503,46 +425,9 @@ impl super::Redirector {
                 "redirector",
                 logger::AGENT_LOGGER_KEY,
             );
-            return false;
+            return Err(e);
         }
-
-        if let Err(e) = self
-            .redirector_shared_state
-            .update_bpf_object(Arc::new(Mutex::new(bpf_object)))
-            .await
-        {
-            logger::write_error(format!("Failed to update bpf object. {}", e));
-        }
-        if let Err(e) = self
-            .redirector_shared_state
-            .set_local_port(self.local_port)
-            .await
-        {
-            logger::write_error(format!("Failed to set local port. {}", e));
-        }
-
-        let message = helpers::write_startup_event(
-            "Started Redirector with cgroup redirection",
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
-            .await
-        {
-            logger::write_error(format!("Failed to set module status message. {}", e));
-        }
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
-            .await
-        {
-            logger::write_error(format!("Failed to set module state. {}", e));
-        }
-
-        true
+        Ok(())
     }
 }
 
@@ -642,7 +527,7 @@ mod tests {
         }
 
         let mut bpf = bpf.unwrap();
-        let result = bpf.update_skip_process_map();
+        let result = bpf.update_skip_process_map(std::process::id());
         assert!(
             result.is_ok(),
             "update_skip_process_map should return success"

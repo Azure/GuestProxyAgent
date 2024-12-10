@@ -26,6 +26,8 @@
 pub mod key;
 
 use self::key::Key;
+use crate::common::error::Error;
+use crate::common::result::Result;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
@@ -512,7 +514,12 @@ impl KeyKeeper {
                     }
 
                     // double check the key details saved correctly to local disk
-                    if Self::check_local_key(&self.key_dir, &key) {
+                    if let Err(e) = Self::check_local_key(&self.key_dir, &key) {
+                        logger::write_warning(format!(
+                            "Saved key '{}' details lost locally - {}.",
+                            guid, e
+                        ));
+                    } else {
                         match key::attest_key(&self.base_url, &key).await {
                             Ok(()) => {
                                 // update in memory
@@ -555,11 +562,6 @@ impl KeyKeeper {
                                 continue;
                             }
                         }
-                    } else {
-                        logger::write_warning(format!(
-                            "Saved key '{}' details lost locally.",
-                            guid
-                        ));
                     }
                 }
             }
@@ -628,23 +630,45 @@ impl KeyKeeper {
         }
     }
 
-    // key is saved locally correctly
-    // true if the key file found and its guid and key value are corrected;
-    // other wise return false
-    fn check_local_key(key_dir: &Path, key: &Key) -> bool {
+    // key was saved locally correctly before
+    // check the key file found and its guid and key value are corrected
+    fn check_local_key(key_dir: &Path, key: &Key) -> Result<()> {
         let guid = key.guid.to_string();
         let mut key_file = key_dir.join(guid);
         key_file.set_extension("key");
         if !key_file.exists() {
             // guid.key file does not exist locally
-            return false;
+            return Err(Error::Key(
+                crate::common::error::KeyErrorType::CheckLocalKey(format!(
+                    "Key file '{}' does not exist locally.",
+                    key_file.display()
+                )),
+            ));
         }
 
         match misc_helpers::json_read_from_file::<Key>(&key_file) {
-            Ok(local_key) => local_key.guid == key.guid && local_key.key == key.key,
-            Err(_) => {
+            Ok(local_key) => {
+                if local_key.guid == key.guid && local_key.key == key.key {
+                    Ok(())
+                } else {
+                    // guid.key file found but guid or key value is not matched
+                    Err(Error::Key(
+                        crate::common::error::KeyErrorType::CheckLocalKey(format!(
+                            "Key file '{}' found but guid or key value is not matched.",
+                            key_file.display()
+                        )),
+                    ))
+                }
+            }
+            Err(e) => {
                 // failed to parse guid.key file
-                false
+                Err(Error::Key(
+                    crate::common::error::KeyErrorType::CheckLocalKey(format!(
+                        "Parse key file '{}' with error: {}",
+                        key_file.display(),
+                        e
+                    )),
+                ))
             }
         }
     }
@@ -705,7 +729,7 @@ mod tests {
         key_file.set_extension("key");
         _ = misc_helpers::json_write_to_file(&key, &key_file);
 
-        assert!(KeyKeeper::check_local_key(&temp_test_path, &key));
+        assert!(KeyKeeper::check_local_key(&temp_test_path, &key).is_ok());
 
         _ = fs::remove_dir_all(&temp_test_path);
     }

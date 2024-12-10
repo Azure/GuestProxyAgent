@@ -45,10 +45,13 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
+use crate::common::constants;
 use crate::common::error::BpfErrorType;
 use crate::common::error::Error;
+use crate::common::helpers;
 use crate::common::result::Result;
 use crate::common::{config, logger};
+use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
@@ -58,6 +61,7 @@ use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 #[cfg(not(windows))]
 pub use linux::BpfObject;
@@ -116,13 +120,10 @@ impl Redirector {
         }
     }
 
-    pub async fn start(&self) -> bool {
-        let started = self.start_impl().await;
-
-        let level = if started {
-            event_logger::INFO_LEVEL
-        } else {
-            event_logger::ERROR_LEVEL
+    pub async fn start(&self) {
+        let level = match self.start_impl().await {
+            Ok(_) => event_logger::INFO_LEVEL,
+            Err(_) => event_logger::ERROR_LEVEL,
         };
         event_logger::write_event(
             level,
@@ -131,25 +132,121 @@ impl Redirector {
             "redirector",
             logger::AGENT_LOGGER_KEY,
         );
-
-        started
     }
 
-    async fn start_impl(&self) -> bool {
+    async fn start_impl(&self) -> Result<()> {
         #[cfg(windows)]
         {
-            if !self.initialized_success().await {
-                return false;
-            }
+            self.initialized()?;
         }
+
         for _ in 0..5 {
-            if self.start_internal().await {
-                return true;
+            match self.start_internal().await {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    self.set_error_status(format!("Failed to start redirector: {e}"))
+                        .await;
+                }
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
-        false
+        Err(Error::Bpf(BpfErrorType::FailedToStartRedirector))
+    }
+
+    async fn start_internal(&self) -> Result<()> {
+        let mut bpf_object = self.load_bpf_object()?;
+
+        logger::write("Success loaded bpf object.".to_string());
+
+        // maps
+        let pid = std::process::id();
+        bpf_object.update_skip_process_map(pid)?;
+        logger::write(format!(
+            "Success updated bpf skip_process map with pid={pid}."
+        ));
+        let wireserver_mode =
+            if let Ok(Some(rules)) = self.key_keeper_shared_state.get_wireserver_rules().await {
+                rules.mode
+            } else {
+                AuthorizationMode::Audit
+            };
+        if wireserver_mode != AuthorizationMode::Disabled {
+            bpf_object.update_policy_elem_bpf_map(
+                "WireServer endpoints",
+                self.local_port,
+                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
+                constants::WIRE_SERVER_PORT,
+            )?;
+            logger::write("Success updated bpf map for WireServer support.".to_string());
+        }
+        let imds_mode = if let Ok(Some(rules)) = self.key_keeper_shared_state.get_imds_rules().await
+        {
+            rules.mode
+        } else {
+            AuthorizationMode::Audit
+        };
+        if imds_mode != AuthorizationMode::Disabled {
+            bpf_object.update_policy_elem_bpf_map(
+                "IMDS endpoints",
+                self.local_port,
+                constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
+                constants::IMDS_PORT,
+            )?;
+            logger::write("Success updated bpf map for IMDS support.".to_string());
+        }
+        if config::get_host_gaplugin_support() > 0 {
+            bpf_object.update_policy_elem_bpf_map(
+                "Host GAPlugin endpoints",
+                self.local_port,
+                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
+                constants::GA_PLUGIN_PORT,
+            )?;
+            logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
+        }
+
+        // programs
+        self.attach_bpf_prog(&mut bpf_object)?;
+        logger::write("Success attached bpf prog.".to_string());
+
+        if let Err(e) = self
+            .redirector_shared_state
+            .update_bpf_object(Arc::new(Mutex::new(bpf_object)))
+            .await
+        {
+            logger::write_error(format!("Failed to update bpf object in shared state: {e}"));
+        }
+        if let Err(e) = self
+            .redirector_shared_state
+            .set_local_port(self.local_port)
+            .await
+        {
+            logger::write_error(format!("Failed to set local port in shared state: {e}"));
+        }
+        let message = helpers::write_startup_event(
+            "Started Redirector with eBPF maps",
+            "start",
+            "redirector",
+            logger::AGENT_LOGGER_KEY,
+        );
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
+            .await
+        {
+            logger::write_error(format!(
+                "Failed to set module status message in shared state: {e}"
+            ));
+        }
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+        {
+            logger::write_error(format!("Failed to set module state in shared state: {e}"));
+        }
+
+        Ok(())
     }
 
     async fn get_status_message(&self) -> String {
@@ -275,7 +372,7 @@ pub async fn lookup_audit(
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         bpf_object.lock().unwrap().lookup_audit(source_port)
     } else {
-        Err(Error::Bpf(BpfErrorType::GetBpfObject))
+        Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
 }
 
@@ -289,7 +386,7 @@ pub async fn remove_audit(
             .unwrap()
             .remove_audit_map_entry(source_port)
     } else {
-        Err(Error::Bpf(BpfErrorType::GetBpfObject))
+        Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
 }
 
