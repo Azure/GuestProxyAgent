@@ -30,7 +30,6 @@ pub const METADATA_HEADER: &str = "Metadata";
 pub const CONNECTION_HEADER: &str = "connection";
 
 // Default Config Settings
-pub const DEFAULT_START_REDIRECTOR: bool = true;
 pub const DEFAULT_MAX_EVENT_FILE_COUNT: usize = 30;
 
 pub const CGROUP_ROOT: &str = "/sys/fs/cgroup";

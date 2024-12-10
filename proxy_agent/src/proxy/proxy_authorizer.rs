@@ -122,18 +122,16 @@ impl Authorizer for WireServer {
             return AuthorizeResult::Forbidden;
         }
 
-        if config::get_wire_server_support() == 2 {
-            if let Some(rules) = access_control_rules {
-                if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
-                    return AuthorizeResult::Ok;
-                } else {
-                    if rules.mode == AuthorizationMode::Audit {
-                        logger.write(
+        if let Some(rules) = access_control_rules {
+            if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
+                return AuthorizeResult::Ok;
+            } else {
+                if rules.mode == AuthorizationMode::Audit {
+                    logger.write(
                             LoggerLevel::Information, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
-                        return AuthorizeResult::OkWithAudit;
-                    }
-                    return AuthorizeResult::Forbidden;
+                    return AuthorizeResult::OkWithAudit;
                 }
+                return AuthorizeResult::Forbidden;
             }
         }
 
@@ -159,17 +157,21 @@ impl Authorizer for Imds {
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
-        if config::get_imds_support() == 2 {
-            if let Some(rules) = access_control_rules {
-                if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
-                    return AuthorizeResult::Ok;
-                } else {
-                    if rules.mode == AuthorizationMode::Audit {
-                        logger.write(LoggerLevel::Information,format!("IMDS request {} denied in audit mode, continue forward the request", request_url));
-                        return AuthorizeResult::OkWithAudit;
-                    }
-                    return AuthorizeResult::Forbidden;
+        if let Some(rules) = access_control_rules {
+            if rules.is_allowed(logger.clone(), request_url.clone(), self.claims.clone()) {
+                return AuthorizeResult::Ok;
+            } else {
+                if rules.mode == AuthorizationMode::Audit {
+                    logger.write(
+                        LoggerLevel::Information,
+                        format!(
+                            "IMDS request {} denied in audit mode, continue forward the request",
+                            request_url
+                        ),
+                    );
+                    return AuthorizeResult::OkWithAudit;
                 }
+                return AuthorizeResult::Forbidden;
             }
         }
 

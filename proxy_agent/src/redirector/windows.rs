@@ -86,9 +86,7 @@ impl super::Redirector {
             } else {
                 AuthorizationMode::Audit
             };
-        if (wireserver_mode != AuthorizationMode::Disabled)
-            || (config::get_wire_server_support() > 0)
-        {
+        if wireserver_mode != AuthorizationMode::Disabled {
             let result = bpf_object.update_policy_elem_bpf_map(
                 self.local_port,
                 constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
@@ -127,7 +125,7 @@ impl super::Redirector {
         } else {
             AuthorizationMode::Audit
         };
-        if (imds_mode != AuthorizationMode::Disabled) || (config::get_imds_support() > 0) {
+        if imds_mode != AuthorizationMode::Disabled {
             let result = bpf_object.update_policy_elem_bpf_map(
                 self.local_port,
                 constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254

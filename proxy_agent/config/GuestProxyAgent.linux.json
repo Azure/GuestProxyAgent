@@ -2,12 +2,9 @@
     "logFolder": "/var/log/azure-proxy-agent",
     "eventFolder": "/var/log/azure-proxy-agent/events",
     "latchKeyFolder": "/var/lib/azure-proxy-agent/keys",
-    "startRedirector": true,
     "monitorIntervalInSeconds": 60,
     "pollKeyStatusIntervalInSeconds": 15,
-    "wireServerSupport": 2,
     "hostGAPluginSupport": 1,
-    "imdsSupport": 2,
     "ebpfProgramName": "ebpf_cgroup.o",
     "cgroupRoot": "/sys/fs/cgroup"
 }

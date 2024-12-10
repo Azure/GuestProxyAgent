@@ -47,7 +47,6 @@ pub async fn start_service(shared_state: SharedState) {
             config::get_keys_dir(),
             config::get_logs_dir(),
             config::get_poll_key_status_duration(),
-            config::get_start_redirector(),
             &shared_state,
         );
         async move {
