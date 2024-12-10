@@ -428,9 +428,7 @@ impl super::Redirector {
             } else {
                 AuthorizationMode::Audit
             };
-        if (wireserver_mode != AuthorizationMode::Disabled)
-            || (config::get_wire_server_support() > 0)
-        {
+        if wireserver_mode != AuthorizationMode::Disabled {
             if let Err(e) = bpf_object.update_policy_elem_bpf_map(
                 "WireServer endpoints",
                 self.local_port,
@@ -447,7 +445,7 @@ impl super::Redirector {
         } else {
             AuthorizationMode::Audit
         };
-        if (imds_mode != AuthorizationMode::Disabled) || (config::get_imds_support() > 0) {
+        if imds_mode != AuthorizationMode::Disabled {
             if let Err(e) = bpf_object.update_policy_elem_bpf_map(
                 "IMDS endpoints",
                 self.local_port,
