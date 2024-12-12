@@ -453,7 +453,7 @@ mod tests {
         let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path);
         assert!(
             should_report_status.is_err(),
-            "Error expected when update current seq no to an invaild folder"
+            "Error expected when update current seq no to an invalid_path"
         );
 
         // test valid dir_path
