@@ -146,6 +146,14 @@ impl ProxyServer {
                 {
                     logger::write_warning(format!("Failed to set module status message: {}", e));
                 }
+                if let Err(e) = self
+                    .agent_status_shared_state
+                    .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+                    .await
+                {
+                    logger::write_warning(format!("Failed to set module state: {}", e));
+                }
+
                 // send this critical error to event logger
                 event_logger::write_event(
                     event_logger::WARN_LEVEL,
