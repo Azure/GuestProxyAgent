@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::constants;
+use crate::error::Error;
 use crate::logger;
+use crate::result::Result;
 use crate::structs;
 use crate::structs::FormattedMessage;
 use crate::structs::HandlerEnvironment;
@@ -113,7 +115,12 @@ pub fn report_status(
     }
 }
 
-pub fn update_current_seq_no(config_seq_no: &str, exe_path: PathBuf) -> bool {
+/// Update the current seq no in the CURRENT_SEQ_NO_FILE
+/// If the seq no is different from the current seq no, update the seq no in the file
+/// If the seq no is same as the current seq no, do not update the seq no in the file
+/// Returns true if the seq no is updated in the file, false otherwise
+/// Returns error if there is an error in writing the seq no to the file
+pub fn update_current_seq_no(config_seq_no: &str, exe_path: &Path) -> Result<bool> {
     let mut should_report_status = true;
 
     logger::write(format!("enable command with new seq no: {config_seq_no}"));
@@ -127,6 +134,7 @@ pub fn update_current_seq_no(config_seq_no: &str, exe_path: PathBuf) -> bool {
                 ));
                 if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
                     logger::write(format!("Error in writing seq no to file: {:?}", e));
+                    return Err(Error::Io(e));
                 }
             } else {
                 logger::write("no update on seq no".to_string());
@@ -135,19 +143,21 @@ pub fn update_current_seq_no(config_seq_no: &str, exe_path: PathBuf) -> bool {
         }
         Err(_e) => {
             logger::write(format!(
-                "no seq no found, writing seq no {} to file",
-                config_seq_no
+                "no seq no found, writing seq no {} to file '{}'",
+                config_seq_no,
+                current_seq_no_stored_file.display()
             ));
             if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
                 logger::write(format!("Error in writing seq no to file: {:?}", e));
+                return Err(Error::Io(e));
             }
         }
     }
 
-    should_report_status
+    Ok(should_report_status)
 }
 
-pub fn get_current_seq_no(exe_path: PathBuf) -> String {
+pub fn get_current_seq_no(exe_path: &Path) -> String {
     let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
@@ -437,29 +447,37 @@ mod tests {
         super::logger::init_logger(log_folder, "log.txt").await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
-        let exe_path = &temp_test_path;
+        // test invalid dir_path
+        let exe_path = PathBuf::from("invalid_path");
         let config_seq_no = "0";
-        let should_report_status =
-            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path);
+        assert!(
+            should_report_status.is_err(),
+            "Error expected when update current seq no to an invaild folder"
+        );
 
+        // test valid dir_path
+        let exe_path = &temp_test_path;
+
+        // test seq no file not found, first write
+        let config_seq_no = "0";
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "0".to_string());
 
+        // test seq no file found, write different seq no
         let config_seq_no = "1";
-        let should_report_status =
-            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
-
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "1".to_string());
 
+        // test seq no file found, write same seq no
         let config_seq_no = "1";
-        let should_report_status =
-            common::update_current_seq_no(config_seq_no, exe_path.to_path_buf());
-
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(!should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "1".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);

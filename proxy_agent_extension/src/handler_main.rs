@@ -220,11 +220,20 @@ fn uninstall_handler() {
 
 async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
     let exe_path = misc_helpers::get_current_exe_dir();
-    let should_report_status =
-        common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf());
-
-    if should_report_status {
-        common::report_status_enable_command(status_folder.to_path_buf(), &config_seq_no, None);
+    match common::update_current_seq_no(&config_seq_no, &exe_path) {
+        Ok(should_report_status) => {
+            if should_report_status {
+                common::report_status_enable_command(
+                    status_folder.to_path_buf(),
+                    &config_seq_no,
+                    None,
+                );
+            }
+        }
+        Err(e) => {
+            logger::write(format!("error in updating current seq no: {:?}", e));
+            process::exit(constants::EXIT_CODE_WRITE_CURRENT_SEQ_NO_ERROR);
+        }
     }
 
     #[cfg(windows)]
