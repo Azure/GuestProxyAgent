@@ -106,15 +106,8 @@ impl KeyKeeper {
 
     /// poll secure channel status at interval from the WireServer endpoint
     pub async fn poll_secure_channel_status<'a>(&self) {
-        let message = "poll secure channel status task started.";
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_status_message(message.to_string(), AgentStatusModule::KeyKeeper)
-            .await
-        {
-            logger::write_warning(format!("Failed to set module status message: {}", e));
-        }
-        logger::write(message.to_string());
+        self.update_status_message("poll secure channel status task started.".to_string(), true)
+            .await;
 
         // launch redirector initialization when the key keeper task is running
         tokio::spawn({
@@ -176,22 +169,11 @@ impl KeyKeeper {
 
         tokio::select! {
             _ = self.loop_poll() => {
-                let message = "poll_secure_channel_status task exited.";
-                if let Err(e) = self.agent_status_shared_state
-                    .set_module_status_message(message.to_string(), AgentStatusModule::KeyKeeper)
-                    .await {
-                    logger::write_warning(format!("Failed to set module status message: {}", e));
-                }
-                logger::write(message.to_string());
+                self.update_status_message("poll_secure_channel_status task exited.".to_string(), true).await;
+
             },
             _ = self.cancellation_token.cancelled() => {
-                let message = "poll_secure_channel_status task cancelled.";
-                if let Err(e) = self.agent_status_shared_state
-                    .set_module_status_message(message.to_string(), AgentStatusModule::KeyKeeper)
-                    .await {
-                        logger::write_warning(format!("Failed to set module status message: {}", e));
-                }
-                logger::write(message.to_string());
+                self.update_status_message("poll_secure_channel_status task cancelled.".to_string(), true).await;
                 self.stop().await;
             }
         }
@@ -310,25 +292,13 @@ impl KeyKeeper {
             let status = match key::get_status(&self.base_url).await {
                 Ok(s) => s,
                 Err(e) => {
-                    let message: String = format!("Failed to get key status - {}", e);
-                    if let Err(e) = self
-                        .agent_status_shared_state
-                        .set_module_status_message(
-                            message.to_string(),
-                            AgentStatusModule::KeyKeeper,
-                        )
-                        .await
-                    {
-                        logger::write_warning(format!(
-                            "Failed to set module status message: {}",
-                            e
-                        ));
-                    }
-                    logger::write_warning(message);
+                    self.update_status_message(format!("Failed to get key status - {}", e), true)
+                        .await;
                     continue;
                 }
             };
-            logger::write_information(format!("Got key status successfully: {}.", status));
+            self.update_status_message(format!("Got key status successfully: {}.", status), true)
+                .await;
 
             let mut access_control_rules_changed = false;
             let wireserver_rule_id = status.get_wireserver_rule_id();
@@ -430,19 +400,7 @@ impl KeyKeeper {
                                     "key_keeper",
                                     logger::AGENT_LOGGER_KEY,
                                 );
-                                if let Err(e) = self
-                                    .agent_status_shared_state
-                                    .set_module_status_message(
-                                        message.to_string(),
-                                        AgentStatusModule::KeyKeeper,
-                                    )
-                                    .await
-                                {
-                                    logger::write_warning(format!(
-                                        "Failed to set module status message: {}",
-                                        e
-                                    ));
-                                }
+                                self.update_status_message(message, false).await;
                                 key_found = true;
 
                                 provision::key_latched(
@@ -486,10 +444,11 @@ impl KeyKeeper {
                     let key = match key::acquire_key(&self.base_url).await {
                         Ok(k) => k,
                         Err(e) => {
-                            logger::write_warning(format!(
-                                "Failed to acquire key details: {:?}",
-                                e
-                            ));
+                            self.update_status_message(
+                                format!("Failed to acquire key details: {:?}", e),
+                                true,
+                            )
+                            .await;
                             continue;
                         }
                     };
@@ -505,20 +464,26 @@ impl KeyKeeper {
                         "Successfully acquired the key '{}' details from server and saved locally.", guid));
                         }
                         Err(e) => {
-                            logger::write_warning(format!(
-                                "Failed to save key details to file: {:?}",
-                                e
-                            ));
+                            self.update_status_message(
+                                format!("Failed to save key details to file: {:?}", e),
+                                true,
+                            )
+                            .await;
                             continue;
                         }
                     }
 
                     // double check the key details saved correctly to local disk
                     if let Err(e) = Self::check_local_key(&self.key_dir, &key) {
-                        logger::write_warning(format!(
-                            "Saved key '{}' details lost locally - {}.",
-                            guid, e
-                        ));
+                        self.update_status_message(
+                            format!(
+                                "Failed to check the key '{}' details saved locally: {:?}.",
+                                guid, e
+                            ),
+                            true,
+                        )
+                        .await;
+                        continue;
                     } else {
                         match key::attest_key(&self.base_url, &key).await {
                             Ok(()) => {
@@ -535,19 +500,7 @@ impl KeyKeeper {
                                     "key_keeper",
                                     logger::AGENT_LOGGER_KEY,
                                 );
-                                if let Err(e) = self
-                                    .agent_status_shared_state
-                                    .set_module_status_message(
-                                        message.to_string(),
-                                        AgentStatusModule::KeyKeeper,
-                                    )
-                                    .await
-                                {
-                                    logger::write_warning(format!(
-                                        "Failed to set module status message: {}",
-                                        e
-                                    ));
-                                }
+                                self.update_status_message(message, false).await;
                                 provision::key_latched(
                                     self.cancellation_token.clone(),
                                     self.key_keeper_shared_state.clone(),
@@ -595,19 +548,8 @@ impl KeyKeeper {
                                 logger::AGENT_LOGGER_KEY,
                             );
                             // Update the status message and let the provision to continue
-                            if let Err(e) = self
-                                .agent_status_shared_state
-                                .set_module_status_message(
-                                    message.to_string(),
-                                    AgentStatusModule::KeyKeeper,
-                                )
-                                .await
-                            {
-                                logger::write_warning(format!(
-                                    "Failed to set module status message: {}",
-                                    e
-                                ));
-                            }
+                            self.update_status_message(message, false).await;
+
                             // clear key in memory for disabled state
                             if let Err(e) = self.key_keeper_shared_state.clear_key().await {
                                 logger::write_warning(format!("Failed to clear key: {}", e));
@@ -627,6 +569,19 @@ impl KeyKeeper {
                     logger::write_warning(format!("Failed to update secure channel state: {}", e));
                 }
             }
+        }
+    }
+
+    async fn update_status_message(&self, message: String, log_to_file: bool) {
+        if log_to_file {
+            logger::write_warning(message.to_string());
+        }
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message, AgentStatusModule::KeyKeeper)
+            .await
+        {
+            logger::write_warning(format!("Failed to set module status message: {}", e));
         }
     }
 
