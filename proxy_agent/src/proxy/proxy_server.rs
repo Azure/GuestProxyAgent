@@ -276,6 +276,7 @@ impl ProxyServer {
                 )
                 .await;
 
+                let cloned_tcp_connection_context = tcp_connection_context.clone();
                 // move client addr, cloned std stream and shared_state to the service_fn
                 let service = service_fn(move |req| {
                     // use tower service as middleware to limit the request body size
@@ -296,7 +297,7 @@ impl ProxyServer {
                         };
 
                     let cloned_proxy_server = cloned_proxy_server.clone();
-                    let cloned_tcp_connection_context = tcp_connection_context.clone();
+                    let cloned_tcp_connection_context = cloned_tcp_connection_context.clone();
                     let mut tower_service =
                         tower_service_layer.service_fn(move |req: Request<_>| {
                             let cloned_proxy_server = cloned_proxy_server.clone();
@@ -568,14 +569,38 @@ impl ProxyServer {
         }
 
         // start new request to the Host endpoint
-        let logger = http_connection_context.get_logger();
-        let proxy_response =
-            hyper_client::send_request(ip.to_string().as_str(), port, proxy_request, move |msg| {
-                logger.write(LoggerLevel::Warning, msg);
-            })
-            .await;
+        let request = match Self::convert_request(proxy_request).await {
+            Ok(r) => r,
+            Err(e) => {
+                http_connection_context.log(
+                    LoggerLevel::Error,
+                    format!("Failed to convert request: {}", e),
+                );
+                return Ok(Self::empty_response(StatusCode::BAD_REQUEST));
+            }
+        };
+        let proxy_response = http_connection_context.send_request(request).await;
         self.forward_response(proxy_response, http_connection_context)
             .await
+    }
+
+    async fn convert_request(
+        request: Request<Limited<hyper::body::Incoming>>,
+    ) -> Result<Request<Full<Bytes>>> {
+        let (head, body) = request.into_parts();
+        let whole_body = match body.collect().await {
+            Ok(data) => data.to_bytes(),
+            Err(e) => {
+                return Err(Error::Hyper(
+                    crate::common::error::HyperErrorType::CustomString(
+                        "convert_request".to_string(),
+                        format!("Failed to receive the request body: {}", e),
+                    ),
+                ));
+            }
+        };
+
+        Ok(Request::from_parts(head, Full::new(whole_body)))
     }
 
     async fn handle_provision_state_check_request(
@@ -853,20 +878,7 @@ impl ProxyServer {
         }
 
         // start new request to the Host endpoint
-        let logger = http_connection_context.get_logger();
-        let proxy_response = hyper_client::send_request(
-            &http_connection_context
-                .tcp_connection_context
-                .get_ip_string(),
-            http_connection_context
-                .tcp_connection_context
-                .destination_port,
-            proxy_request,
-            move |msg| {
-                logger.write(LoggerLevel::Warning, msg);
-            },
-        )
-        .await;
+        let proxy_response = http_connection_context.send_request(proxy_request).await;
         self.forward_response(proxy_response, http_connection_context)
             .await
     }

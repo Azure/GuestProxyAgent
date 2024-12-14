@@ -55,6 +55,9 @@ pub enum HyperErrorType {
     #[error("{0}: {1}")]
     Custom(String, hyper::Error),
 
+    #[error("{0}: {1}")]
+    CustomString(String, String),
+
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
 
