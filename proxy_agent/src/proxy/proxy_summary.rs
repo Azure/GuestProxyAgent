@@ -25,6 +25,7 @@ pub struct ProxySummary {
     pub runAsElevated: bool,
     pub responseStatus: String,
     pub elapsedTime: u128,
+    pub errorDetails: String,
 }
 
 impl ProxySummary {

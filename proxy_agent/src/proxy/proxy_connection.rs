@@ -32,8 +32,7 @@ impl Client {
         req: Request<RequestBody>,
     ) -> Result<hyper::Response<hyper::body::Incoming>> {
         if self.sender.is_closed() {
-            return Err(Error::Hyper(HyperErrorType::CustomString(
-                "[send_request]".to_string(),
+            return Err(Error::Hyper(HyperErrorType::HostConnection(
                 "the connection has been closed".to_string(),
             )));
         }
@@ -106,11 +105,11 @@ impl TcpConnectionContext {
                 let host_ip = audit_entry.destination_ipv4_addr().to_string();
                 let host_port = audit_entry.destination_port_in_host_byte_order();
                 let cloned_logger = logger.clone();
-                let clousure = move |message: String| {
+                let fun = move |message: String| {
                     cloned_logger.write(LoggerLevel::Warning, message);
                 };
                 let sender =
-                    match hyper_client::build_http_sender(&host_ip, host_port, clousure).await {
+                    match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
                         Ok(sender) => {
                             logger.write(
                                 LoggerLevel::Information,
@@ -240,10 +239,7 @@ impl TcpConnectionContext {
     ) -> Result<hyper::Response<hyper::body::Incoming>> {
         match &self.sender {
             Ok(sender) => sender.lock().await.send_request(request).await,
-            Err(e) => Err(Error::Hyper(HyperErrorType::CustomString(
-                "[send_request] Failed to get sender".to_string(),
-                e.clone(),
-            ))),
+            Err(e) => Err(Error::Hyper(HyperErrorType::HostConnection(e.clone()))),
         }
     }
 }

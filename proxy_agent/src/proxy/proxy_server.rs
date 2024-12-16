@@ -22,8 +22,12 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
+use crate::common::error;
 use crate::common::{
-    config, constants, error::Error, helpers, hyper_client, logger, result::Result,
+    config, constants,
+    error::{Error, HyperErrorType},
+    helpers, hyper_client, logger,
+    result::Result,
 };
 use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
@@ -418,14 +422,11 @@ impl ProxyServer {
         let ip = match tcp_connection_context.destination_ip {
             Some(ip) => ip,
             None => {
-                http_connection_context.log(
-                    LoggerLevel::Warning,
-                    "No remote destination_ip found in the request, return!".to_string(),
-                );
                 self.log_connection_summary(
                     &http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     false,
+                    "No remote destination_ip found in the request, return!".to_string(),
                 )
                 .await;
                 return Ok(Self::empty_response(StatusCode::MISDIRECTED_REQUEST));
@@ -435,14 +436,11 @@ impl ProxyServer {
         let claims = match tcp_connection_context.claims {
             Some(c) => c.clone(),
             None => {
-                http_connection_context.log(
-                    LoggerLevel::Warning,
-                    "No claims found in the request, return!".to_string(),
-                );
                 self.log_connection_summary(
                     &http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     true,
+                    "No claims found in the request, return!".to_string(),
                 )
                 .await;
                 return Ok(Self::empty_response(StatusCode::MISDIRECTED_REQUEST));
@@ -455,14 +453,11 @@ impl ProxyServer {
         let claim_details: String = match serde_json::to_string(&claims) {
             Ok(json) => json,
             Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Warning,
-                    format!("Failed to get claims json string: {}", e),
-                );
                 self.log_connection_summary(
                     &http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     false,
+                    format!("Failed to get claims json string: {}", e),
                 )
                 .await;
                 return Ok(Self::empty_response(StatusCode::MISDIRECTED_REQUEST));
@@ -479,14 +474,11 @@ impl ProxyServer {
         {
             Ok(rules) => rules,
             Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Error,
-                    format!("Failed to get access control rules: {}", e),
-                );
                 self.log_connection_summary(
                     &http_connection_context,
                     StatusCode::INTERNAL_SERVER_ERROR,
                     false,
+                    format!("Failed to get access control rules: {}", e),
                 )
                 .await;
                 return Ok(Self::empty_response(StatusCode::INTERNAL_SERVER_ERROR));
@@ -502,15 +494,21 @@ impl ProxyServer {
         );
         if result != AuthorizeResult::Ok {
             // log to authorize failed connection summary
-            self.log_connection_summary(&http_connection_context, StatusCode::FORBIDDEN, true)
-                .await;
+            self.log_connection_summary(
+                &http_connection_context,
+                StatusCode::FORBIDDEN,
+                true,
+                "Authorize failed".to_string(),
+            )
+            .await;
             if result == AuthorizeResult::Forbidden {
-                http_connection_context.log(
-                    LoggerLevel::Warning,
+                self.log_connection_summary(
+                    &http_connection_context,
+                    StatusCode::FORBIDDEN,
+                    false,
                     format!("Block unauthorized request: {}", claim_details),
-                );
-                self.log_connection_summary(&http_connection_context, StatusCode::FORBIDDEN, false)
-                    .await;
+                )
+                .await;
                 return Ok(Self::empty_response(StatusCode::FORBIDDEN));
             }
         }
@@ -591,12 +589,7 @@ impl ProxyServer {
         let whole_body = match body.collect().await {
             Ok(data) => data.to_bytes(),
             Err(e) => {
-                return Err(Error::Hyper(
-                    crate::common::error::HyperErrorType::CustomString(
-                        "convert_request".to_string(),
-                        format!("Failed to receive the request body: {}", e),
-                    ),
-                ));
+                return Err(Error::Hyper(HyperErrorType::RequestBody(e.to_string())));
             }
         };
 
@@ -662,17 +655,18 @@ impl ProxyServer {
         let proxy_response = match proxy_response {
             Ok(response) => response,
             Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Warning,
-                    format!("Failed to send request to host: {}", e),
-                );
+                let http_status_code = match e {
+                    Error::Hyper(HyperErrorType::HostConnection(_)) => StatusCode::BAD_GATEWAY,
+                    _ => StatusCode::SERVICE_UNAVAILABLE,
+                };
                 self.log_connection_summary(
                     &http_connection_context,
-                    StatusCode::SERVICE_UNAVAILABLE,
+                    http_status_code,
                     false,
+                    format!("Failed to send request to host: {}", e),
                 )
                 .await;
-                return Ok(Self::empty_response(StatusCode::SERVICE_UNAVAILABLE));
+                return Ok(Self::empty_response(http_status_code));
             }
         };
 
@@ -700,8 +694,13 @@ impl ProxyServer {
             HeaderValue::from_static("value"),
         );
 
-        self.log_connection_summary(&http_connection_context, response.status(), false)
-            .await;
+        self.log_connection_summary(
+            &http_connection_context,
+            response.status(),
+            false,
+            "".to_string(),
+        )
+        .await;
         Ok(response)
     }
 
@@ -710,6 +709,7 @@ impl ProxyServer {
         http_connection_context: &HttpConnectionContext,
         response_status: StatusCode,
         log_authorize_failed: bool,
+        mut error_details: String,
     ) {
         let elapsed_time = http_connection_context.now.elapsed();
         let claims = match &http_connection_context.tcp_connection_context.claims {
@@ -731,6 +731,11 @@ impl ProxyServer {
             }
         };
 
+        const MAX_ERROR_DETAILS_LEN: usize = 4096; // 4KB
+        if error_details.len() > MAX_ERROR_DETAILS_LEN {
+            error_details.truncate(MAX_ERROR_DETAILS_LEN);
+        }
+
         let summary = ProxySummary {
             id: http_connection_context.id,
             userId: claims.userId,
@@ -751,6 +756,7 @@ impl ProxyServer {
                 .destination_port,
             responseStatus: response_status.to_string(),
             elapsedTime: elapsed_time.as_millis(),
+            errorDetails: error_details,
         };
         if let Ok(json) = serde_json::to_string(&summary) {
             event_logger::write_event(

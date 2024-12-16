@@ -55,11 +55,14 @@ pub enum HyperErrorType {
     #[error("{0}: {1}")]
     Custom(String, hyper::Error),
 
-    #[error("{0}: {1}")]
-    CustomString(String, String),
+    #[error("Host connection error: {0}")]
+    HostConnection(String),
 
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
+
+    #[error("Failed to receive the request body with error: {0}")]
+    RequestBody(String),
 
     #[error("Failed to get response from {0}, status code: {1}")]
     ServerError(String, StatusCode),
