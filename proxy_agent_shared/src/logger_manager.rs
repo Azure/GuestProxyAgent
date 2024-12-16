@@ -1,5 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
+use crate::misc_helpers;
 use crate::rolling_logger::RollingLogger;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -21,6 +23,7 @@ enum TelemetryLoggerAction {
     },
 }
 
+#[derive(PartialEq, Debug)]
 pub enum LoggerLevel {
     Verbeose,
     Information,
@@ -155,37 +158,14 @@ pub async fn init_logger(
         .await;
 }
 
-/*
-pub async fn write(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Verbeose, message)
-        .await;
-}
-
-pub async fn write_information(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(
-            Some(logger_key.to_string()),
-            LoggerLevel::Information,
-            message,
-        )
-        .await;
-}
-
-pub async fn write_warning(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Warning, message)
-        .await;
-}
-
-pub async fn write_error(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Error, message)
-        .await;
-}
-*/
-
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
+    if log_level != LoggerLevel::Verbeose {
+        println!(
+            "{} {}",
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            message
+        );
+    }
     tokio::spawn(async move {
         TELEMETRY_LOGGER
             .write_log(Some(logger_key), log_level, message)
