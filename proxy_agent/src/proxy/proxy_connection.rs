@@ -108,17 +108,16 @@ impl TcpConnectionContext {
                 let fun = move |message: String| {
                     cloned_logger.write(LoggerLevel::Warning, message);
                 };
-                let sender =
-                    match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
-                        Ok(sender) => {
-                            logger.write(
-                                LoggerLevel::Information,
-                                "Successfully created http sender".to_string(),
-                            );
-                            Ok(Arc::new(Mutex::new(Client { sender })))
-                        }
-                        Err(e) => Err(e.to_string()),
-                    };
+                let sender = match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
+                    Ok(sender) => {
+                        logger.write(
+                            LoggerLevel::Information,
+                            "Successfully created http sender".to_string(),
+                        );
+                        Ok(Arc::new(Mutex::new(Client { sender })))
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
 
                 (
                     claims,
