@@ -22,7 +22,6 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
-use crate::common::error;
 use crate::common::{
     config, constants,
     error::{Error, HyperErrorType},
