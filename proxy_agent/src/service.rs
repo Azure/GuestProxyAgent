@@ -39,6 +39,7 @@ pub async fn start_service(shared_state: SharedState) {
         helpers::get_elapsed_time_in_millisec()
     );
     logger::write_information(start_message.clone());
+    #[cfg(not(windows))]
     logger::write_serial_console_log(start_message);
 
     tokio::spawn({

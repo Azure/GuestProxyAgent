@@ -425,11 +425,15 @@ async fn write_provision_state(
     let failed_state_message =
         get_provision_failed_state_message(provision_shared_state, agent_status_shared_state).await;
 
-    if failed_state_message.is_empty() {
-        logger::write_serial_console_log("Provision finished successfully".to_string());
-    } else {
-        logger::write_serial_console_log(failed_state_message.clone());
+    #[cfg(not(windows))]
+    {
+        if failed_state_message.is_empty() {
+            logger::write_serial_console_log("Provision finished successfully".to_string());
+        } else {
+            logger::write_serial_console_log(failed_state_message.clone());
+        }
     }
+
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_TMP_FILE_NAME);
     match std::fs::write(status_file, failed_state_message.as_bytes()) {
         Ok(_) => {
