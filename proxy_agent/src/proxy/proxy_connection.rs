@@ -3,17 +3,49 @@
 
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
-use crate::common::error::Error;
+use crate::common::error::{Error, HyperErrorType};
 use crate::common::result::Result;
 use crate::common::{constants, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
+use http_body_util::Full;
+use hyper::body::Bytes;
+use hyper::client::conn::http1;
+use hyper::Request;
 use proxy_agent_shared::logger_manager::{self, LoggerLevel};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Mutex;
+
+pub type RequestBody = Full<Bytes>;
+struct Client {
+    sender: http1::SendRequest<RequestBody>,
+}
+
+impl Client {
+    async fn send_request(
+        &mut self,
+        req: Request<RequestBody>,
+    ) -> Result<hyper::Response<hyper::body::Incoming>> {
+        if self.sender.is_closed() {
+            return Err(Error::Hyper(HyperErrorType::HostConnection(
+                "the connection has been closed".to_string(),
+            )));
+        }
+
+        let full_url = req.uri().to_string();
+        self.sender.send_request(req).await.map_err(|e| {
+            Error::Hyper(HyperErrorType::Custom(
+                format!("Failed to send request to {}", full_url),
+                e,
+            ))
+        })
+    }
+}
 
 #[derive(Clone)]
 pub struct TcpConnectionContext {
@@ -22,6 +54,7 @@ pub struct TcpConnectionContext {
     pub claims: Option<Claims>,
     pub destination_ip: Option<Ipv4Addr>, // currently, we only support IPv4
     pub destination_port: u16,
+    sender: std::result::Result<Arc<Mutex<Client>>, String>,
     logger: ConnectionLogger,
 }
 
@@ -40,7 +73,7 @@ impl TcpConnectionContext {
             http_connection_id: 0,
         };
 
-        let (claims, destination_ip, destination_port) = match Self::get_audit_entry(
+        let (claims, destination_ip, destination_port, sender) = match Self::get_audit_entry(
             &client_addr,
             &redirector_shared_state,
             &logger,
@@ -69,18 +102,36 @@ impl TcpConnectionContext {
                     }
                 };
 
+                let host_ip = audit_entry.destination_ipv4_addr().to_string();
+                let host_port = audit_entry.destination_port_in_host_byte_order();
+                let cloned_logger = logger.clone();
+                let fun = move |message: String| {
+                    cloned_logger.write(LoggerLevel::Warning, message);
+                };
+                let sender = match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
+                    Ok(sender) => {
+                        logger.write(
+                            LoggerLevel::Information,
+                            "Successfully created http sender".to_string(),
+                        );
+                        Ok(Arc::new(Mutex::new(Client { sender })))
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
+
                 (
                     claims,
                     Some(audit_entry.destination_ipv4_addr()),
-                    audit_entry.destination_port_in_host_byte_order(),
+                    host_port,
+                    sender,
                 )
             }
-            Err(_) => {
+            Err(e) => {
                 logger.write(
                     LoggerLevel::Warning,
                     "This tcp connection may send to proxy agent tcp listener directly".to_string(),
                 );
-                (None, None, 0)
+                (None, None, 0, Err(e.to_string()))
             }
         };
 
@@ -90,6 +141,7 @@ impl TcpConnectionContext {
             claims,
             destination_ip,
             destination_port,
+            sender,
             logger,
         }
     }
@@ -179,6 +231,16 @@ impl TcpConnectionContext {
     pub fn log(&self, logger_level: LoggerLevel, message: String) {
         self.logger.write(logger_level, message)
     }
+
+    async fn send_request(
+        &self,
+        request: hyper::Request<RequestBody>,
+    ) -> Result<hyper::Response<hyper::body::Incoming>> {
+        match &self.sender {
+            Ok(sender) => sender.lock().await.send_request(request).await,
+            Err(e) => Err(Error::Hyper(HyperErrorType::HostConnection(e.clone()))),
+        }
+    }
 }
 
 pub struct HttpConnectionContext {
@@ -201,6 +263,13 @@ impl HttpConnectionContext {
 
     pub fn get_logger(&self) -> ConnectionLogger {
         self.logger.clone()
+    }
+
+    pub async fn send_request(
+        &self,
+        request: hyper::Request<RequestBody>,
+    ) -> Result<hyper::Response<hyper::body::Incoming>> {
+        self.tcp_connection_context.send_request(request).await
     }
 }
 
