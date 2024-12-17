@@ -32,12 +32,15 @@ pub async fn start_service(shared_state: SharedState) {
         constants::MAX_LOG_FILE_COUNT as u16,
     )
     .await;
-    logger::write_information(format!(
+    let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}, elapsed: {}",
         proxy_agent_shared::misc_helpers::get_current_version(),
         helpers::get_long_os_version(),
         helpers::get_elapsed_time_in_millisec()
-    ));
+    );
+    logger::write_information(start_message.clone());
+    #[cfg(not(windows))]
+    logger::write_serial_console_log(start_message);
 
     tokio::spawn({
         let key_keeper = KeyKeeper::new(

@@ -123,7 +123,7 @@ impl EventReader {
         server_ip: Option<&str>,
         server_port: Option<u16>,
     ) {
-        logger::write("telemetry event reader task started.".to_string());
+        logger::write_information("telemetry event reader task started.".to_string());
 
         let wire_server_client = WireServerClient::new(
             server_ip.unwrap_or(constants::WIRE_SERVER_IP),
@@ -266,7 +266,6 @@ impl EventReader {
                 Ok(events) => {
                     num_events_logged += events.len();
                     Self::send_events(events, wire_server_client, vm_meta_data).await;
-                    Self::clean_files(file);
                 }
                 Err(e) => {
                     logger::write_warning(format!(
@@ -274,9 +273,9 @@ impl EventReader {
                         file.display(),
                         e
                     ));
-                    continue;
                 }
             }
+            Self::clean_files(file);
         }
         num_events_logged
     }

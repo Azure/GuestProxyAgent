@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+
 use crate::rolling_logger::RollingLogger;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -21,6 +22,7 @@ enum TelemetryLoggerAction {
     },
 }
 
+#[derive(PartialEq, Debug)]
 pub enum LoggerLevel {
     Verbeose,
     Information,
@@ -154,36 +156,6 @@ pub async fn init_logger(
         .init_logger(logger_key, log_folder, log_name, log_size, log_count)
         .await;
 }
-
-/*
-pub async fn write(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Verbeose, message)
-        .await;
-}
-
-pub async fn write_information(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(
-            Some(logger_key.to_string()),
-            LoggerLevel::Information,
-            message,
-        )
-        .await;
-}
-
-pub async fn write_warning(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Warning, message)
-        .await;
-}
-
-pub async fn write_error(logger_key: &str, message: String) {
-    TELEMETRY_LOGGER
-        .write_log(Some(logger_key.to_string()), LoggerLevel::Error, message)
-        .await;
-}
-*/
 
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
     tokio::spawn(async move {

@@ -130,7 +130,7 @@ impl ProxyServer {
         ConnectionLogger::init_logger(config::get_logs_dir()).await;
 
         let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, self.port);
-        logger::write(format!("Start proxy listener at '{}'.", &addr));
+        logger::write_information(format!("Start proxy listener at '{}'.", &addr));
 
         let listener = match Self::start_listener_with_retry(
             &addr,
@@ -758,6 +758,7 @@ impl ProxyServer {
             errorDetails: error_details,
         };
         if let Ok(json) = serde_json::to_string(&summary) {
+            logger::write_console_log(json.to_string());
             event_logger::write_event(
                 event_logger::INFO_LEVEL,
                 json,

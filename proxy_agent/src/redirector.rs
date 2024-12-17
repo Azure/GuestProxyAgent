@@ -157,12 +157,12 @@ impl Redirector {
     async fn start_internal(&self) -> Result<()> {
         let mut bpf_object = self.load_bpf_object()?;
 
-        logger::write("Success loaded bpf object.".to_string());
+        logger::write_information("Success loaded bpf object.".to_string());
 
         // maps
         let pid = std::process::id();
         bpf_object.update_skip_process_map(pid)?;
-        logger::write(format!(
+        logger::write_information(format!(
             "Success updated bpf skip_process map with pid={pid}."
         ));
         let wireserver_mode =
@@ -178,7 +178,9 @@ impl Redirector {
                 constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
                 constants::WIRE_SERVER_PORT,
             )?;
-            logger::write("Success updated bpf map for WireServer support.".to_string());
+            logger::write_information(
+                "Success updated bpf map for WireServer support.".to_string(),
+            );
         }
         let imds_mode = if let Ok(Some(rules)) = self.key_keeper_shared_state.get_imds_rules().await
         {
@@ -193,7 +195,7 @@ impl Redirector {
                 constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
                 constants::IMDS_PORT,
             )?;
-            logger::write("Success updated bpf map for IMDS support.".to_string());
+            logger::write_information("Success updated bpf map for IMDS support.".to_string());
         }
         if config::get_host_gaplugin_support() > 0 {
             bpf_object.update_policy_elem_bpf_map(
@@ -202,12 +204,14 @@ impl Redirector {
                 constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
                 constants::GA_PLUGIN_PORT,
             )?;
-            logger::write("Success updated bpf map for Host GAPlugin support.".to_string());
+            logger::write_information(
+                "Success updated bpf map for Host GAPlugin support.".to_string(),
+            );
         }
 
         // programs
         self.attach_bpf_prog(&mut bpf_object)?;
-        logger::write("Success attached bpf prog.".to_string());
+        logger::write_information("Success attached bpf prog.".to_string());
 
         if let Err(e) = self
             .redirector_shared_state
