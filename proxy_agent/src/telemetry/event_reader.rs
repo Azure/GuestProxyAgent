@@ -266,7 +266,6 @@ impl EventReader {
                 Ok(events) => {
                     num_events_logged += events.len();
                     Self::send_events(events, wire_server_client, vm_meta_data).await;
-                    Self::clean_files(file);
                 }
                 Err(e) => {
                     logger::write_warning(format!(
@@ -274,9 +273,9 @@ impl EventReader {
                         file.display(),
                         e
                     ));
-                    continue;
                 }
             }
+            Self::clean_files(file);
         }
         num_events_logged
     }

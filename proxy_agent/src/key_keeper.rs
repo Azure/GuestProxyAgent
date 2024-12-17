@@ -311,7 +311,7 @@ impl KeyKeeper {
                 Ok((updated, old_wire_server_rule_id)) => {
                     if updated {
                         logger::write_warning(format!(
-                            "Wireserver rule id changed from {} to {}.",
+                            "Wireserver rule id changed from '{}' to '{}'.",
                             old_wire_server_rule_id, wireserver_rule_id
                         ));
                         if let Err(e) = self
@@ -337,7 +337,7 @@ impl KeyKeeper {
                 Ok((updated, old_imds_rule_id)) => {
                     if updated {
                         logger::write_warning(format!(
-                            "IMDS rule id changed from {} to {}.",
+                            "IMDS rule id changed from '{}' to '{}'.",
                             old_imds_rule_id, imds_rule_id
                         ));
                         if let Err(e) = self
