@@ -573,15 +573,24 @@ impl KeyKeeper {
     }
 
     async fn update_status_message(&self, message: String, log_to_file: bool) {
-        if log_to_file {
-            logger::write_warning(message.to_string());
-        }
-        if let Err(e) = self
+        match self
             .agent_status_shared_state
-            .set_module_status_message(message, AgentStatusModule::KeyKeeper)
+            .set_module_status_message(message.clone(), AgentStatusModule::KeyKeeper)
             .await
         {
-            logger::write_warning(format!("Failed to set module status message: {}", e));
+            Ok(updated) => {
+                if log_to_file {
+                    if updated {
+                        logger::write_information(message);
+                    } else {
+                        // not updated, log at verbose level
+                        logger::write(message);
+                    }
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to set module status message: {}", e));
+            }
         }
     }
 

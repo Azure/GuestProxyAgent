@@ -101,16 +101,7 @@ impl BpfObject {
         match self.0.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
-                    let local_ip = constants::PROXY_AGENT_IP.to_string();
-                    event_logger::write_event(
-                        event_logger::WARN_LEVEL,
-                        format!("update_policy_map with local ip address: {}", local_ip),
-                        "update_policy_map",
-                        "redirector/linux",
-                        logger::AGENT_LOGGER_KEY,
-                    );
-                    let local_ip = super::string_to_ip(&local_ip);
-
+                    let local_ip = super::string_to_ip(constants::PROXY_AGENT_IP);
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
                     let value = destination_entry::from_ipv4(local_ip, local_port);
                     match policy_map.insert(key.to_array(), value.to_array(), 0) {
@@ -315,7 +306,7 @@ impl BpfObject {
                     } else {
                         let local_ip = constants::PROXY_AGENT_IP.to_string();
                         event_logger::write_event(
-                            event_logger::WARN_LEVEL,
+                            event_logger::INFO_LEVEL,
                             format!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
                                 local_ip, ip_to_string(dest_ipv4), dest_port, local_port

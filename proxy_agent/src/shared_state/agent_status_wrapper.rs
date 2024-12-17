@@ -71,7 +71,7 @@ enum AgentStatusAction {
     SetStatusMessage {
         message: String,
         module: AgentStatusModule,
-        response: oneshot::Sender<()>,
+        response: oneshot::Sender<bool>,
     },
     GetStatusMessage {
         module: AgentStatusModule,
@@ -157,24 +157,45 @@ impl AgentStatusSharedState {
                         module,
                         response,
                     } => {
+                        let mut updated = true;
                         match module {
                             AgentStatusModule::KeyKeeper => {
-                                key_keeper_status_message = message;
+                                if key_keeper_status_message == message {
+                                    updated = false;
+                                } else {
+                                    key_keeper_status_message = message;
+                                }
                             }
                             AgentStatusModule::TelemetryReader => {
-                                telemetry_reader_status_message = message;
+                                if telemetry_reader_status_message == message {
+                                    updated = false;
+                                } else {
+                                    telemetry_reader_status_message = message;
+                                }
                             }
                             AgentStatusModule::TelemetryLogger => {
-                                telemetry_logger_status_message = message;
+                                if telemetry_logger_status_message == message {
+                                    updated = false;
+                                } else {
+                                    telemetry_logger_status_message = message;
+                                }
                             }
                             AgentStatusModule::Redirector => {
-                                redirector_status_message = message;
+                                if redirector_status_message == message {
+                                    updated = false;
+                                } else {
+                                    redirector_status_message = message;
+                                }
                             }
                             AgentStatusModule::ProxyServer => {
-                                proxy_server_status_message = message;
+                                if proxy_server_status_message == message {
+                                    updated = false;
+                                } else {
+                                    proxy_server_status_message = message;
+                                }
                             }
                         }
-                        if response.send(()).is_err() {
+                        if response.send(updated).is_err() {
                             logger::write_warning(format!("Failed to send response to AgentStatusAction::SetStatusMessage for module {:?}", module));
                         }
                     }
@@ -499,11 +520,18 @@ impl AgentStatusSharedState {
         })
     }
 
+    /// Set the status message for the module
+    /// # Arguments
+    /// * `message` - The status message
+    /// * `module` - The module name
+    /// # Returns
+    /// * `bool` - True if the status message is updated, false if the status message is not updated
+    /// * 'error' if the message is not sent successfully
     pub async fn set_module_status_message(
         &self,
         message: String,
         module: AgentStatusModule,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
             .send(AgentStatusAction::SetStatusMessage {

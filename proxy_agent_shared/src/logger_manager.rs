@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::misc_helpers;
 use crate::rolling_logger::RollingLogger;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -159,13 +158,6 @@ pub async fn init_logger(
 }
 
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Verbeose {
-        println!(
-            "{} {}",
-            misc_helpers::get_date_time_string_with_milliseconds(),
-            message
-        );
-    }
     tokio::spawn(async move {
         TELEMETRY_LOGGER
             .write_log(Some(logger_key), log_level, message)

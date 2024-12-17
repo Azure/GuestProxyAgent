@@ -68,7 +68,7 @@ impl ProxyAgentStatusTask {
     }
 
     pub async fn start(&self) {
-        logger::write("proxy_agent_status task started.".to_string());
+        logger::write_information("proxy_agent_status task started.".to_string());
         tokio::select! {
             _ = self.loop_status() => {}
             _ = self.cancellation_token.cancelled() => {

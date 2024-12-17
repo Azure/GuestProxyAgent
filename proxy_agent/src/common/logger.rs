@@ -1,27 +1,41 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::logger_manager::{self, LoggerLevel};
+use proxy_agent_shared::{
+    logger_manager::{self, LoggerLevel},
+    misc_helpers,
+};
 
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";
 
 pub fn write(message: String) {
-    logger_manager::log(AGENT_LOGGER_KEY.to_string(), LoggerLevel::Verbeose, message);
+    log(LoggerLevel::Verbeose, message);
 }
 
 pub fn write_information(message: String) {
-    logger_manager::log(
-        AGENT_LOGGER_KEY.to_string(),
-        LoggerLevel::Information,
-        message,
-    );
+    log(LoggerLevel::Information, message);
 }
 
 pub fn write_warning(message: String) {
-    logger_manager::log(AGENT_LOGGER_KEY.to_string(), LoggerLevel::Warning, message);
+    log(LoggerLevel::Warning, message);
 }
 
 pub fn write_error(message: String) {
-    logger_manager::log(AGENT_LOGGER_KEY.to_string(), LoggerLevel::Error, message);
+    log(LoggerLevel::Error, message);
+}
+
+fn log(log_level: LoggerLevel, message: String) {
+    if log_level != LoggerLevel::Verbeose {
+        write_console_log(message.to_string());
+    };
+    logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
+}
+
+pub fn write_console_log(message: String) {
+    println!(
+        "{} {}",
+        misc_helpers::get_date_time_string_with_milliseconds(),
+        message
+    );
 }
 
 #[cfg(not(windows))]
