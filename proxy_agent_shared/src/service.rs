@@ -149,6 +149,9 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     }
 }
 
+#[cfg(windows)]
+pub use windows_service::set_default_failure_actions;
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -173,17 +176,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_check_service_installed() {
+    #[tokio::test]
+    async fn test_check_service_installed() {
         #[cfg(windows)]
         {
             let service_name = "test_check_service_installed";
+            // try delete the service if it exists
+            _ = super::stop_and_delete_service(service_name).await;
+
             let exe_path = std::env::current_exe().unwrap();
             let result = super::install_service(service_name, service_name, vec![], exe_path);
             assert!(result.is_ok());
             let (is_installed, message) = super::check_service_installed(service_name);
             assert!(is_installed);
             assert!(message.contains("successfully queried"));
+
+            // clean up
+            _ = super::stop_and_delete_service(service_name).await.unwrap();
         }
     }
 }

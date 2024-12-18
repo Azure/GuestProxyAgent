@@ -75,6 +75,17 @@ pub async fn run_service() -> Result<()> {
     };
     status_handle.set_service_status(running_state)?;
 
+    // set the service failure actions
+    if let Err(e) = proxy_agent_shared::service::set_default_failure_actions(
+        constants::PROXY_AGENT_SERVICE_NAME,
+    ) {
+        logger::write_error(format!(
+            "Failed to set service '{}' default failure actions with error: {}",
+            constants::PROXY_AGENT_SERVICE_NAME,
+            e
+        ));
+    }
+
     // set the windows service status handle
     SERVICE_STATUS_HANDLE.set(status_handle).unwrap();
 
