@@ -5,11 +5,13 @@ use crate::result::Result;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
-use windows_service::service::ServiceDependency;
+use std::time::Duration;
 use windows_service::service::{
-    Service, ServiceAccess, ServiceConfig, ServiceErrorControl, ServiceInfo, ServiceStartType,
-    ServiceState, ServiceStatus, ServiceType,
+    ServiceAccess, ServiceAction, ServiceActionType, ServiceConfig, ServiceErrorControl,
+    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus,
+    ServiceType,
 };
+use windows_service::service::{ServiceDependency, ServiceFailureActions};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
 pub async fn start_service_with_retry(
@@ -67,13 +69,10 @@ async fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
     // Start service if it already isn't running
     let service = query_service_status(service_name)?;
     if service.current_state == ServiceState::Running {
-        logger_manager::write_info(format!(
-            "Extension service '{}' is already running",
-            service_name
-        ));
+        logger_manager::write_info(format!("Service '{}' is already running", service_name));
         Ok(service)
     } else {
-        logger_manager::write_info(format!("Staring Extension service '{}'", service_name));
+        logger_manager::write_info(format!("Starting service '{}'", service_name));
         let service_manager: ServiceManager =
             ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
         let service = service_manager.open_service(
@@ -151,8 +150,7 @@ pub fn install_or_update_service(
             service_display_name,
             service_dependencies,
             service_exe_path,
-        )
-        .map(|_| ()),
+        ),
     }
 }
 
@@ -182,7 +180,6 @@ pub fn update_service(
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
 
     let service = service_manager.open_service(service_name, ServiceAccess::CHANGE_CONFIG)?;
-
     let mut vec_service_dependencies: Vec<ServiceDependency> = Vec::new();
     for src_dep in service_dependencies {
         vec_service_dependencies.push(ServiceDependency::Service(OsString::from(src_dep)));
@@ -208,9 +205,7 @@ fn create_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     exe_path: PathBuf,
-) -> Result<Service> {
-    let _manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
-
+) -> Result<()> {
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
 
@@ -230,8 +225,44 @@ fn create_service(
         account_name: None, // run as System
         account_password: None,
     };
-    service_manager
-        .create_service(&service_info, ServiceAccess::QUERY_STATUS)
+    service_manager.create_service(&service_info, ServiceAccess::QUERY_STATUS)?;
+
+    set_default_failure_actions(service_name)
+}
+
+/// Setup the default failure actions for the service
+/// The default failure actions are:
+/// - Reset period: 30 minutes
+///   - First restart service after 15 seconds
+///   - Second restart service after 60 seconds
+///   - Third restart service after 120 seconds
+pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
+    let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
+    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
+    let service = service_manager.open_service(service_name, ServiceAccess::CHANGE_CONFIG)?;
+
+    let failure_actions = ServiceFailureActions {
+        reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(1800)), // Reset period 30 minutes
+        reboot_msg: None,
+        command: None,
+        actions: Some(vec![
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(15), // Delay before restart
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(60),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(120),
+            },
+        ]),
+    };
+
+    service
+        .update_failure_actions(failure_actions)
         .map_err(Into::into)
 }
 

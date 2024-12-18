@@ -149,6 +149,9 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     }
 }
 
+#[cfg(windows)]
+pub use windows_service::set_default_failure_actions;
+
 #[cfg(test)]
 mod tests {
     #[test]
