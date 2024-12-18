@@ -182,7 +182,7 @@ mod tests {
         {
             let service_name = "test_check_service_installed";
             // try delete the service if it exists
-            _ = super::stop_and_delete_service(service_name).await.unwrap();
+            _ = super::stop_and_delete_service(service_name).await;
 
             let exe_path = std::env::current_exe().unwrap();
             let result = super::install_service(service_name, service_name, vec![], exe_path);
