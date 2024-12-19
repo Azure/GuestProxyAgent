@@ -13,10 +13,14 @@
     }, 
     "resourceLimits": {   
         "processes": [{ 
-            "name": "ProxyAgentExt"
+            "name": "ProxyAgentExt", 
+            "cpuQuotaPercentage": 0.05, 
+            "memoryQuotaMB":  7500000
         }, 
         {
-            "name": "GuestProxyAgent"
+            "name": "GuestProxyAgent", 
+            "cpuQuotaPercentage": 0.02, 
+            "memoryQuotaMB":  17000000
         }]
     }
 }]
