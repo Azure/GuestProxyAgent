@@ -214,11 +214,11 @@ impl User {
         }
         #[cfg(not(windows))]
         {
-            match users::get_user_by_uid(logon_id as u32) {
+            match uzers::get_user_by_uid(logon_id as u32) {
                 Some(u) => {
                     user_name = u.name().to_string_lossy().to_string();
-                    let g: Option<Vec<users::Group>> =
-                        users::get_user_groups(&user_name, u.primary_group_id());
+                    let g: Option<Vec<uzers::Group>> =
+                        uzers::get_user_groups(&user_name, u.primary_group_id());
 
                     if let Some(groups) = g {
                         for group in groups {
