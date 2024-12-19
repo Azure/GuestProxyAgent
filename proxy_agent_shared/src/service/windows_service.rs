@@ -1,15 +1,18 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::error::Error;
 use crate::logger_manager;
 use crate::result::Result;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
-use windows_service::service::ServiceDependency;
+use std::time::Duration;
 use windows_service::service::{
-    Service, ServiceAccess, ServiceConfig, ServiceErrorControl, ServiceInfo, ServiceStartType,
-    ServiceState, ServiceStatus, ServiceType,
+    ServiceAccess, ServiceAction, ServiceActionType, ServiceConfig, ServiceErrorControl,
+    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus,
+    ServiceType,
 };
+use windows_service::service::{ServiceDependency, ServiceFailureActions};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
 pub async fn start_service_with_retry(
@@ -67,23 +70,27 @@ async fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
     // Start service if it already isn't running
     let service = query_service_status(service_name)?;
     if service.current_state == ServiceState::Running {
-        logger_manager::write_info(format!(
-            "Extension service '{}' is already running",
-            service_name
-        ));
+        logger_manager::write_info(format!("Service '{}' is already running", service_name));
         Ok(service)
     } else {
-        logger_manager::write_info(format!("Staring Extension service '{}'", service_name));
+        logger_manager::write_info(format!("Starting service '{}'", service_name));
         let service_manager: ServiceManager =
-            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-        let service = service_manager.open_service(
-            service_name,
-            ServiceAccess::START | ServiceAccess::QUERY_STATUS,
-        )?;
-        service.start(&[""])?;
+            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+                .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+        let service = service_manager
+            .open_service(
+                service_name,
+                ServiceAccess::START | ServiceAccess::QUERY_STATUS,
+            )
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+        service
+            .start(&[""])
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
         logger_manager::write_info("Wait for 1 second before querying service status".to_string());
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        service.query_status().map_err(Into::into)
+        service
+            .query_status()
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
     }
 }
 
@@ -97,12 +104,14 @@ pub async fn stop_service(service_name: &str) -> Result<ServiceStatus> {
     let service = query_service_status(service_name)?;
     if service.current_state == ServiceState::Running {
         let service_manager: ServiceManager =
-            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-
-        let service = service_manager.open_service(
-            service_name,
-            ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
-        )?;
+            ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+                .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+        let service = service_manager
+            .open_service(
+                service_name,
+                ServiceAccess::STOP | ServiceAccess::QUERY_STATUS,
+            )
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
         match service.stop() {
             Ok(service) => {
                 logger_manager::write_info(format!(
@@ -118,7 +127,9 @@ pub async fn stop_service(service_name: &str) -> Result<ServiceStatus> {
                 ));
             }
         }
-        service.query_status().map_err(Into::into)
+        service
+            .query_status()
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
     } else {
         Ok(service)
     }
@@ -127,9 +138,14 @@ pub async fn stop_service(service_name: &str) -> Result<ServiceStatus> {
 fn delete_service(service_name: &str) -> Result<()> {
     // Delete the service
     let service_manager: ServiceManager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = service_manager.open_service(service_name, ServiceAccess::DELETE)?;
-    service.delete().map_err(Into::into)
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    let service = service_manager
+        .open_service(service_name, ServiceAccess::DELETE)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    service
+        .delete()
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
 pub fn install_or_update_service(
@@ -151,24 +167,33 @@ pub fn install_or_update_service(
             service_display_name,
             service_dependencies,
             service_exe_path,
-        )
-        .map(|_| ()),
+        ),
     }
 }
 
 fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
     let service_manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = service_manager.open_service(service_name, ServiceAccess::QUERY_STATUS)?;
-    service.query_status().map_err(Into::into)
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    let service = service_manager
+        .open_service(service_name, ServiceAccess::QUERY_STATUS)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    service
+        .query_status()
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
 #[allow(dead_code)]
 pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
     let service_manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = service_manager.open_service(service_name, ServiceAccess::QUERY_CONFIG)?;
-    service.query_config().map_err(Into::into)
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    let service = service_manager
+        .open_service(service_name, ServiceAccess::QUERY_CONFIG)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    service
+        .query_config()
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
 pub fn update_service(
@@ -179,10 +204,11 @@ pub fn update_service(
 ) -> Result<()> {
     // update the service with the new executable path
     let service_manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-
-    let service = service_manager.open_service(service_name, ServiceAccess::CHANGE_CONFIG)?;
-
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    let service = service_manager
+        .open_service(service_name, ServiceAccess::CHANGE_CONFIG)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
     let mut vec_service_dependencies: Vec<ServiceDependency> = Vec::new();
     for src_dep in service_dependencies {
         vec_service_dependencies.push(ServiceDependency::Service(OsString::from(src_dep)));
@@ -200,7 +226,9 @@ pub fn update_service(
         account_password: None,
     };
 
-    service.change_config(&service_info).map_err(Into::into)
+    service
+        .change_config(&service_info)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
 fn create_service(
@@ -208,11 +236,10 @@ fn create_service(
     service_display_name: &str,
     service_dependencies: Vec<&str>,
     exe_path: PathBuf,
-) -> Result<Service> {
-    let _manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
-
+) -> Result<()> {
     let service_manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
 
     let mut vec_service_dependencies: Vec<ServiceDependency> = Vec::new();
     for src_dep in service_dependencies {
@@ -232,7 +259,51 @@ fn create_service(
     };
     service_manager
         .create_service(&service_info, ServiceAccess::QUERY_STATUS)
-        .map_err(Into::into)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+
+    set_default_failure_actions(service_name)
+}
+
+/// Setup the default failure actions for the service
+/// The default failure actions are:
+/// - Reset period: 30 minutes
+///   - First restart service after 15 seconds
+///   - Second restart service after 60 seconds
+///   - Third restart service after 120 seconds
+pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
+    let service_manager =
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+            .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+    let service = service_manager
+        .open_service(
+            service_name,
+            ServiceAccess::START | ServiceAccess::CHANGE_CONFIG,
+        )
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
+
+    let failure_actions = ServiceFailureActions {
+        reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(1800)), // Reset period 30 minutes
+        reboot_msg: None,
+        command: None,
+        actions: Some(vec![
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(15), // Delay before restart
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(60),
+            },
+            ServiceAction {
+                action_type: ServiceActionType::Restart,
+                delay: Duration::from_secs(120),
+            },
+        ]),
+    };
+
+    service
+        .update_failure_actions(failure_actions)
+        .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
 #[cfg(test)]
@@ -346,6 +417,9 @@ mod tests {
     #[tokio::test]
     async fn test_create_service() {
         let service_name = "test_create_service";
+        // try delete service if it exists
+        _ = super::stop_and_delete_service(service_name).await;
+
         let exe_path = PathBuf::from("notepad.exe");
         super::create_service(service_name, service_name, vec![], exe_path).unwrap();
         //Check if service is running
