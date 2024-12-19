@@ -1,14 +1,15 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::constants;
+use crate::error::Error;
 use crate::logger;
+use crate::result::Result;
 use crate::structs;
 use crate::structs::FormattedMessage;
 use crate::structs::HandlerEnvironment;
 use crate::structs::TopLevelStatus;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use std::fs;
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
@@ -65,30 +66,19 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
     }
 }
 
-pub fn get_file_path(
-    status_folder: PathBuf,
-    config_seq_no: &Option<String>,
-    file_extension: &str,
-) -> PathBuf {
+pub fn get_file_path(status_folder: PathBuf, config_seq_no: &str, file_extension: &str) -> PathBuf {
     let mut file: PathBuf = status_folder;
     if let Err(e) = misc_helpers::try_create_folder(&file) {
         logger::write(format!("Error in creating folder: {:?}", e));
     }
-    match config_seq_no {
-        Some(config_seq_no) => {
-            file.push(config_seq_no);
-        }
-        None => {
-            file.push("");
-        }
-    }
+    file.push(config_seq_no);
     file.set_extension(file_extension);
     file
 }
 
 pub fn report_status(
     status_folder_path: PathBuf,
-    config_seq_no: &Option<String>,
+    config_seq_no: &str,
     status_obj: &structs::StatusObj,
 ) {
     //Status Instance
@@ -125,50 +115,49 @@ pub fn report_status(
     }
 }
 
-pub fn update_current_seq_no(
-    config_seq_no: &Option<String>,
-    exe_path: PathBuf,
-) -> std::io::Result<bool> {
+/// Update the current seq no in the CURRENT_SEQ_NO_FILE
+/// If the seq no is different from the current seq no, update the seq no in the file
+/// If the seq no is same as the current seq no, do not update the seq no in the file
+/// Returns true if the seq no is updated in the file, false otherwise
+/// Returns error if there is an error in writing the seq no to the file
+pub fn update_current_seq_no(config_seq_no: &str, exe_path: &Path) -> Result<bool> {
     let mut should_report_status = true;
-    match config_seq_no {
-        Some(new_seq_no) => {
-            logger::write(format!("enable command with new seq no: {new_seq_no}"));
-            let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
-            match fs::read_to_string(&current_seq_no_stored_file) {
-                Ok(seq_no) => {
-                    if seq_no != *new_seq_no {
-                        logger::write(format!("updating seq no from {} to {}", seq_no, new_seq_no));
-                        if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
-                            logger::write(format!("Error in writing seq no to file: {:?}", e));
-                        }
-                    } else {
-                        logger::write("no update on seq no".to_string());
-                        should_report_status = false;
-                    }
+
+    logger::write(format!("enable command with new seq no: {config_seq_no}"));
+    let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
+    match fs::read_to_string(&current_seq_no_stored_file) {
+        Ok(seq_no) => {
+            if seq_no != *config_seq_no {
+                logger::write(format!(
+                    "updating seq no from {} to {}",
+                    seq_no, config_seq_no
+                ));
+                if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
+                    logger::write(format!("Error in writing seq no to file: {:?}", e));
+                    return Err(Error::Io(e));
                 }
-                Err(_e) => {
-                    logger::write(format!(
-                        "no seq no found, writing seq no {} to file",
-                        new_seq_no
-                    ));
-                    if let Err(e) = fs::write(&current_seq_no_stored_file, new_seq_no) {
-                        logger::write(format!("Error in writing seq no to file: {:?}", e));
-                    }
-                }
+            } else {
+                logger::write("no update on seq no".to_string());
+                should_report_status = false;
             }
         }
-        None => {
-            logger::write("No config seq no found for enable command".to_string());
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "No config seq no found for enable command",
+        Err(_e) => {
+            logger::write(format!(
+                "no seq no found, writing seq no {} to file '{}'",
+                config_seq_no,
+                current_seq_no_stored_file.display()
             ));
+            if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
+                logger::write(format!("Error in writing seq no to file: {:?}", e));
+                return Err(Error::Io(e));
+            }
         }
     }
+
     Ok(should_report_status)
 }
 
-pub fn get_current_seq_no(exe_path: PathBuf) -> String {
+pub fn get_current_seq_no(exe_path: &Path) -> String {
     let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
@@ -212,7 +201,7 @@ pub fn get_proxy_agent_exe_path() -> PathBuf {
 
 pub fn report_status_enable_command(
     status_folder: PathBuf,
-    config_seq_no: &Option<String>,
+    config_seq_no: &str,
     status: Option<String>,
 ) {
     let message: &str = "Enabling the ProxyAgent Extension...";
@@ -232,19 +221,30 @@ pub fn report_status_enable_command(
     report_status(status_folder, config_seq_no, &handler_status);
 }
 
-pub fn start_event_logger(logger_key: &str) {
+pub async fn start_event_logger(logger_key: &str) {
     logger::write("starting event logger".to_string());
-    let interval: std::time::Duration = std::time::Duration::from_secs(60);
-    let max_event_file_count: usize = 50;
-    let exe_path = misc_helpers::get_current_exe_dir();
-    let event_folder = PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
-    telemetry::event_logger::start_async(
-        event_folder,
-        interval,
-        max_event_file_count,
-        logger_key,
-        |_s| {}, // empty fn
-    );
+    tokio::spawn({
+        let logger_key = logger_key.to_string();
+        async move {
+            let interval: std::time::Duration = std::time::Duration::from_secs(60);
+            let max_event_file_count: usize = 50;
+            let exe_path = misc_helpers::get_current_exe_dir();
+            let event_folder =
+                PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
+            telemetry::event_logger::start(
+                event_folder,
+                interval,
+                max_event_file_count,
+                &logger_key,
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
+            .await;
+        }
+    });
 }
 
 pub fn stop_event_logger() {
@@ -332,8 +332,6 @@ mod tests {
     use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs::{self};
-    use std::io::Error;
-    use std::io::ErrorKind;
     use std::path::PathBuf;
 
     #[test]
@@ -381,8 +379,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_status_file() {
+    #[tokio::test]
+    async fn test_status_file() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_status_file");
@@ -408,7 +406,7 @@ mod tests {
             },
             substatus: Default::default(),
         };
-        common::report_status(status_folder, &Some(seq_no.to_string()), &handler_status);
+        common::report_status(status_folder, &seq_no.to_string(), &handler_status);
         let status_obj =
             misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
                 .unwrap();
@@ -431,15 +429,14 @@ mod tests {
         let status_folder: PathBuf = temp_test_path.join("status");
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
-        let status_file =
-            common::get_file_path(status_folder, &Some(config_seq_no.to_string()), "status");
+        let status_file = common::get_file_path(status_folder, config_seq_no, "status");
         assert_eq!(status_file, *expected_status_file);
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_update_current_seq_no() {
+    #[tokio::test]
+    async fn test_update_current_seq_no() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_update_current_seq_no");
@@ -447,47 +444,47 @@ mod tests {
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
-        let config_seq_no = None;
+        // test invalid dir_path
+        let exe_path = PathBuf::from("invalid_path");
+        let config_seq_no = "0";
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path);
+        assert!(
+            should_report_status.is_err(),
+            "Error expected when update current seq no to an invalid_path"
+        );
+
+        // test valid dir_path
         let exe_path = &temp_test_path;
 
-        let should_report_status: Error =
-            common::update_current_seq_no(&config_seq_no, exe_path.to_path_buf()).unwrap_err();
-        assert_eq!(should_report_status.kind(), ErrorKind::InvalidInput);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
-        assert_eq!(seq_no, "".to_string());
-
+        // test seq no file not found, first write
         let config_seq_no = "0";
-        let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
-                .unwrap();
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "0".to_string());
 
+        // test seq no file found, write different seq no
         let config_seq_no = "1";
-        let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
-                .unwrap();
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "1".to_string());
 
+        // test seq no file found, write same seq no
         let config_seq_no = "1";
-        let should_report_status =
-            common::update_current_seq_no(&Some(config_seq_no.to_string()), exe_path.to_path_buf())
-                .unwrap();
+        let should_report_status = common::update_current_seq_no(config_seq_no, &exe_path).unwrap();
         assert!(!should_report_status);
-        let seq_no = common::get_current_seq_no(exe_path.to_path_buf());
+        let seq_no = common::get_current_seq_no(&exe_path);
         assert_eq!(seq_no, "1".to_string());
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_report_status_enable_command() {
+    #[tokio::test]
+    async fn test_report_status_enable_command() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_report_status_enable_command");
@@ -500,7 +497,7 @@ mod tests {
         let config_seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
-        super::report_status_enable_command(status_folder, &Some(config_seq_no.to_string()), None);
+        super::report_status_enable_command(status_folder, config_seq_no, None);
         let status_obj =
             misc_helpers::json_read_from_file::<Vec<TopLevelStatus>>(&expected_status_file)
                 .unwrap();
@@ -509,8 +506,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[test]
-    fn test_heartbeat_file() {
+    #[tokio::test]
+    async fn test_heartbeat_file() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_heartbeat_file");
@@ -518,7 +515,7 @@ mod tests {
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
         let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt");
+        super::logger::init_logger(log_folder, "log.txt").await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let expected_heartbeat_file: PathBuf = temp_test_path.join("heartbeat.json");

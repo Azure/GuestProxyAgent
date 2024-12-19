@@ -234,7 +234,7 @@ rm -rf debbuild
 mkdir debbuild
 pushd debbuild
     mkdir -p DEBIAN src
-    cp -rf $rootdir/debian/* ./DEBIAN/
+    cp -rf $rootdir/pkg_debian/* ./DEBIAN/
     cp -rf $rootdir/proxy_agent/Cargo.toml ./Cargo.toml
     cp -rf $rootdir/proxy_agent/src/* ./src/    # cargo deb --no-build command still requires ./src/main.rs
     cp -f $out_package_proxyagent_dir/azure-proxy-agent ./
@@ -253,7 +253,7 @@ pushd debbuild
         exit $error_code
     fi
 popd
-rm -rf debbuild
+rm -rf $rootdir/debbuild
 
 echo "======= copy to proxyagent extension folder"
 out_package_proxyagent_extension_dir=$out_package_dir/ProxyAgent_Extension

@@ -9,37 +9,37 @@
 //! ```rust
 //! use proxy_agent::common::constants;
 //! use proxy_agent::host_clients::imds_client;
-//! use proxy_agent::shared_state::SharedState;
-//! use std::sync::{Arc, Mutex};
-//!
-//! let shared_state = SharedState::new();
-//!
-//! let imds_client = imds_client::ImdsClient::new(constants::IMDS_IP.to_string(), 80, shared_state);
-//! let instance_info = imds_client.get_imds_instance_info().await;
+//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+//! let key_keeper_shared_state = KeyKeeperSharedState::new();
+//! let imds_client = imds_client::ImdsClient::new(
+//!    constants::IMDS_IP,
+//!    constants::IMDS_PORT,
+//!   key_keeper_shared_state,
+//! );
+//! let instance_info = imds_client.get_imds_instance_info().await.unwrap();
 //!
 //! ```
 
 use super::instance_info::InstanceInfo;
 use crate::common::{error::Error, hyper_client, logger, result::Result};
-use crate::shared_state::{key_keeper_wrapper, SharedState};
+use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use hyper::Uri;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 pub struct ImdsClient {
     ip: String,
     port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
+    key_keeper_shared_state: KeyKeeperSharedState,
 }
 
 const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
 
 impl ImdsClient {
-    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
+    pub fn new(ip: &str, port: u16, key_keeper_shared_state: KeyKeeperSharedState) -> Self {
         ImdsClient {
             ip: ip.to_string(),
             port,
-            shared_state,
+            key_keeper_shared_state,
         }
     }
 
@@ -55,8 +55,14 @@ impl ImdsClient {
         hyper_client::get(
             &url,
             &headers,
-            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
-            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            self.key_keeper_shared_state
+                .get_current_key_guid()
+                .await
+                .unwrap_or(None),
+            self.key_keeper_shared_state
+                .get_current_key_value()
+                .await
+                .unwrap_or(None),
             logger::write_warning,
         )
         .await

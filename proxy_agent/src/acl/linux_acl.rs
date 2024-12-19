@@ -50,12 +50,13 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
 mod tests {
     use crate::common::logger;
     use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
-    #[test]
-    fn acl_directory_test() {
+    #[tokio::test]
+    async fn acl_directory_test() {
         let mut temp_test_path = env::temp_dir();
         let logger_key = "acl_directory_test";
         temp_test_path.push(logger_key);
@@ -67,7 +68,9 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let output = super::acl_directory(temp_test_path.to_path_buf());
         assert!(

@@ -1,0 +1,12 @@
+groupName: WinServer2025
+vmImagePublisher: MicrosoftWindowsServer
+vmImageOffer: WindowsServer
+vmImageSku: 2025-datacenter-g2
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: BugFixesScenario
+    className: GuestProxyAgentTest.TestScenarios.BugFixesScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension

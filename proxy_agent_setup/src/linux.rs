@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(not(windows))]
 
-use crate::{backup, logger, running};
+use crate::{backup, logger, result::Result, running};
 use proxy_agent_shared::misc_helpers;
 use std::{fs, path::PathBuf};
 
@@ -12,16 +12,16 @@ const EBPF_FILE: &str = "ebpf_cgroup.o";
 const CONFIG_PATH: &str = "/etc/azure/proxy-agent.json";
 const EBPF_PATH: &str = "/usr/lib/azure-proxy-agent/ebpf_cgroup.o";
 
-pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> std::io::Result<u64> {
+pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> Result<u64> {
     copy_service_config_file(service_name, service_file_dir)
 }
 
-fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> std::io::Result<u64> {
+fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> Result<u64> {
     let service_config_name = format!("{}.service", service_name);
     let src_config_file_path = service_file_dir.join(&service_config_name);
     let dst_config_file_path = PathBuf::from(proxy_agent_shared::linux::SERVICE_CONFIG_FOLDER_PATH)
         .join(&service_config_name);
-    fs::copy(src_config_file_path, dst_config_file_path)
+    fs::copy(src_config_file_path, dst_config_file_path).map_err(Into::into)
 }
 
 fn backup_service_config_file(backup_folder: PathBuf) {

@@ -5,8 +5,6 @@
 //! Example
 //! ```rust
 //! use proxy_agent::telemetry::TelemetryData;
-//! use proxy_agent::shared_state::SharedState;
-//! use std::sync::{Arc, Mutex};
 //!
 //! // Create the telemetry data
 //! let mut telemetry_data = TelemetryData::new();
@@ -22,7 +20,17 @@
 //!    Message: "Message".to_string(),
 //!    OperationId: "OperationId".to_string(),
 //! };
-//! let event = TelemetryEvent::from_event_log(&event_log, shared_state.clone());
+//! let vm_meta_data = VmMetaData {
+//!    container_id: "container_id".to_string(),
+//!    tenant_name: "tenant_name".to_string(),
+//!    role_name: "role_name".to_string(),
+//!    role_instance_name: "role_instance_name".to_string(),
+//!    subscription_id: "subscription_id".to_string(),
+//!    resource_group_name: "resource_group_name".to_string(),
+//!    vm_id: "vm_id".to_string(),
+//!    image_origin: 1,
+//! };
+//! let event = TelemetryEvent::from_event_log(&event_log, vm_meta_data);
 //! telemetry_data.add_event(event);
 //!
 //! // Get the size of the telemetry data
@@ -38,12 +46,11 @@
 //! let count = telemetry_data.event_count();
 //! ```
 
-use super::event_reader;
-use crate::{common::helpers, shared_state::SharedState};
+use super::event_reader::VmMetaData;
+use crate::common::helpers;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::telemetry::Event;
 use serde_derive::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 
 /// TelemetryData struct to hold the telemetry events send to wire server.
 pub struct TelemetryData {
@@ -122,8 +129,7 @@ pub struct TelemetryEvent {
 }
 
 impl TelemetryEvent {
-    pub fn from_event_log(event_log: &Event, shared_state: Arc<Mutex<SharedState>>) -> Self {
-        let vm_meta_data = event_reader::get_vm_meta_data(shared_state.clone());
+    pub fn from_event_log(event_log: &Event, vm_meta_data: VmMetaData) -> Self {
         TelemetryEvent {
             event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
             event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),

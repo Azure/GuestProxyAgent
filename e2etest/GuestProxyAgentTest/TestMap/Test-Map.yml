@@ -1,3 +1,4 @@
 testGroupList:
   - include: WinServer2019-TestGroup.yml
   - include: WinServer2022-TestGroup.yml
+  - include: WinServer2025-TestGroup.yml

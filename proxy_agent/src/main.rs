@@ -19,6 +19,7 @@ pub mod test_mock;
 use clap::{Parser, Subcommand};
 use common::constants;
 use common::helpers;
+use provision::ProvisionQuery;
 use proxy_agent_shared::misc_helpers;
 use shared_state::SharedState;
 use std::{process, time::Duration};
@@ -92,19 +93,20 @@ async fn main() {
         // --wait parameter to wait for the provision status until the given time in seconds
         // it is an optional, if not provided then it will query the provision state once by waiting for 0 seconds.
         let wait_time = cli.wait.unwrap_or(0);
-        let (provision_finished, error_message) = provision::get_provision_status_wait(
+        let state = ProvisionQuery::new(
             constants::PROXY_AGENT_PORT,
             Some(Duration::from_secs(wait_time)),
         )
+        .get_provision_status_wait()
         .await;
-        if !provision_finished {
+        if !state.finished {
             // exit code 1 means provision not finished yet.
             process::exit(1);
         } else {
             // provision finished
-            if !error_message.is_empty() {
+            if !state.errorMessage.is_empty() {
                 // if there is any error message then print it and exit with exit code 2.
-                println!("{}", error_message);
+                println!("{}", state.errorMessage);
                 process::exit(2);
             }
             // no error message then exit with 0.
@@ -114,8 +116,8 @@ async fn main() {
 
     if let Some(Commands::Console) = cli.command {
         // console mode - start GPA as long running process
-        let shared_state = SharedState::new();
-        service::start_service(shared_state.clone());
+        let shared_state = SharedState::start_all();
+        service::start_service(shared_state.clone()).await;
         println!("Press Enter to end it.");
         let mut temp = String::new();
         let _read = std::io::stdin().read_line(&mut temp);
@@ -150,7 +152,7 @@ fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
         .get()
         .expect("You must provide the Tokio runtime handle before this function is called");
     handle.block_on(async {
-        if let Err(e) = windows::run_service() {
+        if let Err(e) = windows::run_service().await {
             logger::write_error(format!("Error in running the service: {}", e));
         }
     });

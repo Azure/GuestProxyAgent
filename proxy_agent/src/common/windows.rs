@@ -6,7 +6,6 @@ use crate::common::{
     result::Result,
 };
 use std::mem::MaybeUninit;
-use windows_sys::Win32::Networking::WinSock;
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
     GlobalMemoryStatusEx, // kernel32.dll
@@ -35,15 +34,6 @@ pub fn get_memory_in_mb() -> Result<u64> {
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
         Ok(memory_in_mb)
     }
-}
-
-pub fn check_winsock_last_error() -> Result<()> {
-    let error = unsafe { WinSock::WSAGetLastError() };
-    if error != 0 {
-        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(error)));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

@@ -42,23 +42,15 @@ pub fn get_keys_dir() -> PathBuf {
 pub fn get_events_dir() -> PathBuf {
     PathBuf::from(SYSTEM_CONFIG.get_event_folder())
 }
-pub fn get_start_redirector() -> bool {
-    SYSTEM_CONFIG.get_start_redirector()
-}
 pub fn get_monitor_duration() -> Duration {
     Duration::from_secs(SYSTEM_CONFIG.get_monitor_interval())
 }
 pub fn get_poll_key_status_duration() -> Duration {
     Duration::from_secs(SYSTEM_CONFIG.get_poll_key_status_interval())
 }
-pub fn get_wire_server_support() -> u8 {
-    SYSTEM_CONFIG.wireServerSupport
-}
+//TODO: remove this config/function once the contract is defined for HostGAPlugin
 pub fn get_host_gaplugin_support() -> u8 {
     SYSTEM_CONFIG.hostGAPluginSupport
-}
-pub fn get_imds_support() -> u8 {
-    SYSTEM_CONFIG.imdsSupport
 }
 
 pub fn get_max_event_file_count() -> usize {
@@ -79,13 +71,9 @@ pub struct Config {
     logFolder: String,
     eventFolder: String,
     latchKeyFolder: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    startRedirector: Option<bool>, // true start the redirector/eBPF even secure channel is in disabled state
     monitorIntervalInSeconds: u64,
     pollKeyStatusIntervalInSeconds: u64,
-    wireServerSupport: u8, // 0 not support; 1 proxy only; 2 proxy + authentication check
     hostGAPluginSupport: u8, // 0 not support; 1 proxy only; 2 proxy + authentication check
-    imdsSupport: u8,       // 0 not support; 1 proxy only; 2 proxy + authentication check
     #[serde(skip_serializing_if = "Option::is_none")]
     maxEventFileCount: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,11 +126,6 @@ impl Config {
         &self.latchKeyFolder
     }
 
-    pub fn get_start_redirector(&self) -> bool {
-        self.startRedirector
-            .unwrap_or(constants::DEFAULT_START_REDIRECTOR)
-    }
-
     pub fn get_monitor_interval(&self) -> u64 {
         self.monitorIntervalInSeconds
     }
@@ -151,16 +134,8 @@ impl Config {
         self.pollKeyStatusIntervalInSeconds
     }
 
-    pub fn get_wire_server_support(&self) -> u8 {
-        self.wireServerSupport
-    }
-
     pub fn get_host_gaplugin_support(&self) -> u8 {
         self.hostGAPluginSupport
-    }
-
-    pub fn get_imds_support(&self) -> u8 {
-        self.imdsSupport
     }
 
     pub fn get_max_event_file_count(&self) -> usize {
@@ -226,12 +201,6 @@ mod tests {
         );
 
         assert_eq!(
-            constants::DEFAULT_START_REDIRECTOR,
-            config.get_start_redirector(),
-            "startRedirector should use the default value true"
-        );
-
-        assert_eq!(
             60u64,
             config.get_monitor_interval(),
             "get_monitor_interval mismatch"
@@ -244,18 +213,10 @@ mod tests {
         );
 
         assert_eq!(
-            2u8,
-            config.get_wire_server_support(),
-            "get_wire_server_support mismatch"
-        );
-
-        assert_eq!(
             1u8,
             config.get_host_gaplugin_support(),
             "get_host_gaplugin_support mismatch"
         );
-
-        assert_eq!(1u8, config.get_imds_support(), "get_imds_support mismatch");
 
         assert_eq!(
             constants::DEFAULT_MAX_EVENT_FILE_COUNT,

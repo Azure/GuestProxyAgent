@@ -14,6 +14,8 @@ dependencies = [
  "serde_json",
  "static_vcruntime",
  "sysinfo 0.29.11",
+ "thiserror",
+ "tokio",
  "windows-service",
  "windows-sys 0.42.0",
  "winres",
@@ -825,6 +827,8 @@ dependencies = [
  "clap",
  "proxy_agent_shared",
  "static_vcruntime",
+ "thiserror",
+ "tokio",
  "winres",
 ]
 
@@ -842,6 +846,7 @@ dependencies = [
  "thiserror",
  "thread-id",
  "time",
+ "tokio",
  "windows-service",
  "windows-sys 0.42.0",
  "winreg",

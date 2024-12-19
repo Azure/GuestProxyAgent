@@ -13,17 +13,9 @@ use crate::redirector::AuditEntry;
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
 use std::mem::size_of_val;
-use std::path::PathBuf;
+use std::path::Path;
 
-const EBPF_OBJECT_NULL: i32 = 2022;
-const EBPF_OPEN_ERROR: i32 = 2023;
-const EBPF_LOAD_ERROR: i32 = 2024;
-const EBPF_FIND_PROGRAM_ERROR: i32 = 2025;
-const EBPF_ATTACH_PROGRAM_ERROR: i32 = 2026;
-const EBPF_FIND_MAP_ERROR: i32 = 2027;
-const EBPF_UPDATE_MAP_ERROR: i32 = 2028;
-const EBPF_DELETE_MAP_ERROR: i32 = 2029;
-
+// This module contains the logic to interact with the windows eBPF program & maps.
 impl BpfObject {
     fn is_null(&self) -> bool {
         self.0.is_null()
@@ -44,32 +36,44 @@ impl BpfObject {
 
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        On failure appropriate BpfErrorType is returned.
      */
-    pub fn load_bpf_object(&mut self, bpf_file_path: PathBuf) -> i32 {
+    pub fn load_bpf_object(&mut self, bpf_file_path: &Path) -> Result<()> {
         logger::write_information(format!(
             "Starting redirector with ebpf file {}",
-            misc_helpers::path_to_string(&bpf_file_path)
+            misc_helpers::path_to_string(bpf_file_path)
         ));
         self.close_bpf_object();
-        let obj = match bpf_object__open(&misc_helpers::path_to_string(&bpf_file_path)) {
+        let obj = match bpf_object__open(&misc_helpers::path_to_string(bpf_file_path)) {
             Ok(obj) => obj,
             Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_OPEN_ERROR;
+                //logger::write_error(format!("{}", e));
+                // return EBPF_OPEN_ERROR;
+                return Err(Error::Bpf(BpfErrorType::OpenBpfObject(
+                    bpf_file_path.display().to_string(),
+                    e.to_string(),
+                )));
             }
         };
 
         if obj.is_null() {
-            logger::write_error("bpf_object__open return null".to_string());
-            return EBPF_OBJECT_NULL;
+            // logger::write_error("bpf_object__open return null".to_string());
+            // return EBPF_OBJECT_NULL;
+            return Err(Error::Bpf(BpfErrorType::OpenBpfObject(
+                bpf_file_path.display().to_string(),
+                "bpf_object__open return null".to_string(),
+            )));
         }
 
         let result = match bpf_object__load(obj) {
             Ok(r) => r,
             Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_LOAD_ERROR;
+                // logger::write_error(format!("{}", e));
+                // return EBPF_LOAD_ERROR;
+                return Err(Error::Bpf(BpfErrorType::LoadBpfObject(
+                    bpf_file_path.display().to_string(),
+                    e.to_string(),
+                )));
             }
         };
 
@@ -77,7 +81,7 @@ impl BpfObject {
             self.0 = obj;
         }
 
-        result
+        Ok(())
     }
 
     /**
@@ -89,29 +93,30 @@ impl BpfObject {
 
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        On failure appropriate RESULT is returned.
      */
-    pub fn attach_bpf_prog(&self) -> i32 {
+    pub fn attach_bpf_prog(&self) -> Result<()> {
         if self.is_null() {
-            return EBPF_OBJECT_NULL;
+            return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
-
-        let connect4_program = match bpf_object__find_program_by_name(self.0, "authorize_connect4")
-        {
+        let program_name = "authorize_connect4";
+        let connect4_program = match bpf_object__find_program_by_name(self.0, program_name) {
             Ok(p) => {
-                logger::write_information("Found authorize_connect4 program.".to_string());
+                logger::write_information(format!("Found {} program.", program_name));
                 p
             }
             Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_PROGRAM_ERROR;
+                return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                    program_name.to_string(),
+                    e.to_string(),
+                )));
             }
         };
         if connect4_program.is_null() {
-            logger::write_error(
-                "bpf_object__find_program_by_name 'authorize_connect4' return null".to_string(),
-            );
-            return EBPF_FIND_PROGRAM_ERROR;
+            return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                program_name.to_string(),
+                "bpf_object__find_program_by_name return null".to_string(),
+            )));
         }
 
         let compartment_id = 1;
@@ -127,11 +132,10 @@ impl BpfObject {
         ) {
             Ok(r) => {
                 if r != 0 {
-                    logger::write_error(format!(
-                        "Failed to attach authorize_connect4 program with error code: {}.",
-                        r
-                    ));
-                    return EBPF_ATTACH_PROGRAM_ERROR;
+                    return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                        program_name.to_string(),
+                        format!("ebpf_prog_attach return with error code '{}'", r),
+                    )));
                 }
                 logger::write_information(
                     "Success attached authorize_connect4 program.".to_string(),
@@ -144,32 +148,38 @@ impl BpfObject {
                         match bpf_link_destroy(unsafe { *link }) {
                             Ok(r) => {
                                 if r != 0 {
-                                    logger::write_error(format!(
-                                        "Failed to destroy link with error code: {}.",
-                                        r
-                                    ));
-                                    return EBPF_ATTACH_PROGRAM_ERROR;
+                                    return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                                        program_name.to_string(),
+                                        format!("bpf_link_destroy return with error code '{}'", r),
+                                    )));
                                 }
                                 logger::write_information("Success destroyed link.".to_string());
-                                r
                             }
                             Err(e) => {
-                                logger::write_error(format!("{}", e));
-                                EBPF_ATTACH_PROGRAM_ERROR
+                                return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                                    program_name.to_string(),
+                                    format!("bpf_link_destroy return with error '{}'", e),
+                                )));
                             }
                         }
                     }
                     Err(e) => {
-                        logger::write_error(format!("{}", e));
-                        EBPF_ATTACH_PROGRAM_ERROR
+                        return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                            program_name.to_string(),
+                            format!("bpf_link_disconnect return with error '{}'", e),
+                        )));
                     }
                 }
             }
             Err(e) => {
-                logger::write_error(format!("{}", e));
-                EBPF_ATTACH_PROGRAM_ERROR
+                return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
+                    program_name.to_string(),
+                    format!("ebpf_prog_attach return with error '{}'", e),
+                )));
             }
         }
+
+        Ok(())
     }
 
     /**
@@ -186,39 +196,17 @@ impl BpfObject {
 
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        On failure appropriate RESULT is returned.
      */
     pub fn update_policy_elem_bpf_map(
         &self,
+        endpoint_name: &str,
         local_port: u16,
         dest_ipv4: u32,
         dest_port: u16,
-    ) -> i32 {
-        if self.is_null() {
-            return EBPF_OBJECT_NULL;
-        }
-
-        let proxy_map = match bpf_object__find_map_by_name(self.0, "policy_map") {
-            Ok(m) => m,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
-        if proxy_map.is_null() {
-            logger::write_error(
-                "bpf_object__find_map_by_name 'policy_map' return null".to_string(),
-            );
-            return EBPF_FIND_MAP_ERROR;
-        }
-
-        let map_fd = match bpf_map__fd(proxy_map) {
-            Ok(fd) => fd,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
+    ) -> Result<()> {
+        let map_name = "policy_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
 
         let key = destination_entry_t::from_ipv4(dest_ipv4, dest_port);
         let value = destination_entry_t::from_ipv4(
@@ -226,18 +214,28 @@ impl BpfObject {
             local_port,
         );
 
-        match bpf_map_update_elem(
+        let result = bpf_map_update_elem(
             map_fd,
             &key as *const destination_entry_t as *const c_void,
             &value as *const destination_entry_t as *const c_void,
             0,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                EBPF_UPDATE_MAP_ERROR
-            }
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                endpoint_name.to_string(),
+                format!("bpf_map_update_elem returned error {}", e),
+            ))
+        })?;
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                endpoint_name.to_string(),
+                format!("bpf_map_update_elem returned error code {}", result),
+            )));
         }
+
+        Ok(())
     }
 
     /**
@@ -276,30 +274,9 @@ impl BpfObject {
 
         0 on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_bpf_audit_map(&self, source_port: u16) -> Result<AuditEntry> {
-        if self.is_null() {
-            return Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
-                "BPF has not loaded".to_string(),
-            )));
-        }
-
-        let audit_map_name = "audit_map";
-        let audit_map = bpf_object__find_map_by_name(self.0, audit_map_name).map_err(|e| {
-            Error::Bpf(BpfErrorType::GetBpfMap(
-                audit_map_name.to_string(),
-                e.to_string(),
-            ))
-        })?;
-        if audit_map.is_null() {
-            return Err(Error::Bpf(BpfErrorType::GetBpfMap(
-                audit_map_name.to_string(),
-                "bpf_object__find_map_by_name returns null pointer".to_string(),
-            )));
-        }
-
-        let map_fd = bpf_map__fd(audit_map)
-            .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
+    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+        let map_name = "audit_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
 
         // query by source port.
         let key = sock_addr_audit_key_t::from_source_port(source_port);
@@ -338,51 +315,38 @@ impl BpfObject {
 
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        On failure appropriate RESULT is returned.
      */
-    pub fn update_bpf_skip_process_map(&self, pid: u32) -> i32 {
-        if self.is_null() {
-            return EBPF_OBJECT_NULL;
-        }
-
-        let skip_process_map = match bpf_object__find_map_by_name(self.0, "skip_process_map") {
-            Ok(m) => m,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
-        if skip_process_map.is_null() {
-            logger::write_error(
-                "bpf_object__find_map_by_name 'skip_process_map' return null".to_string(),
-            );
-            return EBPF_FIND_MAP_ERROR;
-        }
-
-        let map_fd = match bpf_map__fd(skip_process_map) {
-            Ok(fd) => fd,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
+    pub fn update_skip_process_map(&self, pid: u32) -> Result<()> {
+        let map_name = "skip_process_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
 
         // insert process id entry.
         let key = sock_addr_skip_process_entry { pid };
         let value = sock_addr_skip_process_entry { pid };
 
-        match bpf_map_update_elem(
+        let result = bpf_map_update_elem(
             map_fd,
             &key as *const sock_addr_skip_process_entry as *const c_void,
             &value as *const sock_addr_skip_process_entry as *const c_void,
             0,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                EBPF_UPDATE_MAP_ERROR
-            }
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                format!("insert pid: {}", pid),
+                format!("bpf_map_update_elem returned error {}", e),
+            ))
+        })?;
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                format!("insert pid: {}", pid),
+                format!("bpf_map_update_elem returned error code {}", result),
+            )));
         }
+
+        Ok(())
     }
 
     /**
@@ -392,42 +356,72 @@ impl BpfObject {
         dest_ipv4  - destination ipv4 address.
         dest_port  - destination port.
     Return Value:
-        0 on success. On failure appropriate RESULT is returned.
+        On failure appropriate RESULT is returned.
      */
-    pub fn remove_policy_elem_bpf_map(&self, dest_ipv4: u32, dest_port: u16) -> i32 {
-        if self.is_null() {
-            return EBPF_OBJECT_NULL;
-        }
-
-        let proxy_map = match bpf_object__find_map_by_name(self.0, "policy_map") {
-            Ok(m) => m,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
-        if proxy_map.is_null() {
-            logger::write_error(
-                "bpf_object__find_map_by_name 'policy_map' return null".to_string(),
-            );
-            return EBPF_FIND_MAP_ERROR;
-        }
-
-        let map_fd = match bpf_map__fd(proxy_map) {
-            Ok(fd) => fd,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                return EBPF_FIND_MAP_ERROR;
-            }
-        };
+    pub fn remove_policy_elem_bpf_map(&self, dest_ipv4: u32, dest_port: u16) -> Result<()> {
+        let map_name = "policy_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
 
         let key = destination_entry_t::from_ipv4(dest_ipv4, dest_port);
-        match bpf_map_delete_elem(map_fd, &key as *const destination_entry_t as *const c_void) {
-            Ok(r) => r,
-            Err(e) => {
-                logger::write_error(format!("{}", e));
-                EBPF_DELETE_MAP_ERROR
-            }
+        let result =
+            bpf_map_delete_elem(map_fd, &key as *const destination_entry_t as *const c_void)
+                .map_err(|e| {
+                    Error::Bpf(BpfErrorType::MapDeleteElem(
+                        format!("dest_ipv4: {}, dest_port: {}", dest_ipv4, dest_port),
+                        format!("Error: {}", e),
+                    ))
+                })?;
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
+                format!("dest_ipv4: {}, dest_port: {}", dest_ipv4, dest_port),
+                format!("Result: {}", result),
+            )));
         }
+
+        Ok(())
+    }
+
+    pub fn remove_audit_map_entry(&self, source_port: u16) -> Result<()> {
+        let audit_map_name = "audit_map";
+        let map_fd = self.get_bpf_map_fd(audit_map_name)?;
+
+        let key = sock_addr_audit_key_t::from_source_port(source_port);
+        let result = bpf_map_delete_elem(
+            map_fd,
+            &key as *const sock_addr_audit_key_t as *const c_void,
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::MapDeleteElem(
+                source_port.to_string(),
+                format!("Error: {}", e),
+            ))
+        })?;
+
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
+                source_port.to_string(),
+                format!("Result: {}", result),
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn get_bpf_map_fd(&self, map_name: &str) -> Result<i32> {
+        if self.is_null() {
+            return Err(Error::Bpf(BpfErrorType::NullBpfObject));
+        }
+
+        let bpf_map = bpf_object__find_map_by_name(self.0, map_name).map_err(|e| {
+            Error::Bpf(BpfErrorType::GetBpfMap(map_name.to_string(), e.to_string()))
+        })?;
+        if bpf_map.is_null() {
+            return Err(Error::Bpf(BpfErrorType::GetBpfMap(
+                map_name.to_string(),
+                "bpf_object__find_map_by_name returns null pointer".to_string(),
+            )));
+        }
+
+        bpf_map__fd(bpf_map).map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))
     }
 }

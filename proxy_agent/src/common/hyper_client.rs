@@ -264,9 +264,28 @@ where
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     F: Fn(String) + Send + 'static,
 {
-    let addr = format!("{}:{}", host, port);
     let full_url = request.uri().clone();
+    let mut sender = build_http_sender(host, port, log_fun).await?;
+    sender.send_request(request).await.map_err(|e| {
+        Error::Hyper(HyperErrorType::Custom(
+            format!("Failed to send request to {}", full_url),
+            e,
+        ))
+    })
+}
 
+pub async fn build_http_sender<B, F>(
+    host: &str,
+    port: u16,
+    log_fun: F,
+) -> Result<hyper::client::conn::http1::SendRequest<B>>
+where
+    B: hyper::body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    F: Fn(String) + Send + 'static,
+{
+    let addr = format!("{}:{}", host, port);
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
         Err(e) => {
@@ -278,8 +297,7 @@ where
     };
 
     let io = TokioIo::new(stream);
-
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+    let (sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
         .map_err(|e| {
             Error::Hyper(HyperErrorType::Custom(
@@ -287,19 +305,13 @@ where
                 e,
             ))
         })?;
-
     tokio::task::spawn(async move {
         if let Err(err) = conn.await {
             log_fun(format!("Connection failed: {:?}", err));
         }
     });
 
-    sender.send_request(request).await.map_err(|e| {
-        Error::Hyper(HyperErrorType::Custom(
-            format!("Failed to send request to {}", full_url),
-            e,
-        ))
-    })
+    Ok(sender)
 }
 
 pub fn host_port_from_uri(full_url: &Uri) -> Result<(String, u16)> {

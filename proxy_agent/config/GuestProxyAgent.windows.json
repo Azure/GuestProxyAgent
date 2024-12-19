@@ -2,11 +2,8 @@
     "logFolder": "C:\\WindowsAzure\\ProxyAgent\\Logs",
     "eventFolder": "C:\\WindowsAzure\\ProxyAgent\\Events",
     "latchKeyFolder": "C:\\WindowsAzure\\ProxyAgent\\Keys",
-    "startRedirector": true,
     "monitorIntervalInSeconds": 60,
     "pollKeyStatusIntervalInSeconds": 15,
-    "wireServerSupport": 2,
     "hostGAPluginSupport": 1,
-    "imdsSupport": 2,
     "ebpfProgramName": "redirect.bpf.sys"
 }

@@ -6,47 +6,47 @@
 //! ```rust
 //! use proxy_agent::common::constants;
 //! use proxy_agent::host_clients::wire_server_client;
-//! use proxy_agent::shared_state::SharedState;
-//! use std::sync::{Arc, Mutex};
+//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 //!
-//! let shared_state = SharedState::new();
+//! let key_keeper_shared_state = KeyKeeperSharedState::new();
 //!
-//! let wire_server_client = wire_server_client::WireServerClient::new(constants::WIRE_SERVER_IP.to_string(), 80, shared_state);
+//! let wire_server_client = wire_server_client::WireServerClient::new(constants::WIRE_SERVER_IP.to_string(), 80, key_keeper_shared_state);
 //! let goal_state = wire_server_client.get_goalstate().await;
 //! let shared_config = wire_server_client.get_shared_config(goal_state.get_shared_config_uri()).await;
 //!
-//! let telemetry_data = "xml telemetry data".to_string();
+//! let telemetry_data = "[xml telemetry data]".to_string();
 //! wire_server_client.send_telemetry_data(telemetry_data).await;
 //!
 //! ```
 
-use crate::common::{
-    error::{Error, WireServerErrorType},
-    hyper_client, logger,
-    result::Result,
-};
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
-use crate::shared_state::{key_keeper_wrapper, SharedState};
+use crate::{
+    common::{
+        error::{Error, WireServerErrorType},
+        hyper_client, logger,
+        result::Result,
+    },
+    shared_state::key_keeper_wrapper::KeyKeeperSharedState,
+};
 use http::Method;
 use hyper::Uri;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 pub struct WireServerClient {
     ip: String,
     port: u16,
-    shared_state: Arc<Mutex<SharedState>>,
+    key_keeper_shared_state: KeyKeeperSharedState,
 }
 
 const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
 const GOALSTATE_URI: &str = "machine?comp=goalstate";
 
 impl WireServerClient {
-    pub fn new(ip: &str, port: u16, shared_state: Arc<Mutex<SharedState>>) -> Self {
+    pub fn new(ip: &str, port: u16, key_keeper_shared_state: KeyKeeperSharedState) -> Self {
         WireServerClient {
             ip: ip.to_string(),
             port,
-            shared_state,
+            key_keeper_shared_state,
         }
     }
 
@@ -112,8 +112,14 @@ impl WireServerClient {
         hyper_client::get(
             &url,
             &headers,
-            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
-            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            self.key_keeper_shared_state
+                .get_current_key_guid()
+                .await
+                .unwrap_or(None),
+            self.key_keeper_shared_state
+                .get_current_key_value()
+                .await
+                .unwrap_or(None),
             logger::write_warning,
         )
         .await
@@ -130,8 +136,14 @@ impl WireServerClient {
         hyper_client::get(
             &url,
             &headers,
-            key_keeper_wrapper::get_current_key_guid(self.shared_state.clone()),
-            key_keeper_wrapper::get_current_key_value(self.shared_state.clone()),
+            self.key_keeper_shared_state
+                .get_current_key_guid()
+                .await
+                .unwrap_or(None),
+            self.key_keeper_shared_state
+                .get_current_key_value()
+                .await
+                .unwrap_or(None),
             logger::write_warning,
         )
         .await

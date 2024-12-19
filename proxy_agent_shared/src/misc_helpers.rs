@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::result::Result;
+use crate::{
+    error::{CommandErrorType, Error},
+    result::Result,
+};
 use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -208,39 +211,81 @@ pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBu
     Ok(files)
 }
 
+pub struct CommandOutput {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+impl CommandOutput {
+    pub fn new(exit_code: i32, stdout: String, stderr: String) -> Self {
+        Self {
+            exit_code,
+            stdout,
+            stderr,
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.exit_code == 0
+    }
+
+    pub fn stdout(&self) -> String {
+        self.stdout.to_string()
+    }
+
+    pub fn stderr(&self) -> String {
+        self.stderr.to_string()
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_code
+    }
+
+    pub fn message(&self) -> String {
+        format!(
+            "exit code: '{}', stdout: '{}', stderr: '{}'",
+            self.exit_code, self.stdout, self.stderr
+        )
+    }
+}
+
 pub fn execute_command(
     program: &str,
     args: Vec<&str>,
     default_error_code: i32,
-) -> (i32, String, String) {
-    match Command::new(program).args(args).output() {
-        Ok(output) => {
-            return (
-                output.status.code().unwrap_or(default_error_code),
-                String::from_utf8_lossy(&output.stdout).to_string(),
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            );
-        }
-        Err(e) => {
-            let error = format!("Failed to execute command {} with error {}", program, e);
-            (default_error_code, String::new(), error)
-        }
-    }
+) -> Result<CommandOutput> {
+    let output = Command::new(program).args(args).output()?;
+    Ok(CommandOutput::new(
+        output.status.code().unwrap_or(default_error_code),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    ))
 }
 
-pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> String {
+pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
+    let proxy_agent_exe_str = path_to_string(proxy_agent_exe);
     if !proxy_agent_exe.exists() {
-        return "Unknown".to_string();
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("File '{}' does not found", proxy_agent_exe_str),
+        )));
     }
     if !proxy_agent_exe.is_file() {
-        return "Unknown".to_string();
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("'{}' is not a file", proxy_agent_exe_str),
+        )));
     }
 
-    let output = execute_command(&path_to_string(proxy_agent_exe), vec!["--version"], -1);
-    if output.0 != 0 {
-        "Unknown".to_string()
+    let output = execute_command(&path_to_string(proxy_agent_exe), vec!["--version"], -1)?;
+    if output.is_success() {
+        Ok(output.stdout().trim().to_string())
     } else {
-        return output.1.trim().to_string();
+        Err(Error::Command(
+            CommandErrorType::CommandName(proxy_agent_exe_str),
+            output.message(),
+        ))
     }
 }
 
@@ -346,15 +391,16 @@ mod tests {
             program,
             vec![&super::path_to_string(&script_file_path)],
             default_error_code,
-        );
-        assert_eq!(1, output.0, "exit code mismatch");
+        )
+        .unwrap();
+        assert_eq!(1, output.exit_code(), "exit code mismatch");
         assert_eq!(
             "this is stdout message",
-            output.1.trim(),
+            output.stdout().trim(),
             "stdout message mismatch"
         );
         assert!(
-            output.2.contains("This is stderr message"),
+            output.stderr().contains("This is stderr message"),
             "stderr message mismatch"
         );
 
