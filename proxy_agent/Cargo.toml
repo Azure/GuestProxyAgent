@@ -20,11 +20,11 @@ regex = "1.9.5"               # match process name in cmdline
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros", "sync"] }
 tokio-util = "0.7.11"
 http = "1.1.0"
-http-body-util = "0.1.2"
-hyper = { version = "1.5.2", features = ["server", "http1", "client"] }
-hyper-util = { version = "0.1.10", features = ["tokio"] }
-tower = { version = "0.5.2", features = ["full"] }
-tower-http = { version = "0.6.2", features = ["limit"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5.2", features = ["limit"] }
 clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 
 thiserror = "1.0.64"
 
@@ -51,7 +51,7 @@ features = [
 ]
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "0.5.0"     # windows NT service
+windows-service = "0.7.0"     # windows NT service
 windows-acl = "0.3.0"         # ACL the latch key folder
 winapi = "0.3.9"              # used by windows-acl PSID
 libloading = "0.8.0"          # for dynamic load libraries
