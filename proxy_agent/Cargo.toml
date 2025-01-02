@@ -51,7 +51,7 @@ features = [
 ]
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "0.5.0"     # windows NT service
+windows-service = "0.7.0"     # windows NT service
 windows-acl = "0.3.0"         # ACL the latch key folder
 winapi = "0.3.9"              # used by windows-acl PSID
 libloading = "0.8.0"          # for dynamic load libraries

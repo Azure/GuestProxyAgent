@@ -15,7 +15,7 @@ thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros", "sync"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "0.5.0"     # windows NT 
+windows-service = "0.7.0"     # windows NT 
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"             # Rust Windows resource helper to add file version
