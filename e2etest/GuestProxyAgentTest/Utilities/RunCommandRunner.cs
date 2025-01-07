@@ -27,25 +27,54 @@ namespace GuestProxyAgentTest.Utilities
             var vmrcs = vmr.GetVirtualMachineRunCommands();
             Console.WriteLine("Creating runcommand on vm.");
 
-            if(null != runCommandParameterSetter)
+            if (null != runCommandParameterSetter)
             {
                 runCommandSettingBuilder = runCommandParameterSetter(runCommandSettingBuilder);
             }
 
             var runCommandSetting = runCommandSettingBuilder.Build();
 
-            await vmrcs.CreateOrUpdateAsync(WaitUntil.Completed, runCommandSetting.runCommandName, toVMRunCommandData(runCommandSetting));
+            int retryCnt = 0;
+
+            while(retryCnt < 3)
+            {
+                try
+                {
+                    await vmrcs.CreateOrUpdateAsync(WaitUntil.Completed, runCommandSetting.runCommandName, toVMRunCommandData(runCommandSetting));
+
+                    var iv = vmrcs.Get(runCommandSetting.runCommandName, "InstanceView").Value.Data.InstanceView;
+
+                    if (iv.ExitCode != 0 || iv.ExecutionState != ExecutionState.Succeeded)
+                    {
+                        Console.WriteLine(string.Format("RunCommand {0} failed with non zero exit code or ExecutionState non succeeded, has retried {1}.", runCommandSetting.runCommandName, retryCnt));
+                        retryCnt++;
+                        continue;
+                    }
+                    return new RunCommandOutputDetails
+                    {
+                        StdOut = runCommandSetting.outputBlobSAS,
+                        StdErr = runCommandSetting.errorBlobSAS,
+                        CustomOut = runCommandSetting.customOutputSAS,
+                        Succeed = true,
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("RunCommand {0} failed with exception: {1}, has retried {2}.", runCommandSetting.runCommandName, ex, retryCnt));
+                    retryCnt++;
+                    continue;
+                }
+            }
             
-            var iv = vmrcs.Get(runCommandSetting.runCommandName, "InstanceView").Value.Data.InstanceView;
             return new RunCommandOutputDetails
             {
                 StdOut = runCommandSetting.outputBlobSAS,
                 StdErr = runCommandSetting.errorBlobSAS,
                 CustomOut = runCommandSetting.customOutputSAS,
-                Succeed = iv.ExecutionState == ExecutionState.Succeeded && iv.ExitCode == 0,
+                Succeed = false,
             };
         }
-
+            
         private static VirtualMachineRunCommandData toVMRunCommandData(RunCommandSetting runCommandSetting)
         {
             var res = new VirtualMachineRunCommandData(TestSetting.Instance.location)
