@@ -46,7 +46,8 @@ namespace GuestProxyAgentTest.Utilities
 
                     if (iv.ExitCode != 0 || iv.ExecutionState != ExecutionState.Succeeded)
                     {
-                        Console.WriteLine(string.Format("RunCommand {0} failed with non zero exit code or ExecutionState non succeeded, has retried {1}.", runCommandSetting.runCommandName, retryCnt));
+                        Console.WriteLine(string.Format("RunCommand {0} failed with exit code {1} and ExecutionState {2}, Execution Message {3} , has retried {4}.", runCommandSetting.runCommandName, iv.ExitCode, iv.ExecutionState.ToString(), iv.ExecutionMessage, retryCnt));
+                        Thread.Sleep(15 * 1000);
                         retryCnt++;
                         continue;
                     }
@@ -61,6 +62,7 @@ namespace GuestProxyAgentTest.Utilities
                 catch (Exception ex)
                 {
                     Console.WriteLine(string.Format("RunCommand {0} failed with exception: {1}, has retried {2}.", runCommandSetting.runCommandName, ex, retryCnt));
+                    Thread.Sleep(15 * 1000);
                     retryCnt++;
                     continue;
                 }
