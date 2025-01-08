@@ -131,7 +131,7 @@ namespace GuestProxyAgentTest.Utilities
         {
             var bsClient = new BlobServiceClient(new Uri(storageAccountUrl), this.tokenCredential);
             Azure.Storage.Blobs.Models.UserDelegationKey userDelegationKey =
-                     bsClient.GetUserDelegationKey(DateTimeOffset.UtcNow.AddMinutes(-20),
+                     bsClient.GetUserDelegationKey(DateTimeOffset.UtcNow.AddHours(-6),
                                                           DateTimeOffset.UtcNow.AddDays(1));
             // Create a SAS token that's valid for one hour.
             BlobSasBuilder sasBuilder = new BlobSasBuilder()
