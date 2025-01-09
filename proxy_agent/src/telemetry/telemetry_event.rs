@@ -85,7 +85,7 @@ impl TelemetryData {
 
     /// Get the size of the telemetry data in bytes.
     pub fn get_size(&self) -> usize {
-        self.to_xml().as_bytes().len()
+        self.to_xml().len()
     }
 
     pub fn add_event(&mut self, event: TelemetryEvent) {
