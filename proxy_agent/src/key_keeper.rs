@@ -105,7 +105,7 @@ impl KeyKeeper {
     }
 
     /// poll secure channel status at interval from the WireServer endpoint
-    pub async fn poll_secure_channel_status<'a>(&self) {
+    pub async fn poll_secure_channel_status(&self) {
         self.update_status_message("poll secure channel status task started.".to_string(), true)
             .await;
 
