@@ -25,6 +25,10 @@ jobs:
       - run: cargo fmt --all -- --check -l
       - name: Clippy
         run: cargo clippy -- -D warnings
+      - name: cargo-audit
+        run: | 
+          cargo install cargo-audit
+          cargo-audit audit
 
   win_lint:
     runs-on: windows-latest
@@ -34,6 +38,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Clippy
         run: cargo clippy -- -D warnings
+      - name: cargo-audit
+        run: | 
+          cargo install cargo-audit
+          cargo-audit audit
 
   build:
     uses: ./.github/workflows/reusable-build.yml
