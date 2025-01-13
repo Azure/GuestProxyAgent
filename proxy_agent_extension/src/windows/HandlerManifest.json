@@ -15,12 +15,12 @@
         "processes": [{ 
             "name": "ProxyAgentExt", 
             "cpuQuotaPercentage": 5, 
-            "memoryQuotaMB":  7500000
+            "memoryQuotaMB":  75
         }, 
         {
             "name": "GuestProxyAgent", 
             "cpuQuotaPercentage": 2, 
-            "memoryQuotaMB":  17000000
+            "memoryQuotaMB":  17
         }]
     }
 }]
