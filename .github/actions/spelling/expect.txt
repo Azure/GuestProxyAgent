@@ -282,7 +282,6 @@ unregisters
 unspec
 uzers
 vcruntime
-Verbeose
 vflji
 vhd
 vmagentlog

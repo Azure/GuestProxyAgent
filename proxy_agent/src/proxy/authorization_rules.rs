@@ -170,7 +170,7 @@ impl ComputedAuthorizationItem {
     ) -> bool {
         if self.mode == AuthorizationMode::Disabled {
             logger.write(
-                LoggerLevel::Verbeose,
+                LoggerLevel::Verbose,
                 "Access control is in disabled state, skip....".to_string(),
             );
 
@@ -183,7 +183,7 @@ impl ComputedAuthorizationItem {
             if privilege.is_match(&logger, &request_url) {
                 any_privilege_matched = true;
                 logger.write(
-                    LoggerLevel::Verbeose,
+                    LoggerLevel::Verbose,
                     format!("Request matched privilege '{}'.", privilege_name),
                 );
 
@@ -193,7 +193,7 @@ impl ComputedAuthorizationItem {
                         if let Some(identity) = self.identities.get(&identity_name) {
                             if identity.is_match(&logger, &claims) {
                                 logger.write(
-                                    LoggerLevel::Verbeose,
+                                    LoggerLevel::Verbose,
                                     format!(
                                         "Request matched privilege '{}' and identity '{}'.",
                                         privilege_name, identity_name
@@ -204,7 +204,7 @@ impl ComputedAuthorizationItem {
                         }
                     }
                     logger.write(
-                        LoggerLevel::Verbeose,
+                        LoggerLevel::Verbose,
                         format!(
                             "Request matched privilege '{}' but no identity matched.",
                             privilege_name
@@ -212,7 +212,7 @@ impl ComputedAuthorizationItem {
                     );
                 } else {
                     logger.write(
-                        LoggerLevel::Verbeose,
+                        LoggerLevel::Verbose,
                         format!(
                             "Request matched privilege '{}' but no identity assigned.",
                             privilege_name
@@ -221,7 +221,7 @@ impl ComputedAuthorizationItem {
                 }
             } else {
                 logger.write(
-                    LoggerLevel::Verbeose,
+                    LoggerLevel::Verbose,
                     format!("Request does not match privilege '{}'.", privilege_name),
                 );
             }
@@ -237,7 +237,7 @@ impl ComputedAuthorizationItem {
         }
 
         logger.write(
-            LoggerLevel::Verbeose,
+            LoggerLevel::Verbose,
             format!(
                 "No privilege matched, fall back to use the default access: {}.",
                 self.defaultAllowed

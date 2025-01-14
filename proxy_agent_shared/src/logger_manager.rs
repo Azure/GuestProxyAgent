@@ -27,7 +27,7 @@ enum TelemetryLoggerAction {
 
 #[derive(PartialEq, PartialOrd, Debug)]
 pub enum LoggerLevel {
-    Verbeose,
+    Verbose,
     Information,
     Warning,
     Error,
@@ -36,7 +36,7 @@ pub enum LoggerLevel {
 impl LoggerLevel {
     pub fn from_string(level: &str) -> Self {
         match level {
-            "Verb" => LoggerLevel::Verbeose,
+            "Verb" => LoggerLevel::Verbose,
             "Info" => LoggerLevel::Information,
             "Warn" => LoggerLevel::Warning,
             "Err" => LoggerLevel::Error,
@@ -54,7 +54,7 @@ impl TelemetryLogger {
         tokio::spawn(async move {
             let mut loggers: HashMap<String, RollingLogger> = HashMap::new();
             let mut first_logger_key: Option<String> = None;
-            let mut file_logger_level = LoggerLevel::Verbeose;
+            let mut file_logger_level = LoggerLevel::Verbose;
             while let Some(action) = rx.recv().await {
                 match action {
                     TelemetryLoggerAction::InitLogger {
@@ -103,7 +103,7 @@ impl TelemetryLogger {
                         };
                         match loggers.get_mut(&logger_key) {
                             Some(logger) => match log_level {
-                                LoggerLevel::Verbeose => {
+                                LoggerLevel::Verbose => {
                                     logger.write(message).unwrap();
                                 }
                                 LoggerLevel::Information => {
@@ -246,11 +246,11 @@ mod tests {
 
         for _ in [0; 20] {
             super::write_log(
-                LoggerLevel::Verbeose,
+                LoggerLevel::Verbose,
                 String::from("This is a test message This is a test message"),
             );
             super::write_log(
-                LoggerLevel::Verbeose,
+                LoggerLevel::Verbose,
                 String::from("This is a test message This is a test message"),
             );
             super::write_log(
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(LoggerLevel::from_string("Info"), LoggerLevel::Information);
 
         let verb_level = LoggerLevel::from_string("Verb");
-        assert_eq!(verb_level, LoggerLevel::Verbeose);
+        assert_eq!(verb_level, LoggerLevel::Verbose);
         assert!(
             info_level > verb_level,
             "Info level should be greater than Verb level"
