@@ -211,18 +211,18 @@ impl Clone for Privilege {
 impl Privilege {
     pub fn is_match(&self, logger: &ConnectionLogger, request_url: &Uri) -> bool {
         logger.write(
-            LoggerLevel::Information,
+            LoggerLevel::Verbeose,
             format!("Start to match privilege '{}'", self.name),
         );
         if request_url.path().to_lowercase().starts_with(&self.path) {
             logger.write(
-                LoggerLevel::Information,
+                LoggerLevel::Verbeose,
                 format!("Matched privilege path '{}'", self.path),
             );
 
             if let Some(query_parameters) = &self.queryParameters {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Start to match query_parameters from privilege '{}'",
                         self.name
@@ -237,7 +237,7 @@ impl Privilege {
                         Some((_, v)) => {
                             if v.to_lowercase() == value.to_lowercase() {
                                 logger.write(
-                                    LoggerLevel::Information,
+                                    LoggerLevel::Verbeose,
                                     format!(
                                         "Matched query_parameters '{}:{}' from privilege '{}'",
                                         key, v, self.name
@@ -245,7 +245,7 @@ impl Privilege {
                                 );
                             } else {
                                 logger.write(
-                                    LoggerLevel::Information,
+                                    LoggerLevel::Verbeose,
                                         format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
                                     );
                                 return false;
@@ -253,7 +253,7 @@ impl Privilege {
                         }
                         None => {
                             logger.write(
-                                LoggerLevel::Information,
+                                LoggerLevel::Verbeose,
                                 format!(
                                     "Not matched query_parameters key '{}' from privilege '{}'",
                                     key, self.name
@@ -294,13 +294,13 @@ impl Clone for Identity {
 impl Identity {
     pub fn is_match(&self, logger: &ConnectionLogger, claims: &Claims) -> bool {
         logger.write(
-            LoggerLevel::Information,
+            LoggerLevel::Verbeose,
             format!("Start to match identity '{}'", self.name),
         );
         if let Some(ref user_name) = self.userName {
             if user_name.to_lowercase() == claims.userName.to_lowercase() {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Matched user name '{}' from identity '{}'",
                         user_name, self.name
@@ -308,7 +308,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Not matched user name '{}' from identity '{}'",
                         user_name, self.name
@@ -320,7 +320,7 @@ impl Identity {
         if let Some(ref process_name) = self.processName {
             if process_name.to_lowercase() == claims.processName.to_lowercase() {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Matched process name '{}' from identity '{}'",
                         process_name, self.name
@@ -328,7 +328,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Not matched process name '{}' from identity '{}'",
                         process_name, self.name
@@ -340,7 +340,7 @@ impl Identity {
         if let Some(ref exe_path) = self.exePath {
             if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Matched process full path '{}' from identity '{}'",
                         exe_path, self.name
@@ -348,7 +348,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Not matched process full path '{}' from identity '{}'",
                         exe_path, self.name
@@ -362,7 +362,7 @@ impl Identity {
             for claims_user_group_name in &claims.userGroups {
                 if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
                     logger.write(
-                        LoggerLevel::Information,
+                        LoggerLevel::Verbeose,
                         format!(
                             "Matched user group name '{}' from identity '{}'",
                             group_name, self.name
@@ -374,7 +374,7 @@ impl Identity {
             }
             if !matched {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbeose,
                     format!(
                         "Not matched user group name '{}' from identity '{}'",
                         group_name, self.name

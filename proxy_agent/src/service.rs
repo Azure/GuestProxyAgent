@@ -24,6 +24,7 @@ use std::time::Duration;
 /// service::start_service(shared_state).await;
 /// ```
 pub async fn start_service(shared_state: SharedState) {
+    logger_manager::set_logger_level(config::get_file_log_level()).await;
     logger_manager::init_logger(
         logger::AGENT_LOGGER_KEY.to_string(),
         config::get_logs_dir(),
@@ -32,6 +33,7 @@ pub async fn start_service(shared_state: SharedState) {
         constants::MAX_LOG_FILE_COUNT as u16,
     )
     .await;
+
     let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}, elapsed: {}",
         proxy_agent_shared::misc_helpers::get_current_version(),

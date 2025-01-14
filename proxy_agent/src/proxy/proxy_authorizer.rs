@@ -284,7 +284,7 @@ pub fn authorize(
 ) -> AuthorizeResult {
     let auth = get_authorizer(ip, port, claims);
     logger.write(
-        LoggerLevel::Information,
+        LoggerLevel::Verbeose,
         format!("Got auth: {}", auth.to_string()),
     );
     auth.authorize(logger, request_uri, access_control_rules)

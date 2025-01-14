@@ -15,6 +15,9 @@ enum TelemetryLoggerAction {
         log_size: u64,
         log_count: u16,
     },
+    SetLoggerLevel {
+        log_level: LoggerLevel,
+    },
     WriteLog {
         logger_key: Option<String>,
         log_level: LoggerLevel,
@@ -22,12 +25,24 @@ enum TelemetryLoggerAction {
     },
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, PartialOrd, Debug)]
 pub enum LoggerLevel {
     Verbeose,
     Information,
     Warning,
     Error,
+}
+
+impl LoggerLevel {
+    pub fn from_string(level: &str) -> Self {
+        match level {
+            "Verb" => LoggerLevel::Verbeose,
+            "Info" => LoggerLevel::Information,
+            "Warn" => LoggerLevel::Warning,
+            "Err" => LoggerLevel::Error,
+            _ => LoggerLevel::Information,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +54,7 @@ impl TelemetryLogger {
         tokio::spawn(async move {
             let mut loggers: HashMap<String, RollingLogger> = HashMap::new();
             let mut first_logger_key: Option<String> = None;
+            let mut file_logger_level = LoggerLevel::Verbeose;
             while let Some(action) = rx.recv().await {
                 match action {
                     TelemetryLoggerAction::InitLogger {
@@ -62,11 +78,18 @@ impl TelemetryLogger {
                             first_logger_key = Some(logger_key);
                         }
                     }
+                    TelemetryLoggerAction::SetLoggerLevel { log_level } => {
+                        file_logger_level = log_level;
+                    }
                     TelemetryLoggerAction::WriteLog {
                         logger_key,
                         log_level,
                         message,
                     } => {
+                        if log_level < file_logger_level {
+                            // skip write to file
+                            continue;
+                        }
                         // get the logger key
                         let logger_key = match logger_key {
                             Some(logger_key) => logger_key,
@@ -128,6 +151,15 @@ impl TelemetryLogger {
         }
     }
 
+    async fn set_logger_level(&self, log_level: LoggerLevel) {
+        if let Err(e) = self
+            .0
+            .send(TelemetryLoggerAction::SetLoggerLevel { log_level })
+            .await
+        {
+            eprintln!("Error in set_logger_level: {}", e);
+        }
+    }
     async fn write_log(&self, logger_key: Option<String>, log_level: LoggerLevel, message: String) {
         if let Err(e) = self
             .0
@@ -155,6 +187,10 @@ pub async fn init_logger(
     TELEMETRY_LOGGER
         .init_logger(logger_key, log_folder, log_name, log_size, log_count)
         .await;
+}
+
+pub async fn set_logger_level(log_level: LoggerLevel) {
+    TELEMETRY_LOGGER.set_logger_level(log_level).await;
 }
 
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
@@ -231,5 +267,23 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn logger_level_test() {
+        let info_level = LoggerLevel::Information;
+        assert_eq!(LoggerLevel::from_string("Info"), LoggerLevel::Information);
+
+        let verb_level = LoggerLevel::from_string("Verb");
+        assert_eq!(verb_level, LoggerLevel::Verbeose);
+        assert!(
+            info_level > verb_level,
+            "Info level should be greater than Verb level"
+        );
+
+        assert!(
+            LoggerLevel::from_string("Verb") >= verb_level,
+            "Verb level should be greater than or equal to Verb level"
+        );
     }
 }
