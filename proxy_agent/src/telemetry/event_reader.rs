@@ -198,7 +198,10 @@ impl EventReader {
                 event_count = self
                     .process_events_and_clean(files, wire_server_client, vm_meta_data)
                     .await;
-                let message = format!("Telemetry event reader sent {} events from {} files", event_count, file_count);
+                let message = format!(
+                    "Telemetry event reader sent {} events from {} files",
+                    event_count, file_count
+                );
                 logger::write(message);
             }
             Err(e) => {
