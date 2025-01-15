@@ -112,7 +112,7 @@ impl KeyKeeper {
 
         #[cfg(windows)]
         {
-            // ACL the parent folder of the keys folder, 
+            // ACL the parent folder of the keys folder,
             // so that all ProxyAgent sub folders could be ACLed too,
             // including GPA service directory.
             match self.key_dir.parent() {
