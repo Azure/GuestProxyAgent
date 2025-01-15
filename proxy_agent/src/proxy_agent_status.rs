@@ -37,6 +37,7 @@ use proxy_agent_shared::proxy_agent_aggregate_status::{
     GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
     ProxyAgentStatus,
 };
+use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -80,15 +81,31 @@ impl ProxyAgentStatusTask {
     async fn loop_status(&self) {
         let map_clear_duration = Duration::from_secs(60 * 60 * 24);
         let mut start_time = Instant::now();
+        let status_report_duration = Duration::from_secs(60 * 15);
+        let mut status_report_time = Instant::now();
 
         loop {
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
+            // write proxyAgentStatus event
+            if status_report_time.elapsed() >= status_report_duration {
+                let status = match serde_json::to_string(&aggregate_status.proxyAgentStatus) {
+                    Ok(status) => status,
+                    Err(e) => format!("Error serializing proxy agent status: {}", e),
+                };
+                event_logger::write_event(
+                    event_logger::INFO_LEVEL,
+                    status,
+                    "loop_status",
+                    "proxy_agent_status",
+                    logger::AGENT_LOGGER_KEY,
+                );
+                status_report_time = Instant::now();
+            }
+            // write the aggregate status to status.json file
             self.write_aggregate_status_to_file(aggregate_status);
 
-            let elapsed_time = start_time.elapsed();
-
             //Clear the connection map and reset start_time after 24 hours
-            if elapsed_time >= map_clear_duration {
+            if start_time.elapsed() >= map_clear_duration {
                 logger::write_information(
                     "Clearing the connection summary map and failed authenticate summary map."
                         .to_string(),
