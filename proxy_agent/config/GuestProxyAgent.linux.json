@@ -6,5 +6,6 @@
     "pollKeyStatusIntervalInSeconds": 15,
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "ebpf_cgroup.o",
-    "cgroupRoot": "/sys/fs/cgroup"
+    "cgroupRoot": "/sys/fs/cgroup",
+    "fileLogLevel": "Info"
 }

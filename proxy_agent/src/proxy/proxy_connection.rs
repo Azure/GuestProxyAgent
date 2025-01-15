@@ -111,7 +111,7 @@ impl TcpConnectionContext {
                 let sender = match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
                     Ok(sender) => {
                         logger.write(
-                            LoggerLevel::Information,
+                            LoggerLevel::Verbose,
                             "Successfully created http sender".to_string(),
                         );
                         Ok(Arc::new(Mutex::new(Client { sender })))
@@ -156,7 +156,7 @@ impl TcpConnectionContext {
         match redirector::lookup_audit(client_source_port, redirector_shared_state).await {
             Ok(data) => {
                 logger.write(
-                    LoggerLevel::Information,
+                    LoggerLevel::Verbose,
                     format!(
                         "Found audit entry with client_source_port '{}' successfully",
                         client_source_port
@@ -164,7 +164,7 @@ impl TcpConnectionContext {
                 );
                 match redirector::remove_audit(client_source_port, redirector_shared_state).await {
                     Ok(_) => logger.write(
-                        LoggerLevel::Information,
+                        LoggerLevel::Verbose,
                         format!(
                             "Removed audit entry with client_source_port '{}' successfully",
                             client_source_port

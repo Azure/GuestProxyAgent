@@ -18,7 +18,7 @@
 
 use crate::common::constants;
 use once_cell::sync::Lazy;
-use proxy_agent_shared::misc_helpers;
+use proxy_agent_shared::{logger_manager::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 
@@ -65,6 +65,10 @@ pub fn get_ebpf_program_name() -> String {
     SYSTEM_CONFIG.get_ebpf_program_name().to_string()
 }
 
+pub fn get_file_log_level() -> LoggerLevel {
+    SYSTEM_CONFIG.get_file_log_level()
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -79,6 +83,8 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     ebpfFileFullPath: Option<String>,
     ebpfProgramName: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fileLogLevel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(not(windows))]
     cgroupRoot: Option<String>,
@@ -149,6 +155,11 @@ impl Config {
 
     pub fn get_ebpf_file_full_path(&self) -> Option<PathBuf> {
         self.ebpfFileFullPath.as_ref().map(PathBuf::from)
+    }
+
+    pub fn get_file_log_level(&self) -> LoggerLevel {
+        let file_log_level = self.fileLogLevel.clone().unwrap_or("Info".to_string());
+        LoggerLevel::from_string(&file_log_level)
     }
 
     #[cfg(not(windows))]

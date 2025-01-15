@@ -114,7 +114,7 @@ pub async fn start<F, Fut>(
             Ok(()) => {
                 logger_manager::log(
                     logger_key.to_string(),
-                    LoggerLevel::Verbeose,
+                    LoggerLevel::Verbose,
                     format!(
                         "Write events to the file {} successfully",
                         file_path.display()

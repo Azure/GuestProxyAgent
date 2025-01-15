@@ -8,7 +8,7 @@ use proxy_agent_shared::{
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";
 
 pub fn write(message: String) {
-    log(LoggerLevel::Verbeose, message);
+    log(LoggerLevel::Verbose, message);
 }
 
 pub fn write_information(message: String) {
@@ -24,7 +24,7 @@ pub fn write_error(message: String) {
 }
 
 fn log(log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Verbeose {
+    if log_level != LoggerLevel::Verbose {
         write_console_log(message.to_string());
     };
     logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);

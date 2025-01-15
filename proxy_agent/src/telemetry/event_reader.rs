@@ -50,7 +50,6 @@ use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
-use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
@@ -198,14 +197,11 @@ impl EventReader {
                 event_count = self
                     .process_events_and_clean(files, wire_server_client, vm_meta_data)
                     .await;
-                let message = format!("Send {} events from {} files", event_count, file_count);
-                event_logger::write_event(
-                    event_logger::INFO_LEVEL,
-                    message,
-                    "start",
-                    "event_reader",
-                    logger::AGENT_LOGGER_KEY,
+                let message = format!(
+                    "Telemetry event reader sent {} events from {} files",
+                    event_count, file_count
                 );
+                logger::write(message);
             }
             Err(e) => {
                 logger::write_warning(format!(
@@ -247,10 +243,12 @@ impl EventReader {
             vm_id: instance_info.get_vm_id(),
             image_origin: instance_info.get_image_origin(),
         };
+
         self.telemetry_shared_state
-            .set_vm_meta_data(Some(vm_meta_data))
+            .set_vm_meta_data(Some(vm_meta_data.clone()))
             .await?;
 
+        logger::write(format!("Updated VM Metadata: {:?}", vm_meta_data));
         Ok(())
     }
 

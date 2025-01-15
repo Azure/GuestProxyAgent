@@ -581,7 +581,13 @@ impl KeyKeeper {
             Ok(updated) => {
                 if log_to_file {
                     if updated {
-                        logger::write_information(message);
+                        event_logger::write_event(
+                            event_logger::INFO_LEVEL,
+                            message,
+                            "update_status_message",
+                            "key_keeper",
+                            logger::AGENT_LOGGER_KEY,
+                        );
                     } else {
                         // not updated, log at verbose level
                         logger::write(message);

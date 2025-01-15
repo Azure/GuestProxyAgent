@@ -251,7 +251,7 @@ impl ProxyServer {
             http_connection_id: 0,
         };
         tcp_connection_logger.write(
-            LoggerLevel::Information,
+            LoggerLevel::Verbose,
             format!("Accepted new tcp connection [{}].", tcp_connection_id),
         );
 
@@ -446,7 +446,7 @@ impl ProxyServer {
             }
         };
         http_connection_context.log(
-            LoggerLevel::Information,
+            LoggerLevel::Verbose,
             format!("Use lookup value:{ip}:{port}."),
         );
         let claim_details: String = match serde_json::to_string(&claims) {
@@ -462,7 +462,7 @@ impl ProxyServer {
                 return Ok(Self::empty_response(StatusCode::MISDIRECTED_REQUEST));
             }
         };
-        http_connection_context.log(LoggerLevel::Information, claim_details.to_string());
+        http_connection_context.log(LoggerLevel::Verbose, claim_details.to_string());
 
         // authenticate the connection
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
@@ -817,7 +817,7 @@ impl ProxyServer {
         };
 
         http_connection_context.log(
-            LoggerLevel::Information,
+            LoggerLevel::Verbose,
             format!(
                 "Received the client request body (len={}) for {} {}",
                 whole_body.len(),
@@ -865,7 +865,7 @@ impl ProxyServer {
                     );
 
                     http_connection_context.log(
-                        LoggerLevel::Information,
+                        LoggerLevel::Verbose,
                         format!("Added authorization header {}", authorization_value),
                     )
                 }
