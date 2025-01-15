@@ -45,10 +45,14 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
             for entry in entries {
                 match entry.sid {
                     Some(ref sid) => {
+                        logger::write(format!(
+                            "acl_directory: removing ACL entry '{}-{}-{}-{}' .",
+                            entry.string_sid, entry.entry_type, entry.flags, entry.mask
+                        ));
                         match acl.remove_entry(
                             sid.as_ptr() as PSID,
                             Some(entry.entry_type),
-                            Some(entry.flags),
+                            None, // remove all, including inherited permissions
                         ) {
                             Ok(r) => {
                                 logger::write(format!("acl_directory: removed '{}' entry.", r));
