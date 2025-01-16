@@ -32,3 +32,4 @@ rsaenh.dll
 SAMCLI.DLL
 SAMLIB.dll
 WLDAP32.dll
+crypt32.dll

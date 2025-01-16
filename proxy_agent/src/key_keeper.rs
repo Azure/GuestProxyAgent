@@ -26,9 +26,9 @@
 pub mod key;
 
 use self::key::Key;
-use crate::common::error::Error;
+use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
-use crate::common::{constants, helpers, logger};
+use crate::common::{self, constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::redirector::Redirector;
@@ -43,6 +43,7 @@ use hyper::Uri;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
+use std::fs;
 use std::path::Path;
 use std::time::Instant;
 use std::{path::PathBuf, time::Duration};
@@ -399,59 +400,42 @@ impl KeyKeeper {
                 let mut key_found = false;
                 if let Some(guid) = &status.keyGuid {
                     // key latched before and search the key locally first
-                    let mut key_file = self.key_dir.to_path_buf().join(guid);
-                    key_file.set_extension("key");
-                    // the key already latched before
-                    if key_file.exists() {
-                        // read the key details locally and update
-                        match misc_helpers::json_read_from_file::<Key>(&key_file) {
-                            Ok(key) => {
-                                if let Err(e) =
-                                    self.key_keeper_shared_state.update_key(key.clone()).await
-                                {
-                                    logger::write_warning(format!("Failed to update key: {}", e));
-                                }
-
-                                let message = helpers::write_startup_event(
-                                    "Found key details from local and ready to use.",
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
-                                self.update_status_message(message, false).await;
-                                key_found = true;
-
-                                provision::key_latched(
-                                    self.cancellation_token.clone(),
-                                    self.key_keeper_shared_state.clone(),
-                                    self.telemetry_shared_state.clone(),
-                                    self.provision_shared_state.clone(),
-                                    self.agent_status_shared_state.clone(),
-                                )
-                                .await;
+                    match Self::get_local_key(&self.key_dir, guid) {
+                        Ok(key) => {
+                            if let Err(e) =
+                                self.key_keeper_shared_state.update_key(key.clone()).await
+                            {
+                                logger::write_warning(format!("Failed to update key: {}", e));
                             }
-                            Err(e) => {
-                                let message = format!("Failed to read latched key details from file: {:?}. Will try acquire the key details from Server.",
-                                e);
-                                event_logger::write_event(
-                                    event_logger::WARN_LEVEL,
-                                    message.to_string(),
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
-                            }
-                        };
-                    } else {
-                        let message = "The latched key file does not exist locally. Will try acquire the key details from Server.".to_string();
-                        event_logger::write_event(
-                            event_logger::WARN_LEVEL,
-                            message.to_string(),
-                            "poll_secure_channel_status",
-                            "key_keeper",
-                            logger::AGENT_LOGGER_KEY,
-                        );
-                    }
+
+                            let message = helpers::write_startup_event(
+                                "Found key details from local and ready to use.",
+                                "poll_secure_channel_status",
+                                "key_keeper",
+                                logger::AGENT_LOGGER_KEY,
+                            );
+                            self.update_status_message(message, false).await;
+                            key_found = true;
+
+                            provision::key_latched(
+                                self.cancellation_token.clone(),
+                                self.key_keeper_shared_state.clone(),
+                                self.telemetry_shared_state.clone(),
+                                self.provision_shared_state.clone(),
+                                self.agent_status_shared_state.clone(),
+                            )
+                            .await;
+                        }
+                        Err(e) => {
+                            event_logger::write_event(
+                                event_logger::WARN_LEVEL,
+                                format!("Failed to fetch local key details with error: {:?}. Will try acquire the key details from Server.", e),
+                                "poll_secure_channel_status",
+                                "key_keeper",
+                                logger::AGENT_LOGGER_KEY,
+                            );
+                        }
+                    };
                 }
 
                 // if key has not latched before,
@@ -474,9 +458,7 @@ impl KeyKeeper {
                     // key has not latched before,
                     // set the key_file full path from key details
                     let guid = key.guid.to_string();
-                    let mut key_file = self.key_dir.to_path_buf().join(&guid);
-                    key_file.set_extension("key");
-                    match misc_helpers::json_write_to_file(&key, &key_file) {
+                    match Self::store_local_key(&self.key_dir, &key, true) {
                         Ok(()) => {
                             logger::write_information(format!(
                         "Successfully acquired the key '{}' details from server and saved locally.", guid));
@@ -492,7 +474,7 @@ impl KeyKeeper {
                     }
 
                     // double check the key details saved correctly to local disk
-                    if let Err(e) = Self::check_local_key(&self.key_dir, &key) {
+                    if let Err(e) = Self::check_local_key(&self.key_dir, &key, true) {
                         self.update_status_message(
                             format!(
                                 "Failed to check the key '{}' details saved locally: {:?}.",
@@ -618,46 +600,100 @@ impl KeyKeeper {
         }
     }
 
-    // key was saved locally correctly before
-    // check the key file found and its guid and key value are corrected
-    fn check_local_key(key_dir: &Path, key: &Key) -> Result<()> {
+    fn store_local_key(key_dir: &Path, key: &Key, encrypted: bool) -> Result<()> {
         let guid = key.guid.to_string();
-        let mut key_file = key_dir.join(guid);
-        key_file.set_extension("key");
+        let mut key_file = key_dir.to_path_buf().join(guid);
+        if encrypted {
+            key_file.set_extension("encrypted");
+            common::store_key_data(
+                &key_file,
+                serde_json::to_string(&key).map_err(|e| {
+                    Error::Key(KeyErrorType::StoreLocalKey(format!(
+                        "serialize key error: {:?} ",
+                        e
+                    )))
+                })?,
+            )
+        } else {
+            key_file.set_extension("key");
+            misc_helpers::json_write_to_file(&key, &key_file).map_err(|e| {
+                Error::Key(KeyErrorType::StoreLocalKey(format!(
+                    "json_write_to_file '{}' failed {}",
+                    key_file.display(),
+                    e
+                )))
+            })
+        }
+    }
+
+    fn fetch_local_key(key_dir: &Path, key_guid: &str, encrypted: bool) -> Result<Key> {
+        let mut key_file = key_dir.join(key_guid);
+        if encrypted {
+            key_file.set_extension("encrypted");
+        } else {
+            key_file.set_extension("key");
+        }
         if !key_file.exists() {
             // guid.key file does not exist locally
             return Err(Error::Key(
-                crate::common::error::KeyErrorType::CheckLocalKey(format!(
+                crate::common::error::KeyErrorType::FetchLocalKey(format!(
                     "Key file '{}' does not exist locally.",
                     key_file.display()
                 )),
             ));
         }
 
-        match misc_helpers::json_read_from_file::<Key>(&key_file) {
-            Ok(local_key) => {
-                if local_key.guid == key.guid && local_key.key == key.key {
-                    Ok(())
-                } else {
-                    // guid.key file found but guid or key value is not matched
-                    Err(Error::Key(
-                        crate::common::error::KeyErrorType::CheckLocalKey(format!(
-                            "Key file '{}' found but guid or key value is not matched.",
-                            key_file.display()
-                        )),
-                    ))
-                }
-            }
+        let key_data = if encrypted {
+            common::fetch_key_data(&key_file)?
+        } else {
+            fs::read_to_string(&key_file).map_err(|e| {
+                Error::Io(format!("read key file '{}' failed", key_file.display()), e)
+            })?
+        };
+
+        serde_json::from_str::<Key>(&key_data).map_err(|e| {
+            Error::Key(crate::common::error::KeyErrorType::FetchLocalKey(format!(
+                "Parse key data with error: {}",
+                e
+            )))
+        })
+    }
+
+    fn get_local_key(key_dir: &Path, key_guid: &str) -> Result<Key> {
+        // fetch encrypted key file first
+        match Self::fetch_local_key(key_dir, key_guid, true) {
+            Ok(key) => Ok(key),
             Err(e) => {
-                // failed to parse guid.key file
-                Err(Error::Key(
-                    crate::common::error::KeyErrorType::CheckLocalKey(format!(
-                        "Parse key file '{}' with error: {}",
-                        key_file.display(),
-                        e
-                    )),
-                ))
+                logger::write_information(format!(
+                    "Failed to fetch .encrypted file with error: {}. Fallback to fetch .key file",
+                    e
+                ));
+                // fallback to fetch key file
+                let local_key = Self::fetch_local_key(key_dir, key_guid, false)?;
+
+                // save the key to encrypted file
+                Self::store_local_key(key_dir, &local_key, true)?;
+
+                Ok(local_key)
             }
+        }
+    }
+
+    // key was saved locally correctly before
+    // check the key file found and its guid and key value are corrected
+    fn check_local_key(key_dir: &Path, key: &Key, encrypted: bool) -> Result<()> {
+        let guid = key.guid.to_string();
+        let local_key = Self::fetch_local_key(key_dir, &guid, encrypted)?;
+
+        if local_key.guid == key.guid && local_key.key == key.key {
+            Ok(())
+        } else {
+            // guid.key file found but guid or key value is not matched
+            Err(Error::Key(
+                crate::common::error::KeyErrorType::CheckLocalKey(
+                    "Local key guid or key value is not matched.".to_string(),
+                ),
+            ))
         }
     }
 
@@ -713,11 +749,21 @@ mod tests {
             "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"        
         }"#;
         let key: Key = serde_json::from_str(key_str).unwrap();
-        let mut key_file = temp_test_path.to_path_buf().join(key.guid.clone());
-        key_file.set_extension("key");
-        _ = misc_helpers::json_write_to_file(&key, &key_file);
 
-        assert!(KeyKeeper::check_local_key(&temp_test_path, &key).is_ok());
+        KeyKeeper::store_local_key(&temp_test_path, &key, false).unwrap();
+        assert!(KeyKeeper::check_local_key(&temp_test_path, &key, false).is_ok());
+        let local_key = KeyKeeper::get_local_key(&temp_test_path, &key.guid).unwrap();
+        assert_eq!(
+            key.key, local_key.key,
+            "Key value should be matched without encrypted."
+        );
+
+        assert!(KeyKeeper::check_local_key(&temp_test_path, &key, true).is_ok());
+        let local_key = KeyKeeper::get_local_key(&temp_test_path, &key.guid).unwrap();
+        assert_eq!(
+            key.key, local_key.key,
+            "Key value should be matched with encrypted."
+        );
 
         _ = fs::remove_dir_all(&temp_test_path);
     }

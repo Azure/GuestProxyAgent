@@ -99,6 +99,12 @@ pub enum KeyErrorType {
 
     #[error("Failed to check local key with error: {0}")]
     CheckLocalKey(String),
+
+    #[error("Failed to get local key with error: {0}")]
+    FetchLocalKey(String),
+
+    #[error("Failed to store key locally with error: {0}")]
+    StoreLocalKey(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -193,6 +199,12 @@ pub enum WindowsApiErrorType {
 
     #[error("{0}")]
     WindowsOsError(std::io::Error),
+
+    #[error("CryptProtectData failed: {0}")]
+    CryptProtectData(std::io::Error),
+
+    #[error("CryptUnprotectData failed: {0}")]
+    CryptUnprotectData(std::io::Error),
 }
 
 #[cfg(test)]
