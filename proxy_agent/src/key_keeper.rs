@@ -104,6 +104,24 @@ impl KeyKeeper {
         }
     }
 
+    fn get_dir_to_acl(&self) -> PathBuf {
+        #[cfg(not(windows))]
+        {
+            self.key_dir.clone()
+        }
+
+        #[cfg(windows)]
+        {
+            // ACL the parent folder of the keys folder,
+            // so that all ProxyAgent sub folders could be ACLed too,
+            // including GPA service directory.
+            match self.key_dir.parent() {
+                Some(parent) => parent.to_path_buf(),
+                None => self.key_dir.clone(),
+            }
+        }
+    }
+
     /// poll secure channel status at interval from the WireServer endpoint
     pub async fn poll_secure_channel_status(&self) {
         self.update_status_message("poll secure channel status task started.".to_string(), true)
@@ -151,16 +169,16 @@ impl KeyKeeper {
             ));
         }
 
-        match acl::acl_directory(self.key_dir.to_path_buf()) {
+        match acl::acl_directory(self.get_dir_to_acl()) {
             Ok(()) => {
                 logger::write(format!(
-                    "key folder {} ACLed if has not before.",
+                    "Folder {} ACLed if has not before.",
                     misc_helpers::path_to_string(&self.key_dir)
                 ));
             }
             Err(e) => {
                 logger::write_warning(format!(
-                    "key folder {} ACLed failed with error {}.",
+                    "Folder {} ACLed failed with error {}.",
                     misc_helpers::path_to_string(&self.key_dir),
                     e
                 ));
