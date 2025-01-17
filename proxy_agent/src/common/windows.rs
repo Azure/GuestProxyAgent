@@ -9,6 +9,7 @@ use std::mem::MaybeUninit;
 use std::path::Path;
 use windows_sys::Win32::Security::Cryptography::{
     // crypt32.dll
+    // msasn1.dll (ASN.1 library) is also used by crypt32.dll
     CryptProtectData,
     CryptUnprotectData,
     CRYPTOAPI_BLOB,

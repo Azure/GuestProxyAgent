@@ -33,3 +33,4 @@ SAMCLI.DLL
 SAMLIB.dll
 WLDAP32.dll
 crypt32.dll
+msasn1.dll
