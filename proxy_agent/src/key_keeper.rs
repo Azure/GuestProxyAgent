@@ -28,7 +28,7 @@ pub mod key;
 use self::key::Key;
 use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
-use crate::common::{self, constants, helpers, logger};
+use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::redirector::Redirector;
@@ -400,7 +400,7 @@ impl KeyKeeper {
                 let mut key_found = false;
                 if let Some(guid) = &status.keyGuid {
                     // key latched before and search the key locally first
-                    match Self::get_local_key(&self.key_dir, guid) {
+                    match Self::fetch_key(&self.key_dir, guid) {
                         Ok(key) => {
                             if let Err(e) =
                                 self.key_keeper_shared_state.update_key(key.clone()).await
@@ -455,10 +455,9 @@ impl KeyKeeper {
                         }
                     };
 
-                    // key has not latched before,
-                    // set the key_file full path from key details
+                    // persist the new key to local disk
                     let guid = key.guid.to_string();
-                    match Self::store_local_key(&self.key_dir, &key, true) {
+                    match Self::store_key(&self.key_dir, &key) {
                         Ok(()) => {
                             logger::write_information(format!(
                         "Successfully acquired the key '{}' details from server and saved locally.", guid));
@@ -474,7 +473,7 @@ impl KeyKeeper {
                     }
 
                     // double check the key details saved correctly to local disk
-                    if let Err(e) = Self::check_local_key(&self.key_dir, &key, true) {
+                    if let Err(e) = Self::check_key(&self.key_dir, &key) {
                         self.update_status_message(
                             format!(
                                 "Failed to check the key '{}' details saved locally: {:?}.",
@@ -605,15 +604,25 @@ impl KeyKeeper {
         let mut key_file = key_dir.to_path_buf().join(guid);
         if encrypted {
             key_file.set_extension("encrypted");
-            common::store_key_data(
-                &key_file,
-                serde_json::to_string(&key).map_err(|e| {
-                    Error::Key(KeyErrorType::StoreLocalKey(format!(
-                        "serialize key error: {:?} ",
-                        e
-                    )))
-                })?,
-            )
+            #[cfg(windows)]
+            {
+                crate::common::store_key_data(
+                    &key_file,
+                    serde_json::to_string(&key).map_err(|e| {
+                        Error::Key(KeyErrorType::StoreLocalKey(format!(
+                            "serialize key error: {:?} ",
+                            e
+                        )))
+                    })?,
+                )
+            }
+            #[cfg(not(windows))]
+            {
+                // return NotSupported error for non-windows platform
+                Err(Error::Key(KeyErrorType::StoreLocalKey(
+                    "Not supported to store encrypted key on non-windows platform.".to_string(),
+                )))
+            }
         } else {
             key_file.set_extension("key");
             misc_helpers::json_write_to_file(&key, &key_file).map_err(|e| {
@@ -623,6 +632,18 @@ impl KeyKeeper {
                     e
                 )))
             })
+        }
+    }
+
+    fn store_key(key_dir: &Path, key: &Key) -> Result<()> {
+        #[cfg(windows)]
+        {
+            // save the key to encrypted file
+            Self::store_local_key(key_dir, key, true)
+        }
+        #[cfg(not(windows))]
+        {
+            Self::store_local_key(key_dir, key, false)
         }
     }
 
@@ -644,7 +665,17 @@ impl KeyKeeper {
         }
 
         let key_data = if encrypted {
-            common::fetch_key_data(&key_file)?
+            #[cfg(not(windows))]
+            {
+                // return NotSupported error for non-windows platform
+                return Err(Error::Key(KeyErrorType::FetchLocalKey(
+                    "Not supported to fetch encrypted key on non-windows platform.".to_string(),
+                )));
+            }
+            #[cfg(windows)]
+            {
+                crate::common::fetch_key_data(&key_file)?
+            }
         } else {
             fs::read_to_string(&key_file).map_err(|e| {
                 Error::Io(format!("read key file '{}' failed", key_file.display()), e)
@@ -659,20 +690,27 @@ impl KeyKeeper {
         })
     }
 
-    fn get_local_key(key_dir: &Path, key_guid: &str) -> Result<Key> {
+    fn fetch_key(key_dir: &Path, key_guid: &str) -> Result<Key> {
         // fetch encrypted key file first
         match Self::fetch_local_key(key_dir, key_guid, true) {
             Ok(key) => Ok(key),
-            Err(e) => {
-                logger::write_information(format!(
-                    "Failed to fetch .encrypted file with error: {}. Fallback to fetch .key file",
-                    e
-                ));
+            Err(_e) => {
+                #[cfg(windows)]
+                {
+                    logger::write_information(format!(
+                        "Failed to fetch .encrypted file with error: {}. Fallback to fetch .key file for windows platform.",
+                        _e
+                    ));
+                }
+
                 // fallback to fetch key file
                 let local_key = Self::fetch_local_key(key_dir, key_guid, false)?;
 
-                // save the key to encrypted file
-                Self::store_local_key(key_dir, &local_key, true)?;
+                #[cfg(windows)]
+                {
+                    // re-save the key to encrypted file for windows platform
+                    Self::store_local_key(key_dir, &local_key, true)?;
+                }
 
                 Ok(local_key)
             }
@@ -694,6 +732,17 @@ impl KeyKeeper {
                     "Local key guid or key value is not matched.".to_string(),
                 ),
             ))
+        }
+    }
+
+    fn check_key(key_dir: &Path, key: &Key) -> Result<()> {
+        #[cfg(windows)]
+        {
+            Self::check_local_key(key_dir, key, true)
+        }
+        #[cfg(not(windows))]
+        {
+            Self::check_local_key(key_dir, key, false)
         }
     }
 
@@ -752,18 +801,22 @@ mod tests {
 
         KeyKeeper::store_local_key(&temp_test_path, &key, false).unwrap();
         assert!(KeyKeeper::check_local_key(&temp_test_path, &key, false).is_ok());
-        let local_key = KeyKeeper::get_local_key(&temp_test_path, &key.guid).unwrap();
+        let local_key = KeyKeeper::fetch_key(&temp_test_path, &key.guid).unwrap();
         assert_eq!(
             key.key, local_key.key,
             "Key value should be matched without encrypted."
         );
 
-        assert!(KeyKeeper::check_local_key(&temp_test_path, &key, true).is_ok());
-        let local_key = KeyKeeper::get_local_key(&temp_test_path, &key.guid).unwrap();
-        assert_eq!(
-            key.key, local_key.key,
-            "Key value should be matched with encrypted."
-        );
+        #[cfg(windows)]
+        {
+            // test encrypted key for windows platform
+            assert!(KeyKeeper::check_local_key(&temp_test_path, &key, true).is_ok());
+            let local_key = KeyKeeper::fetch_key(&temp_test_path, &key.guid).unwrap();
+            assert_eq!(
+                key.key, local_key.key,
+                "Key value should be matched with encrypted."
+            );
+        }
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
