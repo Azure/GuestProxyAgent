@@ -43,7 +43,7 @@ pub fn get_memory_in_mb() -> Result<u64> {
     }
 }
 
-pub fn store_key_data(encrpted_file_path: &Path, key_data: String) -> Result<()> {
+pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()> {
     let data = key_data.as_bytes();
     let data_in = CRYPTOAPI_BLOB {
         cbData: data.len() as u32,
@@ -73,11 +73,11 @@ pub fn store_key_data(encrpted_file_path: &Path, key_data: String) -> Result<()>
     let encrypted_data =
         unsafe { std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec() };
     unsafe { windows_sys::Win32::System::Memory::LocalFree(data_out.pbData as isize) };
-    std::fs::write(encrpted_file_path, encrypted_data).map_err(|e| {
+    std::fs::write(encrypted_file_path, encrypted_data).map_err(|e| {
         Error::Io(
             format!(
                 "store_encrypt_key write file '{}' failed",
-                encrpted_file_path.display()
+                encrypted_file_path.display()
             ),
             e,
         )
@@ -86,12 +86,12 @@ pub fn store_key_data(encrpted_file_path: &Path, key_data: String) -> Result<()>
     Ok(())
 }
 
-pub fn fetch_key_data(encrpted_file_path: &Path) -> Result<String> {
-    let encrypted_data = std::fs::read(encrpted_file_path).map_err(|e| {
+pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
+    let encrypted_data = std::fs::read(encrypted_file_path).map_err(|e| {
         Error::Io(
             format!(
                 "fetch_encrypted_key read file '{}' failed",
-                encrpted_file_path.display()
+                encrypted_file_path.display()
             ),
             e,
         )

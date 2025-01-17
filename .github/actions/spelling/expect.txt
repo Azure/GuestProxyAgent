@@ -41,6 +41,7 @@ CPlat
 cplusplus
 cpptools
 crpteste
+CRYPTOAPI
 csum
 customout
 customoutput
