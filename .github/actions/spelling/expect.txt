@@ -41,6 +41,7 @@ CPlat
 cplusplus
 cpptools
 crpteste
+CRYPTOAPI
 csum
 customout
 customoutput
@@ -159,6 +160,7 @@ metabuild
 MFC
 microsoftcblmariner
 microsoftlosangeles
+msasn
 msp
 msrc
 multilib

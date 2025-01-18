@@ -10,3 +10,9 @@ pub mod result;
 
 #[cfg(windows)]
 pub mod windows;
+
+#[cfg(windows)]
+pub use windows::store_key_data;
+
+#[cfg(windows)]
+pub use windows::fetch_key_data;

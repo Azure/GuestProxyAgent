@@ -878,7 +878,7 @@ impl ProxyServer {
             }
         } else {
             http_connection_context.log(
-                LoggerLevel::Information,
+                LoggerLevel::Verbose,
                 "current key is empty, skip computing the signature.".to_string(),
             );
         }
