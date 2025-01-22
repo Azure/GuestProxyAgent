@@ -974,7 +974,7 @@ mod tests {
             "response.status must be MISDIRECTED_REQUEST."
         );
 
-        // test with tranversal characters
+        // test with traversal characters
         let url: hyper::Uri = format!("http://{}:{}/test/../", host, port)
             .parse()
             .unwrap();
