@@ -76,7 +76,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent_shared
         run: |
-          cargo llvm-cov --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release
+          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release
           type ./out/proxy_agent_shared_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent_shared
@@ -99,7 +99,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent
         run: |
-          cargo llvm-cov --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|bpf_api.rs|bpf_obj.rs)" -- --test-threads=1
+          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|bpf_api.rs|bpf_obj.rs)" -- --test-threads=1
           type out\codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent
@@ -122,7 +122,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent_extension
         run: |
-          cargo llvm-cov --manifest-path proxy_agent_extension\Cargo.toml --output-path out\proxy_agent_extension_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|service_ext.rs)" -- --test-threads=1
+          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path proxy_agent_extension\Cargo.toml --output-path out\proxy_agent_extension_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|service_ext.rs)" -- --test-threads=1
           type out\proxy_agent_extension_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent_extension
