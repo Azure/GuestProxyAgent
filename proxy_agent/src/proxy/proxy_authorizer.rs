@@ -24,68 +24,7 @@ use proxy_agent_shared::logger_manager::LoggerLevel;
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use crate::{common::config, common::constants, common::result::Result, proxy::Claims};
-
-#[cfg(windows)]
-mod default {
-    use crate::proxy::Claims;
-    use proxy_agent_shared::misc_helpers;
-    use std::path::PathBuf;
-
-    const VM_APPLICATION_MANAGER_FILE_NAME: &str = "vm-application-manager";
-    const WINDOWS_AZURE_GUEST_AGENT_FILE_NAME: &str = "windowsazureguestagent.exe";
-    const WAAPPAGENT_FILE_NAME: &str = "waappagent.exe";
-    const COLLECT_GUEST_LOG_FILE_NAME: &str = "collectguestlogs.exe";
-    const SEC_AGENT_FILE_NAME: &str = "wasecagentprov.exe";
-    const IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME: &str = "immediateruncommandservice.exe";
-
-    pub fn is_platform_process(claims: &Claims) -> bool {
-        let process_name =
-            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
-        if process_name == VM_APPLICATION_MANAGER_FILE_NAME
-            || process_name == WINDOWS_AZURE_GUEST_AGENT_FILE_NAME
-            || process_name == WAAPPAGENT_FILE_NAME
-            || process_name == COLLECT_GUEST_LOG_FILE_NAME
-            || process_name == SEC_AGENT_FILE_NAME
-            || process_name == IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME
-        {
-            return true;
-        }
-
-        false
-    }
-}
-
-#[cfg(not(windows))]
-mod default {
-    use crate::proxy::Claims;
-    use once_cell::sync::Lazy;
-    use proxy_agent_shared::misc_helpers;
-    use regex::Regex;
-    use std::path::PathBuf;
-
-    const VM_APPLICATION_MANAGER_FILE_NAME: &str = "vm-application-manager";
-    const IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME: &str = "immediate-run-command-handler";
-    static LINUX_VM_AGENT_REGEX: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r".*python.*walinuxagent").unwrap());
-
-    pub fn is_platform_process(claims: &Claims) -> bool {
-        let process_name =
-            misc_helpers::get_file_name(&PathBuf::from(&claims.processName)).to_lowercase();
-        if process_name == VM_APPLICATION_MANAGER_FILE_NAME
-            || process_name == IMMEDIATE_RUNCOMMAND_SERVICE_FILE_NAME
-        {
-            return true;
-        }
-
-        let process_cmd_line = claims.processCmdLine.to_string().to_lowercase();
-        if LINUX_VM_AGENT_REGEX.is_match(&process_cmd_line) {
-            return true;
-        }
-
-        false
-    }
-}
+use crate::{common::constants, common::result::Result, proxy::Claims};
 
 #[derive(PartialEq)]
 pub enum AuthorizeResult {
@@ -197,14 +136,9 @@ impl Authorizer for GAPlugin {
         if !self.claims.runAsElevated {
             return AuthorizeResult::Forbidden;
         }
-        if config::get_host_gaplugin_support() == 2 {
-            // only allow VMAgent and platform vm extensions talk to GAPlugin
-            if default::is_platform_process(&self.claims) {
-                return AuthorizeResult::Ok;
-            } else {
-                return AuthorizeResult::Forbidden;
-            }
-        }
+
+        // TODO: add support for host gaplugin
+
         AuthorizeResult::Ok
     }
 
@@ -341,12 +275,9 @@ mod tests {
             auth.to_string(),
             "GAPlugin { runAsElevated: true, processName: test }"
         );
-        assert!(AuthorizeResult::Ok==
-            auth.authorize(
-                test_logger.clone(),
-                test_uri.clone(),
-                None
-            ),          "GAPlugin authentication must be Ok since it has not enabled for builtin processes in the config yet"
+        assert!(
+            AuthorizeResult::Ok == auth.authorize(test_logger.clone(), test_uri.clone(), None),
+            "GAPlugin authentication must be Ok"
         );
 
         let auth = super::get_authorizer(
@@ -619,60 +550,5 @@ mod tests {
                 == AuthorizeResult::Forbidden,
             "IMDS authentication must be Forbidden with enforce deny rules"
         );
-    }
-
-    #[test]
-    fn is_platform_process_test() {
-        let mut claims = crate::proxy::Claims {
-            userId: 0,
-            userName: "test".to_string(),
-            userGroups: vec!["test".to_string()],
-            processId: std::process::id(),
-            processName: "test".to_string(),
-            processFullPath: "test".to_string(),
-            processCmdLine: "test".to_string(),
-            runAsElevated: true,
-            clientIp: "127.0.0.1".to_string(),
-            clientPort: 0, // doesn't matter for this test
-        };
-
-        #[cfg(windows)]
-        {
-            let windows_process_names = [
-                "vm-application-manager",
-                "windowsazureguestagent.exe",
-                "waappagent.exe",
-                "immediateruncommandservice.exe",
-            ];
-            for process in windows_process_names.iter() {
-                claims.processName = process.to_string();
-                assert!(
-                    super::default::is_platform_process(&claims),
-                    "{process} should be built-in process"
-                );
-            }
-        }
-
-        #[cfg(not(windows))]
-        {
-            let linux_process_names = ["vm-application-manager", "immediate-run-command-handler"];
-            for process in linux_process_names.iter() {
-                claims.processName = process.to_string();
-                assert!(
-                    super::default::is_platform_process(&claims),
-                    "{process} should be built-in process"
-                );
-            }
-
-            let linux_process_cmds =
-                ["python3 -u bin/WALinuxAgent-2.9.1.1-py3.8.egg -run-exthandlers"];
-            for process_cmd in linux_process_cmds.iter() {
-                claims.processCmdLine = process_cmd.to_string();
-                assert!(
-                    super::default::is_platform_process(&claims),
-                    "{process_cmd} should be built-in process"
-                );
-            }
-        }
     }
 }
