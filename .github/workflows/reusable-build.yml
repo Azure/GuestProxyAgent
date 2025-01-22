@@ -52,34 +52,52 @@ jobs:
       - name: Run Build.cmd Debug amd64
         run: .\build.cmd debug amd64
 
-      - name: Run Build.cmd Debug arm64
-        run: .\build.cmd debug arm64
-
-      - name: Upload debug build zip packages
+      - name: Upload debug amd64 build zip packages
         if: (success() || failure())
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: build-debug-windows-*.zip
+          name: build-debug-windows-amd64.zip
           # A file, directory or wildcard pattern that describes what to upload
-          path: out/*/debug/package/
+          path: out/x86_64-pc-windows-msvc/debug/package/
+
+      - name: Run Build.cmd Debug arm64
+        run: .\build.cmd debug arm64
+
+      - name: Upload debug arm64 build zip packages
+        if: (success() || failure())
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          # Artifact name
+          name: build-debug-windows-arm64.zip
+          # A file, directory or wildcard pattern that describes what to upload
+          path: out/aarch64-pc-windows-msvc/debug/package/
 
       - name: Run Build.cmd Release amd64
         if: (success() || failure())
         run: .\build.cmd release amd64
 
-      - name: Run Build.cmd Release arm64
-        if: (success() || failure())
-        run: .\build.cmd release arm64
-        
-      - name: Upload release build zip packages
+      - name: Upload release amd64 build zip package
         if: (success() || failure())
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
-          name: build-release-windows-*.zip
+          name: build-release-windows-amd64.zip
           # A file, directory or wildcard pattern that describes what to upload
-          path: out/*/release/package/
+          path: out/x86_64-pc-windows-msvc/release/package/
+
+      - name: Run Build.cmd Release arm64
+        if: (success() || failure())
+        run: .\build.cmd release arm64
+        
+      - name: Upload release arm64 build zip package
+        if: (success() || failure())
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          # Artifact name
+          name: build-release-windows-arm64.zip
+          # A file, directory or wildcard pattern that describes what to upload
+          path: out/aarch64-pc-windows-msvc/release/package/
 
       - name: Run Code Coverage for proxy_agent_shared
         run: |
@@ -250,10 +268,10 @@ jobs:
           sudo snap install dotnet-sdk --classic
           sudo chown -R root:root /var/lib
         
-      - name: Run build-linux.sh Debug
-        run: ./build-linux.sh
+      - name: Run build-linux.sh Debug amd64
+        run: ./build-linux.sh debug amd64
 
-      - name: Upload debug build zip package
+      - name: Upload debug build amd64 zip package
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
@@ -261,10 +279,10 @@ jobs:
           # A file, directory or wildcard pattern that describes what to upload
           path: out/x86_64-unknown-linux-musl/debug/package/
 
-      - name: Run build-linux.sh Release
+      - name: Run build-linux.sh Release amd64
         run: ./build-linux.sh release
 
-      - name: Upload release build zip package
+      - name: Upload release amd64 build zip package
         uses: actions/upload-artifact@v3.1.2
         with:
           # Artifact name
