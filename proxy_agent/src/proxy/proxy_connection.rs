@@ -257,6 +257,10 @@ impl HttpConnectionContext {
         hyper_client::should_skip_sig(&self.method, &self.url)
     }
 
+    pub fn contains_traversal_characters(&self) -> bool {
+        self.url.path().contains("..")
+    }
+
     pub fn log(&self, logger_level: LoggerLevel, message: String) {
         self.logger.write(logger_level, message)
     }
