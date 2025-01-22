@@ -21,8 +21,6 @@ if [ "$Configuration" != "release" ]
 then 
     Configuration="debug"
 fi
-out_dir=$out_path/$build_target/$Configuration
-echo "The out_dir is: $out_dir"
 
 release_flag=""
 if [ "$Configuration" = "release" ]
@@ -37,6 +35,8 @@ if [ "$Target" == "arm64" ]
 then 
     build_target="aarch64-unknown-linux-musl"
 fi
+out_dir=$out_path/$build_target/$Configuration
+echo "The out_dir is: $out_dir"
 
 CleanBuild=$3
 if [ "$CleanBuild" = "clean" ] 
