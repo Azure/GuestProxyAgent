@@ -412,6 +412,17 @@ impl ProxyServer {
             ),
         );
 
+        if http_connection_context.contains_traversal_characters() {
+            self.log_connection_summary(
+                &http_connection_context,
+                StatusCode::NOT_FOUND,
+                false,
+                "Traversal characters found in the request, return NOT_FOUND!".to_string(),
+            )
+            .await;
+            return Ok(Self::empty_response(StatusCode::NOT_FOUND));
+        }
+
         if http_connection_context.url == provision::PROVISION_URL_PATH {
             return self
                 .handle_provision_state_check_request(http_connection_context.get_logger(), request)
@@ -961,6 +972,34 @@ mod tests {
             http::StatusCode::MISDIRECTED_REQUEST,
             response.status(),
             "response.status must be MISDIRECTED_REQUEST."
+        );
+
+        // test with tranversal characters
+        let url: hyper::Uri = format!("http://{}:{}/test/../", host, port)
+            .parse()
+            .unwrap();
+        let request = hyper_client::build_request(
+            Method::GET,
+            &url,
+            &HashMap::new(),
+            None,
+            key_keeper_shared_state
+                .get_current_key_guid()
+                .await
+                .unwrap_or(None),
+            key_keeper_shared_state
+                .get_current_key_value()
+                .await
+                .unwrap_or(None),
+        )
+        .unwrap();
+        let response = hyper_client::send_request(host, port, request, logger::write_warning)
+            .await
+            .unwrap();
+        assert_eq!(
+            http::StatusCode::NOT_FOUND,
+            response.status(),
+            "response.status must be NOT_FOUND."
         );
 
         // test large request body
