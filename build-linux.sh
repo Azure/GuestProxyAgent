@@ -30,10 +30,14 @@ fi
 
 echo "======= Set Build Target"
 Target=$2
+rpm_target="x86_64"
 build_target="x86_64-unknown-linux-musl"
 if [ "$Target" == "arm64" ] 
 then 
     build_target="aarch64-unknown-linux-musl"
+    rpm_target="aarch64"
+else
+    Target="amd64"
 fi
 out_dir=$out_path/$build_target/$Configuration
 echo "The out_dir is: $out_dir"
@@ -102,9 +106,14 @@ else
 fi
 
 echo "======= build ebpf program after the proxy_agent_shared is built to let $out_dir created."
-echo "======= build ebpf program for x64_x86 platform"
 ebpf_path=$root_path/linux-ebpf
-runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+
+if [ "$Target" == "arm64" ] 
+then 
+    runthis clang -g -target aarch64-linux-gnu -Werror -O2 -D__TARGET_ARCH_arm64 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+else
+    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+fi
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -219,7 +228,7 @@ cp -f $out_dir/ebpf_cgroup.o $out_package_proxyagent_dir/
 
 echo "======= generate rpm package"
 echo "Generating rpm package -------------- "
-pkgversion=$($out_dir/azure-proxy-agent --version)
+pkgversion=$(grep '^version.*# always 3-number version' ./proxy_agent/Cargo.toml | awk -F '[=#]' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' | tr -d '"')
 echo "Package version: '$pkgversion'"
 rootdir=$(pwd)
 rm -rf build
@@ -235,7 +244,7 @@ popd
 pushd rpmbuild
     mkdir SOURCES BUILD RPMS SRPMS
     cp ../build/azure-proxy-agent_${pkgversion}.tar.gz SOURCES/
-    rpmbuild --define "_topdir ${rootdir}/rpmbuild" --define "pkgversion ${pkgversion}" -ba SPECS/azure-proxy-agent.spec
+    rpmbuild --target $rpm_target --define "_topdir ${rootdir}/rpmbuild" --define "pkgversion ${pkgversion}" -ba SPECS/azure-proxy-agent.spec
     error_code=$?
     if [ $error_code -ne 0 ]
     then 
@@ -245,7 +254,7 @@ pushd rpmbuild
 popd
 rm -rf build 
 echo "======= copy rpm package file to Package folder"
-cp -f $rootdir/rpmbuild/RPMS/x86_64/azure-proxy-agent-${pkgversion}-0.x86_64.rpm $out_package_dir/
+cp -f $rootdir/rpmbuild/RPMS/${rpm_target}/azure-proxy-agent-${pkgversion}-0.${rpm_target}.rpm $out_package_dir/
 
 echo "======= generate deb package"
 echo "Generating deb package -------------- "
@@ -288,6 +297,6 @@ cp -f $out_dir/ProxyAgentExt $out_package_proxyagent_extension_dir/
 echo "======= copy e2e test project to Package folder"
 cp -rf $out_dir/e2etest/ $out_package_dir/e2etest/
 
-echo "======= Generate build-configuration-linux-amd64.zip file with relative path within the zip file"
+echo "======= Generate build-configuration-linux-$Target.zip file with relative path within the zip file"
 cd $out_package_dir
-zip -r $out_dir/build-$Configuration-linux-amd64.zip .
+zip -r $out_dir/build-$Configuration-linux-$Target.zip .
