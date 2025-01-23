@@ -10,9 +10,12 @@ use crate::common::{
 };
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use aya::maps::{HashMap, MapData};
 use aya::programs::{CgroupSockAddr, KProbe};
-use aya::{Bpf, BpfLoader, Btf};
+use aya::{
+    maps::{HashMap, MapData},
+    programs::CgroupAttachMode,
+};
+use aya::{Btf, Ebpf, EbpfLoader};
 use ebpf_obj::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
@@ -21,15 +24,15 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
-pub struct BpfObject(Bpf);
+pub struct BpfObject(Ebpf);
 
 // BpfObject is a wrapper around Bpf object to interact with Linux eBPF programs and maps
 impl BpfObject {
-    pub fn new(bpf: Bpf) -> Self {
-        BpfObject(bpf)
+    pub fn new(ebpf: Ebpf) -> Self {
+        BpfObject(ebpf)
     }
 
-    pub fn get_bpf(&self) -> &Bpf {
+    pub fn get_bpf(&self) -> &Ebpf {
         &self.0
     }
 
@@ -41,7 +44,7 @@ impl BpfObject {
             )));
         }
 
-        match BpfLoader::new()
+        match EbpfLoader::new()
             // load the BTF data from /sys/kernel/btf/vmlinux
             .btf(Btf::from_sys_fs().ok().as_ref())
             // finally load the code
@@ -150,7 +153,7 @@ impl BpfObject {
                                 )));
                             }
                         }
-                        match program.attach(cgroup) {
+                        match program.attach(cgroup, CgroupAttachMode::Single) {
                             Ok(link_id) => {
                                 logger::write(format!(
                                     "connect4 program attached with id {:?}.",
