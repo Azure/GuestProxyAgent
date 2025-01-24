@@ -44,7 +44,7 @@ use crate::common::result::Result;
 use crate::redirector::AuditEntry;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use serde_derive::{Deserialize, Serialize};
-use std::{net::IpAddr, path::PathBuf};
+use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 
 #[cfg(not(windows))]
 use sysinfo::{Pid, PidExt, ProcessExt, System, SystemExt};
@@ -56,8 +56,8 @@ pub struct Claims {
     pub userName: String,
     pub userGroups: Vec<String>,
     pub processId: u32,
-    pub processName: String,
-    pub processFullPath: String,
+    pub processName: OsString,
+    pub processFullPath: PathBuf,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub clientIp: String,
@@ -66,8 +66,8 @@ pub struct Claims {
 
 struct Process {
     pub command_line: String,
-    pub name: String,
-    pub exe_full_name: String,
+    pub name: OsString,
+    pub exe_full_name: PathBuf,
     pub pid: u32,
 }
 
@@ -98,18 +98,15 @@ async fn get_user(
 }
 
 #[cfg(not(windows))]
-fn get_process_info(process_id: u32) -> (String, String) {
-    let mut process_name = UNDEFINED.to_string();
+fn get_process_info(process_id: u32) -> (PathBuf, String) {
+    let mut process_name = PathBuf::default();
     let mut process_cmd_line = UNDEFINED.to_string();
 
     let pid = Pid::from_u32(process_id);
     let mut sys = System::new();
     sys.refresh_processes();
     if let Some(p) = sys.process(pid) {
-        match p.exe().to_str() {
-            Some(name) => process_name = name.to_string(),
-            None => process_name = UNDEFINED.to_string(),
-        };
+        process_name = p.exe().to_path_buf();
         process_cmd_line = p.cmd().join(" ");
     }
 
@@ -123,8 +120,8 @@ impl Claims {
             userName: EMPTY.to_string(),
             userGroups: Vec::new(),
             processId: 0,
-            processName: EMPTY.to_string(),
-            processFullPath: EMPTY.to_string(),
+            processName: OsString::from(EMPTY),
+            processFullPath: PathBuf::from(EMPTY),
             processCmdLine: EMPTY.to_string(),
             runAsElevated: false,
             clientIp: EMPTY.to_string(),
@@ -145,8 +142,8 @@ impl Claims {
             userName: u.user_name.to_string(),
             userGroups: u.user_groups.clone(),
             processId: p.pid,
-            processName: p.name.to_string(),
-            processFullPath: p.exe_full_name.to_string(),
+            processName: p.name,
+            processFullPath: p.exe_full_name,
             processCmdLine: p.command_line.to_string(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
@@ -167,12 +164,12 @@ impl Process {
             let base_info = windows::query_basic_process_info(handler);
             match base_info {
                 Ok(_) => {
-                    process_full_path =
-                        windows::get_process_full_name(handler).unwrap_or(UNDEFINED.to_string());
+                    process_full_path = 
+                        windows::get_process_full_name(handler).unwrap_or_default();
                     cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
                 }
                 Err(e) => {
-                    process_full_path = UNDEFINED.to_string();
+                    process_full_path = PathBuf::default();
                     cmd = UNDEFINED.to_string();
                     println!("Failed to query basic process info: {}", e);
                 }
@@ -185,14 +182,12 @@ impl Process {
             cmd = process_info.1;
         }
 
-        let exe_path = PathBuf::from(process_full_path.to_string());
+        let process_name = process_full_path.file_name()
+            .unwrap_or_default().to_os_string();
+
         Process {
             command_line: cmd,
-            name: exe_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
+            name: process_name,
             exe_full_name: process_full_path,
             pid,
         }
@@ -334,18 +329,16 @@ mod tests {
 
         assert!(claims.runAsElevated, "runAsElevated must be true");
         assert_ne!(String::new(), claims.userName, "userName cannot be empty.");
-        assert_ne!(
-            String::new(),
-            claims.processName,
+        assert!(
+            !claims.processName.is_empty(),
             "processName cannot be empty."
         );
-        assert_ne!(
-            String::new(),
-            claims.processFullPath,
+        assert!(
+            !claims.processFullPath.as_os_str().is_empty(),
             "processFullPath cannot be empty."
         );
         assert_ne!(
-            claims.processName, claims.processFullPath,
+            claims.processName, claims.processFullPath.as_os_str(),
             "processName and processFullPath should not be the same."
         );
         assert_ne!(

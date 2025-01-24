@@ -31,12 +31,14 @@ use crate::{
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
+use clap::builder::OsStr;
 use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::logger_manager::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use std::fmt::{Display, Formatter};
+use std::ffi::OsString;
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -318,7 +320,8 @@ impl Identity {
             }
         }
         if let Some(ref process_name) = self.processName {
-            if process_name.to_lowercase() == claims.processName.to_lowercase() {
+            let process_name_osstr: OsString = process_name.into();
+            if process_name_osstr == claims.processName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -338,7 +341,8 @@ impl Identity {
             }
         }
         if let Some(ref exe_path) = self.exePath {
-            if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
+            let process_path_buf: PathBuf = exe_path.into();
+            if process_path_buf == claims.processFullPath {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -775,12 +779,16 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
     use super::Key;
     use super::KeyStatus;
     use crate::common::constants;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
+    use clap::builder::OsStr;
     use hyper::Uri;
 
     #[test]
@@ -1246,14 +1254,14 @@ mod tests {
         let claims = super::Claims {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
-            processName: "test".to_string(),
+            processName: OsString::from("test"),
             processCmdLine: "test".to_string(),
             userId: 0,
             processId: 0,
             clientIp: "00.000.000".to_string(),
             clientPort: 0, // doesn't matter for this test
             runAsElevated: true,
-            processFullPath: "test".to_string(),
+            processFullPath: PathBuf::from("test"),
         };
 
         let identity = r#"{

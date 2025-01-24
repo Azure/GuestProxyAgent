@@ -47,7 +47,7 @@ pub enum Error {
     RecvError(String, tokio::sync::oneshot::error::RecvError),
 
     #[error("{0}")]
-    FindAuditEntryError(String),
+    FindAuditEntryError(String)
 }
 
 #[derive(Debug, thiserror::Error)]
