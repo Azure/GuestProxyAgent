@@ -31,7 +31,6 @@ use crate::{
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
-use clap::builder::OsStr;
 use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::logger_manager::LoggerLevel;
