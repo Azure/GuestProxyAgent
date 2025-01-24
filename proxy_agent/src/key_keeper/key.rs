@@ -300,7 +300,7 @@ impl Identity {
             format!("Start to match identity '{}'", self.name),
         );
         if let Some(ref user_name) = self.userName {
-            if user_name.to_lowercase() == claims.userName.to_lowercase() {
+            if user_name.to_string() == claims.userName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -364,7 +364,7 @@ impl Identity {
         if let Some(ref group_name) = self.groupName {
             let mut matched = false;
             for claims_user_group_name in &claims.userGroups {
-                if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
+                if claims_user_group_name == group_name {
                     logger.write(
                         LoggerLevel::Verbose,
                         format!(
@@ -788,7 +788,6 @@ mod tests {
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
-    use clap::builder::OsStr;
     use hyper::Uri;
 
     #[test]
@@ -1323,6 +1322,15 @@ mod tests {
         );
         let identity3 = r#"{
             "name": "test",
+            "processName": "Test"
+        }"#;
+        let identity3: Identity = serde_json::from_str(identity3).unwrap();
+        assert!(
+            !identity3.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+        let identity3 = r#"{
+            "name": "test",
             "processName": "test"
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
@@ -1335,6 +1343,15 @@ mod tests {
         let identity4 = r#"{
             "name": "test",
             "exePath": "test1"
+        }"#;
+        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+        assert!(
+            !identity4.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+        let identity4 = r#"{
+            "name": "test",
+            "exePath": "tesT"
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
