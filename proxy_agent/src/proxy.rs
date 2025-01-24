@@ -164,8 +164,7 @@ impl Process {
             let base_info = windows::query_basic_process_info(handler);
             match base_info {
                 Ok(_) => {
-                    process_full_path = 
-                        windows::get_process_full_name(handler).unwrap_or_default();
+                    process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
                     cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
                 }
                 Err(e) => {
@@ -182,8 +181,10 @@ impl Process {
             cmd = process_info.1;
         }
 
-        let process_name = process_full_path.file_name()
-            .unwrap_or_default().to_os_string();
+        let process_name = process_full_path
+            .file_name()
+            .unwrap_or_default()
+            .to_os_string();
 
         Process {
             command_line: cmd,
@@ -338,7 +339,8 @@ mod tests {
             "processFullPath cannot be empty."
         );
         assert_ne!(
-            claims.processName, claims.processFullPath.as_os_str(),
+            claims.processName,
+            claims.processFullPath.as_os_str(),
             "processName and processFullPath should not be the same."
         );
         assert_ne!(

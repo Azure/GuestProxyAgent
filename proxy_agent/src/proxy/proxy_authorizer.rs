@@ -80,7 +80,8 @@ impl Authorizer for WireServer {
     fn to_string(&self) -> String {
         format!(
             "WireServer {{ runAsElevated: {}, processName: {} }}",
-            self.claims.runAsElevated, self.claims.processName.to_string_lossy()
+            self.claims.runAsElevated,
+            self.claims.processName.to_string_lossy()
         )
     }
 }
@@ -145,7 +146,8 @@ impl Authorizer for GAPlugin {
     fn to_string(&self) -> String {
         format!(
             "GAPlugin {{ runAsElevated: {}, processName: {} }}",
-            self.claims.runAsElevated, self.claims.processName.to_string_lossy()
+            self.claims.runAsElevated,
+            self.claims.processName.to_string_lossy()
         )
     }
 }

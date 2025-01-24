@@ -8,9 +8,9 @@ use crate::common::{
 };
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
+use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::SECURITY_LOGON_SESSION_DATA;
@@ -403,7 +403,10 @@ mod tests {
         let base_info = super::query_basic_process_info(handler);
         assert!(base_info.is_ok(), "base_info must be ok");
 
-        assert!(!name.as_os_str().is_empty(), "process name should not be empty");
+        assert!(
+            !name.as_os_str().is_empty(),
+            "process name should not be empty"
+        );
         assert!(
             !full_name.as_os_str().is_empty(),
             "process full name should not be empty"

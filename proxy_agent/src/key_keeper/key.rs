@@ -35,9 +35,9 @@ use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::logger_manager::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
-use std::fmt::{Display, Formatter};
 use std::ffi::OsString;
+use std::fmt::{Display, Formatter};
+use std::{collections::HashMap, path::PathBuf};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -299,7 +299,7 @@ impl Identity {
             format!("Start to match identity '{}'", self.name),
         );
         if let Some(ref user_name) = self.userName {
-            if user_name.to_string() == claims.userName {
+            if *user_name == claims.userName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -319,8 +319,8 @@ impl Identity {
             }
         }
         if let Some(ref process_name) = self.processName {
-            let process_name_osstr: OsString = process_name.into();
-            if process_name_osstr == claims.processName {
+            let process_name_os: OsString = process_name.into();
+            if process_name_os == claims.processName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -1350,7 +1350,7 @@ mod tests {
         );
         let identity4 = r#"{
             "name": "test",
-            "exePath": "tesT"
+            "exePath": "TEST"
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
