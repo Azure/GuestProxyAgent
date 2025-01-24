@@ -27,7 +27,7 @@ use nix::unistd::Pid as NixPid;
 #[cfg(not(windows))]
 use proxy_agent_shared::linux;
 #[cfg(not(windows))]
-use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind};
 
 static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     let exe_path = misc_helpers::get_current_exe_dir();
@@ -293,9 +293,15 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
 #[cfg(not(windows))]
 fn get_linux_extension_long_running_process() -> Option<i32> {
     // check if the process GuestProxyAgentVMExtension running AND without parameters
-    let mut system = System::new();
-    system.refresh_processes();
-    for p in system.processes_by_name(constants::EXTENSION_PROCESS_NAME) {
+    let system = System::new_with_specifics(
+        RefreshKind::new().with_processes(
+            ProcessRefreshKind::new()
+                .with_cmd(UpdateKind::Always)
+                .with_exe(UpdateKind::Always),
+        ),
+    );
+
+    for p in system.processes_by_exact_name(constants::EXTENSION_PROCESS_NAME) {
         let cmd = p.cmd();
         logger::write(format!("cmd: {:?}", cmd));
         if cmd.len() == 1 {

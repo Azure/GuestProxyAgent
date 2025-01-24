@@ -47,7 +47,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 
 #[cfg(not(windows))]
-use sysinfo::{Pid, PidExt, ProcessExt, System, SystemExt};
+use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
@@ -103,10 +103,18 @@ fn get_process_info(process_id: u32) -> (PathBuf, String) {
     let mut process_cmd_line = UNDEFINED.to_string();
 
     let pid = Pid::from_u32(process_id);
-    let mut sys = System::new();
-    sys.refresh_processes();
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(
+            ProcessRefreshKind::new()
+                .with_cmd(UpdateKind::Always)
+                .with_exe(UpdateKind::Always),
+        ),
+    );
     if let Some(p) = sys.process(pid) {
-        process_name = p.exe().to_path_buf();
+        process_name = match p.exe() {
+            Some(path) => path.to_path_buf(),
+            None => PathBuf::default(),
+        };
         process_cmd_line = p.cmd().join(" ");
     }
 
