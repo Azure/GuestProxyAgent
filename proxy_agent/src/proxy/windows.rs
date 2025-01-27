@@ -8,9 +8,9 @@ use crate::common::{
 };
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
+use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::SECURITY_LOGON_SESSION_DATA;
@@ -323,7 +323,7 @@ pub fn get_process_cmd(handler: isize) -> Result<String> {
 }
 
 #[allow(dead_code)]
-pub fn get_process_name(handler: isize) -> Result<String> {
+pub fn get_process_name(handler: isize) -> Result<PathBuf> {
     unsafe {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleBaseNameW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
@@ -332,12 +332,11 @@ pub fn get_process_name(handler: isize) -> Result<String> {
                 std::io::Error::last_os_error(),
             )));
         }
-        let name = String::from_utf16_lossy(&buffer[..size as usize]);
-        Ok(name)
+        Ok(PathBuf::from(OsString::from_wide(&buffer[..size as usize])))
     }
 }
 
-pub fn get_process_full_name(handler: isize) -> Result<String> {
+pub fn get_process_full_name(handler: isize) -> Result<PathBuf> {
     unsafe {
         let mut buffer = [0u16; MAX_PATH + 1];
         let size = K32GetModuleFileNameExW(handler, 0, buffer.as_mut_ptr(), buffer.len() as u32);
@@ -346,8 +345,7 @@ pub fn get_process_full_name(handler: isize) -> Result<String> {
                 std::io::Error::last_os_error(),
             )));
         }
-        let name = String::from_utf16_lossy(&buffer[..size as usize]);
-        Ok(name)
+        Ok(PathBuf::from(OsString::from_wide(&buffer[..size as usize])))
     }
 }
 
@@ -405,9 +403,12 @@ mod tests {
         let base_info = super::query_basic_process_info(handler);
         assert!(base_info.is_ok(), "base_info must be ok");
 
-        assert!(!name.is_empty(), "process name should not be empty");
         assert!(
-            !full_name.is_empty(),
+            !name.as_os_str().is_empty(),
+            "process name should not be empty"
+        );
+        assert!(
+            !full_name.as_os_str().is_empty(),
             "process full name should not be empty"
         );
         assert!(!cmd.is_empty(), "process cmd should not be empty");
