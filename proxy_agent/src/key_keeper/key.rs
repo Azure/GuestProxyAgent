@@ -779,6 +779,10 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+    #[cfg(not(windows))]
+    use std::os::unix::ffi::OsStringExt;
+    #[cfg(windows)]
+    use std::os::windows::ffi::OsStringExt;
     use std::path::PathBuf;
 
     use super::Key;
@@ -788,6 +792,7 @@ mod tests {
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
     use hyper::Uri;
+    use serde_json::json;
 
     #[test]
     fn key_status_v1_test() {
@@ -1249,7 +1254,7 @@ mod tests {
             http_connection_id: 1,
         };
 
-        let claims = super::Claims {
+        let mut claims = super::Claims {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processName: OsString::from("test"),
@@ -1387,6 +1392,36 @@ mod tests {
             "identity should be matched"
         );
 
+        // Test with non-UTF8 valid process name
+        #[cfg(windows)]
+        {
+            let invalid_utf16_bytes: Vec<u16> = vec![0xD800]; // Lone surrogate (0xD800)
+            claims.processName = OsString::from_wide(invalid_utf16_bytes.as_slice());
+        }
+
+        #[cfg(not(windows))]
+        {
+            let invalid_utf8_bytes: Vec<u8> = vec![0x80]; // Invalid UTF-8
+            claims.processName = OsString::from_vec(invalid_utf8_bytes);
+        }
+
+        let process_name_lossy = claims.processName.to_string_lossy().to_string();
+        let replacement_char = "�";
+
+        let identity6 = json!({
+            "name": "test",
+            "processName": replacement_char
+        });
+        let identity6: Identity = serde_json::from_value(identity6).unwrap();
+        assert!(
+            !identity6.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+
+        assert_eq!(
+            replacement_char, process_name_lossy,
+            "process name after lossy conversion should be equal to replacement char"
+        );
         // clean up and ignore the clean up errors
         _ = std::fs::remove_dir_all(temp_test_path);
     }
