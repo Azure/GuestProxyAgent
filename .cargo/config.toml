@@ -6,3 +6,4 @@ check-revoke = false  # Set to false to disable revocation checks
 
 [target.aarch64-unknown-linux-musl]
 linker = "aarch64-linux-gnu-gcc"
+runner = 'sudo -E' # run with root permission but keep the current environment variables

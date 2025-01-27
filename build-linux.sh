@@ -32,10 +32,12 @@ echo "======= Set Build Target"
 Target=$2
 rpm_target="x86_64"
 build_target="x86_64-unknown-linux-musl"
+gnu_target="x86_64-unknown-linux-gnu"
 if [ "$Target" == "arm64" ] 
 then 
     build_target="aarch64-unknown-linux-musl"
     rpm_target="aarch64"
+    gnu_target="aarch64-unknown-linux-gnu"
 else
     Target="amd64"
 fi
@@ -69,9 +71,9 @@ rustup target install $build_target
 cargo install cargo-deb
 
 echo "======= cargo fmt & clippy"
-runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu rustfmt
+runthis rustup component add --toolchain $rustup_version-$gnu_target rustfmt
 cargo fmt --all
-runthis rustup component add --toolchain $rustup_version-x86_64-unknown-linux-gnu clippy
+runthis rustup component add --toolchain $rustup_version-$gnu_target clippy
 cargo clippy -- -D warnings
 error_code=$?
 if [ $error_code -ne 0 ]
@@ -90,19 +92,13 @@ then
     echo "cargo build proxy_agent_shared failed with exit-code: $error_code"
     exit $error_code
 fi
-
-if [ "$Target" == "arm64" ] 
+echo "======= run rust proxy_agent_shared unit tests"
+runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+error_code=$?
+if [ $error_code -ne 0 ]
 then 
-    echo "======= skip running proxy_agent_shared arm64 tests on amd64 machine"
-else
-    echo "======= run rust proxy_agent_shared unit tests"
-    runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-    error_code=$?
-    if [ $error_code -ne 0 ]
-    then 
-        echo "cargo test proxy_agent_shared with exit-code: $error_code"
-        exit $error_code
-    fi
+    echo "cargo test proxy_agent_shared with exit-code: $error_code"
+    exit $error_code
 fi
 
 echo "======= build ebpf program after the proxy_agent_shared is built to let $out_dir created."
@@ -110,7 +106,7 @@ ebpf_path=$root_path/linux-ebpf
 
 if [ "$Target" == "arm64" ] 
 then 
-    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_arm64 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_arm64 -I/usr/include/aarch64-linux-gnu -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 else
     runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 fi
@@ -133,26 +129,19 @@ then
     echo "cargo build proxy_agent failed with exit-code: $error_code"
     exit $error_code
 fi
-
 echo "======= copy config file for Linux platform"
 cp -f -T $root_path/proxy_agent/config/GuestProxyAgent.linux.json $out_dir/proxy-agent.json
 
-if [ "$Target" == "arm64" ] 
+echo "======= copy files for run/debug proxy_agent Unit test"
+runthis cp -f $out_dir/* $out_dir/deps/
+runthis cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
+echo "======= run rust proxy_agent tests"
+Environment="$BuildEnvironment" runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+error_code=$?
+if [ $error_code -ne 0 ]
 then 
-    echo "======= skip running proxy_agent arm64 tests on amd64 machine"
-else
-    echo "======= copy files for run/debug proxy_agent Unit test"
-    runthis cp -f $out_dir/* $out_dir/deps/
-    runthis cp -f -r $out_dir/* $root_path/proxy_agent/target/$Configuration/
-
-    echo "======= run rust proxy_agent tests"
-    Environment="$BuildEnvironment" runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-    error_code=$?
-    if [ $error_code -ne 0 ]
-    then 
-        echo "cargo test proxy_agent with exit-code: $error_code"
-        exit $error_code
-    fi
+    echo "cargo test proxy_agent with exit-code: $error_code"
+    exit $error_code
 fi
 
 echo "======= build proxy_agent_extension"
@@ -167,22 +156,16 @@ then
     exit $error_code
 fi
 
-if [ "$Target" == "arm64" ] 
+echo "======= copy files for run/debug proxy_agent_extension Unit test"
+runthis cp -f $out_dir/* $out_dir/deps/
+runthis cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
+echo "======= run rust proxy_agent_extension tests"
+runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
+error_code=$?
+if [ $error_code -ne 0 ]
 then 
-    echo "======= skip running proxy_agent_extension arm64 tests on amd64 machine"
-else
-    echo "======= copy files for run/debug proxy_agent_extension Unit test"
-    runthis cp -f $out_dir/* $out_dir/deps/
-    runthis cp -f -r $out_dir/* $root_path/proxy_agent_extension/target/$Configuration/
-
-    echo "======= run rust proxy_agent_extension tests"
-    runthis cargo test --all-features $release_flag --target $build_target --manifest-path $cargo_toml --target-dir $out_path -- --test-threads=1
-    error_code=$?
-    if [ $error_code -ne 0 ]
-    then 
-        echo "cargo test proxy_agent_extension with exit-code: $error_code"
-        exit $error_code
-    fi
+    echo "cargo test proxy_agent_extension with exit-code: $error_code"
+    exit $error_code
 fi
 
 echo "======= copy config file for Linux platform"

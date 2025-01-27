@@ -467,8 +467,7 @@ jobs:
                   musl-tools \
                   gcc-aarch64-linux-gnu \
 
-          sudo snap install dotnet-sdk --classic
-          sudo chown -R root:root /var/lib
+          sudo sudo apt-get install -y dotnet-sdk-8.0
         
       - name: Run build-linux.sh Debug arm64
         run: ./build-linux.sh debug arm64
