@@ -436,7 +436,7 @@ jobs:
           asset_content_type: application/zip
 
   build-linux-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: create-release
 
     steps:

@@ -110,7 +110,7 @@ ebpf_path=$root_path/linux-ebpf
 
 if [ "$Target" == "arm64" ] 
 then 
-    runthis clang -g -target aarch64-linux-gnu -Werror -O2 -D__TARGET_ARCH_arm64 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
+    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_arm64 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 else
     runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
 fi
