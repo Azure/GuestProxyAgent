@@ -35,7 +35,7 @@ pub async fn start_service(shared_state: SharedState) {
     .await;
 
     let start_message = format!(
-        "============== GuestProxyAgent ({}) is starting on {} - {}, elapsed: {}",
+        "============== GuestProxyAgent ({}) is starting on {}({}), elapsed: {}",
         proxy_agent_shared::misc_helpers::get_current_version(),
         helpers::get_long_os_version(),
         helpers::get_cpu_arch(),
