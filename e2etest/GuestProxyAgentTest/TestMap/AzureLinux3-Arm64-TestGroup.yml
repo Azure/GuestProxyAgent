@@ -1,0 +1,10 @@
+groupName: AzureLinux3-Fips
+vmImagePublisher: MicrosoftCBLMariner
+vmImageOffer: azure-linux-3
+vmImageSku: azure-linux-3-arm64
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
