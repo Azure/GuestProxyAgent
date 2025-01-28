@@ -4,6 +4,8 @@
 //! This module contains the proxy summary struct.
 //! The proxy summary struct is used to store the summary of the proxied connections.
 
+use std::path::PathBuf;
+
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use serde_derive::{Deserialize, Serialize};
 
@@ -20,7 +22,7 @@ pub struct ProxySummary {
     pub userId: u64,
     pub userName: String,
     pub userGroups: Vec<String>,
-    pub processFullPath: String,
+    pub processFullPath: PathBuf,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub responseStatus: String,
@@ -36,7 +38,7 @@ impl ProxySummary {
             self.clientIp,
             self.ip,
             self.port,
-            self.processFullPath,
+            self.processFullPath.to_string_lossy(),
             self.processCmdLine,
             self.responseStatus
         )
@@ -50,7 +52,7 @@ impl From<ProxySummary> for ProxyConnectionSummary {
             userGroups: Some(proxy_summary.userGroups.clone()),
             ip: proxy_summary.ip.to_string(),
             port: proxy_summary.port,
-            processFullPath: Some(proxy_summary.processFullPath.to_string()),
+            processFullPath: Some(proxy_summary.processFullPath.to_string_lossy().to_string()),
             processCmdLine: proxy_summary.processCmdLine.to_string(),
             responseStatus: proxy_summary.responseStatus.to_string(),
             count: 1,

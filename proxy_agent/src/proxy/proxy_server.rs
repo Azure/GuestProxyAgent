@@ -753,7 +753,7 @@ impl ProxyServer {
             userGroups: claims.userGroups.clone(),
             clientIp: claims.clientIp.to_string(),
             clientPort: claims.clientPort,
-            processFullPath: claims.processFullPath.to_string(),
+            processFullPath: claims.processFullPath,
             processCmdLine: claims.processCmdLine.to_string(),
             runAsElevated: claims.runAsElevated,
             method: http_connection_context.method.to_string(),

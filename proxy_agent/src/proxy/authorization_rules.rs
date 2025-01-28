@@ -348,6 +348,8 @@ mod tests {
     use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
     use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
     use proxy_agent_shared::{logger_manager, misc_helpers};
+    use std::ffi::OsString;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
     #[tokio::test]
@@ -403,10 +405,10 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: 0,
-            processFullPath: "test".to_string(),
+            processFullPath: PathBuf::from("test"),
             clientIp: "0".to_string(),
             clientPort: 0, // doesn't matter for this test
-            processName: "test".to_string(),
+            processName: OsString::from("test"),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
         };

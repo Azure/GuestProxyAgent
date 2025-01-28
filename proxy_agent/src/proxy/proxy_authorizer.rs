@@ -80,7 +80,8 @@ impl Authorizer for WireServer {
     fn to_string(&self) -> String {
         format!(
             "WireServer {{ runAsElevated: {}, processName: {} }}",
-            self.claims.runAsElevated, self.claims.processName
+            self.claims.runAsElevated,
+            self.claims.processName.to_string_lossy()
         )
     }
 }
@@ -145,7 +146,8 @@ impl Authorizer for GAPlugin {
     fn to_string(&self) -> String {
         format!(
             "GAPlugin {{ runAsElevated: {}, processName: {} }}",
-            self.claims.runAsElevated, self.claims.processName
+            self.claims.runAsElevated,
+            self.claims.processName.to_string_lossy()
         )
     }
 }
@@ -231,7 +233,7 @@ mod tests {
         proxy::{proxy_authorizer::AuthorizeResult, proxy_connection::ConnectionLogger},
         shared_state::key_keeper_wrapper::KeyKeeperSharedState,
     };
-    use std::str::FromStr;
+    use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
     #[test]
     fn get_authenticate_test() {
@@ -240,8 +242,8 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: std::process::id(),
-            processName: "test".to_string(),
-            processFullPath: "test".to_string(),
+            processName: OsString::from("test"),
+            processFullPath: PathBuf::from("test"),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -318,8 +320,8 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: std::process::id(),
-            processName: "test".to_string(),
-            processFullPath: "test".to_string(),
+            processName: OsString::from("test"),
+            processFullPath: PathBuf::from("test"),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -450,8 +452,8 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: std::process::id(),
-            processName: "test".to_string(),
-            processFullPath: "test".to_string(),
+            processName: OsString::from("test"),
+            processFullPath: PathBuf::from("test"),
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),

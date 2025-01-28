@@ -35,8 +35,9 @@ use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::logger_manager::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt::{Display, Formatter};
+use std::{collections::HashMap, path::PathBuf};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -298,7 +299,7 @@ impl Identity {
             format!("Start to match identity '{}'", self.name),
         );
         if let Some(ref user_name) = self.userName {
-            if user_name.to_lowercase() == claims.userName.to_lowercase() {
+            if *user_name == claims.userName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -318,7 +319,8 @@ impl Identity {
             }
         }
         if let Some(ref process_name) = self.processName {
-            if process_name.to_lowercase() == claims.processName.to_lowercase() {
+            let process_name_os: OsString = process_name.into();
+            if process_name_os == claims.processName {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -338,7 +340,8 @@ impl Identity {
             }
         }
         if let Some(ref exe_path) = self.exePath {
-            if exe_path.to_lowercase() == claims.processFullPath.to_lowercase() {
+            let process_path_buf: PathBuf = exe_path.into();
+            if process_path_buf == claims.processFullPath {
                 logger.write(
                     LoggerLevel::Verbose,
                     format!(
@@ -360,7 +363,7 @@ impl Identity {
         if let Some(ref group_name) = self.groupName {
             let mut matched = false;
             for claims_user_group_name in &claims.userGroups {
-                if claims_user_group_name.to_lowercase() == group_name.to_lowercase() {
+                if claims_user_group_name == group_name {
                     logger.write(
                         LoggerLevel::Verbose,
                         format!(
@@ -775,6 +778,13 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+    #[cfg(not(windows))]
+    use std::os::unix::ffi::OsStringExt;
+    #[cfg(windows)]
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::PathBuf;
+
     use super::Key;
     use super::KeyStatus;
     use crate::common::constants;
@@ -782,6 +792,7 @@ mod tests {
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
     use hyper::Uri;
+    use serde_json::json;
 
     #[test]
     fn key_status_v1_test() {
@@ -1243,17 +1254,17 @@ mod tests {
             http_connection_id: 1,
         };
 
-        let claims = super::Claims {
+        let mut claims = super::Claims {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
-            processName: "test".to_string(),
+            processName: OsString::from("test"),
             processCmdLine: "test".to_string(),
             userId: 0,
             processId: 0,
             clientIp: "00.000.000".to_string(),
             clientPort: 0, // doesn't matter for this test
             runAsElevated: true,
-            processFullPath: "test".to_string(),
+            processFullPath: PathBuf::from("test"),
         };
 
         let identity = r#"{
@@ -1315,6 +1326,15 @@ mod tests {
         );
         let identity3 = r#"{
             "name": "test",
+            "processName": "Test"
+        }"#;
+        let identity3: Identity = serde_json::from_str(identity3).unwrap();
+        assert!(
+            !identity3.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+        let identity3 = r#"{
+            "name": "test",
             "processName": "test"
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
@@ -1327,6 +1347,15 @@ mod tests {
         let identity4 = r#"{
             "name": "test",
             "exePath": "test1"
+        }"#;
+        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+        assert!(
+            !identity4.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+        let identity4 = r#"{
+            "name": "test",
+            "exePath": "TEST"
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
@@ -1363,6 +1392,36 @@ mod tests {
             "identity should be matched"
         );
 
+        // Test with non-UTF8 valid process name
+        #[cfg(windows)]
+        {
+            let invalid_utf16_bytes: Vec<u16> = vec![0xD800]; // Lone surrogate (0xD800)
+            claims.processName = OsString::from_wide(invalid_utf16_bytes.as_slice());
+        }
+
+        #[cfg(not(windows))]
+        {
+            let invalid_utf8_bytes: Vec<u8> = vec![0x80]; // Invalid UTF-8
+            claims.processName = OsString::from_vec(invalid_utf8_bytes);
+        }
+
+        let process_name_lossy = claims.processName.to_string_lossy().to_string();
+        let replacement_char = "�";
+
+        let identity6 = json!({
+            "name": "test",
+            "processName": replacement_char
+        });
+        let identity6: Identity = serde_json::from_value(identity6).unwrap();
+        assert!(
+            !identity6.is_match(&logger, &claims),
+            "identity should not be matched"
+        );
+
+        assert_eq!(
+            replacement_char, process_name_lossy,
+            "process name after lossy conversion should be equal to replacement char"
+        );
         // clean up and ignore the clean up errors
         _ = std::fs::remove_dir_all(temp_test_path);
     }
