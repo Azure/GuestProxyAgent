@@ -28,44 +28,47 @@ pub fn install_service(
     }
     #[cfg(not(windows))]
     {
-        linux_service::install_or_update_service(service_name);
-        Ok(())
+        linux_service::install_or_update_service(service_name)
     }
 }
 
-pub fn stop_and_delete_service(service_name: &str) -> Result<()> {
+pub async fn stop_and_delete_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_and_delete_service(service_name)
+        windows_service::stop_and_delete_service(service_name).await
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name);
-        linux_service::uninstall_service(service_name);
-        Ok(())
+        linux_service::stop_service(service_name)?;
+        linux_service::uninstall_service(service_name)
     }
 }
 
-pub fn start_service(service_name: &str, _retry_count: u32, _duration: std::time::Duration) {
+pub async fn start_service(
+    service_name: &str,
+    _retry_count: u32,
+    _duration: std::time::Duration,
+) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::start_service_with_retry(service_name, _retry_count, _duration);
+        windows_service::start_service_with_retry(service_name, _retry_count, _duration).await
     }
     #[cfg(not(windows))]
     {
-        linux_service::start_service(service_name);
+        linux_service::start_service(service_name)
     }
 }
 
-pub fn stop_service(service_name: &str) -> Result<()> {
+pub async fn stop_service(service_name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        windows_service::stop_service(service_name).map(|_| ())
+        windows_service::stop_service(service_name)
+            .await
+            .map(|_| ())
     }
     #[cfg(not(windows))]
     {
-        linux_service::stop_service(service_name);
-        Ok(())
+        linux_service::stop_service(service_name)
     }
 }
 
@@ -146,6 +149,9 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     }
 }
 
+#[cfg(windows)]
+pub use windows_service::set_default_failure_actions;
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -159,8 +165,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_install_service() {
+    #[tokio::test]
+    async fn test_install_service() {
         #[cfg(not(windows))]
         {
             let service_name = "test_install_service";
@@ -170,17 +176,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_check_service_installed() {
+    #[tokio::test]
+    async fn test_check_service_installed() {
         #[cfg(windows)]
         {
             let service_name = "test_check_service_installed";
+            // try delete the service if it exists
+            _ = super::stop_and_delete_service(service_name).await;
+
             let exe_path = std::env::current_exe().unwrap();
             let result = super::install_service(service_name, service_name, vec![], exe_path);
             assert!(result.is_ok());
             let (is_installed, message) = super::check_service_installed(service_name);
             assert!(is_installed);
             assert!(message.contains("successfully queried"));
+
+            // clean up
+            _ = super::stop_and_delete_service(service_name).await.unwrap();
         }
     }
 }

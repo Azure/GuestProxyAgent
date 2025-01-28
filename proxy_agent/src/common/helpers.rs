@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use super::error::Error;
 use super::result::Result;
+use super::{error::Error, logger};
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
@@ -11,8 +11,6 @@ use sysinfo::{System, SystemExt};
 
 #[cfg(windows)]
 use super::windows;
-#[cfg(windows)]
-use crate::common::logger;
 
 static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
     #[cfg(windows)]
@@ -95,7 +93,10 @@ pub fn write_startup_event(
     module_name: &str,
     logger_key: &str,
 ) -> String {
-    START.write_event(task, method_name, module_name, logger_key)
+    let message = START.write_event(task, method_name, module_name, logger_key);
+    #[cfg(not(windows))]
+    logger::write_serial_console_log(message.clone());
+    message
 }
 
 #[cfg(test)]

@@ -45,10 +45,14 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
             for entry in entries {
                 match entry.sid {
                     Some(ref sid) => {
+                        logger::write(format!(
+                            "acl_directory: removing ACL entry '{}-{}-{}-{}' .",
+                            entry.string_sid, entry.entry_type, entry.flags, entry.mask
+                        ));
                         match acl.remove_entry(
                             sid.as_ptr() as PSID,
                             Some(entry.entry_type),
-                            Some(entry.flags),
+                            None, // remove all, including inherited permissions
                         ) {
                             Ok(r) => {
                                 logger::write(format!("acl_directory: removed '{}' entry.", r));
@@ -124,6 +128,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
 mod tests {
     use crate::common::logger;
     use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::path::PathBuf;
@@ -133,8 +138,8 @@ mod tests {
 
     const EVERY_ONE_SID: &str = "S-1-1-0";
 
-    #[test]
-    fn acl_directory_test() {
+    #[tokio::test]
+    async fn acl_directory_test() {
         let mut temp_test_path = env::temp_dir();
         let logger_key = "acl_directory_test";
         temp_test_path.push(logger_key);
@@ -146,7 +151,9 @@ mod tests {
             logger_key.to_string(),
             10 * 1024 * 1024,
             20,
-        );
+        )
+        .await;
+        _ = misc_helpers::try_create_folder(&temp_test_path);
 
         // test when dir_to_acl does not exist
         let invalid_path = PathBuf::from("invalid_path");

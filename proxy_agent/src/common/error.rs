@@ -35,6 +35,19 @@ pub enum Error {
 
     #[error("{0} is invalid")]
     Invalid(String),
+
+    #[cfg(windows)]
+    #[error(transparent)]
+    WindowsService(#[from] windows_service::Error),
+
+    #[error("Failed to send '{0}' action response with error {1}")]
+    SendError(String, String),
+
+    #[error("Failed to receive '{0}' action response with error {1}")]
+    RecvError(String, tokio::sync::oneshot::error::RecvError),
+
+    #[error("{0}")]
+    FindAuditEntryError(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -42,8 +55,14 @@ pub enum HyperErrorType {
     #[error("{0}: {1}")]
     Custom(String, hyper::Error),
 
+    #[error("Host connection error: {0}")]
+    HostConnection(String),
+
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
+
+    #[error("Failed to receive the request body with error: {0}")]
+    RequestBody(String),
 
     #[error("Failed to get response from {0}, status code: {1}")]
     ServerError(String, StatusCode),
@@ -77,6 +96,15 @@ pub enum KeyErrorType {
 
     #[error("Failed to join {0} and {1} with error: {2}")]
     ParseKeyUrl(String, String, InvalidUri),
+
+    #[error("Failed to check local key with error: {0}")]
+    CheckLocalKey(String),
+
+    #[error("Failed to get local key with error: {0}")]
+    FetchLocalKey(String),
+
+    #[error("Failed to store key locally with error: {0}")]
+    StoreLocalKey(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -99,6 +127,9 @@ pub enum BpfErrorType {
     #[error("Failed to lookup element '{0}' in BPF map 'audit_map'. {1}")]
     MapLookupElem(String, String),
 
+    #[error("Failed to delete element '{0}' in BPF map 'audit_map'. {1}")]
+    MapDeleteElem(String, String),
+
     #[error("Failed to retrieve file descriptor of the BPF map 'audit_map' with error: {0}")]
     MapFileDescriptor(String),
 
@@ -109,10 +140,16 @@ pub enum BpfErrorType {
     GetBpfApi,
 
     #[error("Failed to get BPF object: Object is not initialized")]
-    GetBpfObject,
+    NullBpfObject,
 
     #[error("Loading eBPF API from file path '{0}' failed with error: {1}")]
     LoadBpfApi(String, String),
+
+    #[error("Opening BPF object from file path '{0}' failed with error: {1}")]
+    OpenBpfObject(String, String),
+
+    #[error("Loading BPF object from file path '{0}' failed with error: {1}")]
+    LoadBpfObject(String, String),
 
     #[error("Loading BPF API function '{0}' failed with error: {1}")]
     LoadBpfApiFunction(String, String),
@@ -140,6 +177,9 @@ pub enum BpfErrorType {
 
     #[error("CString initialization failed with error: {0}")]
     CString(std::ffi::NulError),
+
+    #[error("Failed to start eBPF/redirector with multiple retries")]
+    FailedToStartRedirector,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -151,14 +191,20 @@ pub enum WindowsApiErrorType {
     #[error("LsaGetLogonSessionData {0}")]
     LsaGetLogonSessionData(String),
 
-    #[error("WinSock::WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT: {0}")]
-    WSAIoctl(i32),
+    #[error("WinSock::WSAIoctl - {0}")]
+    WSAIoctl(String),
 
     #[error("GlobalMemoryStatusEx failed: {0}")]
     GlobalMemoryStatusEx(std::io::Error),
 
     #[error("{0}")]
     WindowsOsError(std::io::Error),
+
+    #[error("CryptProtectData failed: {0}")]
+    CryptProtectData(std::io::Error),
+
+    #[error("CryptUnprotectData failed: {0}")]
+    CryptUnprotectData(std::io::Error),
 }
 
 #[cfg(test)]

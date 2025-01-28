@@ -1,6 +1,6 @@
 [package]
 name = "azure-proxy-agent"
-version = "1.0.24"      # always 3-number version
+version = "1.0.25"      # always 3-number version
 edition = "2021"
 build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,7 +17,7 @@ bitflags = "2.6.0"            # support bitflag enum
 hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
 regex = "1.9.5"               # match process name in cmdline
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros", "sync"] }
 tokio-util = "0.7.11"
 http = "1.1.0"
 http-body-util = "0.1"
@@ -38,8 +38,8 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 sysinfo = "0.28.4"            # read process information for Linux
-aya = "0.12.0"                # linux ebpf program loader
-users = "0.11.0"              # get user name
+aya = "0.13.1"                # linux ebpf program loader
+uzers = "0.12.1"              # get user name
 libc = "0.2.147"              # linux call
 
 [target.'cfg(not(windows))'.dependencies.nix]
@@ -51,7 +51,7 @@ features = [
 ]
 
 [target.'cfg(windows)'.dependencies]
-windows-service = "0.5.0"     # windows NT service
+windows-service = "0.7.0"     # windows NT service
 windows-acl = "0.3.0"         # ACL the latch key folder
 winapi = "0.3.9"              # used by windows-acl PSID
 libloading = "0.8.0"          # for dynamic load libraries
@@ -74,6 +74,8 @@ features = [
   "Win32_System_Threading",
   "Win32_System_ProcessStatus",
   "Win32_System_Kernel",
+  "Win32_Security_Cryptography",
+  "Win32_System_Memory",
 ]
 
 [features]
