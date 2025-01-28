@@ -3,9 +3,11 @@
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    // windows_service::Error is a custom error type from the windows-service crate
+    // it does not display the IO error message, so we need to add it manually
     #[cfg(windows)]
-    #[error(transparent)]
-    WindowsService(#[from] windows_service::Error),
+    #[error("{0}: {1}")]
+    WindowsService(windows_service::Error, std::io::Error),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -39,6 +41,8 @@ pub enum ParseVersionErrorType {
 pub enum CommandErrorType {
     #[error("Findmnt")]
     Findmnt,
+    #[error("{0}")]
+    CommandName(String),
 }
 
 #[cfg(test)]
