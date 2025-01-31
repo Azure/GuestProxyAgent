@@ -3,3 +3,6 @@ runner = 'sudo -E' # run with root permission but keep the current environment v
 
 [http]
 check-revoke = false  # Set to false to disable revocation checks
+
+[target.aarch64-unknown-linux-musl]
+runner = 'sudo -E' # run with root permission but keep the current environment variables
