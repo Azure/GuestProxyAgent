@@ -10,12 +10,19 @@ set ContinueAtConvertBpfToNative=%4
 if "%Configuration%"=="" (SET Configuration=debug)
 echo Configuration=%Configuration%
 
+SET eBPF_Platform="x64"
 Set build_target=x86_64-pc-windows-msvc
 if "%Target%"=="arm64" (
     Set build_target=aarch64-pc-windows-msvc
+    SET eBPF_Platform="arm64"
+    
+    REM Install the latest Windows Driver Kit (WDK) NuGet packages
+    nuget.exe install Microsoft.Windows.WDK.arm64 -Version 10.0.26100.2454
 ) else (
     Set build_target=x86_64-pc-windows-msvc
     Set Target=amd64
+    REM Install the latest Windows Driver Kit (WDK) NuGet packages
+    nuget.exe install Microsoft.Windows.WDK.x64 -Version 10.0.26100.2454
 )
 SET out_path=%root_path%out
 SET out_dir=%out_path%\%build_target%\%Configuration%
@@ -63,7 +70,6 @@ if not exist "%out_package_proxyagent_dir%" (md "%out_package_proxyagent_dir%")
 echo ======= copy VB Scripts to Package folder
 xcopy /Y %root_path%\Setup\Windows\*.* %out_package_dir%\
 
-REM TODO:: need revisit this section when windows ebpf supports arm64
 echo ======= build ebpf program
 SET ebpf_path=%root_path%\ebpf
 echo call clang -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
@@ -77,8 +83,8 @@ xcopy /Y %out_dir%\redirect.bpf.o %out_package_proxyagent_dir%\
 echo ======= convert redirect.bpf.o to redirect.bpf.sys
 call %eBPF_for_Windows_bin_path%\export_program_info.exe --clear
 call %eBPF_for_Windows_bin_path%\export_program_info.exe
-echo call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir %out_dir% -FileName redirect.bpf.o -IncludeDir %eBPF_for_Windows_inc_path%
-call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir %out_dir% -FileName redirect.bpf.o -IncludeDir %eBPF_for_Windows_inc_path%
+echo call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform%
+call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform%
 if  %ERRORLEVEL% NEQ 0 (
     echo call Convert-BpfToNative.ps1 failed with exit-code: %errorlevel%
     if "%ContinueAtConvertBpfToNative%"=="" (
