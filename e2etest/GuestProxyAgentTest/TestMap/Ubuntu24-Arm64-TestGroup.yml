@@ -1,4 +1,4 @@
-groupName: Ubuntu24
+groupName: Ubuntu24-Arm64
 vmImagePublisher: canonical
 vmImageOffer: ubuntu-24_04-lts
 vmImageSku: server-arm64

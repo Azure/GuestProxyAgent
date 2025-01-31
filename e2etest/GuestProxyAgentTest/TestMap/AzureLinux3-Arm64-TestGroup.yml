@@ -1,4 +1,4 @@
-groupName: AzureLinux3-Fips
+groupName: AzureLinux3-Arm64
 vmImagePublisher: MicrosoftCBLMariner
 vmImageOffer: azure-linux-3
 vmImageSku: azure-linux-3-arm64
