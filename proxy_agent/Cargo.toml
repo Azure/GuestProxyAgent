@@ -37,7 +37,7 @@ features = [
 ]
 
 [target.'cfg(not(windows))'.dependencies]
-sysinfo = "0.28.4"            # read process information for Linux
+sysinfo = "0.30.13"            # read process information for Linux
 aya = "0.13.1"                # linux ebpf program loader
 uzers = "0.12.1"              # get user name
 libc = "0.2.147"              # linux call
