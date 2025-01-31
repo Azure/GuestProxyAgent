@@ -35,4 +35,4 @@ features = [
 ]
 
 [target.'cfg(not(windows))'.dependencies]
-sysinfo = "0.29.10"            # read process information for Linux
+sysinfo = "0.30.13"            # read process information for Linux

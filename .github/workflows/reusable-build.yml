@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload debug amd64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-windows-amd64.zip
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload release amd64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-windows-amd64.zip
@@ -205,7 +205,7 @@ jobs:
 
       - name: Upload debug arm64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-windows-arm64.zip
@@ -218,7 +218,7 @@ jobs:
         
       - name: Upload release arm64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-windows-arm64.zip
@@ -303,7 +303,7 @@ jobs:
         run: ./build-linux.sh debug amd64
 
       - name: Upload debug build amd64 zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-linux-amd64.zip
@@ -314,7 +314,7 @@ jobs:
         run: ./build-linux.sh release
 
       - name: Upload release amd64 build zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-linux-amd64.zip
@@ -473,7 +473,7 @@ jobs:
         run: ./build-linux.sh debug arm64
 
       - name: Upload debug arm64 build zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-linux-arm64.zip
@@ -484,7 +484,7 @@ jobs:
         run: ./build-linux.sh release arm64
 
       - name: Upload release arm64 build zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-linux-arm64.zip
