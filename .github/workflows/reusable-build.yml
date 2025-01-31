@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload debug build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-windows-amd64.zip
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload release build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-windows-amd64.zip
@@ -221,7 +221,7 @@ jobs:
         run: ./build-linux.sh
 
       - name: Upload debug build zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-debug-linux-amd64.zip
@@ -232,7 +232,7 @@ jobs:
         run: ./build-linux.sh release
 
       - name: Upload release build zip package
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           # Artifact name
           name: build-release-linux-amd64.zip
