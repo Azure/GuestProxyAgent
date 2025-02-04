@@ -211,7 +211,7 @@ cp -f $out_dir/ebpf_cgroup.o $out_package_proxyagent_dir/
 
 echo "======= generate rpm package"
 echo "Generating rpm package -------------- "
-pkgversion=$(grep '^version.*# always 3-number version' ./proxy_agent/Cargo.toml | awk -F '[=#]' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' | tr -d '"')
+pkgversion=$($out_dir/azure-proxy-agent --version)
 echo "Package version: '$pkgversion'"
 rootdir=$(pwd)
 rm -rf build
