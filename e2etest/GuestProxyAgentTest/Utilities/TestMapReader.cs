@@ -2,24 +2,35 @@
 // SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.Settings;
 using System.Reflection;
-using YamlDotNet.Serialization.NamingConventions;
-using YamlDotNet.Serialization;
 using GuestProxyAgentTest.Models;
 
 namespace GuestProxyAgentTest.Utilities
 {
     public static class TestMapReader
     {
-        private static readonly string TestMapFile;
-        static TestMapReader()
+        static string TestMapFile(bool test_arm64 = false)
         {
-            if (Constants.IS_WINDOWS())
+            if (test_arm64)
             {
-                TestMapFile = "Test-Map.yml";
+                if (Constants.IS_WINDOWS())
+                {
+                    return "Test-Map-Arm64.yml";
+                }
+                else
+                {
+                    return "Test-Map-Linux-Arm64.yml";
+                }
             }
             else
             {
-                TestMapFile = "Test-Map-Linux.yml";
+                if (Constants.IS_WINDOWS())
+                {
+                    return "Test-Map.yml";
+                }
+                else
+                {
+                    return "Test-Map-Linux.yml";
+                }
             }
         }
 
@@ -27,10 +38,10 @@ namespace GuestProxyAgentTest.Utilities
         /// Read 'Test-Map.yml' and covert to a TestScenarioSetting list
         /// </summary>
         /// <returns></returns>
-        public static List<TestScenarioSetting> ReadFlattenTestScenarioSettingFromTestMap()
+        public static List<TestScenarioSetting> ReadFlattenTestScenarioSettingFromTestMap(bool test_arm64 = false)
         {
             var curFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
-            return YamlUtils.DeserializeYaml<TestMap>(Path.Combine(curFolder, "TestMap", TestMapFile))
+            return YamlUtils.DeserializeYaml<TestMap>(Path.Combine(curFolder, "TestMap", TestMapFile(test_arm64)))
                .TestGroupList.Select((x) => YamlUtils.DeserializeYaml<TestGroupDetails>(Path.Combine(curFolder, "TestMap", x.Include)))
                .SelectMany(x => x.Scenarios, (group, ele) => new TestScenarioSetting
                {
