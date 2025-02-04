@@ -322,6 +322,8 @@ impl KeyKeeper {
             let mut access_control_rules_changed = false;
             let wireserver_rule_id = status.get_wireserver_rule_id();
             let imds_rule_id: String = status.get_imds_rule_id();
+            let hostga_rule_id: String = status.get_hostga_rule_id();
+
             match self
                 .key_keeper_shared_state
                 .update_wireserver_rule_id(wireserver_rule_id.to_string())
@@ -374,16 +376,44 @@ impl KeyKeeper {
                 }
             }
 
+            match self
+                .key_keeper_shared_state
+                .update_hostga_rule_id(hostga_rule_id.to_string())
+                .await
+            {
+                Ok((updated, old_hostga_rule_id)) => {
+                    if updated {
+                        logger::write_warning(format!(
+                            "HostGA rule id changed from '{}' to '{}'.",
+                            old_hostga_rule_id, hostga_rule_id
+                        ));
+                        if let Err(e) = self
+                            .key_keeper_shared_state
+                            .set_hostga_rules(status.get_hostga_rules())
+                            .await
+                        {
+                            logger::write_error(format!("Failed to set HostGA rules: {}", e));
+                        }
+                        access_control_rules_changed = true;
+                    }
+                }
+                Err(e) => {
+                    logger::write_warning(format!("Failed to update HostGA rule id: {}", e));
+                }
+            }
+
             if access_control_rules_changed {
-                if let (Ok(wireserver_rules), Ok(imds_rules)) = (
+                if let (Ok(wireserver_rules), Ok(imds_rules), Ok(hostga_rules)) = (
                     self.key_keeper_shared_state.get_wireserver_rules().await,
                     self.key_keeper_shared_state.get_imds_rules().await,
+                    self.key_keeper_shared_state.get_hostga_rules().await,
                 ) {
                     let rules = AuthorizationRulesForLogging::new(
                         status.authorizationRules.clone(),
                         ComputedAuthorizationRules {
                             wireserver: wireserver_rules,
                             imds: imds_rules,
+                            hostga: hostga_rules,
                         },
                     );
                     rules.write_all(&self.log_dir, constants::MAX_LOG_FILE_COUNT);

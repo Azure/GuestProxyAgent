@@ -254,6 +254,8 @@ pub struct ComputedAuthorizationRules {
     pub imds: Option<ComputedAuthorizationItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wireserver: Option<ComputedAuthorizationItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostga: Option<ComputedAuthorizationItem>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -600,10 +602,12 @@ mod tests {
             Some(AuthorizationRules {
                 imds: Some(authorization_item.clone()),
                 wireserver: Some(authorization_item.clone()),
+                hostga: Some(authorization_item.clone()),
             }),
             ComputedAuthorizationRules {
                 imds: Some(computed_authorization_item.clone()),
                 wireserver: Some(computed_authorization_item.clone()),
+                hostga: Some(computed_authorization_item.clone()),
             },
         );
 
