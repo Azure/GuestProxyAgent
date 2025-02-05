@@ -1,5 +1,6 @@
 aab
 AAFFBB
+aarch
 abe
 addrpair
 ATL
