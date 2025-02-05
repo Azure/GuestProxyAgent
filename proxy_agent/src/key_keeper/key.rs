@@ -80,6 +80,8 @@ pub struct AuthorizationRules {
     pub imds: Option<AuthorizationItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wireserver: Option<AuthorizationItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostga: Option<AuthorizationItem>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -539,6 +541,13 @@ impl KeyStatus {
         }
     }
 
+    pub fn get_hostga_rule_id(&self) -> String {
+        match self.get_hostga_rules() {
+            Some(item) => item.id.to_string(),
+            None => String::new(),
+        }
+    }
+
     pub fn get_wireserver_rules(&self) -> Option<AuthorizationItem> {
         match &self.authorizationRules {
             Some(rules) => rules.wireserver.clone(),
@@ -549,6 +558,13 @@ impl KeyStatus {
     pub fn get_imds_rules(&self) -> Option<AuthorizationItem> {
         match &self.authorizationRules {
             Some(rules) => rules.imds.clone(),
+            None => None,
+        }
+    }
+
+    pub fn get_hostga_rules(&self) -> Option<AuthorizationItem> {
+        match &self.authorizationRules {
+            Some(rules) => rules.hostga.clone(),
             None => None,
         }
     }
@@ -594,6 +610,13 @@ impl KeyStatus {
             } else {
                 AUDIT_MODE.to_string()
             }
+        }
+    }
+
+    pub fn get_hostga_mode(&self) -> String {
+        match self.get_hostga_rules() {
+            Some(item) => item.mode.to_lowercase(),
+            None => "disabled".to_string(),
         }
     }
 }
@@ -982,6 +1005,79 @@ mod tests {
                             }
                         ]
                     }
+                },
+                "hostga": {
+                    "defaultAccess": "allow",
+                    "mode": "enforce",
+                    "id": "sigid",
+                    "rules": {
+                        "privileges": [
+                            {
+                                "name": "test",
+                                "path": "/test",
+                                "queryParameters": {
+                                    "key1": "value1",
+                                    "key2": "value2"
+                                }
+                            },
+                            {
+                                "name": "test2",
+                                "path": "/test2",
+                                "queryParameters": {
+                                    "key1": "value3",
+                                    "key2": "value4"
+                                }
+                            }
+                        ],
+                        "roles": [
+                            {
+                                "name": "test3",
+                                "privileges": [
+                                    "test1",
+                                    "test2"
+                                ]
+                            },
+                            {
+                                "name": "test6",
+                                "privileges": [
+                                    "test4",
+                                    "test5"
+                                ]
+                            }
+                        ],
+                        "identities": [
+                            {
+                                "name": "test",
+                                "userName": "test",
+                                "groupName": "test",
+                                "exePath": "test",
+                                "processName": "test"
+                            },
+                            {
+                                "name": "test1",
+                                "userName": "test1",
+                                "groupName": "test1",
+                                "exePath": "test1",
+                                "processName": "test1"
+                            }
+                        ],
+                        "roleAssignments": [
+                            {
+                                "role": "test4",
+                                "identities": [
+                                    "test",
+                                    "test1"
+                                ]
+                            },
+                            {
+                                "role": "test5",
+                                "identities": [
+                                    "test",
+                                    "test1"
+                                ]
+                            }
+                        ]
+                    }
                 }
             }
         }"#;
@@ -1129,6 +1225,96 @@ mod tests {
         );
         assert_eq!(
             "test", first_role_assignment.identities[0],
+            "roleAssignment identities mismatch"
+        );
+
+        // Validate HostGA rules
+        let hostga_rules = status.get_hostga_rules().unwrap();
+        assert_eq!(
+            "allow", hostga_rules.defaultAccess,
+            "defaultAccess mismatch"
+        );
+        assert_eq!(
+            "sigid",
+            status.get_hostga_rule_id(),
+            "HostGA rule id mismatch"
+        );
+        assert_eq!("enforce", status.get_hostga_mode(), "HostGA mode mismatch");
+
+        // Validate HostGA rule details
+        // Retrieve and validate second privilege for HostGA
+        let privilege = &hostga_rules
+            .rules
+            .as_ref()
+            .unwrap()
+            .privileges
+            .as_ref()
+            .unwrap()[1];
+
+        assert_eq!("test2", privilege.name, "privilege name mismatch");
+        assert_eq!("/test2", privilege.path, "privilege path mismatch");
+
+        assert_eq!(
+            "value3",
+            privilege.queryParameters.as_ref().unwrap()["key1"],
+            "privilege queryParameters mismatch"
+        );
+        assert_eq!(
+            "value4",
+            privilege.queryParameters.as_ref().unwrap()["key2"],
+            "privilege queryParameters mismatch"
+        );
+
+        // Retrieve and validate second role for HostGA
+        let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
+        assert_eq!("test6", role.name, "role name mismatch");
+        assert_eq!("test4", role.privileges[0], "role privilege mismatch");
+        assert_eq!("test5", role.privileges[1], "role privilege mismatch");
+
+        // Retrieve and validate first identity for HostGA
+        let identity = &hostga_rules
+            .rules
+            .as_ref()
+            .unwrap()
+            .identities
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!("test", identity.name, "identity name mismatch");
+        assert_eq!(
+            "test",
+            identity.userName.as_ref().unwrap(),
+            "identity userName mismatch"
+        );
+        assert_eq!(
+            "test",
+            identity.groupName.as_ref().unwrap(),
+            "identity groupName mismatch"
+        );
+        assert_eq!(
+            "test",
+            identity.exePath.as_ref().unwrap(),
+            "identity exePath mismatch"
+        );
+        assert_eq!(
+            "test",
+            identity.processName.as_ref().unwrap(),
+            "identity processName mismatch"
+        );
+
+        // Retrieve and validate first role assignment for HostGA
+        let role_assignment = &hostga_rules
+            .rules
+            .as_ref()
+            .unwrap()
+            .roleAssignments
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(
+            "test4", role_assignment.role,
+            "roleAssignment role mismatch"
+        );
+        assert_eq!(
+            "test", role_assignment.identities[0],
             "roleAssignment identities mismatch"
         );
     }
