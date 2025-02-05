@@ -113,6 +113,7 @@ guestproxyagentmsis
 guiddef
 hklm
 hlist
+hostga
 httpwg
 Iaa
 idstepsrun

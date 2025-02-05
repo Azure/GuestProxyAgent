@@ -502,7 +502,7 @@ impl KeyKeeperSharedState {
             .map_err(|e| Error::RecvError("KeyKeeperAction::GetHostGARuleId".to_string(), e))
     }
 
-    pub async fn set_hostga_rule_id(&self, rule_id: String) -> Result<()> {
+    async fn set_hostga_rule_id(&self, rule_id: String) -> Result<()> {
         let (response, receiver) = oneshot::channel();
         self.0
             .send(KeyKeeperAction::SetHostGARuleId { rule_id, response })

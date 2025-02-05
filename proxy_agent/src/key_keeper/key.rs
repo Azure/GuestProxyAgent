@@ -1009,7 +1009,7 @@ mod tests {
                 "hostga": {
                     "defaultAccess": "allow",
                     "mode": "enforce",
-                    "id": "hostgasigid",
+                    "id": "sigid",
                     "rules": {
                         "privileges": [
                             {
@@ -1235,7 +1235,7 @@ mod tests {
             "defaultAccess mismatch"
         );
         assert_eq!(
-            "hostgasigid",
+            "sigid",
             status.get_hostga_rule_id(),
             "HostGA rule id mismatch"
         );
@@ -1266,13 +1266,7 @@ mod tests {
         );
 
         // Retrieve and validate second role for HostGA
-        let role = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .roles
-            .as_ref()
-            .unwrap()[1];
+        let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
         assert_eq!("test6", role.name, "role name mismatch");
         assert_eq!("test4", role.privileges[0], "role privilege mismatch");
         assert_eq!("test5", role.privileges[1], "role privilege mismatch");
