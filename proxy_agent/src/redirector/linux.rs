@@ -459,6 +459,23 @@ pub async fn update_imds_redirect_policy(
     }
 }
 
+pub async fn update_hostga_redirect_policy(
+    redirect: bool,
+    redirector_shared_state: RedirectorSharedState,
+) {
+    if let (Ok(Some(bpf_object)), Ok(local_port)) = (
+        redirector_shared_state.get_bpf_object().await,
+        redirector_shared_state.get_local_port().await,
+    ) {
+        bpf_object.lock().unwrap().update_redirect_policy(
+            constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
+            constants::GA_PLUGIN_PORT,
+            local_port,
+            redirect,
+        );
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "test-with-root")]
 mod tests {

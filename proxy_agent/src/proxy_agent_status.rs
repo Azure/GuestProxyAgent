@@ -150,6 +150,13 @@ impl ProxyAgentStatusTask {
                 .await
                 .unwrap_or(UNKNOWN_STATE.to_string()),
         );
+        states.insert(
+            "hostGARuleId".to_string(),
+            self.key_keeper_shared_state
+                .get_hostga_rule_id()
+                .await
+                .unwrap_or(UNKNOWN_STATE.to_string()),
+        );
         if let Ok(Some(incarnation)) = self
             .key_keeper_shared_state
             .get_current_key_incarnation()

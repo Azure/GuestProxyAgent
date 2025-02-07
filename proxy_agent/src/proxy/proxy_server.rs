@@ -478,6 +478,7 @@ impl ProxyServer {
         // authenticate the connection
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
             ip.to_string(),
+            port,
             self.key_keeper_shared_state.clone(),
         )
         .await

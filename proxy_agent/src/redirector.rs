@@ -420,6 +420,11 @@ pub use linux::update_wire_server_redirect_policy;
 #[cfg(windows)]
 pub use windows::update_wire_server_redirect_policy;
 
+#[cfg(not(windows))]
+pub use linux::update_hostga_redirect_policy;
+#[cfg(windows)]
+pub use windows::update_hostga_redirect_policy;
+
 #[cfg(test)]
 mod tests {
     #[tokio::test]
