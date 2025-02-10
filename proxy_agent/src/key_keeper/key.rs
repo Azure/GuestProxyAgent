@@ -478,6 +478,7 @@ impl KeyStatus {
                         // need read details from authorizationRules
                         let wireserver;
                         let imds;
+                        let hostga;
                         match &self.authorizationRules {
                             Some(rules) => {
                                 match &rules.wireserver {
@@ -507,11 +508,25 @@ impl KeyStatus {
                                     }
                                     None => imds = " IMDS Disabled",
                                 };
+
+                                match &rules.hostga {
+                                    Some(item) => {
+                                        let mode = item.mode.to_lowercase();
+                                        if mode == ENFORCE_MODE {
+                                            hostga = "HostGA Enforce";
+                                        } else if mode == AUDIT_MODE {
+                                            hostga = "HostGA Audit";
+                                        } else {
+                                            hostga = "HostGA Disabled";
+                                        }
+                                    }
+                                    None => hostga = "HostGA Disabled",
+                                };
                             }
                             None => return super::DISABLE_STATE.to_string(),
                         }
 
-                        format!("{} - {}", wireserver, imds)
+                        format!("{} - {} - {}", wireserver, imds, hostga)
                     } else {
                         super::DISABLE_STATE.to_string()
                     }

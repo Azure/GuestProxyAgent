@@ -567,6 +567,11 @@ impl KeyKeeper {
                             self.redirector_shared_state.clone(),
                         )
                         .await;
+                        redirector::update_hostga_redirect_policy(
+                            status.get_hostga_mode() != DISABLE_STATE,
+                            self.redirector_shared_state.clone(),
+                        )
+                        .await;
 
                         // customer has not enforce the secure channel state
                         if state == DISABLE_STATE {
