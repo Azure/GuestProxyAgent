@@ -24,6 +24,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub version: bool,
 
+    #[cfg(test)]
+    #[arg(short, long)]
+    test_threads: Option<usize>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
