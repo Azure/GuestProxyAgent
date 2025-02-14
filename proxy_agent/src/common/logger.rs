@@ -37,7 +37,11 @@ pub fn write_console_log(message: String) {
     } else {
         String::new()
     };
-    println!("{} {}", time_stamp, message);
+    if time_stamp.is_empty() {
+        println!("{}", message);
+    } else {
+        println!("{} {}", time_stamp, message);
+    }
 }
 
 #[cfg(not(windows))]
