@@ -32,15 +32,14 @@ fn log(log_level: LoggerLevel, message: String) {
 }
 
 pub fn write_console_log(message: String) {
-    let time_stamp = if cli::CLI.is_console_mode() {
-        misc_helpers::get_date_time_string_with_milliseconds()
+    if cli::CLI.is_console_mode() {
+        println!(
+            "{} {}",
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            message
+        );
     } else {
-        String::new()
-    };
-    if time_stamp.is_empty() {
         println!("{}", message);
-    } else {
-        println!("{} {}", time_stamp, message);
     }
 }
 
