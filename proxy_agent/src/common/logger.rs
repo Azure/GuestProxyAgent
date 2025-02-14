@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::common::cli;
 use proxy_agent_shared::{
     logger_manager::{self, LoggerLevel},
     misc_helpers,
@@ -31,11 +32,15 @@ fn log(log_level: LoggerLevel, message: String) {
 }
 
 pub fn write_console_log(message: String) {
-    println!(
-        "{} {}",
-        misc_helpers::get_date_time_string_with_milliseconds(),
-        message
-    );
+    if cli::CLI.is_console_mode() {
+        println!(
+            "{} {}",
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            message
+        );
+    } else {
+        println!("{}", message);
+    }
 }
 
 #[cfg(not(windows))]
