@@ -87,8 +87,11 @@ Remove-Item -Path $PIRExtensionFolderZIPLocation -Force
 wget $decodedUrlString -OutFile $PIRExtensionFolderZIPLocation
 Write-Output "$((Get-Date).ToUniversalTime()) - downloaded the proxyagent extension file to path: " $PIRExtensionFolderZIPLocation
 
-TASKKILL /F /IM ProxyAgentExt.exe
+Write-Output "$((Get-Date).ToUniversalTime()) - net stop $serviceName"
+net stop $serviceName
+
 Write-Output "$((Get-Date).ToUniversalTime()) - TASKKILL /F /IM ProxyAgentExt.exe"
+TASKKILL /F /IM ProxyAgentExt.exe
 
 Write-Output "$((Get-Date).ToUniversalTime()) - Delete registry key at $registrykeyPath"
 Remove-Item -Path $registrykeyPath -Recurse
