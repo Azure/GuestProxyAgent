@@ -5,6 +5,7 @@ use crate::constants;
 use crate::logger;
 use crate::structs::*;
 use proxy_agent_shared::proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus;
+use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use service_state::ServiceState;
@@ -465,10 +466,13 @@ fn extension_substatus(
             .proxyConnectionSummary
             .is_empty()
         {
-            let proxy_agent_aggregate_connection_status_obj =
-                proxy_agent_aggregate_status_top_level.proxyConnectionSummary;
+            let proxy_agent_aggregate_connection_status_obj = get_top_proxy_connection_summary(
+                proxy_agent_aggregate_status_top_level
+                    .proxyConnectionSummary
+                    .clone(),
+                constants::MAX_CONNECTION_SUMMARY_LEN,
+            );
             match serde_json::to_string(&proxy_agent_aggregate_connection_status_obj) {
-                // TODO: only select Top X connection summary if the connection status is too big
                 Ok(proxy_agent_aggregate_connection_status) => {
                     substatus_proxy_agent_connection_message =
                         proxy_agent_aggregate_connection_status;
@@ -492,8 +496,12 @@ fn extension_substatus(
             .failedAuthenticateSummary
             .is_empty()
         {
-            let proxy_agent_aggregate_failed_auth_status_obj =
-                proxy_agent_aggregate_status_top_level.failedAuthenticateSummary;
+            let proxy_agent_aggregate_failed_auth_status_obj = get_top_proxy_connection_summary(
+                proxy_agent_aggregate_status_top_level
+                    .failedAuthenticateSummary
+                    .clone(),
+                constants::MAX_FAILED_AUTH_SUMMARY_LEN,
+            );
             match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
                 Ok(proxy_agent_aggregate_failed_auth_status) => {
                     substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
@@ -555,6 +563,19 @@ fn extension_substatus(
             service_state,
         );
     }
+}
+
+fn get_top_proxy_connection_summary(
+    mut summary: Vec<ProxyConnectionSummary>,
+    max_count: usize,
+) -> Vec<ProxyConnectionSummary> {
+    summary.sort_by(|a, b| a.count.cmp(&b.count));
+    let len = summary.len();
+    if len > max_count {
+        summary = summary.split_off(len - max_count);
+    }
+
+    summary
 }
 
 fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
@@ -986,5 +1007,35 @@ mod tests {
 
         //Clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[tokio::test]
+    async fn get_top_proxy_connection_summary_tests() {
+        let mut summary = Vec::new();
+        let mut proxy_connection_summary_obj = ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        };
+        summary.push(proxy_connection_summary_obj.clone());
+        proxy_connection_summary_obj.count = 5;
+        summary.push(proxy_connection_summary_obj.clone());
+        proxy_connection_summary_obj.count = 2;
+        summary.push(proxy_connection_summary_obj.clone());
+        proxy_connection_summary_obj.count = 4;
+        summary.push(proxy_connection_summary_obj.clone());
+        proxy_connection_summary_obj.count = 2;
+        summary.push(proxy_connection_summary_obj.clone());
+        let max_len = 3;
+        let result = super::get_top_proxy_connection_summary(summary, max_len);
+        assert_eq!(result.len(), max_len);
+        assert_eq!(result[0].count, 2); // lowest count
+        assert_eq!(result[1].count, 4); // 2nd highest count
+        assert_eq!(result[2].count, 5); // 3rd highest count
     }
 }
