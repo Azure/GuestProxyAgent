@@ -27,7 +27,7 @@ pub struct Cli {
     #[cfg(test)]
     #[arg(short, long)]
     test_threads: Option<usize>,
-    
+
     #[cfg(test)]
     #[arg(short, long)]
     nocapture: bool,
