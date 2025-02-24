@@ -169,7 +169,7 @@ impl RollingLogger {
                 continue;
             }
 
-            let file_name: String = entry.file_name().into_string().Into;
+            let file_name: String = entry.file_name().into_string()?;
             if !file_name.starts_with(&self.log_file_name) {
                 continue;
             }
