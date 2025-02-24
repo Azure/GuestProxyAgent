@@ -172,9 +172,7 @@ pub async fn set_logger_level(log_level: LoggerLevel) {
 
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
     tokio::spawn(async move {
-        LOGGER
-            .write_log(Some(logger_key), log_level, message)
-            .await;
+        LOGGER.write_log(Some(logger_key), log_level, message).await;
     });
 }
 
