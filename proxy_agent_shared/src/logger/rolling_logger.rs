@@ -169,9 +169,11 @@ impl RollingLogger {
                 continue;
             }
 
-            let file_name: String = entry.file_name().into_string()?;
-            if !file_name.starts_with(&self.log_file_name) {
-                continue;
+            // log file name should able convert to string safely; if not, ignore this file entry
+            if let Ok(file_name) = entry.file_name().into_string() {
+                if !file_name.starts_with(&self.log_file_name) {
+                    continue;
+                }
             }
 
             log_files.push(file_full_path);
