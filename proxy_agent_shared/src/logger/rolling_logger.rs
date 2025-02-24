@@ -51,7 +51,9 @@ impl RollingLogger {
             initialized: false,
             log_writer: None, // will initialize later
         };
-        logger.init().unwrap();
+        if let Err(e) = logger.init() {
+            eprintln!("Failed to initialize logger: {:?}", e);
+        }
 
         logger
     }
@@ -111,6 +113,11 @@ impl RollingLogger {
 
     pub fn write_line(&mut self, message: String) -> Result<()> {
         self.roll_if_needed()?;
+        if self.log_writer.is_none() {
+            self.open_file()?;
+        }
+
+        // below unwrap is safe because we have checked the log_writer is not None above
         self.log_writer
             .as_mut()
             .unwrap()
@@ -162,7 +169,7 @@ impl RollingLogger {
                 continue;
             }
 
-            let file_name = entry.file_name().into_string().unwrap();
+            let file_name: String = entry.file_name().into_string().Into;
             if !file_name.starts_with(&self.log_file_name) {
                 continue;
             }
