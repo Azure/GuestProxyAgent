@@ -19,12 +19,11 @@
 //! authorizer.authorize(logger, url, vm_metadata);
 //!  
 
-use proxy_agent_shared::logger_manager::LoggerLevel;
-
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::{common::constants, common::result::Result, proxy::Claims};
+use proxy_agent_shared::logger::LoggerLevel;
 
 #[derive(PartialEq)]
 pub enum AuthorizeResult {

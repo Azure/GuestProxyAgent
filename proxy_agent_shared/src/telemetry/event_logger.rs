@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::logger_manager;
-use crate::logger_manager::LoggerLevel;
+
+use crate::logger::{logger_manager, LoggerLevel};
 use crate::misc_helpers;
 use crate::telemetry::Event;
 use concurrent_queue::ConcurrentQueue;
@@ -181,7 +181,7 @@ pub fn write_event(
 
 #[cfg(test)]
 mod tests {
-    use crate::logger_manager;
+    use crate::logger::logger_manager;
     use crate::misc_helpers;
     use std::env;
     use std::fs;

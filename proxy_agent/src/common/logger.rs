@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 use crate::common::cli;
 use proxy_agent_shared::{
-    logger_manager::{self, LoggerLevel},
+    logger::{logger_manager, LoggerLevel},
     misc_helpers,
 };
 

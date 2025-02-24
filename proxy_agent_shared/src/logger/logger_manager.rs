@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::rolling_logger::RollingLogger;
+use super::rolling_logger::RollingLogger;
+use super::LoggerLevel;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -23,26 +24,6 @@ enum TelemetryLoggerAction {
         log_level: LoggerLevel,
         message: String,
     },
-}
-
-#[derive(PartialEq, PartialOrd, Debug)]
-pub enum LoggerLevel {
-    Verbose,
-    Information,
-    Warning,
-    Error,
-}
-
-impl LoggerLevel {
-    pub fn from_string(level: &str) -> Self {
-        match level {
-            "Verb" => LoggerLevel::Verbose,
-            "Info" => LoggerLevel::Information,
-            "Warn" => LoggerLevel::Warning,
-            "Err" => LoggerLevel::Error,
-            _ => LoggerLevel::Information,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -102,20 +83,16 @@ impl TelemetryLogger {
                             },
                         };
                         match loggers.get_mut(&logger_key) {
-                            Some(logger) => match log_level {
-                                LoggerLevel::Verbose => {
-                                    logger.write(message).unwrap();
+                            Some(logger) => {
+                                if let Err(e) = logger.write(log_level, message) {
+                                    // TODO write to application event log if windows
+                                    // TODO write to syslog if linux
+                                    eprintln!(
+                                        "Writing to logger '{}' with error: {}",
+                                        logger_key, e
+                                    );
                                 }
-                                LoggerLevel::Information => {
-                                    logger.write_information(message).unwrap();
-                                }
-                                LoggerLevel::Warning => {
-                                    logger.write_warning(message).unwrap();
-                                }
-                                LoggerLevel::Error => {
-                                    logger.write_error(message).unwrap();
-                                }
-                            },
+                            }
                             None => {
                                 println!("Error getting logger: {}", logger_key);
                             }
@@ -221,7 +198,7 @@ pub fn write_err(message: String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::logger_manager::LoggerLevel;
+    use super::LoggerLevel;
     use crate::misc_helpers;
     use std::env;
     use std::fs;

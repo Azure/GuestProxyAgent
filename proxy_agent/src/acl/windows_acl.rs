@@ -127,7 +127,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::common::logger;
-    use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::logger::logger_manager;
     use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;

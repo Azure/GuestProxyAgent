@@ -382,7 +382,7 @@ mod tests {
     use crate::common::logger;
     use crate::key_keeper::key::Key;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::{logger::logger_manager, misc_helpers};
     use std::{env, fs};
 
     #[tokio::test]

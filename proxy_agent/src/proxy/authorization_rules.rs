@@ -20,7 +20,7 @@
 use super::{proxy_connection::ConnectionLogger, Claims};
 use crate::common::logger;
 use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, Identity, Privilege, Role};
-use proxy_agent_shared::logger_manager::LoggerLevel;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -349,7 +349,7 @@ mod tests {
     };
     use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
     use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::{logger::logger_manager, misc_helpers};
     use std::ffi::OsString;
     use std::path::PathBuf;
     use std::str::FromStr;

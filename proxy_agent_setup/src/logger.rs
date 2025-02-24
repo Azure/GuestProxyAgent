@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::{
-    logger_manager::{self, LoggerLevel},
-    misc_helpers,
-};
+use proxy_agent_shared::{logger::logger_manager, logger::LoggerLevel, misc_helpers};
 use std::path::PathBuf;
 
 const LOGGER_KEY: &str = "setup.log";

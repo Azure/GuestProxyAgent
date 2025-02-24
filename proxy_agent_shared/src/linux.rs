@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::error::{CommandErrorType, Error};
-use crate::logger_manager;
+use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::result::Result;
 use once_cell::sync::Lazy;

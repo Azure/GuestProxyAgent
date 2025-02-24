@@ -14,7 +14,7 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
-use proxy_agent_shared::logger_manager::{self, LoggerLevel};
+use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;

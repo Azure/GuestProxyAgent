@@ -6,6 +6,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
 
+use super::LoggerLevel;
+
 pub struct RollingLogger {
     log_dir: PathBuf,
     log_file_name: String,
@@ -78,7 +80,16 @@ impl RollingLogger {
         Ok(())
     }
 
-    pub fn write(&mut self, message: String) -> Result<()> {
+    pub fn write(&mut self, logger_level: LoggerLevel, message: String) -> Result<()> {
+        match logger_level {
+            LoggerLevel::Verbose => self.write_verb(message),
+            LoggerLevel::Information => self.write_information(message),
+            LoggerLevel::Warning => self.write_warning(message),
+            LoggerLevel::Error => self.write_error(message),
+        }
+    }
+
+    pub fn write_verb(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[VERB]    ");
         self.write_line(header + &message)
     }
@@ -210,7 +221,7 @@ mod tests {
             RollingLogger::create_new(temp_test_path.clone(), String::from("proxyagent"), 1024, 10);
 
         logger
-            .write(String::from("This is a test message"))
+            .write_verb(String::from("This is a test message"))
             .unwrap();
 
         // clean up and ignore the clean up errors
@@ -231,7 +242,7 @@ mod tests {
         // test without deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write_verb(String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();
@@ -240,7 +251,7 @@ mod tests {
         // test with deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write_verb(String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();

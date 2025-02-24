@@ -803,7 +803,7 @@ mod tests {
     use crate::key_keeper;
     use crate::key_keeper::KeyKeeper;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::{logger::logger_manager, misc_helpers};
     use std::env;
     use std::fs;
     use std::time::Duration;
