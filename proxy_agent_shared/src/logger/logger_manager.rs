@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
-enum TelemetryLoggerAction {
+enum LoggerAction {
     InitLogger {
         logger_key: String,
         log_folder: PathBuf,
@@ -27,9 +27,9 @@ enum TelemetryLoggerAction {
 }
 
 #[derive(Clone, Debug)]
-struct TelemetryLogger(mpsc::Sender<TelemetryLoggerAction>);
+struct Logger(mpsc::Sender<LoggerAction>);
 
-impl TelemetryLogger {
+impl Logger {
     pub fn start_new() -> Self {
         let (tx, mut rx) = mpsc::channel(100);
         tokio::spawn(async move {
@@ -38,7 +38,7 @@ impl TelemetryLogger {
             let mut file_logger_level = LoggerLevel::Verbose;
             while let Some(action) = rx.recv().await {
                 match action {
-                    TelemetryLoggerAction::InitLogger {
+                    LoggerAction::InitLogger {
                         logger_key,
                         log_folder,
                         log_name,
@@ -59,10 +59,10 @@ impl TelemetryLogger {
                             first_logger_key = Some(logger_key);
                         }
                     }
-                    TelemetryLoggerAction::SetLoggerLevel { log_level } => {
+                    LoggerAction::SetLoggerLevel { log_level } => {
                         file_logger_level = log_level;
                     }
-                    TelemetryLoggerAction::WriteLog {
+                    LoggerAction::WriteLog {
                         logger_key,
                         log_level,
                         message,
@@ -115,7 +115,7 @@ impl TelemetryLogger {
     ) {
         if let Err(e) = self
             .0
-            .send(TelemetryLoggerAction::InitLogger {
+            .send(LoggerAction::InitLogger {
                 logger_key,
                 log_folder,
                 log_name,
@@ -131,7 +131,7 @@ impl TelemetryLogger {
     async fn set_logger_level(&self, log_level: LoggerLevel) {
         if let Err(e) = self
             .0
-            .send(TelemetryLoggerAction::SetLoggerLevel { log_level })
+            .send(LoggerAction::SetLoggerLevel { log_level })
             .await
         {
             eprintln!("Error in set_logger_level: {}", e);
@@ -140,7 +140,7 @@ impl TelemetryLogger {
     async fn write_log(&self, logger_key: Option<String>, log_level: LoggerLevel, message: String) {
         if let Err(e) = self
             .0
-            .send(TelemetryLoggerAction::WriteLog {
+            .send(LoggerAction::WriteLog {
                 logger_key,
                 log_level,
                 message,
@@ -152,7 +152,7 @@ impl TelemetryLogger {
     }
 }
 
-static TELEMETRY_LOGGER: Lazy<TelemetryLogger> = Lazy::new(TelemetryLogger::start_new);
+static LOGGER: Lazy<Logger> = Lazy::new(Logger::start_new);
 
 pub async fn init_logger(
     logger_key: String,
@@ -161,26 +161,24 @@ pub async fn init_logger(
     log_size: u64,
     log_count: u16,
 ) {
-    TELEMETRY_LOGGER
+    LOGGER
         .init_logger(logger_key, log_folder, log_name, log_size, log_count)
         .await;
 }
 
 pub async fn set_logger_level(log_level: LoggerLevel) {
-    TELEMETRY_LOGGER.set_logger_level(log_level).await;
+    LOGGER.set_logger_level(log_level).await;
 }
 
 pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
     tokio::spawn(async move {
-        TELEMETRY_LOGGER
-            .write_log(Some(logger_key), log_level, message)
-            .await;
+        LOGGER.write_log(Some(logger_key), log_level, message).await;
     });
 }
 
 fn write_log(log_level: LoggerLevel, message: String) {
     tokio::spawn(async move {
-        TELEMETRY_LOGGER.write_log(None, log_level, message).await;
+        LOGGER.write_log(None, log_level, message).await;
     });
 }
 
