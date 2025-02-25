@@ -75,8 +75,8 @@ xcopy /Y %root_path%\Setup\Windows\*.* %out_package_dir%\
 
 echo ======= build ebpf program
 SET ebpf_path=%root_path%\ebpf
-echo call clang -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
-call clang -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
+echo call clang -I"%ebpf_path%" -I "%eBPF_for_Windows_inc_path%" -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
+call clang -I"%ebpf_path%" -I "%eBPF_for_Windows_inc_path%" -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
 if  %ERRORLEVEL% NEQ 0 (
     echo call clang failed with exit-code: %errorlevel%
     exit /b %errorlevel%
