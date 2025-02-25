@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::error::Error;
-use crate::logger_manager;
+use crate::logger::logger_manager;
 use crate::result::Result;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -308,7 +308,7 @@ pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::logger_manager;
+    use crate::logger::logger_manager;
     use std::env;
     use std::{path::PathBuf, process::Command};
 

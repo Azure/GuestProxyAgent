@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::logger_manager::{self, LoggerLevel};
+use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use std::path::PathBuf;
 
 static LOGGER_KEY: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();

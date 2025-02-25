@@ -45,7 +45,7 @@ use hyper::service::service_fn;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use proxy_agent_shared::logger_manager::LoggerLevel;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -910,7 +910,7 @@ mod tests {
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
-    use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::logger::logger_manager;
     use std::collections::HashMap;
     use std::env;
     use std::fs;

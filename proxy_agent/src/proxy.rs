@@ -244,7 +244,7 @@ impl User {
 
 #[cfg(test)]
 mod tests {
-    use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::logger::logger_manager;
 
     use super::Claims;
     use crate::{

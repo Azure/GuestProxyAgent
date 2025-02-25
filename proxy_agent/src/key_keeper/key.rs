@@ -33,7 +33,7 @@ use crate::{
 };
 use http::{Method, StatusCode};
 use hyper::Uri;
-use proxy_agent_shared::logger_manager::LoggerLevel;
+use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::fmt::{Display, Formatter};

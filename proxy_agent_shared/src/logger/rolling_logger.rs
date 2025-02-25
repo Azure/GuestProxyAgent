@@ -6,6 +6,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
 
+use super::LoggerLevel;
+
 pub struct RollingLogger {
     log_dir: PathBuf,
     log_file_name: String,
@@ -49,7 +51,9 @@ impl RollingLogger {
             initialized: false,
             log_writer: None, // will initialize later
         };
-        logger.init().unwrap();
+        if let Err(e) = logger.init() {
+            eprintln!("Failed to initialize logger: {:?}", e);
+        }
 
         logger
     }
@@ -78,7 +82,16 @@ impl RollingLogger {
         Ok(())
     }
 
-    pub fn write(&mut self, message: String) -> Result<()> {
+    pub fn write(&mut self, logger_level: LoggerLevel, message: String) -> Result<()> {
+        match logger_level {
+            LoggerLevel::Verbose => self.write_verb(message),
+            LoggerLevel::Information => self.write_information(message),
+            LoggerLevel::Warning => self.write_warning(message),
+            LoggerLevel::Error => self.write_error(message),
+        }
+    }
+
+    pub fn write_verb(&mut self, message: String) -> Result<()> {
         let header = get_log_header("[VERB]    ");
         self.write_line(header + &message)
     }
@@ -100,6 +113,11 @@ impl RollingLogger {
 
     pub fn write_line(&mut self, message: String) -> Result<()> {
         self.roll_if_needed()?;
+        if self.log_writer.is_none() {
+            self.open_file()?;
+        }
+
+        // below unwrap is safe because we have checked the log_writer is not None above
         self.log_writer
             .as_mut()
             .unwrap()
@@ -151,9 +169,11 @@ impl RollingLogger {
                 continue;
             }
 
-            let file_name = entry.file_name().into_string().unwrap();
-            if !file_name.starts_with(&self.log_file_name) {
-                continue;
+            // log file name should able convert to string safely; if not, ignore this file entry
+            if let Ok(file_name) = entry.file_name().into_string() {
+                if !file_name.starts_with(&self.log_file_name) {
+                    continue;
+                }
             }
 
             log_files.push(file_full_path);
@@ -210,7 +230,7 @@ mod tests {
             RollingLogger::create_new(temp_test_path.clone(), String::from("proxyagent"), 1024, 10);
 
         logger
-            .write(String::from("This is a test message"))
+            .write_verb(String::from("This is a test message"))
             .unwrap();
 
         // clean up and ignore the clean up errors
@@ -231,7 +251,7 @@ mod tests {
         // test without deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write_verb(String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();
@@ -240,7 +260,7 @@ mod tests {
         // test with deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write_verb(String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();

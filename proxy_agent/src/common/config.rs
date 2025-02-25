@@ -18,7 +18,7 @@
 
 use crate::common::constants;
 use once_cell::sync::Lazy;
-use proxy_agent_shared::{logger_manager::LoggerLevel, misc_helpers};
+use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 

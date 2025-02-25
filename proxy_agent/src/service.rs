@@ -8,7 +8,7 @@ use crate::key_keeper::KeyKeeper;
 use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector;
 use crate::shared_state::SharedState;
-use proxy_agent_shared::logger_manager;
+use proxy_agent_shared::logger::logger_manager;
 use proxy_agent_shared::telemetry::event_logger;
 
 #[cfg(not(windows))]

@@ -485,7 +485,7 @@ mod tests {
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use aya::maps::HashMap;
-    use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::logger::logger_manager;
     use proxy_agent_shared::misc_helpers;
     use std::env;
 

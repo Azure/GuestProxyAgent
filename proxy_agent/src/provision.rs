@@ -595,7 +595,7 @@ mod tests {
     use crate::proxy::proxy_connection::ConnectionLogger;
     use crate::proxy::proxy_server;
     use crate::shared_state::SharedState;
-    use proxy_agent_shared::logger_manager;
+    use proxy_agent_shared::logger::logger_manager;
     use std::env;
     use std::fs;
     use std::time::Duration;
