@@ -66,7 +66,7 @@ impl Authorizer for WireServer {
             } else {
                 if rules.mode == AuthorizationMode::Audit {
                     logger.write(
-                            LoggerLevel::Information, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
+                            LoggerLevel::Info, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
                     return AuthorizeResult::OkWithAudit;
                 }
                 return AuthorizeResult::Forbidden;
@@ -102,7 +102,7 @@ impl Authorizer for Imds {
             } else {
                 if rules.mode == AuthorizationMode::Audit {
                     logger.write(
-                        LoggerLevel::Information,
+                        LoggerLevel::Info,
                         format!(
                             "IMDS request {} denied in audit mode, continue forward the request",
                             request_url
@@ -143,7 +143,7 @@ impl Authorizer for GAPlugin {
             } else {
                 if rules.mode == AuthorizationMode::Audit {
                     logger.write(
-                            LoggerLevel::Information, format!("HostGAPlugin request {} denied in audit mode, continue forward the request", request_url));
+                            LoggerLevel::Info, format!("HostGAPlugin request {} denied in audit mode, continue forward the request", request_url));
                     return AuthorizeResult::OkWithAudit;
                 }
                 return AuthorizeResult::Forbidden;
@@ -238,7 +238,7 @@ pub fn authorize(
 ) -> AuthorizeResult {
     let auth = get_authorizer(ip, port, claims);
     logger.write(
-        LoggerLevel::Verbose,
+        LoggerLevel::Trace,
         format!("Got auth: {}", auth.to_string()),
     );
     auth.authorize(logger, request_uri, access_control_rules)

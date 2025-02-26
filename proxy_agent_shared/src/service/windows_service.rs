@@ -308,29 +308,11 @@ pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::logger::logger_manager;
-    use std::env;
     use std::{path::PathBuf, process::Command};
 
     #[tokio::test]
     async fn test_install_service() {
         const TEST_SERVICE_NAME: &str = "test_nt_service";
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push("test_install_service");
-
-        let log_folder: PathBuf = temp_test_path.to_path_buf();
-        let log_key: &str = "test_install_service";
-        let log_name: String = "test_install_service.log".to_string();
-        let log_size: u64 = 20 * 1024 * 1024;
-        let log_count: u16 = 30;
-        logger_manager::init_logger(
-            log_key.to_string(),
-            log_folder,
-            log_name,
-            log_size,
-            log_count,
-        )
-        .await;
 
         // Delete Service if it exists
         _ = super::stop_and_delete_service(TEST_SERVICE_NAME).await;
@@ -408,7 +390,7 @@ mod tests {
             .expect("Failed to execute command");
 
         let output_str = String::from_utf8_lossy(&output.stdout);
-        print!("SC query output: {}", output_str);
+        println!("SC query output: {}", output_str);
 
         // Check if the output contains the desired information indicating the service is running
         assert!(output_str.contains("The specified service does not exist as an installed service"));

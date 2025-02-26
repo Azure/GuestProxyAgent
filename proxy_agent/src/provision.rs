@@ -345,7 +345,6 @@ pub async fn start_event_threads(
                 config::get_events_dir(),
                 Duration::default(),
                 config::get_max_event_file_count(),
-                logger::AGENT_LOGGER_KEY,
                 move |status: String| {
                     let cloned_agent_status_shared_state = cloned_agent_status_shared_state.clone();
                     async move {
@@ -590,12 +589,9 @@ impl ProvisionQuery {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::logger;
     use crate::provision::ProvisionFlags;
-    use crate::proxy::proxy_connection::ConnectionLogger;
     use crate::proxy::proxy_server;
     use crate::shared_state::SharedState;
-    use proxy_agent_shared::logger::logger_manager;
     use std::env;
     use std::fs;
     use std::time::Duration;
@@ -608,16 +604,6 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
-        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
 
         // start listener, the port must different from the one used in production code
         let shared_state = SharedState::start_all();

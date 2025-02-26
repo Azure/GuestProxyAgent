@@ -244,33 +244,14 @@ impl User {
 
 #[cfg(test)]
 mod tests {
-    use proxy_agent_shared::logger::logger_manager;
-
     use super::Claims;
     use crate::{
-        common::logger, redirector::AuditEntry,
-        shared_state::proxy_server_wrapper::ProxyServerSharedState,
+        redirector::AuditEntry, shared_state::proxy_server_wrapper::ProxyServerSharedState,
     };
-    use std::{env, fs, net::IpAddr};
+    use std::net::IpAddr;
 
     #[tokio::test]
     async fn user_test() {
-        let mut temp_test_path = env::temp_dir();
-        let logger_key = "user_test";
-        temp_test_path.push(logger_key);
-
-        // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
-
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
-
         let logon_id;
         let expected_user_name;
         #[cfg(windows)]

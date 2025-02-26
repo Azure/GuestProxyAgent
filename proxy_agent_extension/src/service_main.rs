@@ -4,6 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs::*;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use proxy_agent_shared::telemetry::event_logger;
@@ -31,7 +32,7 @@ pub fn run() {
         misc_helpers::get_long_os_version()
     );
     telemetry::event_logger::write_event(
-        telemetry::event_logger::INFO_LEVEL,
+        LoggerLevel::Info,
         message,
         "run",
         "service_main",
@@ -95,7 +96,7 @@ async fn monitor_thread() {
         let current_seq_no = common::get_current_seq_no(&exe_path);
         if cache_seq_no != current_seq_no {
             telemetry::event_logger::write_event(
-                telemetry::event_logger::INFO_LEVEL,
+                LoggerLevel::Info,
                 format!(
                     "Current seq_no: {} does not match cached seq no {}",
                     current_seq_no, cache_seq_no
@@ -122,7 +123,7 @@ async fn monitor_thread() {
             if proxyagent_file_version_in_extension != proxyagent_service_file_version {
                 // Call setup tool to install or update proxy agent service
                 telemetry::event_logger::write_event(
-                    telemetry::event_logger::INFO_LEVEL,
+                    LoggerLevel::Info,
                     format!("Version mismatch between file versions. ProxyAgentService File Version: {}, ProxyAgent in Extension File Version: {}", 
                         proxyagent_service_file_version,
                         proxyagent_file_version_in_extension),
@@ -202,7 +203,7 @@ fn write_state_event(
 ) {
     if service_state.update_service_state_entry(state_key, state_value, MAX_STATE_COUNT) {
         event_logger::write_event(
-            event_logger::INFO_LEVEL,
+            LoggerLevel::Info,
             message,
             method_name,
             module_name,
@@ -280,9 +281,9 @@ fn backup_proxyagent(setup_tool: &String) {
     match Command::new(setup_tool).arg("backup").output() {
         Ok(output) => {
             let event_level = if output.status.success() {
-                telemetry::event_logger::INFO_LEVEL
+                LoggerLevel::Info
             } else {
-                telemetry::event_logger::WARN_LEVEL
+                LoggerLevel::Warn
             };
             telemetry::event_logger::write_event(
                 event_level,
@@ -298,7 +299,7 @@ fn backup_proxyagent(setup_tool: &String) {
         }
         Err(e) => {
             telemetry::event_logger::write_event(
-                telemetry::event_logger::INFO_LEVEL,
+                LoggerLevel::Info,
                 format!("Error in running Backup Proxy Agent command: {}", e),
                 "backup_proxyagent",
                 "service_main",
@@ -585,9 +586,9 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
         match output {
             Ok(output) => {
                 let event_level = if output.status.success() {
-                    telemetry::event_logger::INFO_LEVEL
+                    LoggerLevel::Info
                 } else {
-                    telemetry::event_logger::WARN_LEVEL
+                    LoggerLevel::Warn
                 };
                 telemetry::event_logger::write_event(
                     event_level,
@@ -603,7 +604,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             }
             Err(e) => {
                 telemetry::event_logger::write_event(
-                    telemetry::event_logger::INFO_LEVEL,
+                    LoggerLevel::Info,
                     format!("Error in running Restore Proxy Agent command: {}", e),
                     "restore_purge_proxyagent",
                     "service_main",
@@ -617,9 +618,9 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
         match output {
             Ok(output) => {
                 let event_level = if output.status.success() {
-                    telemetry::event_logger::INFO_LEVEL
+                    LoggerLevel::Info
                 } else {
-                    telemetry::event_logger::WARN_LEVEL
+                    LoggerLevel::Warn
                 };
                 telemetry::event_logger::write_event(
                     event_level,
@@ -635,7 +636,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             }
             Err(e) => {
                 telemetry::event_logger::write_event(
-                    telemetry::event_logger::INFO_LEVEL,
+                    LoggerLevel::Info,
                     format!("Error in running Purge Proxy Agent command: {}", e),
                     "restore_purge_proxyagent",
                     "service_main",
@@ -673,7 +674,7 @@ fn report_proxy_agent_service_status(
                 common::report_status(status_folder, seq_no, status);
             } else {
                 telemetry::event_logger::write_event(
-                    telemetry::event_logger::INFO_LEVEL,
+                    LoggerLevel::Info,
                     format!(
                         "Update Proxy Agent command failed with error: {}",
                         String::from_utf8_lossy(&output.stderr)
@@ -696,7 +697,7 @@ fn report_proxy_agent_service_status(
         }
         Err(e) => {
             telemetry::event_logger::write_event(
-                telemetry::event_logger::INFO_LEVEL,
+                LoggerLevel::Info,
                 format!("Error in running Update Proxy Agent command: {}", e),
                 "report_proxy_agent_service_status",
                 "service_main",
@@ -735,7 +736,6 @@ fn get_proxy_agent_file_version_in_extension() -> String {
 #[cfg(test)]
 mod tests {
     use crate::constants;
-    use crate::logger;
     use crate::structs::*;
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::proxy_agent_aggregate_status::*;
@@ -749,9 +749,9 @@ mod tests {
     #[cfg(windows)]
     use std::process::Command;
 
-    #[tokio::test]
+    #[test]
     #[cfg(windows)]
-    async fn report_proxy_agent_service_status() {
+    fn report_proxy_agent_service_status() {
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_status_file");
@@ -760,8 +760,6 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
         _ = misc_helpers::try_create_folder(&temp_test_path);
         let status_folder: PathBuf = temp_test_path.join("status");
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
 
         let mut test_good = temp_test_path.clone();
         test_good.push("test.ps1");
@@ -828,18 +826,8 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
     }
 
-    #[tokio::test]
-    async fn test_proxyagent_service_success_status() {
-        // Create temp directory for status folder
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push("test_status_file");
-
-        //Clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(&temp_test_path);
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
-
+    #[test]
+    fn test_proxyagent_service_success_status() {
         let proxy_agent_status_obj = ProxyAgentStatus {
             version: "1.0.0".to_string(),
             status: OverallState::SUCCESS,
@@ -926,24 +914,11 @@ mod tests {
             &mut service_state,
         );
         assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
-
-        //Clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
     }
 
     #[tokio::test]
     #[cfg(windows)]
     async fn test_report_ebpf_status() {
-        // Create temp directory for status folder
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push("test_status_file");
-
-        //Clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
-        _ = misc_helpers::try_create_folder(&temp_test_path);
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
-
         let mut status = StatusObj {
             name: constants::PLUGIN_NAME.to_string(),
             operation: constants::ENABLE_OPERATION.to_string(),
@@ -1004,9 +979,6 @@ mod tests {
             status.substatus[3].name,
             constants::EBPF_SUBSTATUS_NAME.to_string()
         );
-
-        //Clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
     }
 
     #[tokio::test]

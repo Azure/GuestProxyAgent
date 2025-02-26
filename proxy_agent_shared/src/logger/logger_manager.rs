@@ -2,263 +2,141 @@
 // SPDX-License-Identifier: MIT
 
 use super::rolling_logger::RollingLogger;
-use super::LoggerLevel;
-use once_cell::sync::Lazy;
+use log::Level;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use tokio::sync::mpsc;
 
-enum LoggerAction {
-    InitLogger {
-        logger_key: String,
-        log_folder: PathBuf,
-        log_name: String,
-        log_size: u64,
-        log_count: u16,
-    },
-    SetLoggerLevel {
-        log_level: LoggerLevel,
-    },
-    WriteLog {
-        logger_key: Option<String>,
-        log_level: LoggerLevel,
-        message: String,
-    },
+static LOGGERS: tokio::sync::OnceCell<HashMap<String, RollingLogger>> =
+    tokio::sync::OnceCell::const_new();
+static DEFAULT_LOGGER_KEY: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+static MAX_LOG_LEVEL: tokio::sync::OnceCell<Level> = tokio::sync::OnceCell::const_new();
+
+/// Setup the loggers and set the default logger key
+/// # Arguments
+/// * `loggers` - A hashmap of loggers
+/// * `default_logger_key` - The default logger key
+/// # Panics
+/// * If the default logger key is not found in the loggers hashmap
+pub fn set_loggers(loggers: HashMap<String, RollingLogger>, default_logger_key: String) {
+    if LOGGERS.initialized() {
+        return;
+    }
+
+    if !loggers.contains_key(&default_logger_key) {
+        panic!("Default logger key not found in the loggers hashmap");
+    }
+
+    // set the loggers once
+    LOGGERS.set(loggers).unwrap();
+    DEFAULT_LOGGER_KEY.set(default_logger_key).unwrap();
 }
 
-#[derive(Clone, Debug)]
-struct Logger(mpsc::Sender<LoggerAction>);
-
-impl Logger {
-    pub fn start_new() -> Self {
-        let (tx, mut rx) = mpsc::channel(100);
-        tokio::spawn(async move {
-            let mut loggers: HashMap<String, RollingLogger> = HashMap::new();
-            let mut first_logger_key: Option<String> = None;
-            let mut file_logger_level = LoggerLevel::Verbose;
-            while let Some(action) = rx.recv().await {
-                match action {
-                    LoggerAction::InitLogger {
-                        logger_key,
-                        log_folder,
-                        log_name,
-                        log_size,
-                        log_count,
-                    } => {
-                        if loggers.contains_key(&logger_key) {
-                            eprintln!("logger '{logger_key}' already exists.");
-                            continue;
-                        }
-
-                        let logger =
-                            RollingLogger::create_new(log_folder, log_name, log_size, log_count);
-                        loggers.insert(logger_key.to_string(), logger);
-                        println!("logger '{logger_key}' created.");
-
-                        if first_logger_key.is_none() {
-                            first_logger_key = Some(logger_key);
-                        }
-                    }
-                    LoggerAction::SetLoggerLevel { log_level } => {
-                        file_logger_level = log_level;
-                    }
-                    LoggerAction::WriteLog {
-                        logger_key,
-                        log_level,
-                        message,
-                    } => {
-                        if log_level < file_logger_level {
-                            // skip write to file
-                            continue;
-                        }
-                        // get the logger key
-                        let logger_key = match logger_key {
-                            Some(logger_key) => logger_key,
-                            None => match first_logger_key.as_ref() {
-                                Some(logger_key) => logger_key.clone(),
-                                None => {
-                                    eprintln!("No logger has been created.");
-                                    continue;
-                                }
-                            },
-                        };
-                        match loggers.get_mut(&logger_key) {
-                            Some(logger) => {
-                                if let Err(e) = logger.write(log_level, message) {
-                                    // TODO write to application event log if windows
-                                    // TODO write to syslog if linux
-                                    eprintln!(
-                                        "Writing to logger '{}' with error: {}",
-                                        logger_key, e
-                                    );
-                                }
-                            }
-                            None => {
-                                println!("Error getting logger: {}", logger_key);
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        Self(tx)
+pub fn set_logger_level(log_level: Level) {
+    if MAX_LOG_LEVEL.initialized() {
+        return;
     }
+    MAX_LOG_LEVEL.set(log_level).unwrap();
+}
 
-    async fn init_logger(
-        &self,
-        logger_key: String,
-        log_folder: PathBuf,
-        log_name: String,
-        log_size: u64,
-        log_count: u16,
-    ) {
-        if let Err(e) = self
-            .0
-            .send(LoggerAction::InitLogger {
-                logger_key,
-                log_folder,
-                log_name,
-                log_size,
-                log_count,
-            })
-            .await
-        {
-            eprintln!("Error in init_logger: {}", e);
-        }
+fn get_logger(logger_key: Option<String>) -> Option<&'static RollingLogger> {
+    if let Some(loggers) = LOGGERS.get() {
+        let key = match logger_key {
+            Some(k) => k,
+            None => DEFAULT_LOGGER_KEY.get().unwrap().clone(),
+        };
+        return loggers.get(&key);
     }
+    None
+}
 
-    async fn set_logger_level(&self, log_level: LoggerLevel) {
-        if let Err(e) = self
-            .0
-            .send(LoggerAction::SetLoggerLevel { log_level })
-            .await
-        {
-            eprintln!("Error in set_logger_level: {}", e);
-        }
-    }
-    async fn write_log(&self, logger_key: Option<String>, log_level: LoggerLevel, message: String) {
-        if let Err(e) = self
-            .0
-            .send(LoggerAction::WriteLog {
-                logger_key,
-                log_level,
-                message,
-            })
-            .await
-        {
-            eprintln!("Error in write_log: {}", e);
+pub fn log(logger_key: String, log_level: Level, message: String) {
+    if let Some(logger) = get_logger(Some(logger_key)) {
+        if let Err(e) = logger.write(log_level, message) {
+            eprintln!("Error writing to log: {}", e);
         }
     }
 }
 
-static LOGGER: Lazy<Logger> = Lazy::new(Logger::start_new);
+pub fn write_log(log_level: Level, message: String) {
+    if let Some(logger) = get_logger(None) {
+        let level = match MAX_LOG_LEVEL.get() {
+            Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
+            None => Level::Trace,
+        };
+        if log_level > level {
+            return;
+        }
 
-pub async fn init_logger(
-    logger_key: String,
-    log_folder: PathBuf,
-    log_name: String,
-    log_size: u64,
-    log_count: u16,
-) {
-    LOGGER
-        .init_logger(logger_key, log_folder, log_name, log_size, log_count)
-        .await;
-}
-
-pub async fn set_logger_level(log_level: LoggerLevel) {
-    LOGGER.set_logger_level(log_level).await;
-}
-
-pub fn log(logger_key: String, log_level: LoggerLevel, message: String) {
-    tokio::spawn(async move {
-        LOGGER.write_log(Some(logger_key), log_level, message).await;
-    });
-}
-
-fn write_log(log_level: LoggerLevel, message: String) {
-    tokio::spawn(async move {
-        LOGGER.write_log(None, log_level, message).await;
-    });
+        if let Err(e) = logger.write(log_level, message) {
+            eprintln!("Error writing to log: {}", e);
+        }
+    }
 }
 
 pub fn write_info(message: String) {
-    write_log(LoggerLevel::Information, message);
+    write_log(Level::Info, message);
 }
 
 pub fn write_warn(message: String) {
-    write_log(LoggerLevel::Warning, message);
+    write_log(Level::Warn, message);
 }
 
 pub fn write_err(message: String) {
-    write_log(LoggerLevel::Error, message);
+    write_log(Level::Error, message);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::LoggerLevel;
     use crate::misc_helpers;
+    use ctor::{ctor, dtor};
+    use log::Level;
     use std::env;
     use std::fs;
 
-    #[tokio::test]
-    async fn logger_manager_test() {
+    const TEST_LOGGER_KEY: &str = "logger_manager_test";
+
+    fn get_temp_test_dir() -> std::path::PathBuf {
         let mut temp_test_path = env::temp_dir();
-        let logger_key = "agent_logger_test";
-        temp_test_path.push(logger_key);
+        temp_test_path.push(TEST_LOGGER_KEY);
+        temp_test_path
+    }
 
-        // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
-
-        super::init_logger(
-            logger_key.to_string(),
-            temp_test_path.clone(),
-            logger_key.to_string(),
+    #[ctor]
+    fn setup() {
+        // Setup logger_manager for unit tests
+        let logger = crate::logger::rolling_logger::RollingLogger::create_new(
+            get_temp_test_dir(),
+            "test.log".to_string(),
             200,
             6,
-        )
-        .await;
+        );
+        let mut loggers = std::collections::HashMap::new();
+        loggers.insert(TEST_LOGGER_KEY.to_string(), logger);
+        crate::logger::logger_manager::set_loggers(loggers, TEST_LOGGER_KEY.to_string());
+    }
 
-        for _ in [0; 20] {
-            super::write_log(
-                LoggerLevel::Verbose,
-                String::from("This is a test message This is a test message"),
-            );
-            super::write_log(
-                LoggerLevel::Verbose,
-                String::from("This is a test message This is a test message"),
-            );
-            super::write_log(
-                LoggerLevel::Information,
-                "message from write_info".to_string(),
-            );
-            super::write_log(LoggerLevel::Warning, "message from write_warn".to_string());
-            super::write_log(LoggerLevel::Error, "message from write_err".to_string());
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        let file_count = misc_helpers::get_files(&temp_test_path).unwrap();
-        assert_eq!(6, file_count.len(), "log file count mismatch");
-
+    #[dtor]
+    fn cleanup() {
         // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&temp_test_path);
+        _ = fs::remove_dir_all(&get_temp_test_dir());
     }
 
     #[test]
-    fn logger_level_test() {
-        let info_level = LoggerLevel::Information;
-        assert_eq!(LoggerLevel::from_string("Info"), LoggerLevel::Information);
+    fn logger_manager_test() {
+        for _ in [0; 20] {
+            super::write_log(
+                Level::Trace,
+                String::from("This is a test message This is a test message"),
+            );
+            super::write_log(
+                Level::Debug,
+                String::from("This is a test message This is a test message"),
+            );
+            super::write_log(Level::Info, "message from write_info".to_string());
+            super::write_log(Level::Warn, "message from write_warn".to_string());
+            super::write_log(Level::Error, "message from write_err".to_string());
+        }
 
-        let verb_level = LoggerLevel::from_string("Verb");
-        assert_eq!(verb_level, LoggerLevel::Verbose);
-        assert!(
-            info_level > verb_level,
-            "Info level should be greater than Verb level"
-        );
-
-        assert!(
-            LoggerLevel::from_string("Verb") >= verb_level,
-            "Verb level should be greater than or equal to Verb level"
-        );
+        let file_count = misc_helpers::get_files(&get_temp_test_dir()).unwrap();
+        assert_eq!(6, file_count.len(), "log file count mismatch");
     }
 }

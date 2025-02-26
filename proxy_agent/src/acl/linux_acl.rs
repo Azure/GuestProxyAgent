@@ -62,14 +62,6 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let output = super::acl_directory(temp_test_path.to_path_buf());

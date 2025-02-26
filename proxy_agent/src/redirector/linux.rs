@@ -499,14 +499,6 @@ mod tests {
         let logger_key = "linux_ebpf_test";
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push(logger_key);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");
