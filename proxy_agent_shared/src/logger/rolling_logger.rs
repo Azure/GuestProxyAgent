@@ -161,25 +161,6 @@ impl RollingLogger {
         Ok(())
     }
 }
-/*
-impl log::Log for RollingLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            let log_header = Self::get_log_header(&format!("[{}]    ", record.level()));
-            let message = format!("{}{}", log_header, record.args());
-            if let Err(e) = self.write_line(message) {
-                eprintln!("Error writing to log: {}", e);
-            }
-        }
-    }
-
-    fn flush(&self) {}
-}
-*/
 
 #[cfg(test)]
 mod tests {

@@ -63,7 +63,7 @@ pub async fn start_service(shared_state: SharedState) {
     });
 }
 
-pub fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
+fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
     logger_manager::set_logger_level(max_logger_level);
 
     let agent_logger = RollingLogger::create_new(
