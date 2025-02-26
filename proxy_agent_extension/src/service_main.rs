@@ -739,8 +739,6 @@ mod tests {
     use crate::structs::*;
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::proxy_agent_aggregate_status::*;
-    use std::env;
-    use std::fs;
 
     #[cfg(windows)]
     use std::io::Write;
