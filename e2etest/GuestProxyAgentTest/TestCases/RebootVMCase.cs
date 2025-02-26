@@ -27,9 +27,9 @@ namespace GuestProxyAgentTest.TestCases
             };
 
             var vmr = context.VirtualMachineResource;
-            await vmr.RestartAsync(Azure.WaitUntil.Completed);
             try
             {
+                await vmr.RestartAsync(Azure.WaitUntil.Completed);
                 var iv = await vmr.InstanceViewAsync();
                 context.TestResultDetails = new TestCaseResultDetails
                 {

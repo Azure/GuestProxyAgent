@@ -1,12 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using Azure.ResourceManager.Compute;
-using GuestProxyAgentTest.TestCases;
+using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.Settings;
+using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Utilities;
-using System.Net;
-using GuestProxyAgentTest.Extensions;
 using System.Diagnostics;
 
 namespace GuestProxyAgentTest.TestScenarios
@@ -78,7 +77,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 throw new Exception("Test scenario setting is not set.");
             }
 
-            if(_junitTestResultBuilder == null)
+            if (_junitTestResultBuilder == null)
             {
                 throw new Exception("JUnit test result builder is not set");
             }
@@ -131,8 +130,38 @@ namespace GuestProxyAgentTest.TestScenarios
                 testScenarioStatusDetails.Status = ScenarioTestStatus.Running;
                 PreCheck();
 
-                var vmr = await new VMBuilder().LoadTestCaseSetting(_testScenarioSetting).Build(this.EnableProxyAgentForNewVM);
-                ConsoleLog("VM created");
+                VirtualMachineResource vmr;
+                var vmBuilder = new VMBuilder().LoadTestCaseSetting(_testScenarioSetting);
+                try
+                {
+                    vmr = await vmBuilder.Build(this.EnableProxyAgentForNewVM);
+                    ConsoleLog("VM Create succeed");
+                }
+                catch (Exception)
+                {
+                    // if the VM Creation operation failed, try check the VM instance view for 5 minutes
+                    var startTime = DateTime.UtcNow;
+                    while (true)
+                    {
+                        vmr = await vmBuilder.GetVirtualMachineResource();
+                        var instanceView = await vmr.InstanceViewAsync();
+                        if (instanceView?.Value?.Statuses?.Count > 0 && (instanceView.Value.Statuses[0].DisplayStatus == "Provisioning succeeded"
+                            || instanceView.Value.Statuses[0].DisplayStatus == "VM running"))
+                        {
+                            ConsoleLog("VM Create succeed");
+                            break;
+                        }
+
+                        if (DateTime.UtcNow - startTime > TimeSpan.FromMinutes(5))
+                        {
+                            // poll timed out, rethrow the exception
+                            throw;
+                        }
+
+                        // wait for 10 seconds before polling again
+                        await Task.Delay(10000);
+                    }
+                }
 
                 ConsoleLog("Running scenario test: " + _testScenarioSetting.testScenarioName);
                 await ScenarioTestAsync(vmr, testScenarioStatusDetails);
@@ -147,7 +176,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 sw.Stop();
                 // exception happened at here is outside of test cases under scenario test
                 // write to the failure to JUNIT with a fixed test case named 'ScenarioTestWorkflow'
-                _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, "ScenarioTestWorkflow", "", ex.Message + ex.StackTrace?? "", "", sw.ElapsedMilliseconds);
+                _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, "ScenarioTestWorkflow", "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
                 ConsoleLog("Exception occurs: " + ex.Message);
             }
             finally
@@ -181,7 +210,7 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 TestCaseExecutionContext context = new TestCaseExecutionContext(vmr, _testScenarioSetting);
                 Stopwatch sw = Stopwatch.StartNew();
-                
+
                 try
                 {
                     await testCase.StartAsync(context);
@@ -210,7 +239,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 finally
                 {
-                    ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed? "Succeed": "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
+                    ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed ? "Succeed" : "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
                     SaveResultFile(context.TestResultDetails.CustomOut, $"TestCases/{testCase.TestCaseName}", "customOut.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdErr, $"TestCases/{testCase.TestCaseName}", "stdErr.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdOut, $"TestCases/{testCase.TestCaseName}", "stdOut.txt", context.TestResultDetails.FromBlob);
@@ -223,7 +252,7 @@ namespace GuestProxyAgentTest.TestScenarios
             var logZipPath = Path.Combine(Path.GetTempPath(), _testScenarioSetting.testGroupName + "_" + _testScenarioSetting.testScenarioName + "_VMAgentLogs.zip");
             using (File.CreateText(logZipPath)) ConsoleLog("Created empty VMAgentLogs.zip file.");
             var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStorageFolderPrefix); ;
-            
+
             var runCommandRes = await RunCommandRunner.ExecuteRunCommandOnVM(vmr, new RunCommandSettingBuilder()
                     .TestScenarioSetting(_testScenarioSetting)
                     .RunCommandName("CollectInVMGALog")
@@ -241,7 +270,7 @@ namespace GuestProxyAgentTest.TestScenarios
             var fileFolder = Path.Combine(TestSetting.Instance.testResultFolder, _testScenarioSetting.testGroupName, _testScenarioSetting.testScenarioName, parentFolderName);
             Directory.CreateDirectory(fileFolder);
             var filePath = Path.Combine(fileFolder, fileName);
-            
+
             if (isFromSas)
             {
                 TestCommonUtilities.DownloadFile(fileContentOrSas, filePath, ConsoleLog);
