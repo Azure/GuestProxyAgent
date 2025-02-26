@@ -49,6 +49,14 @@ fn get_logger(logger_key: Option<String>) -> Option<&'static RollingLogger> {
 }
 
 pub fn log(logger_key: String, log_level: Level, message: String) {
+    let level = match MAX_LOG_LEVEL.get() {
+        Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
+        None => Level::Trace,
+    };
+    if log_level > level {
+        return;
+    }
+
     if let Some(logger) = get_logger(Some(logger_key)) {
         if let Err(e) = logger.write(log_level, message) {
             eprintln!("Error writing to log: {}", e);
@@ -57,15 +65,15 @@ pub fn log(logger_key: String, log_level: Level, message: String) {
 }
 
 pub fn write_log(log_level: Level, message: String) {
-    if let Some(logger) = get_logger(None) {
-        let level = match MAX_LOG_LEVEL.get() {
-            Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
-            None => Level::Trace,
-        };
-        if log_level > level {
-            return;
-        }
+    let level = match MAX_LOG_LEVEL.get() {
+        Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
+        None => Level::Trace,
+    };
+    if log_level > level {
+        return;
+    }
 
+    if let Some(logger) = get_logger(None) {
         if let Err(e) = logger.write(log_level, message) {
             eprintln!("Error writing to log: {}", e);
         }
