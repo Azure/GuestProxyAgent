@@ -740,16 +740,15 @@ mod tests {
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::proxy_agent_aggregate_status::*;
 
-    #[cfg(windows)]
-    use std::io::Write;
-    #[cfg(windows)]
-    use std::path::PathBuf;
-    #[cfg(windows)]
-    use std::process::Command;
-
     #[test]
     #[cfg(windows)]
     fn report_proxy_agent_service_status() {
+        use std::env;
+        use std::fs;
+        use std::io::Write;
+        use std::path::PathBuf;
+        use std::process::Command;
+
         // Create temp directory for status folder
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("test_status_file");
