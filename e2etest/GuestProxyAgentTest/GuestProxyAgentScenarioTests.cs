@@ -85,7 +85,7 @@ namespace GuestProxyAgentTest
 
             try
             {
-                await Task.WhenAll(taskList).TimeoutAfter(TestSetting.Instance.testTimeoutMilliseconds);
+                await Task.WhenAll(taskList).TimeoutAfter(TestSetting.Instance.testMapTimeoutMilliseconds);
             }
             catch (Exception ex)
             {

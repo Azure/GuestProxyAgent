@@ -10,6 +10,15 @@ using System.Text;
 
 namespace GuestProxyAgentTest.TestCases
 {
+    public enum TestCaseResult
+    {
+        NotStarted,
+        Running,
+        Succeed,
+        Failed,
+        Aborted,
+    }
+    
     /// <summary>
     /// Base case for each TestCase
     /// </summary>
@@ -22,6 +31,8 @@ namespace GuestProxyAgentTest.TestCases
         {
             get; private set;
         } = null!;
+
+        public TestCaseResult Result { get; set; } = TestCaseResult.NotStarted;
 
         public TestCaseBase(string testCaseName)
         {

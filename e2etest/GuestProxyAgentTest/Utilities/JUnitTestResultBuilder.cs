@@ -157,6 +157,51 @@ namespace GuestProxyAgentTest.Utilities
             return this;
         }
 
+
+        public JunitTestResultBuilder AddAbortedTestResult(string testScenarioName, string testName, string stdOutMessage, string stdErrMessage, string customOutput, long durationInMilliseconds = 0)
+        {
+            lock (this)
+            {
+                XmlDocument doc = null!;
+                if (!testSuiteMap.ContainsKey(testScenarioName))
+                {
+                    doc = new XmlDocument();
+                    var testsuites = doc.CreateElement("testsuites");
+                    doc.AppendChild(testsuites);
+                    XmlElement testSuiteElement = doc.CreateElement("testsuite");
+                    testSuiteElement.SetAttribute("name", testGroupName + "." + testScenarioName);
+                    testSuiteElement.SetAttribute("tests", "0");
+                    testSuiteElement.SetAttribute("errors", "0");
+                    testSuiteElement.SetAttribute("failures", "0");
+                    testSuiteElement.SetAttribute("skipped", "0");
+                    testSuiteElement.SetAttribute("timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss"));
+                    testsuites.AppendChild(testSuiteElement);
+                    testSuiteMap[testScenarioName] = (doc, testSuiteElement);
+                }
+                doc = testSuiteMap[testScenarioName].Item1;
+                var testSuite = testSuiteMap[testScenarioName].Item2;
+                testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
+                testSuite.SetAttribute("failures", StringAdd(testSuite.GetAttribute("failures"), 1));
+                XmlElement failedTestCaseElement = doc.CreateElement("testcase");
+                failedTestCaseElement.SetAttribute("name", testName);
+                failedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
+                failedTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds / 1000).ToString());
+                testSuite.AppendChild(failedTestCaseElement);
+                XmlElement systemOutElement = doc.CreateElement("system-out");
+                systemOutElement.InnerText = stdOutMessage;
+                failedTestCaseElement.AppendChild(systemOutElement);
+                XmlElement systemErrElement = doc.CreateElement("system-err");
+                systemErrElement.InnerText = stdErrMessage;
+                failedTestCaseElement.AppendChild(systemErrElement);
+                XmlElement failureElement = doc.CreateElement("failure");
+                failureElement.SetAttribute("message", "Test case aborted.");
+                failureElement.SetAttribute("type", "Aborted");
+                failureElement.InnerText = stdErrMessage;
+                failedTestCaseElement.AppendChild(failureElement);
+            }
+            return this;
+        }
+
         /// <summary>
         /// build and save the test result to file
         /// </summary>

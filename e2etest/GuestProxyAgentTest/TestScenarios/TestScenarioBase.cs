@@ -103,6 +103,10 @@ namespace GuestProxyAgentTest.TestScenarios
             catch (Exception ex)
             {
                 ConsoleLog($"Test Scenario {_testScenarioSetting.testScenarioName} Exception: {ex.Message}.");
+
+                // set running test cases to failed
+                // set not started test cases to aborted
+                ex.UpdateTestCaseResults(_testCases, _junitTestResultBuilder, _testScenarioSetting.testScenarioName);
             }
             finally
             {
@@ -213,6 +217,7 @@ namespace GuestProxyAgentTest.TestScenarios
 
                 try
                 {
+                    testCase.Result = TestCaseResult.Running;
                     await testCase.StartAsync(context);
                     sw.Stop();
                     context.TestResultDetails
@@ -239,6 +244,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 finally
                 {
+                    testCase.Result = context.TestResultDetails.Succeed ? TestCaseResult.Succeed : TestCaseResult.Failed;
                     ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed ? "Succeed" : "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
                     SaveResultFile(context.TestResultDetails.CustomOut, $"TestCases/{testCase.TestCaseName}", "customOut.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdErr, $"TestCases/{testCase.TestCaseName}", "stdErr.txt", context.TestResultDetails.FromBlob);
