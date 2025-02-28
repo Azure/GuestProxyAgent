@@ -40,6 +40,7 @@ use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
 use crate::{acl, redirector};
 use hyper::Uri;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -105,24 +106,6 @@ impl KeyKeeper {
         }
     }
 
-    fn get_dir_to_acl(&self) -> PathBuf {
-        #[cfg(not(windows))]
-        {
-            self.key_dir.clone()
-        }
-
-        #[cfg(windows)]
-        {
-            // ACL the parent folder of the keys folder,
-            // so that all ProxyAgent sub folders could be ACLed too,
-            // including GPA service directory.
-            match self.key_dir.parent() {
-                Some(parent) => parent.to_path_buf(),
-                None => self.key_dir.clone(),
-            }
-        }
-    }
-
     /// poll secure channel status at interval from the WireServer endpoint
     pub async fn poll_secure_channel_status(&self) {
         self.update_status_message("poll secure channel status task started.".to_string(), true)
@@ -170,7 +153,7 @@ impl KeyKeeper {
             ));
         }
 
-        match acl::acl_directory(self.get_dir_to_acl()) {
+        match acl::acl_directory(self.key_dir.clone()) {
             Ok(()) => {
                 logger::write(format!(
                     "Folder {} ACLed if has not before.",
@@ -183,6 +166,22 @@ impl KeyKeeper {
                     misc_helpers::path_to_string(&self.key_dir),
                     e
                 ));
+            }
+        }
+
+        // acl current executable dir
+        #[cfg(windows)]
+        {
+            if let Ok(current_exe) = std::env::current_exe() {
+                if let Some(current_dir) = current_exe.parent() {
+                    if let Err(e) = acl::acl_directory(current_dir.to_path_buf()) {
+                        logger::write_warning(format!(
+                            "Current executable directory {} ACLed failed with error {}.",
+                            misc_helpers::path_to_string(current_dir),
+                            e
+                        ));
+                    }
+                }
             }
         }
 
@@ -458,7 +457,7 @@ impl KeyKeeper {
                         }
                         Err(e) => {
                             event_logger::write_event(
-                                event_logger::WARN_LEVEL,
+                                LoggerLevel::Warn,
                                 format!("Failed to fetch local key details with error: {:?}. Will try acquire the key details from Server.", e),
                                 "poll_secure_channel_status",
                                 "key_keeper",
@@ -616,7 +615,7 @@ impl KeyKeeper {
                 if log_to_file {
                     if updated {
                         event_logger::write_event(
-                            event_logger::INFO_LEVEL,
+                            LoggerLevel::Info,
                             message,
                             "update_status_message",
                             "key_keeper",
@@ -799,11 +798,10 @@ impl KeyKeeper {
 #[cfg(test)]
 mod tests {
     use super::key::Key;
-    use crate::common::logger;
     use crate::key_keeper;
     use crate::key_keeper::KeyKeeper;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger::logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::time::Duration;
@@ -816,14 +814,6 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger_key.to_string(),
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            200,
-            6,
-        )
-        .await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let key_str = r#"{
@@ -872,16 +862,6 @@ mod tests {
                 print!("Failed to remove_dir_all with error {}.", e);
             }
         }
-
-        // init main logger
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let cancellation_token = CancellationToken::new();
         // start wire_server listener

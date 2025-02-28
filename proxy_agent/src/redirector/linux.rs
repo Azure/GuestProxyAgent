@@ -19,8 +19,8 @@ use aya::{Btf, Ebpf, EbpfLoader};
 use ebpf_obj::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
 };
-use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
@@ -291,7 +291,7 @@ impl BpfObject {
                         match policy_map.remove(&key.to_array()) {
                             Ok(_) => {
                                 event_logger::write_event(
-                                    event_logger::INFO_LEVEL,
+                                    LoggerLevel::Info,
                                     format!(
                                         "policy_map removed for destination: {}:{}",
                                         ip_to_string(dest_ipv4),
@@ -309,7 +309,7 @@ impl BpfObject {
                     } else {
                         let local_ip = constants::PROXY_AGENT_IP.to_string();
                         event_logger::write_event(
-                            event_logger::INFO_LEVEL,
+                            LoggerLevel::Info,
                             format!(
                                 "update_redirect_policy_internal with local ip address: {}, dest_ipv4: {}, dest_port: {}, local_port: {}",
                                 local_ip, ip_to_string(dest_ipv4), dest_port, local_port
@@ -322,7 +322,7 @@ impl BpfObject {
                         let value = destination_entry::from_ipv4(local_ip, local_port);
                         match policy_map.insert(key.to_array(), value.to_array(), 0) {
                             Ok(_) => event_logger::write_event(
-                                event_logger::INFO_LEVEL,
+                                LoggerLevel::Info,
                                 format!(
                                     "policy_map updated for destination: {}:{}",
                                     ip_to_string(dest_ipv4),
@@ -401,7 +401,7 @@ impl super::Redirector {
             }
             Err(e) => {
                 event_logger::write_event(
-                    event_logger::WARN_LEVEL,
+                    LoggerLevel::Warn,
                     format!("Failed to get the cgroup2 mount path {}, fallback to use the cgroup2 path from config file.", e),
                     "start",
                     "redirector/linux",
@@ -413,7 +413,7 @@ impl super::Redirector {
         if let Err(e) = bpf_object.attach_cgroup_program(cgroup2_path) {
             let message = format!("Failed to attach cgroup program for redirection. {}", e);
             event_logger::write_event(
-                event_logger::WARN_LEVEL,
+                LoggerLevel::Warn,
                 message.to_string(),
                 "start",
                 "redirector",
@@ -481,11 +481,9 @@ pub async fn update_hostga_redirect_policy(
 mod tests {
     use crate::common::config;
     use crate::common::constants;
-    use crate::common::logger;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_entry;
     use crate::redirector::linux::ebpf_obj::sock_addr_audit_key;
     use aya::maps::HashMap;
-    use proxy_agent_shared::logger::logger_manager;
     use proxy_agent_shared::misc_helpers;
     use std::env;
 
@@ -499,14 +497,6 @@ mod tests {
         let logger_key = "linux_ebpf_test";
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push(logger_key);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let mut bpf_file_path = misc_helpers::get_current_exe_dir();
         bpf_file_path.push("config::get_ebpf_program_name()");

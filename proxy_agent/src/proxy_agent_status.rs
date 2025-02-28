@@ -32,6 +32,7 @@ use crate::common::logger;
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
@@ -93,7 +94,7 @@ impl ProxyAgentStatusTask {
                     Err(e) => format!("Error serializing proxy agent status: {}", e),
                 };
                 event_logger::write_event(
-                    event_logger::INFO_LEVEL,
+                    LoggerLevel::Info,
                     status,
                     "loop_status",
                     "proxy_agent_status",

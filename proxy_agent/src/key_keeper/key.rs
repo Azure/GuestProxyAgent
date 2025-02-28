@@ -214,18 +214,18 @@ impl Clone for Privilege {
 impl Privilege {
     pub fn is_match(&self, logger: &ConnectionLogger, request_url: &Uri) -> bool {
         logger.write(
-            LoggerLevel::Verbose,
+            LoggerLevel::Trace,
             format!("Start to match privilege '{}'", self.name),
         );
         if request_url.path().to_lowercase().starts_with(&self.path) {
             logger.write(
-                LoggerLevel::Verbose,
+                LoggerLevel::Trace,
                 format!("Matched privilege path '{}'", self.path),
             );
 
             if let Some(query_parameters) = &self.queryParameters {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Start to match query_parameters from privilege '{}'",
                         self.name
@@ -240,7 +240,7 @@ impl Privilege {
                         Some((_, v)) => {
                             if v.to_lowercase() == value.to_lowercase() {
                                 logger.write(
-                                    LoggerLevel::Verbose,
+                                    LoggerLevel::Trace,
                                     format!(
                                         "Matched query_parameters '{}:{}' from privilege '{}'",
                                         key, v, self.name
@@ -248,7 +248,7 @@ impl Privilege {
                                 );
                             } else {
                                 logger.write(
-                                    LoggerLevel::Verbose,
+                                    LoggerLevel::Trace,
                                         format!("Not matched query_parameters value '{}' from privilege '{}'", key, self.name),
                                     );
                                 return false;
@@ -256,7 +256,7 @@ impl Privilege {
                         }
                         None => {
                             logger.write(
-                                LoggerLevel::Verbose,
+                                LoggerLevel::Trace,
                                 format!(
                                     "Not matched query_parameters key '{}' from privilege '{}'",
                                     key, self.name
@@ -297,13 +297,13 @@ impl Clone for Identity {
 impl Identity {
     pub fn is_match(&self, logger: &ConnectionLogger, claims: &Claims) -> bool {
         logger.write(
-            LoggerLevel::Verbose,
+            LoggerLevel::Trace,
             format!("Start to match identity '{}'", self.name),
         );
         if let Some(ref user_name) = self.userName {
             if *user_name == claims.userName {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Matched user name '{}' from identity '{}'",
                         user_name, self.name
@@ -311,7 +311,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Not matched user name '{}' from identity '{}'",
                         user_name, self.name
@@ -324,7 +324,7 @@ impl Identity {
             let process_name_os: OsString = process_name.into();
             if process_name_os == claims.processName {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Matched process name '{}' from identity '{}'",
                         process_name, self.name
@@ -332,7 +332,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Not matched process name '{}' from identity '{}'",
                         process_name, self.name
@@ -345,7 +345,7 @@ impl Identity {
             let process_path_buf: PathBuf = exe_path.into();
             if process_path_buf == claims.processFullPath {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Matched process full path '{}' from identity '{}'",
                         exe_path, self.name
@@ -353,7 +353,7 @@ impl Identity {
                 );
             } else {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Not matched process full path '{}' from identity '{}'",
                         exe_path, self.name
@@ -367,7 +367,7 @@ impl Identity {
             for claims_user_group_name in &claims.userGroups {
                 if claims_user_group_name == group_name {
                     logger.write(
-                        LoggerLevel::Verbose,
+                        LoggerLevel::Trace,
                         format!(
                             "Matched user group name '{}' from identity '{}'",
                             group_name, self.name
@@ -379,7 +379,7 @@ impl Identity {
             }
             if !matched {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Not matched user group name '{}' from identity '{}'",
                         group_name, self.name
@@ -1370,10 +1370,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_privilege_is_match() {
-        let logger_key = "test_privilege_is_match";
-        let mut temp_test_path = std::env::temp_dir();
-        temp_test_path.push(logger_key);
-        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
         let logger = ConnectionLogger {
             tcp_connection_id: 1,
             http_connection_id: 1,
@@ -1439,17 +1435,10 @@ mod tests {
             !privilege2.is_match(&logger, &url),
             "privilege should not be matched"
         );
-
-        // clean up and ignore the clean up errors
-        _ = std::fs::remove_dir_all(temp_test_path);
     }
 
     #[tokio::test]
     async fn test_identity_is_match() {
-        let logger_key = "test_identity_is_match";
-        let mut temp_test_path = std::env::temp_dir();
-        temp_test_path.push(logger_key);
-        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
         let logger = ConnectionLogger {
             tcp_connection_id: 1,
             http_connection_id: 1,
@@ -1623,7 +1612,5 @@ mod tests {
             replacement_char, process_name_lossy,
             "process name after lossy conversion should be equal to replacement char"
         );
-        // clean up and ignore the clean up errors
-        _ = std::fs::remove_dir_all(temp_test_path);
     }
 }

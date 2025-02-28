@@ -7,6 +7,7 @@ name = "ProxyAgentExt"
 version = "9.9.9"
 dependencies = [
  "clap",
+ "ctor",
  "nix",
  "once_cell",
  "proxy_agent_shared",
@@ -162,6 +163,7 @@ dependencies = [
  "aya",
  "bitflags",
  "clap",
+ "ctor",
  "hex",
  "hmac-sha256",
  "http",
@@ -343,6 +345,21 @@ name = "crossbeam-utils"
 version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
+
+[[package]]
+name = "ctor"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21d960ecacd0a1bf55e73144b72de745e7bf275c7952c50e36e8af0a0cb7ab1f"
+dependencies = [
+ "ctor-proc-macro",
+]
+
+[[package]]
+name = "ctor-proc-macro"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c426d2ba3e525b39c1f0a9ba41b9fe61878dee11fa4e4a76b6ab440f46c5db5d"
 
 [[package]]
 name = "deranged"
@@ -627,9 +644,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.22"
+version = "0.4.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
 name = "memchr"
@@ -786,6 +803,8 @@ name = "proxy_agent_shared"
 version = "9.9.9"
 dependencies = [
  "concurrent-queue",
+ "ctor",
+ "log",
  "once_cell",
  "os_info",
  "regex",

@@ -170,7 +170,7 @@ impl ComputedAuthorizationItem {
     ) -> bool {
         if self.mode == AuthorizationMode::Disabled {
             logger.write(
-                LoggerLevel::Verbose,
+                LoggerLevel::Trace,
                 "Access control is in disabled state, skip....".to_string(),
             );
 
@@ -183,7 +183,7 @@ impl ComputedAuthorizationItem {
             if privilege.is_match(&logger, &request_url) {
                 any_privilege_matched = true;
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!("Request matched privilege '{}'.", privilege_name),
                 );
 
@@ -193,7 +193,7 @@ impl ComputedAuthorizationItem {
                         if let Some(identity) = self.identities.get(&identity_name) {
                             if identity.is_match(&logger, &claims) {
                                 logger.write(
-                                    LoggerLevel::Verbose,
+                                    LoggerLevel::Trace,
                                     format!(
                                         "Request matched privilege '{}' and identity '{}'.",
                                         privilege_name, identity_name
@@ -204,7 +204,7 @@ impl ComputedAuthorizationItem {
                         }
                     }
                     logger.write(
-                        LoggerLevel::Verbose,
+                        LoggerLevel::Trace,
                         format!(
                             "Request matched privilege '{}' but no identity matched.",
                             privilege_name
@@ -212,7 +212,7 @@ impl ComputedAuthorizationItem {
                     );
                 } else {
                     logger.write(
-                        LoggerLevel::Verbose,
+                        LoggerLevel::Trace,
                         format!(
                             "Request matched privilege '{}' but no identity assigned.",
                             privilege_name
@@ -221,7 +221,7 @@ impl ComputedAuthorizationItem {
                 }
             } else {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!("Request does not match privilege '{}'.", privilege_name),
                 );
             }
@@ -229,7 +229,7 @@ impl ComputedAuthorizationItem {
 
         if any_privilege_matched {
             logger.write(
-                LoggerLevel::Information,
+                LoggerLevel::Info,
                 "Privilege matched at least once, but no identity matches, deny the access."
                     .to_string(),
             );
@@ -237,7 +237,7 @@ impl ComputedAuthorizationItem {
         }
 
         logger.write(
-            LoggerLevel::Verbose,
+            LoggerLevel::Trace,
             format!(
                 "No privilege matched, fall back to use the default access: {}.",
                 self.defaultAllowed
@@ -342,14 +342,13 @@ impl AuthorizationRulesForLogging {
 #[cfg(test)]
 mod tests {
     use super::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
-    use crate::common::logger;
     use crate::key_keeper::key::{
         AccessControlRules, AuthorizationItem, AuthorizationRules, Identity, Privilege, Role,
         RoleAssignment,
     };
     use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
     use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
-    use proxy_agent_shared::{logger::logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     use std::ffi::OsString;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -359,7 +358,6 @@ mod tests {
         let logger_key = "test_authorization_rules";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        ConnectionLogger::init_logger(temp_test_path.to_path_buf()).await;
         let test_logger = ConnectionLogger {
             tcp_connection_id: 0,
             http_connection_id: 0,
@@ -556,16 +554,6 @@ mod tests {
             }
         }
         misc_helpers::try_create_folder(&temp_test_path).unwrap();
-
-        // init main logger
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let access_control_rules = AccessControlRules {
             roles: Some(vec![Role {

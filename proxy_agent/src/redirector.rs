@@ -55,6 +55,7 @@ use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -122,8 +123,8 @@ impl Redirector {
 
     pub async fn start(&self) {
         let level = match self.start_impl().await {
-            Ok(_) => event_logger::INFO_LEVEL,
-            Err(_) => event_logger::ERROR_LEVEL,
+            Ok(_) => LoggerLevel::Info,
+            Err(_) => LoggerLevel::Error,
         };
         event_logger::write_event(
             level,
@@ -280,7 +281,7 @@ impl Redirector {
             ));
         }
         event_logger::write_event(
-            event_logger::ERROR_LEVEL,
+            LoggerLevel::Error,
             message,
             "start",
             "redirector",

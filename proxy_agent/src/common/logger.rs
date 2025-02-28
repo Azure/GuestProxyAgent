@@ -9,15 +9,15 @@ use proxy_agent_shared::{
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";
 
 pub fn write(message: String) {
-    log(LoggerLevel::Verbose, message);
+    log(LoggerLevel::Trace, message);
 }
 
 pub fn write_information(message: String) {
-    log(LoggerLevel::Information, message);
+    log(LoggerLevel::Info, message);
 }
 
 pub fn write_warning(message: String) {
-    log(LoggerLevel::Warning, message);
+    log(LoggerLevel::Warn, message);
 }
 
 pub fn write_error(message: String) {
@@ -25,7 +25,7 @@ pub fn write_error(message: String) {
 }
 
 fn log(log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Verbose {
+    if log_level != LoggerLevel::Trace {
         write_console_log(message.to_string());
     };
     logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
