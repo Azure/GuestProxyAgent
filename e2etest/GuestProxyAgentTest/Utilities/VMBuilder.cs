@@ -49,7 +49,7 @@ namespace GuestProxyAgentTest.Utilities
         /// Build Build and return the VirtualMachine based on the setting
         /// </summary>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(bool enableProxyAgent)
+        public async Task<VirtualMachineResource> Build(bool enableProxyAgent, CancellationToken cancellationToken)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -68,7 +68,7 @@ namespace GuestProxyAgentTest.Utilities
 
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
-            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent))).Value;
+            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent), cancellationToken: cancellationToken)).Value;
             Console.WriteLine("Virtual machine created, with id: " + vmr.Id);
             return vmr;
         }

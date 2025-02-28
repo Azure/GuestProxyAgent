@@ -20,7 +20,7 @@ namespace GuestProxyAgentTest.Extensions
                 else if (testCase.Result == TestCaseResult.NotStarted)
                 {
                     testCase.Result = TestCaseResult.Aborted;
-                    junitTestResultBuilder.AddAbortedTestResult(testScenarioName, testCase.TestCaseName, "", "Test case not started.", "", 0);
+                    junitTestResultBuilder.AddAbortedTestResult(testScenarioName, testCase.TestCaseName, "Test case not started.");
                 }
             }
         }

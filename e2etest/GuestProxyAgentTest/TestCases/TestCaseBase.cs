@@ -18,7 +18,7 @@ namespace GuestProxyAgentTest.TestCases
         Failed,
         Aborted,
     }
-    
+
     /// <summary>
     /// Base case for each TestCase
     /// </summary>
@@ -69,9 +69,10 @@ namespace GuestProxyAgentTest.TestCases
                 custJsonSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, custJsonPath, "customOutputJson.json", testScenarioSetting.TestScenarioStorageFolderPrefix);
             }
             return await RunCommandRunner.ExecuteRunCommandOnVM(context.VirtualMachineResource, new RunCommandSettingBuilder()
-                    .TestScenarioSetting(testScenarioSetting)
-                    .RunCommandName(TestCaseName)
-                    .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, scriptFileName))
+                                                                                                    .TestScenarioSetting(testScenarioSetting)
+                                                                                                    .RunCommandName(TestCaseName)
+                                                                                                    .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, scriptFileName))
+                    , context.CancellationToken
                     , (builder) => builder
                         .CustomOutputSas(custJsonSas)
                         .AddParameters(parameterList));
