@@ -16,6 +16,7 @@ namespace GuestProxyAgentTest.TestScenarios
     public abstract class TestScenarioBase
     {
         private TestScenarioSetting _testScenarioSetting = null!;
+        private VMBuilder _vmBuilder = null!;
         private JunitTestResultBuilder _junitTestResultBuilder = null!;
         private List<TestCaseBase> _testCases = new List<TestCaseBase>();
         protected bool EnableProxyAgentForNewVM { get; set; }
@@ -29,6 +30,7 @@ namespace GuestProxyAgentTest.TestScenarios
         public TestScenarioBase TestScenarioSetting(TestScenarioSetting testScenarioSetting)
         {
             this._testScenarioSetting = testScenarioSetting;
+            this._vmBuilder = new VMBuilder().LoadTestCaseSetting(testScenarioSetting);
             return this;
         }
 
@@ -81,6 +83,11 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 throw new Exception("JUnit test result builder is not set");
             }
+
+            if (_vmBuilder == null)
+            {
+                throw new Exception("VM builder is not set");
+            }
         }
 
         /// <summary>
@@ -96,6 +103,7 @@ namespace GuestProxyAgentTest.TestScenarios
         /// <returns></returns>
         public async Task StartAsync(TestScenarioStatusDetails testScenarioStatusDetails)
         {
+            PreCheck();
             try
             {
                 // Create a cancellation token source that will be used to cancel the running test scenario/cases
@@ -139,15 +147,13 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 ConsoleLog("Running test.");
                 testScenarioStatusDetails.Status = ScenarioTestStatus.Running;
-                PreCheck();
 
                 VirtualMachineResource vmr;
                 Stopwatch sw = Stopwatch.StartNew();
                 var vmCreateTestName = "CreateVM";
-                var vmBuilder = new VMBuilder().LoadTestCaseSetting(_testScenarioSetting);
                 try
                 {
-                    vmr = await vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
+                    vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
                     ConsoleLog("VM Create succeed");
                     sw.Stop();
                     _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
@@ -158,7 +164,7 @@ namespace GuestProxyAgentTest.TestScenarios
                     var startTime = DateTime.UtcNow;
                     while (true)
                     {
-                        vmr = await vmBuilder.GetVirtualMachineResource();
+                        vmr = await _vmBuilder.GetVirtualMachineResource();
                         var instanceView = await vmr.InstanceViewAsync(cancellationToken: cancellationToken);
                         if (instanceView?.Value?.Statuses?.Count > 0 && (instanceView.Value.Statuses[0].DisplayStatus == "Provisioning succeeded"
                             || instanceView.Value.Statuses[0].DisplayStatus == "VM running"))
@@ -253,7 +259,7 @@ namespace GuestProxyAgentTest.TestScenarios
         private async Task CollectGALogsOnVMAsync()
         {
             ConsoleLog("Collecting GA logs on VM.");
-            var vmr = await new VMBuilder().LoadTestCaseSetting(_testScenarioSetting).GetVirtualMachineResource();
+            var vmr = await _vmBuilder.GetVirtualMachineResource();
             var logZipPath = Path.Combine(Path.GetTempPath(), _testScenarioSetting.testGroupName + "_" + _testScenarioSetting.testScenarioName + "_VMAgentLogs.zip");
             using (File.CreateText(logZipPath))
             {

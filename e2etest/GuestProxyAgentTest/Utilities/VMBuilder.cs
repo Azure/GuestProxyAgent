@@ -37,7 +37,7 @@ namespace GuestProxyAgentTest.Utilities
         {
             this.testScenarioSetting = testScenarioSetting;
             this.rgName = this.testScenarioSetting.ResourceGroupName;
-            var prefix = "e2e" + testScenarioSetting.suffixName;
+            var prefix = "e2e" + new Random().Next(1000);
             this.vmName = prefix + "vm";
             this.vNetName = prefix + "vNet";
             this.netInfName = prefix + "nInf";

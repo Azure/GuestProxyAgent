@@ -70,7 +70,6 @@ namespace GuestProxyAgentTest.Utilities
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
                     testSuiteElement.SetAttribute("skipped", "0");
-                    testSuiteElement.SetAttribute("aborted", "0");
                     testSuiteElement.SetAttribute("timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss"));
                     testsuites.AppendChild(testSuiteElement);
                     testSuiteMap[testScenarioName] = (doc, testSuiteElement);
@@ -119,7 +118,6 @@ namespace GuestProxyAgentTest.Utilities
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
                     testSuiteElement.SetAttribute("skipped", "0");
-                    testSuiteElement.SetAttribute("aborted", "0");
                     testSuiteElement.SetAttribute("timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss"));
                     testsuites.AppendChild(testSuiteElement);
                     testSuiteMap[testScenarioName] = (doc, testSuiteElement);
@@ -174,7 +172,6 @@ namespace GuestProxyAgentTest.Utilities
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
                     testSuiteElement.SetAttribute("skipped", "0");
-                    testSuiteElement.SetAttribute("aborted", "0");
                     testSuiteElement.SetAttribute("timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss"));
                     testsuites.AppendChild(testSuiteElement);
                     testSuiteMap[testScenarioName] = (doc, testSuiteElement);
@@ -182,13 +179,13 @@ namespace GuestProxyAgentTest.Utilities
                 doc = testSuiteMap[testScenarioName].Item1;
                 var testSuite = testSuiteMap[testScenarioName].Item2;
                 testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
-                testSuite.SetAttribute("aborted", StringAdd(testSuite.GetAttribute("aborted"), 1));
+                testSuite.SetAttribute("skipped", StringAdd(testSuite.GetAttribute("skipped"), 1));
                 XmlElement abortedTestCaseElement = doc.CreateElement("testcase");
                 abortedTestCaseElement.SetAttribute("name", testName);
                 abortedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
                 abortedTestCaseElement.SetAttribute("time", "0");
                 testSuite.AppendChild(abortedTestCaseElement);
-                XmlElement abortedElement = doc.CreateElement("aborted");
+                XmlElement abortedElement = doc.CreateElement("skipped");
                 abortedElement.SetAttribute("message", "Test case aborted.");
                 abortedElement.InnerText = message;
                 abortedTestCaseElement.AppendChild(abortedElement);
