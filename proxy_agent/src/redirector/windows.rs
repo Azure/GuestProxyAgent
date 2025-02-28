@@ -34,8 +34,6 @@ impl Default for BpfObject {
 impl super::Redirector {
     pub fn initialized(&self) -> Result<()> {
         if !bpf_api::ebpf_api_is_loaded() {
-            // self.set_error_status("Failed to load eBPF API.".to_string())
-            //    .await;
             return Err(Error::Bpf(BpfErrorType::GetBpfApi));
         }
         Ok(())
