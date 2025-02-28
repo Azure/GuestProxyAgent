@@ -191,7 +191,7 @@ namespace GuestProxyAgentTest.TestScenarios
             }
 
             testScenarioStatusDetails.Status = ScenarioTestStatus.Completed;
-            ConsoleLog("Test case run finished.");
+            ConsoleLog("Test scenario run finished.");
         }
 
         private async Task ScenarioTestAsync(VirtualMachineResource vmr, TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)

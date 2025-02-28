@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Utilities;
 
