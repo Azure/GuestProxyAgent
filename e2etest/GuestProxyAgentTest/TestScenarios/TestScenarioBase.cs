@@ -135,22 +135,24 @@ namespace GuestProxyAgentTest.TestScenarios
 
         private async Task DoStartAsync(TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)
         {
-            Stopwatch sw = new Stopwatch();
             try
             {
                 ConsoleLog("Running test.");
-                sw.Start();
                 testScenarioStatusDetails.Status = ScenarioTestStatus.Running;
                 PreCheck();
 
                 VirtualMachineResource vmr;
+                Stopwatch sw = Stopwatch.StartNew();
+                var vmCreateTestName = "CreateVM";
                 var vmBuilder = new VMBuilder().LoadTestCaseSetting(_testScenarioSetting);
                 try
                 {
                     vmr = await vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
                     ConsoleLog("VM Create succeed");
+                    sw.Stop();
+                    _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // if the VM Creation operation failed, try check the VM instance view for 5 minutes
                     var startTime = DateTime.UtcNow;
@@ -162,12 +164,16 @@ namespace GuestProxyAgentTest.TestScenarios
                             || instanceView.Value.Statuses[0].DisplayStatus == "VM running"))
                         {
                             ConsoleLog("VM Create succeed");
+                            sw.Stop();
+                            _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
                             break;
                         }
 
                         if (DateTime.UtcNow - startTime > TimeSpan.FromMinutes(5))
                         {
                             // poll timed out, rethrow the exception
+                            sw.Stop();
+                            _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, vmCreateTestName, "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
                             throw;
                         }
 
@@ -183,10 +189,6 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 testScenarioStatusDetails.ErrorMessage = ex.Message;
                 testScenarioStatusDetails.Result = ScenarioTestResult.Failed;
-                sw.Stop();
-                // exception happened at here is outside of test cases under scenario test
-                // write to the failure to JUNIT with a fixed test case named 'ScenarioTestWorkflow'
-                _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, "ScenarioTestWorkflow", "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
                 ConsoleLog("Exception occurs: " + ex.Message);
             }
 
@@ -200,6 +202,7 @@ namespace GuestProxyAgentTest.TestScenarios
             // always running all the cases inside scenario
             foreach (var testCase in _testCases)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (cancellationToken.IsCancellationRequested)
                 {
                     ConsoleLog($"Test case {testCase.TestCaseName} is cancelled.");
