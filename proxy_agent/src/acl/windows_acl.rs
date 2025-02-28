@@ -126,8 +126,6 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::logger;
-    use proxy_agent_shared::logger::logger_manager;
     use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
@@ -145,14 +143,6 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         // test when dir_to_acl does not exist

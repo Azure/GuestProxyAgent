@@ -20,6 +20,7 @@ use crate::common::constants;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{path::PathBuf, time::Duration};
 
 #[cfg(not(windows))]
@@ -159,7 +160,7 @@ impl Config {
 
     pub fn get_file_log_level(&self) -> LoggerLevel {
         let file_log_level = self.fileLogLevel.clone().unwrap_or("Info".to_string());
-        LoggerLevel::from_string(&file_log_level)
+        LoggerLevel::from_str(&file_log_level).unwrap_or(LoggerLevel::Info)
     }
 
     #[cfg(not(windows))]

@@ -58,6 +58,7 @@
 use crate::common::logger;
 use crate::common::result::Result;
 use crate::{common::error::Error, proxy::proxy_summary::ProxySummary};
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     ModuleState, ProxyAgentDetailStatus, ProxyConnectionSummary,
 };
@@ -574,7 +575,7 @@ impl AgentStatusSharedState {
         };
         if message.len() > MAX_STATUS_MESSAGE_LENGTH {
             event_logger::write_event(
-                event_logger::WARN_LEVEL,
+                LoggerLevel::Warn,
                 format!(
                     "Status message is too long, truncating to {} characters. Message: {}",
                     MAX_STATUS_MESSAGE_LENGTH, message
