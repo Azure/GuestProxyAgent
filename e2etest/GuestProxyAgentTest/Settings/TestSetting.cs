@@ -35,7 +35,7 @@ namespace GuestProxyAgentTest.Settings
         internal string zipFilePath = null!;
         internal string sharedStorageAccountUrl = null!;
         internal string testResultFolder = null!;
-        internal int testTimeoutMilliseconds = 1000 * 60 * 120;
+        internal int testMapTimeoutMilliseconds = 1000 * 60 * 180;
         internal string windowsInVmWireServerAccessControlProfileReferenceId = null!;
         internal string windowsInVmIMDSAccessControlProfileReferenceId = null!;
         internal string linuxInVmWireServerAccessControlProfileReferenceId = null!;

@@ -16,6 +16,7 @@ namespace GuestProxyAgentTest.TestScenarios
     public abstract class TestScenarioBase
     {
         private TestScenarioSetting _testScenarioSetting = null!;
+        private VMBuilder _vmBuilder = null!;
         private JunitTestResultBuilder _junitTestResultBuilder = null!;
         private List<TestCaseBase> _testCases = new List<TestCaseBase>();
         protected bool EnableProxyAgentForNewVM { get; set; }
@@ -29,6 +30,7 @@ namespace GuestProxyAgentTest.TestScenarios
         public TestScenarioBase TestScenarioSetting(TestScenarioSetting testScenarioSetting)
         {
             this._testScenarioSetting = testScenarioSetting;
+            this._vmBuilder = new VMBuilder().LoadTestCaseSetting(testScenarioSetting);
             return this;
         }
 
@@ -81,6 +83,11 @@ namespace GuestProxyAgentTest.TestScenarios
             {
                 throw new Exception("JUnit test result builder is not set");
             }
+
+            if (_vmBuilder == null)
+            {
+                throw new Exception("VM builder is not set");
+            }
         }
 
         /// <summary>
@@ -96,16 +103,32 @@ namespace GuestProxyAgentTest.TestScenarios
         /// <returns></returns>
         public async Task StartAsync(TestScenarioStatusDetails testScenarioStatusDetails)
         {
+            PreCheck();
             try
             {
-                await DoStartAsync(testScenarioStatusDetails).TimeoutAfter(_testScenarioSetting.testScenarioTimeoutMilliseconds);
+                // Create a cancellation token source that will be used to cancel the running test scenario/cases
+                CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+                await DoStartAsync(testScenarioStatusDetails, cancellationTokenSource.Token).TimeoutAfter(_testScenarioSetting.testScenarioTimeoutMilliseconds, cancellationTokenSource);
             }
             catch (Exception ex)
             {
                 ConsoleLog($"Test Scenario {_testScenarioSetting.testScenarioName} Exception: {ex.Message}.");
+
+                // set running test cases to failed
+                // set not started test cases to aborted
+                ex.UpdateTestCaseResults(_testCases, _junitTestResultBuilder, _testScenarioSetting.testScenarioName);
             }
             finally
             {
+                try
+                {
+                    await CollectGALogsOnVMAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Collect GA Logs error: " + ex.Message);
+                }
+
                 try
                 {
                     ConsoleLog("Cleanup generated Azure Resources.");
@@ -118,43 +141,45 @@ namespace GuestProxyAgentTest.TestScenarios
             }
         }
 
-
-        private async Task DoStartAsync(TestScenarioStatusDetails testScenarioStatusDetails)
+        private async Task DoStartAsync(TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)
         {
-            RunCommandOutputDetails collectGALogOutput = null!;
-            Stopwatch sw = new Stopwatch();
             try
             {
                 ConsoleLog("Running test.");
-                sw.Start();
                 testScenarioStatusDetails.Status = ScenarioTestStatus.Running;
-                PreCheck();
 
                 VirtualMachineResource vmr;
-                var vmBuilder = new VMBuilder().LoadTestCaseSetting(_testScenarioSetting);
+                Stopwatch sw = Stopwatch.StartNew();
+                var vmCreateTestName = "CreateVM";
                 try
                 {
-                    vmr = await vmBuilder.Build(this.EnableProxyAgentForNewVM);
+                    vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
                     ConsoleLog("VM Create succeed");
+                    sw.Stop();
+                    _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // if the VM Creation operation failed, try check the VM instance view for 5 minutes
                     var startTime = DateTime.UtcNow;
                     while (true)
                     {
-                        vmr = await vmBuilder.GetVirtualMachineResource();
-                        var instanceView = await vmr.InstanceViewAsync();
+                        vmr = await _vmBuilder.GetVirtualMachineResource();
+                        var instanceView = await vmr.InstanceViewAsync(cancellationToken: cancellationToken);
                         if (instanceView?.Value?.Statuses?.Count > 0 && (instanceView.Value.Statuses[0].DisplayStatus == "Provisioning succeeded"
                             || instanceView.Value.Statuses[0].DisplayStatus == "VM running"))
                         {
                             ConsoleLog("VM Create succeed");
+                            sw.Stop();
+                            _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
                             break;
                         }
 
                         if (DateTime.UtcNow - startTime > TimeSpan.FromMinutes(5))
                         {
                             // poll timed out, rethrow the exception
+                            sw.Stop();
+                            _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, vmCreateTestName, "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
                             throw;
                         }
 
@@ -164,55 +189,38 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
 
                 ConsoleLog("Running scenario test: " + _testScenarioSetting.testScenarioName);
-                await ScenarioTestAsync(vmr, testScenarioStatusDetails);
-
-                collectGALogOutput = await CollectGALogsOnVMAsync(vmr);
-                ConsoleLog("GA log zip collected.");
+                await ScenarioTestAsync(vmr, testScenarioStatusDetails, cancellationToken);
             }
             catch (Exception ex)
             {
                 testScenarioStatusDetails.ErrorMessage = ex.Message;
                 testScenarioStatusDetails.Result = ScenarioTestResult.Failed;
-                sw.Stop();
-                // exception happened at here is outside of test cases under scenario test
-                // write to the failure to JUNIT with a fixed test case named 'ScenarioTestWorkflow'
-                _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, "ScenarioTestWorkflow", "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
                 ConsoleLog("Exception occurs: " + ex.Message);
             }
-            finally
-            {
-                try
-                {
-                    ConsoleLog("Saving logs.");
-                    if (collectGALogOutput != null)
-                    {
-                        SaveResultFile(collectGALogOutput.StdOut, "collectLogZip", "stdOut.txt");
-                        SaveResultFile(collectGALogOutput.StdErr, "collectLogZip", "stdErr.txt");
-                        SaveResultFile(collectGALogOutput.CustomOut, "collectLogZip", "GALogs.zip");
-                    }
 
-                }
-                catch (Exception ex)
-                {
-
-                    Console.WriteLine("Saving logs error: " + ex.Message);
-                }
-            }
             testScenarioStatusDetails.Status = ScenarioTestStatus.Completed;
-            ConsoleLog("Test case run finished.");
+            ConsoleLog("Test scenario run finished.");
         }
 
-        private async Task ScenarioTestAsync(VirtualMachineResource vmr, TestScenarioStatusDetails testScenarioStatusDetails)
+        private async Task ScenarioTestAsync(VirtualMachineResource vmr, TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)
         {
             testScenarioStatusDetails.Result = ScenarioTestResult.Succeed;
             // always running all the cases inside scenario
             foreach (var testCase in _testCases)
             {
-                TestCaseExecutionContext context = new TestCaseExecutionContext(vmr, _testScenarioSetting);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    ConsoleLog($"Test case {testCase.TestCaseName} is cancelled.");
+                    break;
+                }
+
+                TestCaseExecutionContext context = new TestCaseExecutionContext(vmr, _testScenarioSetting, cancellationToken);
                 Stopwatch sw = Stopwatch.StartNew();
 
                 try
                 {
+                    testCase.Result = TestCaseResult.Running;
                     await testCase.StartAsync(context);
                     sw.Stop();
                     context.TestResultDetails
@@ -239,6 +247,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 finally
                 {
+                    testCase.Result = context.TestResultDetails.Succeed ? TestCaseResult.Succeed : TestCaseResult.Failed;
                     ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed ? "Succeed" : "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
                     SaveResultFile(context.TestResultDetails.CustomOut, $"TestCases/{testCase.TestCaseName}", "customOut.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdErr, $"TestCases/{testCase.TestCaseName}", "stdErr.txt", context.TestResultDetails.FromBlob);
@@ -247,22 +256,34 @@ namespace GuestProxyAgentTest.TestScenarios
             }
         }
 
-        private async Task<RunCommandOutputDetails> CollectGALogsOnVMAsync(VirtualMachineResource vmr)
+        private async Task CollectGALogsOnVMAsync()
         {
+            ConsoleLog("Collecting GA logs on VM.");
+            var vmr = await _vmBuilder.GetVirtualMachineResource();
             var logZipPath = Path.Combine(Path.GetTempPath(), _testScenarioSetting.testGroupName + "_" + _testScenarioSetting.testScenarioName + "_VMAgentLogs.zip");
-            using (File.CreateText(logZipPath)) ConsoleLog("Created empty VMAgentLogs.zip file.");
-            var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStorageFolderPrefix); ;
+            using (File.CreateText(logZipPath))
+            {
+                ConsoleLog("Created empty VMAgentLogs.zip file.");
+            }
+            var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStorageFolderPrefix);
 
-            var runCommandRes = await RunCommandRunner.ExecuteRunCommandOnVM(vmr, new RunCommandSettingBuilder()
+            var collectGALogOutput = await RunCommandRunner.ExecuteRunCommandOnVM(vmr, new RunCommandSettingBuilder()
                     .TestScenarioSetting(_testScenarioSetting)
                     .RunCommandName("CollectInVMGALog")
                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.COLLECT_INVM_GA_LOG_SCRIPT_NAME))
+                    , CancellationToken.None
                     , (builder) =>
                     {
                         return builder.AddParameter("logZipSas", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(logZipSas)));
                     });
-            runCommandRes.CustomOut = logZipSas;
-            return runCommandRes;
+            collectGALogOutput.CustomOut = logZipSas;
+
+            ConsoleLog("GA log zip collected.");
+
+            SaveResultFile(collectGALogOutput.StdOut, "collectLogZip", "stdOut.txt");
+            SaveResultFile(collectGALogOutput.StdErr, "collectLogZip", "stdErr.txt");
+            SaveResultFile(collectGALogOutput.CustomOut, "collectLogZip", "GALogs.zip");
+            ConsoleLog("GA log zip saved.");
         }
 
         private void SaveResultFile(string fileContentOrSas, string parentFolderName, string fileName, bool isFromSas = true)
@@ -291,6 +312,7 @@ namespace GuestProxyAgentTest.TestScenarios
     {
         private VirtualMachineResource _vmr = null!;
         private TestScenarioSetting _testScenarioSetting = null!;
+        private CancellationToken _cancellationToken;
 
         /// <summary>
         /// TestResultDetails for a particular test case
@@ -316,10 +338,19 @@ namespace GuestProxyAgentTest.TestScenarios
             }
         }
 
-        public TestCaseExecutionContext(VirtualMachineResource vmr, TestScenarioSetting testScenarioSetting)
+        public CancellationToken CancellationToken
+        {
+            get
+            {
+                return _cancellationToken;
+            }
+        }
+
+        public TestCaseExecutionContext(VirtualMachineResource vmr, TestScenarioSetting testScenarioSetting, CancellationToken cancellationToken)
         {
             _vmr = vmr;
             _testScenarioSetting = testScenarioSetting;
+            _cancellationToken = cancellationToken;
         }
     }
 }
