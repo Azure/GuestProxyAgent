@@ -138,7 +138,11 @@ impl Redirector {
     async fn start_impl(&self) -> Result<()> {
         #[cfg(windows)]
         {
-            self.initialized()?;
+            if let Err(e) = self.initialized() {
+                self.set_error_status(format!("Failed to initialize redirector: {e}"))
+                    .await;
+                return Err(e);
+            }
         }
 
         for _ in 0..5 {

@@ -11,7 +11,7 @@ use crate::common::{
 };
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
-use proxy_agent_shared::misc_helpers;
+use proxy_agent_shared::{logger::LoggerLevel, misc_helpers, telemetry::event_logger};
 use std::env;
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::path::PathBuf;
@@ -37,7 +37,13 @@ fn init_ebpf_lib() -> Option<Library> {
             return Some(ebpf_lib);
         }
         Err(e) => {
-            logger::write_warning(format!("{}", e));
+            event_logger::write_event(
+                LoggerLevel::Error,
+                format!("{}", e),
+                "load_ebpf_api",
+                "redirector",
+                logger::AGENT_LOGGER_KEY,
+            );
         }
     }
 
@@ -47,7 +53,13 @@ fn init_ebpf_lib() -> Option<Library> {
             return Some(ebpf_lib);
         }
         Err(e) => {
-            logger::write_warning(format!("{}", e));
+            event_logger::write_event(
+                LoggerLevel::Warn,
+                format!("{}", e),
+                "load_ebpf_api",
+                "redirector",
+                logger::AGENT_LOGGER_KEY,
+            );
         }
     }
 
