@@ -146,9 +146,12 @@ impl Redirector {
         }
 
         for _ in 0..5 {
-            if let Err(e) = self.start_internal().await {
-                self.set_error_status(format!("Failed to start redirector: {e}"))
-                    .await;
+            match self.start_internal().await {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    self.set_error_status(format!("Failed to start redirector: {e}"))
+                        .await;
+                }
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
