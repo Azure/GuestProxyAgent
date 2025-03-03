@@ -259,14 +259,26 @@ impl KeyKeeper {
                     // this is to handle quicker response to the secure channel state change during VM provisioning.
                     _ = notify.notified() => {
                         if  current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
-                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', start poll status now.", current_state));
+                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', reset states and start poll status now.", current_state));
                             provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
+                            if let Err(e) =  self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await{
+                                logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {}", e));
+                            }
 
                             if start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
                                 // already timeup, reset the start timer
                                 start = Instant::now();
+                                provision_timeup = false;
                             }
                         } else {
+                            // report key latched ready to try update the provision finished time_tick
+                            provision::key_latched(
+                                self.cancellation_token.clone(),
+                                self.key_keeper_shared_state.clone(),
+                                self.telemetry_shared_state.clone(),
+                                self.provision_shared_state.clone(),
+                                self.agent_status_shared_state.clone(),
+                            ).await;
                             let slept_time_in_millisec = time.elapsed().as_millis();
                             let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
                             if continue_sleep > 0 {
