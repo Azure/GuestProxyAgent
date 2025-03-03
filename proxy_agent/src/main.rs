@@ -19,7 +19,7 @@ pub mod test_mock;
 use common::cli::{Commands, CLI};
 use common::constants;
 use common::helpers;
-use provision::ProvisionQuery;
+use provision::provision_query::ProvisionQuery;
 use proxy_agent_shared::misc_helpers;
 use shared_state::SharedState;
 use std::{process, time::Duration};
