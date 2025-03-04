@@ -27,7 +27,7 @@ use nix::unistd::Pid as NixPid;
 #[cfg(not(windows))]
 use proxy_agent_shared::linux;
 #[cfg(not(windows))]
-use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind};
 
 static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
     let exe_path = misc_helpers::get_current_exe_dir();
@@ -37,7 +37,7 @@ static HANDLER_ENVIRONMENT: Lazy<structs::HandlerEnvironment> = Lazy::new(|| {
 pub async fn program_start(command: ExtensionCommand, config_seq_no: String) {
     //Set up Logger instance
     let log_folder = HANDLER_ENVIRONMENT.logFolder.to_string();
-    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE).await;
+    logger::init_logger(log_folder, constants::HANDLER_LOG_FILE);
 
     logger::write(format!(
         "GuestProxyAgentExtension Version: {}, OS Arch: {}, OS Version: {}",
@@ -293,9 +293,15 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
 #[cfg(not(windows))]
 fn get_linux_extension_long_running_process() -> Option<i32> {
     // check if the process GuestProxyAgentVMExtension running AND without parameters
-    let mut system = System::new();
-    system.refresh_processes();
-    for p in system.processes_by_name(constants::EXTENSION_PROCESS_NAME) {
+    let system = System::new_with_specifics(
+        RefreshKind::new().with_processes(
+            ProcessRefreshKind::new()
+                .with_cmd(UpdateKind::Always)
+                .with_exe(UpdateKind::Always),
+        ),
+    );
+
+    for p in system.processes_by_exact_name(constants::EXTENSION_PROCESS_NAME) {
         let cmd = p.cmd();
         logger::write(format!("cmd: {:?}", cmd));
         if cmd.len() == 1 {
@@ -399,22 +405,14 @@ async fn update_handler() {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-    use std::fs::{self};
 
     #[cfg(windows)]
     use crate::handler_main;
     #[cfg(windows)]
     use proxy_agent_shared::version::Version;
 
-    #[tokio::test]
-    async fn test_check_os_supported() {
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push("test_check_os_supported");
-
-        let log_folder: String = temp_test_path.to_str().unwrap().to_string();
-        super::logger::init_logger(log_folder, "log.txt").await;
-
+    #[test]
+    fn test_check_os_supported() {
         #[cfg(windows)]
         {
             let version = Version {
@@ -442,6 +440,5 @@ mod tests {
             };
             assert!(!handler_main::check_windows_os_version(version));
         }
-        _ = fs::remove_dir_all(&temp_test_path);
     }
 }

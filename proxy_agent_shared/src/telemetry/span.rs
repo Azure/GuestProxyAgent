@@ -71,7 +71,7 @@ impl SimpleSpan {
         let elapsed_massage =
             ElapsedMessage::new(self.get_elapsed_time_in_millisec(), message.to_string());
         event_logger::write_event(
-            event_logger::INFO_LEVEL,
+            log::Level::Info,
             elapsed_massage.to_json_string(),
             method_name,
             module_name,

@@ -1,6 +1,6 @@
 [package]
 name = "ProxyAgentExt"
-version = "1.0.25"      # always 3-number version
+version = "1.0.26"      # always 3-number version
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,6 +13,7 @@ proxy_agent_shared = { path ="../proxy_agent_shared"}
 clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser
 thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros", "sync"] }
+ctor = "0.3.6"                # used for test setup and clean up
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT 
@@ -35,4 +36,4 @@ features = [
 ]
 
 [target.'cfg(not(windows))'.dependencies]
-sysinfo = "0.29.10"            # read process information for Linux
+sysinfo = "0.30.13"            # read process information for Linux

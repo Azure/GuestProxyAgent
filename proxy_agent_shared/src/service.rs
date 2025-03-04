@@ -8,7 +8,7 @@ mod windows_service;
 use std::path::PathBuf;
 
 #[cfg(windows)]
-use crate::logger_manager;
+use crate::logger::logger_manager;
 use crate::result::Result;
 
 pub fn install_service(

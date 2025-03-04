@@ -34,8 +34,6 @@ impl Default for BpfObject {
 impl super::Redirector {
     pub fn initialized(&self) -> Result<()> {
         if !bpf_api::ebpf_api_is_loaded() {
-            // self.set_error_status("Failed to load eBPF API.".to_string())
-            //    .await;
             return Err(Error::Bpf(BpfErrorType::GetBpfApi));
         }
         Ok(())
@@ -164,6 +162,41 @@ pub async fn update_imds_redirect_policy(
             ));
         } else {
             logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
+        }
+    }
+}
+
+pub async fn update_hostga_redirect_policy(
+    redirect: bool,
+    redirector_shared_state: RedirectorSharedState,
+) {
+    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
+        if redirect {
+            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
+                if let Err(e) = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+                    "Host GAPlugin endpoints",
+                    local_port,
+                    constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
+                    constants::GA_PLUGIN_PORT,
+                ) {
+                    logger::write_error(format!(
+                        "Failed to update bpf map for HostGAPlugin redirect policy with result: {e}"
+                    ));
+                } else {
+                    logger::write(
+                        "Success updated bpf map for HostGAPlugin redirect policy.".to_string(),
+                    );
+                }
+            }
+        } else if let Err(e) = bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
+            constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
+            constants::GA_PLUGIN_PORT,
+        ) {
+            logger::write_error(format!(
+                "Failed to delete bpf map for HostGAPlugin redirect policy with result: {e}"
+            ));
+        } else {
+            logger::write("Success deleted bpf map for HostGAPlugin redirect policy.".to_string());
         }
     }
 }

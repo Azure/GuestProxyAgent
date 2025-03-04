@@ -55,6 +55,7 @@ use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -122,8 +123,8 @@ impl Redirector {
 
     pub async fn start(&self) {
         let level = match self.start_impl().await {
-            Ok(_) => event_logger::INFO_LEVEL,
-            Err(_) => event_logger::ERROR_LEVEL,
+            Ok(_) => LoggerLevel::Info,
+            Err(_) => LoggerLevel::Error,
         };
         event_logger::write_event(
             level,
@@ -137,7 +138,11 @@ impl Redirector {
     async fn start_impl(&self) -> Result<()> {
         #[cfg(windows)]
         {
-            self.initialized()?;
+            if let Err(e) = self.initialized() {
+                self.set_error_status(format!("Failed to initialize redirector: {e}"))
+                    .await;
+                return Err(e);
+            }
         }
 
         for _ in 0..5 {
@@ -280,7 +285,7 @@ impl Redirector {
             ));
         }
         event_logger::write_event(
-            event_logger::ERROR_LEVEL,
+            LoggerLevel::Error,
             message,
             "start",
             "redirector",
@@ -419,6 +424,11 @@ pub use windows::update_imds_redirect_policy;
 pub use linux::update_wire_server_redirect_policy;
 #[cfg(windows)]
 pub use windows::update_wire_server_redirect_policy;
+
+#[cfg(not(windows))]
+pub use linux::update_hostga_redirect_policy;
+#[cfg(windows)]
+pub use windows::update_hostga_redirect_policy;
 
 #[cfg(test)]
 mod tests {
