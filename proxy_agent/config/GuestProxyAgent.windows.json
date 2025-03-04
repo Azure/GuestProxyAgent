@@ -6,5 +6,5 @@
     "pollKeyStatusIntervalInSeconds": 15,
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "redirect.bpf.sys",
-    "fileLogLevel": "Trace"
+    "fileLogLevel": "Info"
 }
