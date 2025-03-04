@@ -21,6 +21,7 @@ namespace GuestProxyAgentTest.TestCases
                     .TestScenarioSetting(context.ScenarioSetting)
                     .RunCommandName("InstallOrUpdateProxyAgentPackage")
                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.INSTALL_LINUX_GUEST_PROXY_AGENT_PACKAGE_SCRIPT_NAME))
+                    , context.CancellationToken
                     , (builder) =>
                     {
                         var zipsas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_MSI_CONTAINER_NAME, TestSetting.Instance.zipFilePath, context.ScenarioSetting.TestScenarioStorageFolderPrefix);

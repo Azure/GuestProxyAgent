@@ -4,8 +4,8 @@
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
 use crate::common::error::{Error, HyperErrorType};
+use crate::common::hyper_client;
 use crate::common::result::Result;
-use crate::common::{constants, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
@@ -14,9 +14,8 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
-use proxy_agent_shared::logger_manager::{self, LoggerLevel};
+use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -106,12 +105,12 @@ impl TcpConnectionContext {
                 let host_port = audit_entry.destination_port_in_host_byte_order();
                 let cloned_logger = logger.clone();
                 let fun = move |message: String| {
-                    cloned_logger.write(LoggerLevel::Warning, message);
+                    cloned_logger.write(LoggerLevel::Warn, message);
                 };
                 let sender = match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
                     Ok(sender) => {
                         logger.write(
-                            LoggerLevel::Verbose,
+                            LoggerLevel::Trace,
                             "Successfully created http sender".to_string(),
                         );
                         Ok(Arc::new(Mutex::new(Client { sender })))
@@ -128,7 +127,7 @@ impl TcpConnectionContext {
             }
             Err(e) => {
                 logger.write(
-                    LoggerLevel::Warning,
+                    LoggerLevel::Warn,
                     "This tcp connection may send to proxy agent tcp listener directly".to_string(),
                 );
                 (None, None, 0, Err(e.to_string()))
@@ -156,7 +155,7 @@ impl TcpConnectionContext {
         match redirector::lookup_audit(client_source_port, redirector_shared_state).await {
             Ok(data) => {
                 logger.write(
-                    LoggerLevel::Verbose,
+                    LoggerLevel::Trace,
                     format!(
                         "Found audit entry with client_source_port '{}' successfully",
                         client_source_port
@@ -164,7 +163,7 @@ impl TcpConnectionContext {
                 );
                 match redirector::remove_audit(client_source_port, redirector_shared_state).await {
                     Ok(_) => logger.write(
-                        LoggerLevel::Verbose,
+                        LoggerLevel::Trace,
                         format!(
                             "Removed audit entry with client_source_port '{}' successfully",
                             client_source_port
@@ -172,7 +171,7 @@ impl TcpConnectionContext {
                     ),
                     Err(e) => {
                         logger.write(
-                            LoggerLevel::Warning,
+                            LoggerLevel::Warn,
                             format!("Failed to remove audit entry: {}", e),
                         );
                     }
@@ -185,7 +184,7 @@ impl TcpConnectionContext {
                     "Failed to find audit entry with client_source_port '{}' with error: {}",
                     client_source_port, e
                 );
-                logger.write(LoggerLevel::Warning, message.clone());
+                logger.write(LoggerLevel::Warn, message.clone());
 
                 #[cfg(not(windows))]
                 {
@@ -195,21 +194,21 @@ impl TcpConnectionContext {
                 #[cfg(windows)]
                 {
                     logger.write(
-                        LoggerLevel::Information,
+                        LoggerLevel::Info,
                         "Try to get audit entry from socket stream".to_string(),
                     );
 
                     match redirector::get_audit_from_stream_socket(raw_socket_id) {
                         Ok(data) => {
                             logger.write(
-                                LoggerLevel::Information,
+                                LoggerLevel::Info,
                                 "Found audit entry from socket stream successfully".to_string(),
                             );
                             Ok(data)
                         }
                         Err(e) => {
                             logger.write(
-                                LoggerLevel::Warning,
+                                LoggerLevel::Warn,
                                 format!("Failed to get lookup_audit_from_stream with error: {}", e),
                             );
                             Err(Error::FindAuditEntryError(message))
@@ -284,17 +283,6 @@ pub struct ConnectionLogger {
 }
 impl ConnectionLogger {
     pub const CONNECTION_LOGGER_KEY: &'static str = "Connection_Logger";
-    pub async fn init_logger(log_folder: PathBuf) {
-        logger_manager::init_logger(
-            Self::CONNECTION_LOGGER_KEY.to_string(),
-            log_folder,
-            "ProxyAgent.Connection.log".to_string(),
-            constants::MAX_LOG_FILE_SIZE,
-            constants::MAX_LOG_FILE_COUNT as u16,
-        )
-        .await;
-    }
-
     pub fn write(&self, logger_level: LoggerLevel, message: String) {
         logger_manager::log(
             Self::CONNECTION_LOGGER_KEY.to_string(),

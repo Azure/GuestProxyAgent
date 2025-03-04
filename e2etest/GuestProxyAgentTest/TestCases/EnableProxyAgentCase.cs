@@ -47,7 +47,7 @@ namespace GuestProxyAgentTest.TestCases
                 };
             }
 
-            await vmr.UpdateAsync(Azure.WaitUntil.Completed, patch);
+            await vmr.UpdateAsync(Azure.WaitUntil.Completed, patch, cancellationToken: context.CancellationToken);
             var iv = await vmr.InstanceViewAsync();
             context.TestResultDetails = new TestCaseResultDetails
             {

@@ -7,7 +7,7 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
 
 #[cfg(not(windows))]
-use sysinfo::{System, SystemExt};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
 #[cfg(windows)]
 use super::windows;
@@ -27,8 +27,11 @@ static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
     }
     #[cfg(not(windows))]
     {
-        let mut sys = System::new();
-        sys.refresh_system();
+        let sys = System::new_with_specifics(
+            RefreshKind::new()
+                .with_memory(MemoryRefreshKind::everything())
+                .with_cpu(CpuRefreshKind::everything()),
+        );
         let ram = sys.total_memory();
         let ram_in_mb = ram / 1024 / 1024;
         let cpu_count = sys.cpus().len();

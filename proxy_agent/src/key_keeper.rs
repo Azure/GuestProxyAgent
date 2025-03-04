@@ -40,6 +40,7 @@ use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
 use crate::{acl, redirector};
 use hyper::Uri;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -105,24 +106,6 @@ impl KeyKeeper {
         }
     }
 
-    fn get_dir_to_acl(&self) -> PathBuf {
-        #[cfg(not(windows))]
-        {
-            self.key_dir.clone()
-        }
-
-        #[cfg(windows)]
-        {
-            // ACL the parent folder of the keys folder,
-            // so that all ProxyAgent sub folders could be ACLed too,
-            // including GPA service directory.
-            match self.key_dir.parent() {
-                Some(parent) => parent.to_path_buf(),
-                None => self.key_dir.clone(),
-            }
-        }
-    }
-
     /// poll secure channel status at interval from the WireServer endpoint
     pub async fn poll_secure_channel_status(&self) {
         self.update_status_message("poll secure channel status task started.".to_string(), true)
@@ -170,7 +153,7 @@ impl KeyKeeper {
             ));
         }
 
-        match acl::acl_directory(self.get_dir_to_acl()) {
+        match acl::acl_directory(self.key_dir.clone()) {
             Ok(()) => {
                 logger::write(format!(
                     "Folder {} ACLed if has not before.",
@@ -183,6 +166,22 @@ impl KeyKeeper {
                     misc_helpers::path_to_string(&self.key_dir),
                     e
                 ));
+            }
+        }
+
+        // acl current executable dir
+        #[cfg(windows)]
+        {
+            if let Ok(current_exe) = std::env::current_exe() {
+                if let Some(current_dir) = current_exe.parent() {
+                    if let Err(e) = acl::acl_directory(current_dir.to_path_buf()) {
+                        logger::write_warning(format!(
+                            "Current executable directory {} ACLed failed with error {}.",
+                            misc_helpers::path_to_string(current_dir),
+                            e
+                        ));
+                    }
+                }
             }
         }
 
@@ -260,14 +259,26 @@ impl KeyKeeper {
                     // this is to handle quicker response to the secure channel state change during VM provisioning.
                     _ = notify.notified() => {
                         if  current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
-                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', start poll status now.", current_state));
+                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', reset states and start poll status now.", current_state));
                             provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
+                            if let Err(e) =  self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await{
+                                logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {}", e));
+                            }
 
                             if start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
                                 // already timeup, reset the start timer
                                 start = Instant::now();
+                                provision_timeup = false;
                             }
                         } else {
+                            // report key latched ready to try update the provision finished time_tick
+                            provision::key_latched(
+                                self.cancellation_token.clone(),
+                                self.key_keeper_shared_state.clone(),
+                                self.telemetry_shared_state.clone(),
+                                self.provision_shared_state.clone(),
+                                self.agent_status_shared_state.clone(),
+                            ).await;
                             let slept_time_in_millisec = time.elapsed().as_millis();
                             let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
                             if continue_sleep > 0 {
@@ -322,6 +333,8 @@ impl KeyKeeper {
             let mut access_control_rules_changed = false;
             let wireserver_rule_id = status.get_wireserver_rule_id();
             let imds_rule_id: String = status.get_imds_rule_id();
+            let hostga_rule_id: String = status.get_hostga_rule_id();
+
             match self
                 .key_keeper_shared_state
                 .update_wireserver_rule_id(wireserver_rule_id.to_string())
@@ -374,16 +387,44 @@ impl KeyKeeper {
                 }
             }
 
+            match self
+                .key_keeper_shared_state
+                .update_hostga_rule_id(hostga_rule_id.to_string())
+                .await
+            {
+                Ok((updated, old_hostga_rule_id)) => {
+                    if updated {
+                        logger::write_warning(format!(
+                            "HostGA rule id changed from '{}' to '{}'.",
+                            old_hostga_rule_id, hostga_rule_id
+                        ));
+                        if let Err(e) = self
+                            .key_keeper_shared_state
+                            .set_hostga_rules(status.get_hostga_rules())
+                            .await
+                        {
+                            logger::write_error(format!("Failed to set HostGA rules: {}", e));
+                        }
+                        access_control_rules_changed = true;
+                    }
+                }
+                Err(e) => {
+                    logger::write_warning(format!("Failed to update HostGA rule id: {}", e));
+                }
+            }
+
             if access_control_rules_changed {
-                if let (Ok(wireserver_rules), Ok(imds_rules)) = (
+                if let (Ok(wireserver_rules), Ok(imds_rules), Ok(hostga_rules)) = (
                     self.key_keeper_shared_state.get_wireserver_rules().await,
                     self.key_keeper_shared_state.get_imds_rules().await,
+                    self.key_keeper_shared_state.get_hostga_rules().await,
                 ) {
                     let rules = AuthorizationRulesForLogging::new(
                         status.authorizationRules.clone(),
                         ComputedAuthorizationRules {
                             wireserver: wireserver_rules,
                             imds: imds_rules,
+                            hostga: hostga_rules,
                         },
                     );
                     rules.write_all(&self.log_dir, constants::MAX_LOG_FILE_COUNT);
@@ -428,7 +469,7 @@ impl KeyKeeper {
                         }
                         Err(e) => {
                             event_logger::write_event(
-                                event_logger::WARN_LEVEL,
+                                LoggerLevel::Warn,
                                 format!("Failed to fetch local key details with error: {:?}. Will try acquire the key details from Server.", e),
                                 "poll_secure_channel_status",
                                 "key_keeper",
@@ -537,6 +578,11 @@ impl KeyKeeper {
                             self.redirector_shared_state.clone(),
                         )
                         .await;
+                        redirector::update_hostga_redirect_policy(
+                            status.get_hostga_mode() != DISABLE_STATE,
+                            self.redirector_shared_state.clone(),
+                        )
+                        .await;
 
                         // customer has not enforce the secure channel state
                         if state == DISABLE_STATE {
@@ -581,7 +627,7 @@ impl KeyKeeper {
                 if log_to_file {
                     if updated {
                         event_logger::write_event(
-                            event_logger::INFO_LEVEL,
+                            LoggerLevel::Info,
                             message,
                             "update_status_message",
                             "key_keeper",
@@ -764,11 +810,10 @@ impl KeyKeeper {
 #[cfg(test)]
 mod tests {
     use super::key::Key;
-    use crate::common::logger;
     use crate::key_keeper;
     use crate::key_keeper::KeyKeeper;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     use std::env;
     use std::fs;
     use std::time::Duration;
@@ -781,14 +826,6 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-        logger_manager::init_logger(
-            logger_key.to_string(),
-            temp_test_path.clone(),
-            logger_key.to_string(),
-            200,
-            6,
-        )
-        .await;
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
         let key_str = r#"{
@@ -837,16 +874,6 @@ mod tests {
                 print!("Failed to remove_dir_all with error {}.", e);
             }
         }
-
-        // init main logger
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let cancellation_token = CancellationToken::new();
         // start wire_server listener

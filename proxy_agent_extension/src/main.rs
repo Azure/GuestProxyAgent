@@ -81,8 +81,8 @@ async fn main() {
         let log_folder = common::get_handler_environment(&exe_path)
             .logFolder
             .to_string();
-        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE).await;
-        common::start_event_logger(constants::SERVICE_LOG_FILE).await;
+        logger::init_logger(log_folder, constants::SERVICE_LOG_FILE);
+        common::start_event_logger().await;
         #[cfg(windows)]
         {
             if let Err(e) = service_dispatcher::start(constants::PLUGIN_NAME, ffi_service_main) {

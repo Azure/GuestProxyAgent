@@ -1,14 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+using Azure;
 using Azure.Core;
-using Azure.ResourceManager.Compute.Models;
+using Azure.ResourceManager;
 using Azure.ResourceManager.Compute;
+using Azure.ResourceManager.Compute.Models;
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Resources;
-using Azure.ResourceManager;
-using Azure;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
 using GuestProxyAgentTest.Settings;
+using Microsoft.Azure.Management.ResourceManager.Fluent;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -49,7 +49,7 @@ namespace GuestProxyAgentTest.Utilities
         /// Build Build and return the VirtualMachine based on the setting
         /// </summary>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(bool enableProxyAgent)
+        public async Task<VirtualMachineResource> Build(bool enableProxyAgent, CancellationToken cancellationToken)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -68,9 +68,17 @@ namespace GuestProxyAgentTest.Utilities
 
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
-            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent))).Value;
+            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent), cancellationToken: cancellationToken)).Value;
             Console.WriteLine("Virtual machine created, with id: " + vmr.Id);
             return vmr;
+        }
+
+        public async Task<VirtualMachineResource> GetVirtualMachineResource()
+        {
+            PreCheck();
+            ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
+            var sub = await client.GetDefaultSubscriptionAsync();
+            return sub.GetResourceGroups().Get(this.rgName).Value.GetVirtualMachine(this.vmName);
         }
 
         private async Task<VirtualMachineData> DoCreateVMData(ResourceGroupResource rgr, bool enableProxyAgent)
