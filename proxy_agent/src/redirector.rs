@@ -136,15 +136,6 @@ impl Redirector {
     }
 
     async fn start_impl(&self) -> Result<()> {
-        #[cfg(windows)]
-        {
-            if let Err(e) = self.initialized() {
-                self.set_error_status(format!("Failed to initialize redirector: {e}"))
-                    .await;
-                return Err(e);
-            }
-        }
-
         for _ in 0..5 {
             match self.start_internal().await {
                 Ok(_) => return Ok(()),
@@ -160,6 +151,11 @@ impl Redirector {
     }
 
     async fn start_internal(&self) -> Result<()> {
+        #[cfg(windows)]
+        {
+            self.initialized()?;
+        }
+
         let mut bpf_object = self.load_bpf_object()?;
 
         logger::write_information("Success loaded bpf object.".to_string());
