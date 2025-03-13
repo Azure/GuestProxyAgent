@@ -79,7 +79,7 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::{config, logger};
+use crate::common::{config, helpers, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
 use crate::proxy_agent_status;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -413,7 +413,7 @@ async fn write_provision_state(
         logger::write_error(format!("Failed to write provisioned file with error: {e}"));
     }
 
-    let failed_state_message =
+    let mut failed_state_message =
         get_provision_failed_state_message(provision_shared_state, agent_status_shared_state).await;
 
     #[cfg(not(windows))]
@@ -423,6 +423,11 @@ async fn write_provision_state(
         } else {
             logger::write_serial_console_log(failed_state_message.clone());
         }
+    }
+
+    if !failed_state_message.is_empty() {
+        // escape xml characters to allow the message to able be composed into xml payload
+        failed_state_message = helpers::xml_escape(failed_state_message);
     }
 
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_TMP_FILE_NAME);
