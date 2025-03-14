@@ -93,6 +93,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+const PROVISION_TAG_FILE_NAME: &str = "provisioned.tag";
 const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
 const STATUS_TAG_FILE_NAME: &str = "status.tag";
 
@@ -400,7 +401,7 @@ async fn write_provision_state(
     agent_status_shared_state: AgentStatusSharedState,
 ) {
     let provision_dir = provision_dir.unwrap_or_else(config::get_keys_dir);
-    let provisioned_file: PathBuf = provision_dir.join("provisioned.tag");
+    let provisioned_file: PathBuf = provision_dir.join(PROVISION_TAG_FILE_NAME);
     if let Err(e) = misc_helpers::try_create_folder(&provision_dir) {
         logger::write_error(format!("Failed to create provision folder with error: {e}"));
         return;
@@ -731,7 +732,7 @@ mod tests {
             .update_current_secure_channel_state(super::DISABLE_STATE.to_string())
             .await;
 
-        let provisioned_file = temp_test_path.join("provisioned.tag");
+        let provisioned_file = temp_test_path.join(super::PROVISION_TAG_FILE_NAME);
         assert!(provisioned_file.exists());
 
         let status_file = temp_test_path.join(super::STATUS_TAG_FILE_NAME);
@@ -855,6 +856,90 @@ mod tests {
         );
 
         // stop listener
+        cancellation_token.cancel();
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[tokio::test]
+    async fn provision_status_tag_file_test() {
+        let mut temp_test_path = env::temp_dir();
+        let logger_key = "provision_status_tag_file_test";
+        temp_test_path.push(logger_key);
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+
+        let shared_state = SharedState::start_all();
+        let cancellation_token = shared_state.get_cancellation_token();
+        let provision_shared_state = shared_state.get_provision_shared_state();
+        let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
+        let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+        let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+
+        // test all 3 provision states as ready
+        super::update_provision_state(
+            ProvisionFlags::LISTENER_READY,
+            Some(temp_test_path.clone()),
+            cancellation_token.clone(),
+            key_keeper_shared_state.clone(),
+            telemetry_shared_state.clone(),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        super::update_provision_state(
+            ProvisionFlags::KEY_LATCH_READY,
+            Some(temp_test_path.clone()),
+            cancellation_token.clone(),
+            key_keeper_shared_state.clone(),
+            telemetry_shared_state.clone(),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        super::update_provision_state(
+            ProvisionFlags::REDIRECTOR_READY,
+            Some(temp_test_path.clone()),
+            cancellation_token.clone(),
+            key_keeper_shared_state.clone(),
+            telemetry_shared_state.clone(),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+
+        let provisioned_file = temp_test_path.join(super::PROVISION_TAG_FILE_NAME);
+        assert!(provisioned_file.exists());
+        let status_file = temp_test_path.join(super::STATUS_TAG_FILE_NAME);
+        assert!(status_file.exists());
+        assert_eq!(
+            0,
+            status_file.metadata().unwrap().len(),
+            "success status.tag file must be empty"
+        );
+
+        // test key_latch not ready, and error status message contains xml escape characters
+        super::key_latch_ready_state_reset(provision_shared_state.clone()).await;
+        _ = agent_status_shared_state
+            .set_module_status_message(
+                "keyLatchStatus - Failed to acquire key details: Key(KeyResponse(\"acquire\", 403))".to_string(),
+                super::AgentStatusModule::KeyKeeper,
+            )
+            .await;
+        super::provision_timeup(
+            Some(temp_test_path.clone()),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        //let status_file = temp_test_path.join(super::STATUS_TAG_FILE_NAME);
+        assert!(status_file.exists());
+        let status_file_content = fs::read_to_string(&status_file).unwrap();
+        assert_eq!(
+            "keyLatchStatus - keyLatchStatus - Failed to acquire key details: Key(KeyResponse(&quot;acquire&quot;, 403))\r\n",
+            status_file_content
+        );
+
         cancellation_token.cancel();
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
