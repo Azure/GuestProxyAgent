@@ -87,6 +87,7 @@ use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::telemetry::event_reader::EventReader;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
 use std::path::PathBuf;
@@ -429,6 +430,15 @@ async fn write_provision_state(
     if !failed_state_message.is_empty() {
         // escape xml characters to allow the message to able be composed into xml payload
         failed_state_message = helpers::xml_escape(failed_state_message);
+
+        // write provision failed error message to event
+        event_logger::write_event(
+            LoggerLevel::Error,
+            failed_state_message.to_string(),
+            "write_provision_state",
+            "provision",
+            logger::AGENT_LOGGER_KEY,
+        );
     }
 
     let status_file: PathBuf = provision_dir.join(STATUS_TAG_TMP_FILE_NAME);

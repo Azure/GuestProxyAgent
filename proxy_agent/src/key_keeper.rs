@@ -31,7 +31,6 @@ use crate::common::result::Result;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
-use crate::redirector::Redirector;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
@@ -110,35 +109,6 @@ impl KeyKeeper {
     pub async fn poll_secure_channel_status(&self) {
         self.update_status_message("poll secure channel status task started.".to_string(), true)
             .await;
-
-        // launch redirector initialization when the key keeper task is running
-        tokio::spawn({
-            let cancellation_token = self.cancellation_token.clone();
-            let key_keeper_shared_state = self.key_keeper_shared_state.clone();
-            let telemetry_shared_state = self.telemetry_shared_state.clone();
-            let provision_shared_state = self.provision_shared_state.clone();
-            let agent_status_shared_state = self.agent_status_shared_state.clone();
-
-            let redirector = Redirector::new(
-                constants::PROXY_AGENT_PORT,
-                self.redirector_shared_state.clone(),
-                self.key_keeper_shared_state.clone(),
-                agent_status_shared_state.clone(),
-            );
-            async move {
-                redirector.start().await;
-                if redirector.is_started().await {
-                    provision::redirector_ready(
-                        cancellation_token.clone(),
-                        key_keeper_shared_state.clone(),
-                        telemetry_shared_state.clone(),
-                        provision_shared_state.clone(),
-                        agent_status_shared_state.clone(),
-                    )
-                    .await;
-                }
-            }
-        });
 
         if let Err(e) = misc_helpers::try_create_folder(&self.key_dir) {
             logger::write_warning(format!(
@@ -469,7 +439,7 @@ impl KeyKeeper {
                         }
                         Err(e) => {
                             event_logger::write_event(
-                                LoggerLevel::Warn,
+                                LoggerLevel::Info,
                                 format!("Failed to fetch local key details with error: {:?}. Will try acquire the key details from Server.", e),
                                 "poll_secure_channel_status",
                                 "key_keeper",
