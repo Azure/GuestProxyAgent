@@ -33,7 +33,7 @@ impl Default for BpfObject {
 // Redirector implementation for Windows platform
 impl super::Redirector {
     pub fn initialized(&self) -> Result<()> {
-        if !bpf_api::ebpf_api_is_loaded() {
+        if !bpf_api::try_load_ebpf_api() {
             return Err(Error::Bpf(BpfErrorType::GetBpfApi));
         }
         Ok(())
