@@ -3,7 +3,7 @@
   "build": {
     "dockerfile": "../docker/linux/Dockerfile",
     "args": {
-      "RUST_VERSION": "1.80.0"
+      "RUST_VERSION": "1.85.0"
     }
   },
   "customizations": {

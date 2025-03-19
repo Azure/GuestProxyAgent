@@ -10,17 +10,30 @@ use crate::common::{
     result::Result,
 };
 use libloading::{Library, Symbol};
-use once_cell::sync::Lazy;
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers, telemetry::event_logger};
 use std::env;
 use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::path::PathBuf;
 
-static EBPF_API: Lazy<Option<Library>> = Lazy::new(init_ebpf_lib);
+static EBPF_API: tokio::sync::OnceCell<Library> = tokio::sync::OnceCell::const_new();
 const EBPF_API_FILE_NAME: &str = "EbpfApi.dll";
 
-pub fn ebpf_api_is_loaded() -> bool {
-    EBPF_API.is_some()
+pub fn try_load_ebpf_api() -> bool {
+    if !EBPF_API.initialized() {
+        if let Some(ebpf_api) = init_ebpf_lib() {
+            if let Err(e) = EBPF_API.set(ebpf_api) {
+                event_logger::write_event(
+                    LoggerLevel::Error,
+                    format!("{}", e),
+                    "try_load_ebpf_api",
+                    "redirector",
+                    logger::AGENT_LOGGER_KEY,
+                );
+            }
+        }
+    }
+
+    EBPF_API.initialized()
 }
 
 fn init_ebpf_lib() -> Option<Library> {
@@ -84,7 +97,7 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
 }
 
 fn get_ebpf_api() -> Result<&'static Library> {
-    match EBPF_API.as_ref() {
+    match EBPF_API.get() {
         Some(api) => Ok(api),
         None => Err(Error::Bpf(BpfErrorType::GetBpfApi)),
     }
