@@ -7,7 +7,7 @@ use crate::common::{config, constants, helpers, logger};
 use crate::key_keeper::KeyKeeper;
 use crate::proxy::proxy_connection::ConnectionLogger;
 use crate::proxy::proxy_server::ProxyServer;
-use crate::redirector;
+use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::logger::rolling_logger::RollingLogger;
 use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
@@ -52,6 +52,13 @@ pub async fn start_service(shared_state: SharedState) {
         );
         async move {
             key_keeper.poll_secure_channel_status().await;
+        }
+    });
+
+    tokio::spawn({
+        let redirector: Redirector = Redirector::new(constants::PROXY_AGENT_PORT, &shared_state);
+        async move {
+            redirector.start().await;
         }
     });
 
