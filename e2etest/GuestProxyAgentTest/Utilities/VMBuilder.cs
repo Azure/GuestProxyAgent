@@ -176,7 +176,7 @@ namespace GuestProxyAgentTest.Utilities
                 {
                     new SubnetData
                     {
-                        Name = "default",
+                        Name = "defaultoutboundaccess",
                         AddressPrefix = "10.0.0.0/24",
                     }
                 }
