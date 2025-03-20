@@ -51,7 +51,7 @@ fn init_ebpf_lib() -> Option<Library> {
         }
         Err(e) => {
             event_logger::write_event(
-                LoggerLevel::Error,
+                LoggerLevel::Warn,
                 format!("{}", e),
                 "load_ebpf_api",
                 "redirector",
@@ -91,7 +91,7 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
     unsafe { Library::new(bpf_api_file_path.as_path()) }.map_err(|e| {
         Error::Bpf(BpfErrorType::LoadBpfApi(
             misc_helpers::path_to_string(&bpf_api_file_path),
-            e.to_string(),
+            format!("{}, last OS error: {}", e, std::io::Error::last_os_error()),
         ))
     })
 }
@@ -108,7 +108,7 @@ fn get_ebpf_api_fun<'a, T>(ebpf_api: &'a Library, name: &str) -> Result<Symbol<'
     unsafe { ebpf_api.get(name.as_bytes()) }.map_err(|e| {
         Error::Bpf(BpfErrorType::LoadBpfApiFunction(
             name.to_string(),
-            e.to_string(),
+            format!("{}, last OS error: {}", e, std::io::Error::last_os_error()),
         ))
     })
 }
