@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using Azure;
 using Azure.Core;
@@ -178,7 +178,7 @@ namespace GuestProxyAgentTest.Utilities
                     {
                         Name = "default",
                         AddressPrefix = "10.0.0.0/24",
-                        DefaultOutboundAccess = "false"
+                        DefaultOutboundAccess = false
                     }
                 }
             });
