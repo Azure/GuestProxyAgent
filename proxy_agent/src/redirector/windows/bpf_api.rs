@@ -108,7 +108,7 @@ fn get_ebpf_api_fun<'a, T>(ebpf_api: &'a Library, name: &str) -> Result<Symbol<'
     unsafe { ebpf_api.get(name.as_bytes()) }.map_err(|e| {
         Error::Bpf(BpfErrorType::LoadBpfApiFunction(
             name.to_string(),
-            format!("{}", e),
+            format!("{}, last OS error: {}", e, std::io::Error::last_os_error()),
         ))
     })
 }
