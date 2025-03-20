@@ -301,7 +301,7 @@ impl Redirector {
             ));
         }
         event_logger::write_event(
-            LoggerLevel::Error,
+            LoggerLevel::Warn,
             message,
             "start",
             "redirector",
