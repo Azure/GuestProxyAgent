@@ -70,11 +70,43 @@ impl ProxyAgentStatusTask {
     }
 
     pub async fn start(&self) {
-        logger::write_information("proxy_agent_status task started.".to_string());
+        // Initialize the agent status state to running and ignore the error if it fails
+        _ = self
+            .agent_status_shared_state
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyAgentStatus)
+            .await;
+        // Update the agent status message to running
+        self.update_agent_status_message("Proxy agent status is running.".to_string())
+            .await;
         tokio::select! {
             _ = self.loop_status() => {}
             _ = self.cancellation_token.cancelled() => {
                 logger::write_warning("cancellation token signal received, stop the guest_proxy_agent_status task.".to_string());
+            }
+        }
+    }
+
+    async fn update_agent_status_message(&self, status_message: String) {
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(status_message, AgentStatusModule::ProxyAgentStatus)
+            .await
+        {
+            logger::write_error(format!("Error updating agent status message: {}", e));
+        }
+    }
+
+    async fn get_agent_status_message(&self) -> String {
+        match self
+            .agent_status_shared_state
+            .get_module_status_message(AgentStatusModule::ProxyAgentStatus)
+            .await
+        {
+            Ok(message) => message,
+            Err(e) => {
+                let message = format!("Error getting agent status message: {}", e);
+                logger::write_error(message.clone());
+                message
             }
         }
     }
@@ -103,7 +135,7 @@ impl ProxyAgentStatusTask {
                 status_report_time = Instant::now();
             }
             // write the aggregate status to status.json file
-            self.write_aggregate_status_to_file(aggregate_status);
+            self.write_aggregate_status_to_file(aggregate_status).await;
 
             //Clear the connection map and reset start_time after 24 hours
             if start_time.elapsed() >= map_clear_duration {
@@ -195,7 +227,7 @@ impl ProxyAgentStatusTask {
             // monitorStatus is proxy_agent_status itself status
             monitorStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING,
-                message: "proxy_agent_status thread started.".to_string(),
+                message: self.get_agent_status_message().await,
                 states: None,
             },
             keyLatchStatus: key_latch_status,
@@ -245,13 +277,14 @@ impl ProxyAgentStatusTask {
         }
     }
 
-    fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
+    async fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
         let full_file_path = self.status_dir.join("status.json");
         if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
-            logger::write_error(format!(
+            self.update_agent_status_message(format!(
                 "Error writing aggregate status to status file: {}",
                 e
-            ));
+            ))
+            .await;
         }
     }
 }
@@ -285,7 +318,7 @@ mod tests {
             AgentStatusSharedState::start_new(),
         );
         let aggregate_status = task.guest_proxy_agent_aggregate_status_new().await;
-        task.write_aggregate_status_to_file(aggregate_status);
+        task.write_aggregate_status_to_file(aggregate_status).await;
 
         let file_path = temp_test_path.join("status.json");
         assert!(file_path.exists(), "File does not exist in the directory");
