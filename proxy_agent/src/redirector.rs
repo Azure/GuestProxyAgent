@@ -300,13 +300,6 @@ impl Redirector {
                 message, e
             ));
         }
-        event_logger::write_event(
-            LoggerLevel::Warn,
-            message,
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
     }
 }
 

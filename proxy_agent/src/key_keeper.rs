@@ -594,19 +594,9 @@ impl KeyKeeper {
             .await
         {
             Ok(updated) => {
-                if log_to_file {
-                    if updated {
-                        event_logger::write_event(
-                            LoggerLevel::Info,
-                            message,
-                            "update_status_message",
-                            "key_keeper",
-                            logger::AGENT_LOGGER_KEY,
-                        );
-                    } else {
-                        // not updated, log at verbose level
-                        logger::write(message);
-                    }
+                if log_to_file && !updated {
+                    // not updated, log at verbose level
+                    logger::write(message);
                 }
             }
             Err(e) => {
