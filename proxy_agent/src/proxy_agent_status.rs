@@ -285,6 +285,13 @@ impl ProxyAgentStatusTask {
                 e
             ))
             .await;
+        } else {
+            // need overwrite the status message to indicate the status file is written successfully
+            self.update_agent_status_message(format!(
+                "Aggregate status written to status file: {}",
+                full_file_path.display()
+            ))
+            .await;
         }
     }
 }
