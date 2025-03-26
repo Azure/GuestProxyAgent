@@ -49,7 +49,7 @@ check_skip_process_map_entry(uint32_t pid)
 inline __attribute__((always_inline)) int
 update_audit_map_entry(bpf_sock_addr_t *ctx)
 {
-    uint64_t pid_tip = bpf_sock_addr_get_current_pid_tgid(ctx);
+    uint64_t pid_tip = bpf_get_current_pid_tgid(ctx);
     uint32_t pid = (uint32_t)(pid_tip >> 32);
 
     if (check_skip_process_map_entry(pid) == 1)
