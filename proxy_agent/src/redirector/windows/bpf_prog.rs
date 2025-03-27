@@ -57,11 +57,13 @@ impl BpfObject {
         };
 
         if obj.is_null() {
-            // logger::write_error("bpf_object__open return null".to_string());
-            // return EBPF_OBJECT_NULL;
+            let error_code = libbpf_get_error()?;
             return Err(Error::Bpf(BpfErrorType::OpenBpfObject(
                 bpf_file_path.display().to_string(),
-                "bpf_object__open return null".to_string(),
+                format!(
+                    "bpf_object__open return null pointer with error code '{}'",
+                    error_code
+                ),
             )));
         }
 
@@ -79,6 +81,11 @@ impl BpfObject {
 
         if result == 0 {
             self.0 = obj;
+        } else {
+            return Err(Error::Bpf(BpfErrorType::LoadBpfObject(
+                bpf_file_path.display().to_string(),
+                format!("bpf_object__load return with error code '{}'", result),
+            )));
         }
 
         Ok(())
