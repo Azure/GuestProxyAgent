@@ -12,7 +12,7 @@ use crate::common::{
 use libloading::{Library, Symbol};
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers, telemetry::event_logger};
 use std::env;
-use std::ffi::{c_char, c_int, c_uint, c_void, CString};
+use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CString};
 use std::path::PathBuf;
 
 static EBPF_API: tokio::sync::OnceCell<Library> = tokio::sync::OnceCell::const_new();
@@ -152,8 +152,17 @@ type BpfMapLookupElem =
 
 type BpfMapDeleteElem = unsafe extern "C" fn(map_fd: c_int, key: *const c_void) -> c_int;
 
+type LibBpfGetError = unsafe extern "C" fn(no_use_ptr: *const c_void) -> c_long;
+
 fn get_cstring(s: &str) -> Result<CString> {
     CString::new(s).map_err(|e| Error::Bpf(BpfErrorType::CString(e)))
+}
+
+pub fn libbpf_get_error() -> Result<c_long> {
+    let ebpf_api = get_ebpf_api()?;
+    let libbpf_get_error: Symbol<LibBpfGetError> =
+        get_ebpf_api_fun(ebpf_api, "libbpf_get_error\0")?;
+    Ok(unsafe { libbpf_get_error(std::ptr::null()) })
 }
 
 pub fn bpf_object__open(path: &str) -> Result<*mut bpf_object> {
