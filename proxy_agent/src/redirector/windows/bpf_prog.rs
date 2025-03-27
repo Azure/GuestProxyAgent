@@ -81,6 +81,11 @@ impl BpfObject {
 
         if result == 0 {
             self.0 = obj;
+        } else {
+            return Err(Error::Bpf(BpfErrorType::LoadBpfObject(
+                bpf_file_path.display().to_string(),
+                format!("bpf_object__load return with error code '{}'", result),
+            )));
         }
 
         Ok(())
