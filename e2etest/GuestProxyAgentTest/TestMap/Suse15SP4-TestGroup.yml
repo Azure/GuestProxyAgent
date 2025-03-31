@@ -1,7 +1,7 @@
-groupName: Redhat90-Arm64
-vmImagePublisher: RedHat
-vmImageOffer: rhel-arm64
-vmImageSku: 9_0-arm64
+groupName: Suse15SP4
+vmImagePublisher: SUSE
+vmImageOffer: sles-15-sp4-byos
+vmImageSku: gen2
 vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario

@@ -1,4 +1,4 @@
-groupName: Redhat90
+groupName: Rocky9
 vmImagePublisher: resf
 vmImageOffer: rockylinux-x86_64
 vmImageSku: 9-base
