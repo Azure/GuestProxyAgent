@@ -99,6 +99,8 @@ fn check_linux_os_supported(version: Version) -> bool {
         return version.major >= constants::linux::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
     } else if linux_type.contains(constants::linux::RED_HAT_OS_NAME) {
         return version.major >= constants::linux::MIN_RED_HAT_OS_BUILD;
+    } else if linux_type.contains(constants::linux::ROCKY_OS_NAME) {
+        return version.major >= constants::linux::MIN_ROCKY_OS_BUILD;
     } else {
         return false;
     }

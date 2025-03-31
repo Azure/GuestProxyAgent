@@ -78,11 +78,13 @@ pub const MAX_CONNECTION_SUMMARY_LEN: usize = 100;
 pub const MAX_FAILED_AUTH_SUMMARY_LEN: usize = 50;
 
 #[cfg(not(windows))]
-pub mod linux{
+pub mod linux {
     pub const MIN_SUPPORTED_MARINER_OS_BUILD: u32 = 2;
     pub const MIN_SUPPORTED_UBUNTU_OS_BUILD: u32 = 20;
     pub const MIN_SUPPORTED_AZURE_LINUX_OS_BUILD: u32 = 3;
 
     pub const RED_HAT_OS_NAME: &str = "red hat enterprise linux";
     pub const MIN_RED_HAT_OS_BUILD: u32 = 9;
+    pub const ROCKY_OS_NAME: &str = "rocky linux";
+    pub const MIN_ROCKY_OS_BUILD: u32 = 9;
 }
