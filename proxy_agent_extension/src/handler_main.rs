@@ -92,11 +92,13 @@ fn check_os_version_supported() -> bool {
 fn check_linux_os_supported(version: Version) -> bool {
     let linux_type = linux::get_os_type().to_lowercase();
     if linux_type.contains("ubuntu") {
-        version.major >= constants::MIN_SUPPORTED_UBUNTU_OS_BUILD
+        version.major >= constants::linux::MIN_SUPPORTED_UBUNTU_OS_BUILD
     } else if linux_type.contains("mariner") {
-        return version.major >= constants::MIN_SUPPORTED_MARINER_OS_BUILD;
+        return version.major >= constants::linux::MIN_SUPPORTED_MARINER_OS_BUILD;
     } else if linux_type.contains("azure linux") {
-        return version.major >= constants::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
+        return version.major >= constants::linux::MIN_SUPPORTED_AZURE_LINUX_OS_BUILD;
+    } else if linux_type.contains(constants::linux::RED_HAT_OS_NAME) {
+        return version.major >= constants::linux::MIN_RED_HAT_OS_BUILD;
     } else {
         return false;
     }

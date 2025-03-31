@@ -2,3 +2,4 @@ testGroupList:
   - include: AzureLinux3-Arm64-TestGroup.yml
   - include: Ubuntu24-Arm64-TestGroup.yml
   - include: Ubuntu22-Arm64-TestGroup.yml
+  - include: Redhat90-Arm64-TestGroup.yml

@@ -1,7 +1,7 @@
 groupName: Redhat90
 vmImagePublisher: RedHat
-vmImageOffer: RHEL
-vmImageSku: 9_0
+vmImageOffer: rhel-arm64
+vmImageSku: 9_0-arm64
 vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario
