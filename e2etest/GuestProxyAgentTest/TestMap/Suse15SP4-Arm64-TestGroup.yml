@@ -1,0 +1,12 @@
+groupName: Suse15SP4-Arm64
+vmImagePublisher: SUSE
+vmImageOffer: sles-15-sp4-byos-arm64
+vmImageSku: gen2
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
+  - name: ProxyAgentExtension
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
