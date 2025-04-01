@@ -5,5 +5,4 @@ testGroupList:
   - include: Ubuntu22-TestGroup.yml
   - include: Ubuntu20-TestGroup.yml
   - include: Redhat90-TestGroup.yml
-  - include: Rocky9-TestGroup.yml
   - include: Suse15SP4-TestGroup.yml
