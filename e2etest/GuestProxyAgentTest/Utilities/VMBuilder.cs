@@ -25,6 +25,7 @@ namespace GuestProxyAgentTest.Utilities
         private string rgName = "";
         private string adminUsername = "testuser";
         private string adminPassword = SdkContext.RandomResourceName("pP@1", 15);
+        private readonly string[] PLAN_REQUIRED_IMAGES = new string[] { "almalinux", "kinvolk", "resf" };
 
         public VMBuilder() { }
 
@@ -157,6 +158,16 @@ namespace GuestProxyAgentTest.Utilities
                 };
             }
 
+            if (PLAN_REQUIRED_IMAGES.Contains(this.testScenarioSetting.VMImageDetails.Publisher))
+            {
+                vmData.Plan = new ComputePlan()
+                {
+                    Name = this.testScenarioSetting.VMImageDetails.Sku,
+                    Publisher = this.testScenarioSetting.VMImageDetails.Publisher,
+                    Product = this.testScenarioSetting.VMImageDetails.Offer,
+                };
+            }
+            
             return vmData;
         }
 
