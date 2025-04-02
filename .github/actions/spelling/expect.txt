@@ -3,6 +3,7 @@ AAFFBB
 aarch
 abe
 addrpair
+almalinux
 ATL
 ATLMFC
 autobuild
@@ -139,6 +140,7 @@ jobsjob
 joutvhu
 JScript
 keyonly
+kinvolk
 kotlin
 kprobe
 ktime
