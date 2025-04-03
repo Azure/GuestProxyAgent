@@ -25,6 +25,12 @@ namespace GuestProxyAgentTest.Utilities
         private string rgName = "";
         private string adminUsername = "testuser";
         private string adminPassword = SdkContext.RandomResourceName("pP@1", 15);
+
+        // In order to use the plan, we need to accept the terms first.
+        // https://learn.microsoft.com/en-us/cli/azure/vm/image/terms?view=azure-cli-latest#az-vm-image-terms-accept
+        // az vm image terms accept --urn almalinux:almalinux:9:latest --subscription <subscriptionId>
+        // az vm image terms accept --urn kinvolk:flatcar:stable:latest --subscription <subscriptionId>
+        // az vm image terms accept --urn resf:rockylinux-x86_64:9-base:latest --subscription <subscriptionId>
         private readonly string[] PLAN_REQUIRED_IMAGES = new string[] { "almalinux", "kinvolk", "resf" };
 
         public VMBuilder() { }
