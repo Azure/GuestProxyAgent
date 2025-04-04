@@ -1,7 +1,7 @@
-groupName: Ubuntu20
-vmImagePublisher: canonical
-vmImageOffer: 0001-com-ubuntu-server-focal
-vmImageSku: 20_04-lts
+groupName: Suse15SP4-Arm64
+vmImagePublisher: SUSE
+vmImageOffer: sles-15-sp4-byos-arm64
+vmImageSku: gen2
 vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario
