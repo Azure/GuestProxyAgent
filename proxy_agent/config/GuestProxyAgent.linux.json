@@ -1,5 +1,5 @@
 {
-    "logFolder": "/var/log/azure-proxy-agent",
+    "logFolder": "",
     "eventFolder": "/var/log/azure-proxy-agent/events",
     "latchKeyFolder": "/var/lib/azure-proxy-agent/keys",
     "monitorIntervalInSeconds": 60,

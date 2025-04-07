@@ -7,11 +7,6 @@ pub const PLUGIN_FAILED_AUTH_NAME: &str = "ProxyAgentFailedAuthenticationSummary
 pub const HANDLER_ENVIRONMENT_FILE: &str = "HandlerEnvironment.json";
 pub const HANDLER_LOG_FILE: &str = "ProxyAgentExtension.log";
 pub const SERVICE_LOG_FILE: &str = "ProxyAgentExtensionService.log";
-#[cfg(windows)]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FILE: &str =
-    "C:\\WindowsAzure\\ProxyAgent\\Logs\\status.json";
-#[cfg(not(windows))]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FILE: &str = "/var/log/azure-proxy-agent/status.json";
 pub const EXTENSION_SERVICE_NAME: &str = "GuestProxyAgentVMExtension";
 #[cfg(not(windows))]
 pub const EXTENSION_PROCESS_NAME: &str = "ProxyAgentExt";
