@@ -509,7 +509,9 @@ impl KeyStatus {
                                     None => imds = " IMDS Disabled",
                                 };
 
-                                match &rules.hostga {
+                                // short-term: HostGA uses wireserver mode
+                                // long-term: TBD
+                                match &rules.wireserver {
                                     Some(item) => {
                                         let mode = item.mode.to_lowercase();
                                         if mode == ENFORCE_MODE {
@@ -578,6 +580,8 @@ impl KeyStatus {
     }
 
     pub fn get_hostga_rules(&self) -> Option<AuthorizationItem> {
+        // short-term: HostGA has no rules
+        // long-term: TBD
         match &self.authorizationRules {
             Some(rules) => rules.hostga.clone(),
             None => None,
@@ -629,10 +633,13 @@ impl KeyStatus {
     }
 
     pub fn get_hostga_mode(&self) -> String {
-        match self.get_hostga_rules() {
-            Some(item) => item.mode.to_lowercase(),
-            None => "disabled".to_string(),
-        }
+        // match self.get_hostga_rules() {
+        //     Some(item) => item.mode.to_lowercase(),
+        //     None => "disabled".to_string(),
+        // }
+
+        // short-term: HostGA uses wireserver mode
+        self.get_wire_server_mode()
     }
 }
 
