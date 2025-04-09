@@ -117,6 +117,14 @@ impl ProxyAgentStatusTask {
         let status_report_duration = Duration::from_secs(60 * 15);
         let mut status_report_time = Instant::now();
 
+        if let Err(e) = misc_helpers::try_create_folder(&self.status_dir) {
+            logger::write_error(format!(
+                "Error creating status directory: {} with error {}",
+                self.status_dir.display(),
+                e
+            ));
+        }
+
         loop {
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
             // write proxyAgentStatus event
