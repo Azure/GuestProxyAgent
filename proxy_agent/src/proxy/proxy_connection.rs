@@ -14,7 +14,7 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
-use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
+use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
@@ -67,15 +67,12 @@ impl TcpConnectionContext {
     ) -> Self {
         let client_source_ip = client_addr.ip();
         let client_source_port = client_addr.port();
-        let logger = ConnectionLogger {
-            tcp_connection_id: id,
-            http_connection_id: 0,
-        };
+        let mut logger = ConnectionLogger::new(id, 0);
 
         let (claims, destination_ip, destination_port, sender) = match Self::get_audit_entry(
             &client_addr,
             &redirector_shared_state,
-            &logger,
+            &mut logger,
             #[cfg(windows)]
             raw_socket_id,
         )
@@ -103,7 +100,7 @@ impl TcpConnectionContext {
 
                 let host_ip = audit_entry.destination_ipv4_addr().to_string();
                 let host_port = audit_entry.destination_port_in_host_byte_order();
-                let cloned_logger = logger.clone();
+                let mut cloned_logger = logger.clone();
                 let fun = move |message: String| {
                     cloned_logger.write(LoggerLevel::Warn, message);
                 };
@@ -148,7 +145,7 @@ impl TcpConnectionContext {
     async fn get_audit_entry(
         client_addr: &SocketAddr,
         redirector_shared_state: &RedirectorSharedState,
-        logger: &ConnectionLogger,
+        logger: &mut ConnectionLogger,
         #[cfg(windows)] raw_socket_id: usize,
     ) -> Result<AuditEntry> {
         let client_source_port = client_addr.port();
@@ -227,7 +224,7 @@ impl TcpConnectionContext {
         "None".to_string()
     }
 
-    pub fn log(&self, logger_level: LoggerLevel, message: String) {
+    pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
         self.logger.write(logger_level, message)
     }
 
@@ -260,7 +257,7 @@ impl HttpConnectionContext {
         self.url.path().contains("..")
     }
 
-    pub fn log(&self, logger_level: LoggerLevel, message: String) {
+    pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
         self.logger.write(logger_level, message)
     }
 
@@ -276,21 +273,54 @@ impl HttpConnectionContext {
     }
 }
 
-#[derive(Clone)]
 pub struct ConnectionLogger {
     pub tcp_connection_id: u128,
     pub http_connection_id: u128,
+    queue: Vec<String>,
 }
 impl ConnectionLogger {
     pub const CONNECTION_LOGGER_KEY: &'static str = "Connection_Logger";
-    pub fn write(&self, logger_level: LoggerLevel, message: String) {
-        logger_manager::log(
-            Self::CONNECTION_LOGGER_KEY.to_string(),
-            logger_level,
-            format!(
-                "Connection:{}[{}] - {}",
-                self.http_connection_id, self.tcp_connection_id, message
-            ),
-        )
+
+    pub fn new(tcp_connection_id: u128, http_connection_id: u128) -> Self {
+        Self {
+            tcp_connection_id,
+            http_connection_id,
+            queue: Vec::new(),
+        }
+    }
+
+    pub fn write(&mut self, logger_level: LoggerLevel, message: String) {
+        if logger_level > logger_manager::get_logger_level() {
+            return;
+        }
+
+        self.queue.push(format!(
+            "{}{}[{}] - {}",
+            logger::get_log_header(logger_level),
+            self.http_connection_id,
+            self.tcp_connection_id,
+            message
+        ));
+    }
+}
+
+impl Drop for ConnectionLogger {
+    fn drop(&mut self) {
+        if !self.queue.is_empty() {
+            logger_manager::write_many(
+                Some(Self::CONNECTION_LOGGER_KEY.to_string()),
+                self.queue.clone(),
+            );
+        }
+    }
+}
+
+impl Clone for ConnectionLogger {
+    fn clone(&self) -> Self {
+        Self {
+            tcp_connection_id: self.tcp_connection_id,
+            http_connection_id: self.http_connection_id,
+            queue: Vec::new(), // Do not clone the queue, as it is used for logging
+        }
     }
 }

@@ -262,7 +262,7 @@ where
     B: hyper::body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-    F: Fn(String) + Send + 'static,
+    F: FnMut(String) + Send + 'static,
 {
     let full_url = request.uri().clone();
     let mut sender = build_http_sender(host, port, log_fun).await?;
@@ -277,13 +277,13 @@ where
 pub async fn build_http_sender<B, F>(
     host: &str,
     port: u16,
-    log_fun: F,
+    mut log_fun: F,
 ) -> Result<hyper::client::conn::http1::SendRequest<B>>
 where
     B: hyper::body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-    F: Fn(String) + Send + 'static,
+    F: FnMut(String) + Send + 'static,
 {
     let addr = format!("{}:{}", host, port);
     let stream = match TcpStream::connect(addr.to_string()).await {

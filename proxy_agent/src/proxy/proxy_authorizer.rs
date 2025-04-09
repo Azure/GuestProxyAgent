@@ -52,7 +52,7 @@ struct WireServer {
 impl Authorizer for WireServer {
     fn authorize(
         &self,
-        logger: ConnectionLogger,
+        mut logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -92,7 +92,7 @@ struct Imds {
 impl Authorizer for Imds {
     fn authorize(
         &self,
-        logger: ConnectionLogger,
+        mut logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -129,7 +129,7 @@ struct GAPlugin {
 impl Authorizer for GAPlugin {
     fn authorize(
         &self,
-        logger: ConnectionLogger,
+        mut logger: ConnectionLogger,
         request_url: hyper::Uri,
         access_control_rules: Option<ComputedAuthorizationItem>,
     ) -> AuthorizeResult {
@@ -231,7 +231,7 @@ pub async fn get_access_control_rules(
 pub fn authorize(
     ip: String,
     port: u16,
-    logger: ConnectionLogger,
+    mut logger: ConnectionLogger,
     request_uri: hyper::Uri,
     claims: Claims,
     access_control_rules: Option<ComputedAuthorizationItem>,
@@ -267,10 +267,7 @@ mod tests {
             clientIp: "127.0.0.1".to_string(),
             clientPort: 0, // doesn't matter for this test
         };
-        let test_logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let test_logger = ConnectionLogger::new(0, 0);
         let auth: Box<dyn super::Authorizer> = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
             crate::common::constants::WIRE_SERVER_PORT,
@@ -345,10 +342,7 @@ mod tests {
             clientIp: "127.0.0.1".to_string(),
             clientPort: 0, // doesn't matter for this test
         };
-        let test_logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let test_logger = ConnectionLogger::new(1, 1);
         let auth = super::get_authorizer(
             crate::common::constants::WIRE_SERVER_IP.to_string(),
             crate::common::constants::WIRE_SERVER_PORT,
@@ -461,10 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn imds_authenticate_test() {
-        let test_logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let test_logger = ConnectionLogger::new(1, 1);
         let claims = crate::proxy::Claims {
             userId: 0,
             userName: "test".to_string(),
@@ -586,10 +577,7 @@ mod tests {
             clientIp: "127.0.0.1".to_string(),
             clientPort: 0, // doesn't matter for this test
         };
-        let test_logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let test_logger = ConnectionLogger::new(1, 1);
         let auth = super::get_authorizer(
             crate::common::constants::GA_PLUGIN_IP.to_string(),
             crate::common::constants::GA_PLUGIN_PORT,

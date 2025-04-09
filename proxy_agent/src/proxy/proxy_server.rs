@@ -233,21 +233,14 @@ impl ProxyServer {
         {
             Ok(id) => id,
             Err(e) => {
-                ConnectionLogger {
-                    tcp_connection_id: 0,
-                    http_connection_id: 0,
-                }
-                .write(
+                ConnectionLogger::new(0, 0).write(
                     LoggerLevel::Error,
                     format!("Failed to increase tcp connection count: {}", e),
                 );
                 return;
             }
         };
-        let tcp_connection_logger = ConnectionLogger {
-            tcp_connection_id,
-            http_connection_id: 0,
-        };
+        let mut tcp_connection_logger = ConnectionLogger::new(0, 0);
         tcp_connection_logger.write(
             LoggerLevel::Trace,
             format!("Accepted new tcp connection [{}].", tcp_connection_id),
@@ -335,7 +328,7 @@ impl ProxyServer {
     // Set the read timeout for the stream
     fn set_stream_read_time_out(
         stream: TcpStream,
-        connection_logger: ConnectionLogger,
+        mut connection_logger: ConnectionLogger,
     ) -> Result<(TcpStream, std::net::TcpStream)> {
         // Convert the stream to a std stream
         let std_stream = stream.into_std().map_err(|e| {
@@ -372,7 +365,7 @@ impl ProxyServer {
     async fn handle_new_http_request(
         self,
         request: Request<Limited<hyper::body::Incoming>>,
-        tcp_connection_context: TcpConnectionContext,
+        mut tcp_connection_context: TcpConnectionContext,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         let connection_id = match self
             .agent_status_shared_state
@@ -389,16 +382,13 @@ impl ProxyServer {
             }
         };
 
-        let http_connection_context = HttpConnectionContext {
+        let mut http_connection_context = HttpConnectionContext {
             id: connection_id,
             now: std::time::Instant::now(),
             url: request.uri().clone(),
             method: request.method().clone(),
             tcp_connection_context: tcp_connection_context.clone(),
-            logger: ConnectionLogger {
-                tcp_connection_id: tcp_connection_context.id,
-                http_connection_id: connection_id,
-            },
+            logger: ConnectionLogger::new(tcp_connection_context.id, connection_id),
         };
         http_connection_context.log(
             LoggerLevel::Info,
@@ -412,7 +402,7 @@ impl ProxyServer {
 
         if http_connection_context.contains_traversal_characters() {
             self.log_connection_summary(
-                &http_connection_context,
+                &mut http_connection_context,
                 StatusCode::NOT_FOUND,
                 false,
                 "Traversal characters found in the request, return NOT_FOUND!".to_string(),
@@ -431,7 +421,7 @@ impl ProxyServer {
             Some(ip) => ip,
             None => {
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     false,
                     "No remote destination_ip found in the request, return!".to_string(),
@@ -445,7 +435,7 @@ impl ProxyServer {
             Some(c) => c.clone(),
             None => {
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     true,
                     "No claims found in the request, return!".to_string(),
@@ -459,7 +449,7 @@ impl ProxyServer {
             Ok(json) => json,
             Err(e) => {
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     StatusCode::MISDIRECTED_REQUEST,
                     false,
                     format!("Failed to get claims json string: {}", e),
@@ -481,7 +471,7 @@ impl ProxyServer {
             Ok(rules) => rules,
             Err(e) => {
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     StatusCode::INTERNAL_SERVER_ERROR,
                     false,
                     format!("Failed to get access control rules: {}", e),
@@ -501,7 +491,7 @@ impl ProxyServer {
         if result != AuthorizeResult::Ok {
             // log to authorize failed connection summary
             self.log_connection_summary(
-                &http_connection_context,
+                &mut http_connection_context,
                 StatusCode::FORBIDDEN,
                 true,
                 "Authorize failed".to_string(),
@@ -509,7 +499,7 @@ impl ProxyServer {
             .await;
             if result == AuthorizeResult::Forbidden {
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     StatusCode::FORBIDDEN,
                     false,
                     format!("Block unauthorized request: {}", claim_details),
@@ -604,7 +594,7 @@ impl ProxyServer {
 
     async fn handle_provision_state_check_request(
         &self,
-        logger: ConnectionLogger,
+        mut logger: ConnectionLogger,
         request: Request<Limited<hyper::body::Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         // check MetaData header exists or not
@@ -692,7 +682,7 @@ impl ProxyServer {
     async fn forward_response(
         &self,
         proxy_response: Result<Response<Incoming>>,
-        http_connection_context: HttpConnectionContext,
+        mut http_connection_context: HttpConnectionContext,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         let proxy_response = match proxy_response {
             Ok(response) => response,
@@ -702,7 +692,7 @@ impl ProxyServer {
                     _ => StatusCode::SERVICE_UNAVAILABLE,
                 };
                 self.log_connection_summary(
-                    &http_connection_context,
+                    &mut http_connection_context,
                     http_status_code,
                     false,
                     format!("Failed to send request to host: {}", e),
@@ -712,7 +702,7 @@ impl ProxyServer {
             }
         };
 
-        let logger = http_connection_context.get_logger();
+        let mut logger = http_connection_context.get_logger();
         let (head, body) = proxy_response.into_parts();
         let frame_stream = body.map_frame(move |frame| {
             let frame = match frame.into_data() {
@@ -737,7 +727,7 @@ impl ProxyServer {
         );
 
         self.log_connection_summary(
-            &http_connection_context,
+            &mut http_connection_context,
             response.status(),
             false,
             "".to_string(),
@@ -748,7 +738,7 @@ impl ProxyServer {
 
     async fn log_connection_summary(
         &self,
-        http_connection_context: &HttpConnectionContext,
+        http_connection_context: &mut HttpConnectionContext,
         response_status: StatusCode,
         log_authorize_failed: bool,
         mut error_details: String,
@@ -844,7 +834,7 @@ impl ProxyServer {
 
     async fn handle_request_with_signature(
         &self,
-        http_connection_context: HttpConnectionContext,
+        mut http_connection_context: HttpConnectionContext,
         request: Request<Limited<Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         let (head, body) = request.into_parts();

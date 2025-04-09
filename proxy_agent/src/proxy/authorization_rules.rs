@@ -164,7 +164,7 @@ impl ComputedAuthorizationItem {
 
     pub fn is_allowed(
         &self,
-        logger: ConnectionLogger,
+        mut logger: ConnectionLogger,
         request_url: hyper::Uri,
         claims: Claims,
     ) -> bool {
@@ -180,7 +180,7 @@ impl ComputedAuthorizationItem {
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
-            if privilege.is_match(&logger, &request_url) {
+            if privilege.is_match(&mut logger, &request_url) {
                 any_privilege_matched = true;
                 logger.write(
                     LoggerLevel::Trace,
@@ -191,7 +191,7 @@ impl ComputedAuthorizationItem {
                     for assignment in assignments {
                         let identity_name = assignment.clone();
                         if let Some(identity) = self.identities.get(&identity_name) {
-                            if identity.is_match(&logger, &claims) {
+                            if identity.is_match(&mut logger, &claims) {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
@@ -358,10 +358,7 @@ mod tests {
         let logger_key = "test_authorization_rules";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        let test_logger = ConnectionLogger {
-            tcp_connection_id: 0,
-            http_connection_id: 0,
-        };
+        let test_logger = ConnectionLogger::new(0, 0);
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {

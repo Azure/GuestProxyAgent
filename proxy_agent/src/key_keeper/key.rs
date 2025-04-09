@@ -212,7 +212,7 @@ impl Clone for Privilege {
 }
 
 impl Privilege {
-    pub fn is_match(&self, logger: &ConnectionLogger, request_url: &Uri) -> bool {
+    pub fn is_match(&self, logger: &mut ConnectionLogger, request_url: &Uri) -> bool {
         logger.write(
             LoggerLevel::Trace,
             format!("Start to match privilege '{}'", self.name),
@@ -295,7 +295,7 @@ impl Clone for Identity {
 }
 
 impl Identity {
-    pub fn is_match(&self, logger: &ConnectionLogger, claims: &Claims) -> bool {
+    pub fn is_match(&self, logger: &mut ConnectionLogger, claims: &Claims) -> bool {
         logger.write(
             LoggerLevel::Trace,
             format!("Start to match identity '{}'", self.name),
@@ -1370,10 +1370,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_privilege_is_match() {
-        let logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let mut logger = ConnectionLogger::new(1, 1);
 
         let privilege = r#"{
             "name": "test",
@@ -1388,7 +1385,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            privilege.is_match(&logger, &url),
+            privilege.is_match(&mut logger, &url),
             "privilege should be matched"
         );
 
@@ -1396,13 +1393,13 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege.is_match(&logger, &url),
+            !privilege.is_match(&mut logger, &url),
             "privilege should not be matched"
         );
 
         let url = "http://localhost/test?key1=value1".parse().unwrap();
         assert!(
-            !privilege.is_match(&logger, &url),
+            !privilege.is_match(&mut logger, &url),
             "privilege should not be matched"
         );
 
@@ -1415,7 +1412,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            privilege1.is_match(&logger, &url),
+            privilege1.is_match(&mut logger, &url),
             "privilege should be matched"
         );
 
@@ -1432,17 +1429,14 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege2.is_match(&logger, &url),
+            !privilege2.is_match(&mut logger, &url),
             "privilege should not be matched"
         );
     }
 
     #[tokio::test]
     async fn test_identity_is_match() {
-        let logger = ConnectionLogger {
-            tcp_connection_id: 1,
-            http_connection_id: 1,
-        };
+        let mut logger = ConnectionLogger::new(1, 1);
 
         let mut claims = super::Claims {
             userName: "test".to_string(),
@@ -1466,7 +1460,7 @@ mod tests {
         }"#;
         let identity: Identity = serde_json::from_str(identity).unwrap();
         assert!(
-            identity.is_match(&logger, &claims),
+            identity.is_match(&mut logger, &claims),
             "identity should be matched"
         );
 
@@ -1479,7 +1473,7 @@ mod tests {
         }"#;
         let identity1: Identity = serde_json::from_str(identity1).unwrap();
         assert!(
-            !identity1.is_match(&logger, &claims),
+            !identity1.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
 
@@ -1490,7 +1484,7 @@ mod tests {
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
         assert!(
-            !identity2.is_match(&logger, &claims),
+            !identity2.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
 
@@ -1500,7 +1494,7 @@ mod tests {
         }"#;
         let identity2: Identity = serde_json::from_str(identity2).unwrap();
         assert!(
-            identity2.is_match(&logger, &claims),
+            identity2.is_match(&mut logger, &claims),
             "identity should be matched"
         );
 
@@ -1511,7 +1505,7 @@ mod tests {
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
         assert!(
-            !identity3.is_match(&logger, &claims),
+            !identity3.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
         let identity3 = r#"{
@@ -1520,7 +1514,7 @@ mod tests {
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
         assert!(
-            !identity3.is_match(&logger, &claims),
+            !identity3.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
         let identity3 = r#"{
@@ -1529,7 +1523,7 @@ mod tests {
         }"#;
         let identity3: Identity = serde_json::from_str(identity3).unwrap();
         assert!(
-            identity3.is_match(&logger, &claims),
+            identity3.is_match(&mut logger, &claims),
             "identity should be matched"
         );
 
@@ -1540,7 +1534,7 @@ mod tests {
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
-            !identity4.is_match(&logger, &claims),
+            !identity4.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
         let identity4 = r#"{
@@ -1549,7 +1543,7 @@ mod tests {
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
-            !identity4.is_match(&logger, &claims),
+            !identity4.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
         let identity4 = r#"{
@@ -1558,7 +1552,7 @@ mod tests {
         }"#;
         let identity4: Identity = serde_json::from_str(identity4).unwrap();
         assert!(
-            identity4.is_match(&logger, &claims),
+            identity4.is_match(&mut logger, &claims),
             "identity should be matched"
         );
 
@@ -1569,7 +1563,7 @@ mod tests {
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
         assert!(
-            !identity5.is_match(&logger, &claims),
+            !identity5.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
         let identity5 = r#"{
@@ -1578,7 +1572,7 @@ mod tests {
         }"#;
         let identity5: Identity = serde_json::from_str(identity5).unwrap();
         assert!(
-            identity5.is_match(&logger, &claims),
+            identity5.is_match(&mut logger, &claims),
             "identity should be matched"
         );
 
@@ -1604,7 +1598,7 @@ mod tests {
         });
         let identity6: Identity = serde_json::from_value(identity6).unwrap();
         assert!(
-            !identity6.is_match(&logger, &claims),
+            !identity6.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
 
