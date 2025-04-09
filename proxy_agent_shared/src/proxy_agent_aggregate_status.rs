@@ -3,6 +3,12 @@
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[cfg(windows)]
+pub const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "C:\\WindowsAzure\\ProxyAgent\\Logs\\";
+#[cfg(not(windows))]
+pub const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
+pub const PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME: &str = "status.json";
+
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub enum ModuleState {
     UNKNOWN,
