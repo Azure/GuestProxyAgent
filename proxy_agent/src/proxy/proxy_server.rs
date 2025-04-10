@@ -240,7 +240,7 @@ impl ProxyServer {
                 return;
             }
         };
-        let mut tcp_connection_logger = ConnectionLogger::new(0, 0);
+        let mut tcp_connection_logger = ConnectionLogger::new(tcp_connection_id, 0);
         tcp_connection_logger.write(
             LoggerLevel::Trace,
             format!("Accepted new tcp connection [{}].", tcp_connection_id),
@@ -250,7 +250,7 @@ impl ProxyServer {
             let cloned_proxy_server = self.clone();
             async move {
                 let (stream, _cloned_std_stream) =
-                    match Self::set_stream_read_time_out(stream, tcp_connection_logger.clone()) {
+                    match Self::set_stream_read_time_out(stream, &mut tcp_connection_logger) {
                         Ok((stream, cloned_std_stream)) => (stream, cloned_std_stream),
                         Err(e) => {
                             tcp_connection_logger.write(
@@ -270,8 +270,7 @@ impl ProxyServer {
                 )
                 .await;
 
-                let cloned_tcp_connection_context: TcpConnectionContext =
-                    tcp_connection_context.clone();
+                let cloned_tcp_connection_context = tcp_connection_context.clone();
                 // move client addr, cloned std stream and shared_state to the service_fn
                 let service = service_fn(move |req| {
                     // use tower service as middleware to limit the request body size
@@ -329,7 +328,7 @@ impl ProxyServer {
     // Set the read timeout for the stream
     fn set_stream_read_time_out(
         stream: TcpStream,
-        mut connection_logger: ConnectionLogger,
+        connection_logger: &mut ConnectionLogger,
     ) -> Result<(TcpStream, std::net::TcpStream)> {
         // Convert the stream to a std stream
         let std_stream = stream.into_std().map_err(|e| {
