@@ -164,7 +164,7 @@ impl ComputedAuthorizationItem {
 
     pub fn is_allowed(
         &self,
-        mut logger: ConnectionLogger,
+        logger: &mut ConnectionLogger,
         request_url: hyper::Uri,
         claims: Claims,
     ) -> bool {
@@ -180,7 +180,7 @@ impl ComputedAuthorizationItem {
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
-            if privilege.is_match(&mut logger, &request_url) {
+            if privilege.is_match(logger, &request_url) {
                 any_privilege_matched = true;
                 logger.write(
                     LoggerLevel::Trace,
@@ -191,7 +191,7 @@ impl ComputedAuthorizationItem {
                     for assignment in assignments {
                         let identity_name = assignment.clone();
                         if let Some(identity) = self.identities.get(&identity_name) {
-                            if identity.is_match(&mut logger, &claims) {
+                            if identity.is_match(logger, &claims) {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
@@ -358,7 +358,7 @@ mod tests {
         let logger_key = "test_authorization_rules";
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
-        let test_logger = ConnectionLogger::new(0, 0);
+        let mut test_logger = ConnectionLogger::new(0, 0);
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
@@ -411,11 +411,11 @@ mod tests {
         };
         // assert the claim is allowed given the rules above
         let url = hyper::Uri::from_str("http://localhost/test/test").unwrap();
-        assert!(rules.is_allowed(test_logger.clone(), url, claims.clone()));
+        assert!(rules.is_allowed(&mut test_logger, url, claims.clone()));
         let relative_url = hyper::Uri::from_str("/test/test").unwrap();
-        assert!(rules.is_allowed(test_logger.clone(), relative_url.clone(), claims.clone()));
+        assert!(rules.is_allowed(&mut test_logger, relative_url.clone(), claims.clone()));
         claims.userName = "test1".to_string();
-        assert!(!rules.is_allowed(test_logger.clone(), relative_url, claims.clone()));
+        assert!(!rules.is_allowed(&mut test_logger, relative_url, claims.clone()));
 
         // Test Audit Mode
         let access_control_rules = AccessControlRules {
@@ -490,9 +490,9 @@ mod tests {
         assert!(!rules.privileges.is_empty());
 
         let url = hyper::Uri::from_str("http://localhost/test/test1").unwrap();
-        assert!(rules.is_allowed(test_logger.clone(), url, claims.clone()));
+        assert!(rules.is_allowed(&mut test_logger, url, claims.clone()));
         let relative_url = hyper::Uri::from_str("/test/test1").unwrap();
-        assert!(rules.is_allowed(test_logger.clone(), relative_url, claims.clone()));
+        assert!(rules.is_allowed(&mut test_logger, relative_url, claims.clone()));
 
         // Test enforce mode, identity not match
         let access_control_rules = AccessControlRules {
@@ -531,9 +531,9 @@ mod tests {
         assert!(!rules.privileges.is_empty());
 
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-        assert!(!rules.is_allowed(test_logger.clone(), url, claims.clone()));
+        assert!(!rules.is_allowed(&mut test_logger, url, claims.clone()));
         let relativeurl = hyper::Uri::from_str("/test?").unwrap();
-        assert!(!rules.is_allowed(test_logger.clone(), relativeurl, claims.clone()));
+        assert!(!rules.is_allowed(&mut test_logger, relativeurl, claims.clone()));
     }
 
     #[tokio::test]

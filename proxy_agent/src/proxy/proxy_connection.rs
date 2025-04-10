@@ -261,8 +261,8 @@ impl HttpConnectionContext {
         self.logger.write(logger_level, message)
     }
 
-    pub fn get_logger(&self) -> ConnectionLogger {
-        self.logger.clone()
+    pub fn get_logger_mut_ref(&mut self) -> &mut ConnectionLogger {
+        &mut self.logger
     }
 
     pub async fn send_request(
@@ -307,6 +307,13 @@ impl ConnectionLogger {
 impl Drop for ConnectionLogger {
     fn drop(&mut self) {
         if !self.queue.is_empty() {
+            self.queue.push(format!(
+                "{}{}[{}] - {}",
+                logger::get_log_header(LoggerLevel::Info),
+                self.http_connection_id,
+                self.tcp_connection_id,
+                "------------------------ ConnectionLogger is dropped ------------------------"
+            ));
             logger_manager::write_many(
                 Some(Self::CONNECTION_LOGGER_KEY.to_string()),
                 self.queue.clone(),

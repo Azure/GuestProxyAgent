@@ -270,7 +270,8 @@ impl ProxyServer {
                 )
                 .await;
 
-                let cloned_tcp_connection_context = tcp_connection_context.clone();
+                let cloned_tcp_connection_context: TcpConnectionContext =
+                    tcp_connection_context.clone();
                 // move client addr, cloned std stream and shared_state to the service_fn
                 let service = service_fn(move |req| {
                     // use tower service as middleware to limit the request body size
@@ -413,7 +414,10 @@ impl ProxyServer {
 
         if http_connection_context.url == provision::provision_query::PROVISION_URL_PATH {
             return self
-                .handle_provision_state_check_request(http_connection_context.get_logger(), request)
+                .handle_provision_state_check_request(
+                    http_connection_context.get_logger_mut_ref(),
+                    request,
+                )
                 .await;
         }
 
@@ -483,7 +487,7 @@ impl ProxyServer {
         let result = proxy_authorizer::authorize(
             ip.to_string(),
             port,
-            http_connection_context.get_logger(),
+            http_connection_context.get_logger_mut_ref(),
             request.uri().clone(),
             claims.clone(),
             access_control_rules,
@@ -594,7 +598,7 @@ impl ProxyServer {
 
     async fn handle_provision_state_check_request(
         &self,
-        mut logger: ConnectionLogger,
+        logger: &mut ConnectionLogger,
         request: Request<Limited<hyper::body::Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         // check MetaData header exists or not
@@ -702,7 +706,7 @@ impl ProxyServer {
             }
         };
 
-        let mut logger = http_connection_context.get_logger();
+        let mut logger = http_connection_context.logger.clone();
         let (head, body) = proxy_response.into_parts();
         let frame_stream = body.map_frame(move |frame| {
             let frame = match frame.into_data() {
