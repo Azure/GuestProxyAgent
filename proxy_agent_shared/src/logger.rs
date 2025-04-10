@@ -1,10 +1,21 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::misc_helpers;
+
 pub mod logger_manager;
 pub mod rolling_logger;
 
 pub type LoggerLevel = log::Level;
+
+pub fn get_log_header(level: LoggerLevel) -> String {
+    format!(
+        "{} [{}]    ",
+        misc_helpers::get_date_time_string_with_milliseconds(),
+        level
+    )[..34]
+        .to_string()
+}
 
 #[cfg(test)]
 mod tests {
