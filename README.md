@@ -34,7 +34,7 @@ secret is negotiated to authenticate with the trusted delegate, and all requests
 endorsed by the delegate using an [HMAC](https://en.wikipedia.org/wiki/HMAC). This establishes a point-to-point trust
 relationship with strong AuthN.
 
-The GPA leverages [eBPF](https://ebpf.io/what-is-ebpf/) to intercept HTTP requests to the metadata services. eBPF
+The GPA leverages [eBPF](https://ebpf.io/what-is-ebpf/) to intercept HTTP requests to the metadata services only (not intercept any other http traffic). eBPF
 enables the GPA to authoritatively verify the identity of the in guest software that made the request without introducing
 an additional kernel module. Using this information, it compares the identity of the client against an allow list defined
 as a part of the VM model in the Azure Resource Manager (ARM) and endorses requests that are authorized by transparently
