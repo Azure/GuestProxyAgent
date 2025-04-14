@@ -5,12 +5,15 @@ pub mod windows;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::key_keeper::KeyKeeper;
+use crate::proxy::proxy_connection::ConnectionLogger;
 use crate::proxy::proxy_server::ProxyServer;
-use crate::redirector;
+use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
-use proxy_agent_shared::logger_manager;
+use proxy_agent_shared::logger::rolling_logger::RollingLogger;
+use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use proxy_agent_shared::telemetry::event_logger;
 
+use std::path::PathBuf;
 #[cfg(not(windows))]
 use std::time::Duration;
 
@@ -24,15 +27,14 @@ use std::time::Duration;
 /// service::start_service(shared_state).await;
 /// ```
 pub async fn start_service(shared_state: SharedState) {
-    logger_manager::set_logger_level(config::get_file_log_level()).await;
-    logger_manager::init_logger(
-        logger::AGENT_LOGGER_KEY.to_string(),
-        config::get_logs_dir(),
-        "ProxyAgent.log".to_string(),
-        constants::MAX_LOG_FILE_SIZE,
-        constants::MAX_LOG_FILE_COUNT as u16,
-    )
-    .await;
+    let log_folder = config::get_logs_dir();
+    if log_folder == PathBuf::from("") {
+        logger::write_console_log(
+            "The log folder is not set, skip write to GPA managed file log.".to_string(),
+        );
+    } else {
+        setup_loggers(log_folder, config::get_file_log_level());
+    }
 
     let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}({}), elapsed: {}",
@@ -61,11 +63,42 @@ pub async fn start_service(shared_state: SharedState) {
     });
 
     tokio::spawn({
+        let redirector: Redirector = Redirector::new(constants::PROXY_AGENT_PORT, &shared_state);
+        async move {
+            redirector.start().await;
+        }
+    });
+
+    tokio::spawn({
         let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
         async move {
             proxy_server.start().await;
         }
     });
+}
+
+fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
+    logger_manager::set_logger_level(max_logger_level);
+
+    let agent_logger = RollingLogger::create_new(
+        log_folder.clone(),
+        "ProxyAgent.log".to_string(),
+        constants::MAX_LOG_FILE_SIZE,
+        constants::MAX_LOG_FILE_COUNT as u16,
+    );
+    let connection_logger = RollingLogger::create_new(
+        log_folder.clone(),
+        "ProxyAgent.Connection.log".to_string(),
+        constants::MAX_LOG_FILE_SIZE,
+        constants::MAX_LOG_FILE_COUNT as u16,
+    );
+    let mut loggers = std::collections::HashMap::new();
+    loggers.insert(logger::AGENT_LOGGER_KEY.to_string(), agent_logger);
+    loggers.insert(
+        ConnectionLogger::CONNECTION_LOGGER_KEY.to_string(),
+        connection_logger,
+    );
+    logger_manager::set_loggers(loggers, logger::AGENT_LOGGER_KEY.to_string());
 }
 
 /// Start the service and wait until the service is stopped.
@@ -114,4 +147,32 @@ pub fn stop_service(shared_state: SharedState) {
     });
 
     event_logger::stop();
+}
+
+#[cfg(test)]
+mod tests {
+    use ctor::{ctor, dtor};
+    use proxy_agent_shared::logger::LoggerLevel;
+    use std::env;
+    use std::fs;
+
+    const TEST_LOGGER_KEY: &str = "proxy_agent_test";
+
+    fn get_temp_test_dir() -> std::path::PathBuf {
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push(TEST_LOGGER_KEY);
+        temp_test_path
+    }
+
+    #[ctor]
+    fn setup() {
+        // Setup logger_manager for unit tests
+        super::setup_loggers(get_temp_test_dir(), LoggerLevel::Trace);
+    }
+
+    #[dtor]
+    fn cleanup() {
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&get_temp_test_dir());
+    }
 }

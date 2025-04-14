@@ -136,7 +136,7 @@ pub enum BpfErrorType {
     #[error("Failed to get valid map '{0}' in BPF object with error: {1}")]
     GetBpfMap(String, String),
 
-    #[error("Failed to get eBPF API: API is not loaded")]
+    #[error("Failed to get eBPF API: EbpfApi.dll is not loaded")]
     GetBpfApi,
 
     #[error("Failed to get BPF object: Object is not initialized")]

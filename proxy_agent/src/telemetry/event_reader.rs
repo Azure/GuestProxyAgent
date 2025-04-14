@@ -382,7 +382,7 @@ mod tests {
     use crate::common::logger;
     use crate::key_keeper::key::Key;
     use crate::test_mock::server_mock;
-    use proxy_agent_shared::{logger_manager, misc_helpers};
+    use proxy_agent_shared::misc_helpers;
     use std::{env, fs};
 
     #[tokio::test]
@@ -391,20 +391,8 @@ mod tests {
         temp_dir.push("test_event_reader_thread");
 
         _ = fs::remove_dir_all(&temp_dir);
-
-        let mut log_dir = temp_dir.to_path_buf();
-        log_dir.push("Logs");
         let mut events_dir = temp_dir.to_path_buf();
         events_dir.push("Events");
-
-        logger_manager::init_logger(
-            logger::AGENT_LOGGER_KEY.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            "logger_key".to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         // start wire_server listener
         let ip = "127.0.0.1";

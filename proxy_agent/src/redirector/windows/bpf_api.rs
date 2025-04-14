@@ -10,17 +10,30 @@ use crate::common::{
     result::Result,
 };
 use libloading::{Library, Symbol};
-use once_cell::sync::Lazy;
-use proxy_agent_shared::misc_helpers;
+use proxy_agent_shared::{logger::LoggerLevel, misc_helpers, telemetry::event_logger};
 use std::env;
-use std::ffi::{c_char, c_int, c_uint, c_void, CString};
+use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CString};
 use std::path::PathBuf;
 
-static EBPF_API: Lazy<Option<Library>> = Lazy::new(init_ebpf_lib);
+static EBPF_API: tokio::sync::OnceCell<Library> = tokio::sync::OnceCell::const_new();
 const EBPF_API_FILE_NAME: &str = "EbpfApi.dll";
 
-pub fn ebpf_api_is_loaded() -> bool {
-    EBPF_API.is_some()
+pub fn try_load_ebpf_api() -> bool {
+    if !EBPF_API.initialized() {
+        if let Some(ebpf_api) = init_ebpf_lib() {
+            if let Err(e) = EBPF_API.set(ebpf_api) {
+                event_logger::write_event(
+                    LoggerLevel::Error,
+                    format!("{}", e),
+                    "try_load_ebpf_api",
+                    "redirector",
+                    logger::AGENT_LOGGER_KEY,
+                );
+            }
+        }
+    }
+
+    EBPF_API.initialized()
 }
 
 fn init_ebpf_lib() -> Option<Library> {
@@ -37,7 +50,13 @@ fn init_ebpf_lib() -> Option<Library> {
             return Some(ebpf_lib);
         }
         Err(e) => {
-            logger::write_warning(format!("{}", e));
+            event_logger::write_event(
+                LoggerLevel::Warn,
+                format!("{}", e),
+                "load_ebpf_api",
+                "redirector",
+                logger::AGENT_LOGGER_KEY,
+            );
         }
     }
 
@@ -47,7 +66,13 @@ fn init_ebpf_lib() -> Option<Library> {
             return Some(ebpf_lib);
         }
         Err(e) => {
-            logger::write_warning(format!("{}", e));
+            event_logger::write_event(
+                LoggerLevel::Warn,
+                format!("{}", e),
+                "load_ebpf_api",
+                "redirector",
+                logger::AGENT_LOGGER_KEY,
+            );
         }
     }
 
@@ -66,13 +91,13 @@ fn load_ebpf_api(bpf_api_file_path: PathBuf) -> Result<Library> {
     unsafe { Library::new(bpf_api_file_path.as_path()) }.map_err(|e| {
         Error::Bpf(BpfErrorType::LoadBpfApi(
             misc_helpers::path_to_string(&bpf_api_file_path),
-            e.to_string(),
+            format!("{}, last OS error: {}", e, std::io::Error::last_os_error()),
         ))
     })
 }
 
 fn get_ebpf_api() -> Result<&'static Library> {
-    match EBPF_API.as_ref() {
+    match EBPF_API.get() {
         Some(api) => Ok(api),
         None => Err(Error::Bpf(BpfErrorType::GetBpfApi)),
     }
@@ -83,7 +108,7 @@ fn get_ebpf_api_fun<'a, T>(ebpf_api: &'a Library, name: &str) -> Result<Symbol<'
     unsafe { ebpf_api.get(name.as_bytes()) }.map_err(|e| {
         Error::Bpf(BpfErrorType::LoadBpfApiFunction(
             name.to_string(),
-            e.to_string(),
+            format!("{}, last OS error: {}", e, std::io::Error::last_os_error()),
         ))
     })
 }
@@ -127,8 +152,17 @@ type BpfMapLookupElem =
 
 type BpfMapDeleteElem = unsafe extern "C" fn(map_fd: c_int, key: *const c_void) -> c_int;
 
+type LibBpfGetError = unsafe extern "C" fn(no_use_ptr: *const c_void) -> c_long;
+
 fn get_cstring(s: &str) -> Result<CString> {
     CString::new(s).map_err(|e| Error::Bpf(BpfErrorType::CString(e)))
+}
+
+pub fn libbpf_get_error() -> Result<c_long> {
+    let ebpf_api = get_ebpf_api()?;
+    let libbpf_get_error: Symbol<LibBpfGetError> =
+        get_ebpf_api_fun(ebpf_api, "libbpf_get_error\0")?;
+    Ok(unsafe { libbpf_get_error(std::ptr::null()) })
 }
 
 pub fn bpf_object__open(path: &str) -> Result<*mut bpf_object> {

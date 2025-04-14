@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 use crate::misc_helpers;
 use crate::result::Result;
+use log::Level;
 use std::fs::{self, File, OpenOptions};
 use std::io::{LineWriter, Write};
 use std::path::PathBuf;
 
+#[derive(Debug)]
 pub struct RollingLogger {
     log_dir: PathBuf,
     log_file_name: String,
@@ -13,20 +15,6 @@ pub struct RollingLogger {
 
     max_log_file_size: u64,  // max log file size in KB
     max_log_file_count: u16, // max log file count, if exceed the count, the older log files will be removed.
-
-    initialized: bool,
-
-    //log_file: File,
-    log_writer: Option<LineWriter<File>>,
-}
-
-fn get_log_header(severity: &str) -> String {
-    format!(
-        "{} {} {}",
-        misc_helpers::get_thread_identity(),
-        misc_helpers::get_date_time_string_with_milliseconds(),
-        severity
-    )
 }
 
 impl RollingLogger {
@@ -40,30 +28,16 @@ impl RollingLogger {
         log_size: u64,
         log_count: u16,
     ) -> RollingLogger {
-        let mut logger = RollingLogger {
+        RollingLogger {
             log_dir: dir,
             log_file_name: file_name,
             log_file_extension: String::from("log"),
             max_log_file_size: log_size,
             max_log_file_count: log_count,
-            initialized: false,
-            log_writer: None, // will initialize later
-        };
-        logger.init().unwrap();
-
-        logger
-    }
-
-    fn init(&mut self) -> Result<()> {
-        if !self.initialized {
-            self.open_file()?;
-            self.initialized = true;
         }
-
-        Ok(())
     }
 
-    fn open_file(&mut self) -> Result<()> {
+    fn open_file(&self) -> Result<LineWriter<File>> {
         misc_helpers::try_create_folder(&self.log_dir)?;
 
         let file_full_path = self.get_current_file_full_path(None);
@@ -73,45 +47,43 @@ impl RollingLogger {
             File::create(file_full_path)?
         };
 
-        self.log_writer = Some(LineWriter::new(f));
+        Ok(LineWriter::new(f))
+    }
+
+    /// write a message to the log file, and roll the log file if needed
+    /// the message will be prefixed with the log level and timestamp
+    pub fn write(&self, level: Level, message: String) -> Result<()> {
+        let message = format!("{}{}", crate::logger::get_log_header(level), message);
+        self.write_line(message)
+    }
+
+    /// write list of messages to the log file, and roll the log file if needed
+    pub fn write_many(&self, messages: Vec<String>) -> Result<()> {
+        self.roll_if_needed()?;
+
+        if let Ok(mut writer) = self.open_file() {
+            for message in messages {
+                writer.write_all(message.as_bytes())?;
+                writer.write_all(b"\n")?;
+            }
+            writer.flush()?;
+        }
+        Ok(())
+    }
+
+    fn write_line(&self, message: String) -> Result<()> {
+        self.roll_if_needed()?;
+
+        if let Ok(mut writer) = self.open_file() {
+            writer.write_all(message.as_bytes())?;
+            writer.write_all(b"\n")?;
+            writer.flush()?;
+        }
 
         Ok(())
     }
 
-    pub fn write(&mut self, message: String) -> Result<()> {
-        let header = get_log_header("[VERB]    ");
-        self.write_line(header + &message)
-    }
-
-    pub fn write_information(&mut self, message: String) -> Result<()> {
-        let header = get_log_header("[INFO]    ");
-        self.write_line(header + &message)
-    }
-
-    pub fn write_warning(&mut self, message: String) -> Result<()> {
-        let header = get_log_header("[WARN]    ");
-        self.write_line(header + &message)
-    }
-
-    pub fn write_error(&mut self, message: String) -> Result<()> {
-        let header = get_log_header("[ERROR]   ");
-        self.write_line(header + &message)
-    }
-
-    pub fn write_line(&mut self, message: String) -> Result<()> {
-        self.roll_if_needed()?;
-        self.log_writer
-            .as_mut()
-            .unwrap()
-            .write_all(message.as_bytes())?;
-        self.log_writer
-            .as_mut()
-            .unwrap()
-            .write_all(b"\n")
-            .map_err(Into::into)
-    }
-
-    fn archive_file(&mut self) -> Result<()> {
+    fn archive_file(&self) -> Result<()> {
         let new_file_name = self.get_current_file_full_path(Some(format!(
             "{}-{}",
             misc_helpers::get_date_time_string_with_milliseconds(),
@@ -151,9 +123,11 @@ impl RollingLogger {
                 continue;
             }
 
-            let file_name = entry.file_name().into_string().unwrap();
-            if !file_name.starts_with(&self.log_file_name) {
-                continue;
+            // log file name should able convert to string safely; if not, ignore this file entry
+            if let Ok(file_name) = entry.file_name().into_string() {
+                if !file_name.starts_with(&self.log_file_name) {
+                    continue;
+                }
             }
 
             log_files.push(file_full_path);
@@ -179,8 +153,8 @@ impl RollingLogger {
         full_path
     }
 
-    fn roll_if_needed(&mut self) -> Result<()> {
-        self.init()?;
+    fn roll_if_needed(&self) -> Result<()> {
+        self.open_file()?;
 
         let file = self.get_current_file_full_path(None);
         let file_length = file.metadata()?.len();
@@ -206,11 +180,10 @@ mod tests {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("logger_new_tests");
 
-        let mut logger =
+        let logger =
             RollingLogger::create_new(temp_test_path.clone(), String::from("proxyagent"), 1024, 10);
-
         logger
-            .write(String::from("This is a test message"))
+            .write(log::Level::Info, String::from("This is a test message"))
             .unwrap();
 
         // clean up and ignore the clean up errors
@@ -225,13 +198,13 @@ mod tests {
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
 
-        let mut logger =
+        let logger =
             RollingLogger::create_new(temp_test_path.clone(), String::from("proxyagent"), 100, 6);
 
         // test without deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write(log::Level::Info, String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();
@@ -240,7 +213,7 @@ mod tests {
         // test with deleting old files
         for _ in [0; 10] {
             logger
-                .write(String::from("This is a test message"))
+                .write(log::Level::Trace, String::from("This is a test message"))
                 .unwrap();
         }
         let file_count = logger.get_log_files().unwrap();

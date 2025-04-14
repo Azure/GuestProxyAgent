@@ -1,7 +1,7 @@
-groupName: Ubuntu20
-vmImagePublisher: canonical
-vmImageOffer: 0001-com-ubuntu-server-focal
-vmImageSku: 20_04-lts
+groupName: Rocky9
+vmImagePublisher: resf
+vmImageOffer: rockylinux-x86_64
+vmImageSku: 9-base
 vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario

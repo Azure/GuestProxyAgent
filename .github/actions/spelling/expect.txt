@@ -3,6 +3,7 @@ AAFFBB
 aarch
 abe
 addrpair
+almalinux
 ATL
 ATLMFC
 autobuild
@@ -24,6 +25,7 @@ Bufs
 BUILDIN
 buildroot
 buildshell
+byos
 cacheline
 cbl
 ccbdee
@@ -114,6 +116,7 @@ guestproxyagentmsis
 guiddef
 hklm
 hlist
+hostga
 httpwg
 Iaa
 idstepsrun
@@ -137,6 +140,7 @@ jobsjob
 joutvhu
 JScript
 keyonly
+kinvolk
 kotlin
 kprobe
 ktime
@@ -173,6 +177,7 @@ Newtonsoft
 nic
 nifs
 nmake
+nocapture
 NOCONFIRMATION
 NOERRORUI
 NONINFRINGEMENT
@@ -185,7 +190,7 @@ onebranch
 oneshot
 opencode
 opensource
-percpu
+PERCPU
 pgpkey
 pgrep
 pidof
@@ -211,10 +216,13 @@ Redist
 refcnt
 registrykey
 relativeurl
+resf
 reuseport
 rgr
 rgs
-ringbuf
+rhel
+RINGBUF
+rockylinux
 rolename
 rootdir
 rpmbuild
@@ -238,6 +246,7 @@ sigid
 SIO
 skc
 sku
+sles
 sln
 smp
 spellright
@@ -251,6 +260,7 @@ stdoutput
 subsecond
 substatus
 Substatuses
+suse
 Swatinem
 SWbem
 sysinfoapi
@@ -327,7 +337,7 @@ wsum
 wyy
 xamarin
 xcopy
-xdp
+XDP
 xfsprogs
 xsi
 xxxx

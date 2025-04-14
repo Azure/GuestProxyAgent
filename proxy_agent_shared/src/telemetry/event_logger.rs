@@ -1,20 +1,17 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::logger_manager;
-use crate::logger_manager::LoggerLevel;
+
+use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::telemetry::Event;
 use concurrent_queue::ConcurrentQueue;
+use log::Level;
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub const INFO_LEVEL: &str = "Informational";
-pub const WARN_LEVEL: &str = "Warning";
-pub const ERROR_LEVEL: &str = "Error";
-pub const CRITICAL_LEVEL: &str = "Critical";
 pub const MAX_MESSAGE_LENGTH: usize = 1024 * 4; // 4KB
 
 static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
@@ -25,7 +22,6 @@ pub async fn start<F, Fut>(
     event_dir: PathBuf,
     mut interval: Duration,
     max_event_file_count: usize,
-    logger_key: &str,
     set_status_fn: F,
 ) where
     F: Fn(String) -> Fut,
@@ -34,11 +30,7 @@ pub async fn start<F, Fut>(
     let message = "Telemetry event logger thread started.";
     set_status_fn(message.to_string());
 
-    logger_manager::log(
-        logger_key.to_string(),
-        LoggerLevel::Information,
-        message.to_string(),
-    );
+    logger_manager::write_log(Level::Info, message.to_string());
 
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {}", e);
@@ -53,11 +45,7 @@ pub async fn start<F, Fut>(
         if EVENT_QUEUE.is_closed() {
             let message = "Event queue already closed, stop processing events.";
             set_status_fn(message.to_string());
-            logger_manager::log(
-                logger_key.to_string(),
-                LoggerLevel::Information,
-                message.to_string(),
-            );
+            logger_manager::write_log(Level::Info, message.to_string());
             break;
         }
         tokio::time::sleep(interval).await;
@@ -66,11 +54,7 @@ pub async fn start<F, Fut>(
             let message = "Stop signal received, exiting the event logger thread.";
             set_status_fn(message.to_string());
 
-            logger_manager::log(
-                logger_key.to_string(),
-                LoggerLevel::Information,
-                message.to_string(),
-            );
+            logger_manager::write_log(Level::Info, message.to_string());
             EVENT_QUEUE.close();
         }
 
@@ -91,7 +75,7 @@ pub async fn start<F, Fut>(
         match misc_helpers::get_files(&event_dir) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
-                    logger_manager::log(logger_key.to_string(), LoggerLevel::Warning,format!(
+                    logger_manager::write_log( Level::Warn,format!(
                         "Event files exceed the max file count {}, drop and skip the write to disk.",
                         max_event_file_count
                     ));
@@ -99,9 +83,8 @@ pub async fn start<F, Fut>(
                 }
             }
             Err(e) => {
-                logger_manager::log(
-                    logger_key.to_string(),
-                    LoggerLevel::Warning,
+                logger_manager::write_log(
+                    Level::Warn,
                     format!("Failed to get event files with error: {}", e),
                 );
             }
@@ -112,9 +95,8 @@ pub async fn start<F, Fut>(
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
         match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
-                logger_manager::log(
-                    logger_key.to_string(),
-                    LoggerLevel::Verbose,
+                logger_manager::write_log(
+                    Level::Trace,
                     format!(
                         "Write events to the file {} successfully",
                         file_path.display()
@@ -122,9 +104,8 @@ pub async fn start<F, Fut>(
                 );
             }
             Err(e) => {
-                logger_manager::log(
-                    logger_key.to_string(),
-                    LoggerLevel::Warning,
+                logger_manager::write_log(
+                    Level::Warn,
                     format!(
                         "Failed to write events to the file {} with error: {}",
                         file_path.display(),
@@ -141,7 +122,7 @@ pub fn stop() {
 }
 
 pub fn write_event(
-    level: &str,
+    level: Level,
     message: String,
     method_name: &str,
     module_name: &str,
@@ -161,18 +142,12 @@ pub fn write_event(
     )) {
         Ok(()) => {
             // wrap file log within event log
-            if level == INFO_LEVEL {
-                logger_manager::log(logger_key, LoggerLevel::Information, message);
-            } else if level == WARN_LEVEL {
-                logger_manager::log(logger_key, LoggerLevel::Warning, message);
-            } else {
-                logger_manager::log(logger_key, LoggerLevel::Error, message);
-            }
+            logger_manager::log(logger_key, level, message);
         }
         Err(e) => {
             logger_manager::log(
                 logger_key,
-                LoggerLevel::Warning,
+                Level::Warn,
                 format!("Failed to push event to the queue with error: {}", e),
             );
         }
@@ -181,7 +156,6 @@ pub fn write_event(
 
 #[cfg(test)]
 mod tests {
-    use crate::logger_manager;
     use crate::misc_helpers;
     use std::env;
     use std::fs;
@@ -194,33 +168,16 @@ mod tests {
         temp_test_path.push(logger_key);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
-
-        let mut log_dir = temp_test_path.to_path_buf();
-        log_dir.push("Logs");
         let mut events_dir: std::path::PathBuf = temp_test_path.to_path_buf();
         events_dir.push("Events");
-        logger_manager::init_logger(
-            logger_key.to_string(), // production code uses 'Agent_Log' to write.
-            log_dir.clone(),
-            logger_key.to_string(),
-            10 * 1024 * 1024,
-            20,
-        )
-        .await;
 
         let cloned_events_dir = events_dir.to_path_buf();
         tokio::spawn(async {
-            super::start(
-                cloned_events_dir,
-                Duration::from_millis(100),
-                3,
-                logger_key,
-                |_| {
-                    async {
-                        // do nothing
-                    }
-                },
-            )
+            super::start(cloned_events_dir, Duration::from_millis(100), 3, |_| {
+                async {
+                    // do nothing
+                }
+            })
             .await;
         });
 
@@ -266,7 +223,7 @@ mod tests {
     async fn write_events(logger_key: &str) {
         for _ in [0; 10] {
             super::write_event(
-                "Informational",
+                log::Level::Info,
                 "This is test event".to_string(),
                 "event_logger_test",
                 "event_logger_test",

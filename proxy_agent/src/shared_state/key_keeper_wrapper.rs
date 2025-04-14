@@ -74,6 +74,13 @@ enum KeyKeeperAction {
     GetImdsRuleId {
         response: oneshot::Sender<String>,
     },
+    GetHostGARuleId {
+        response: oneshot::Sender<String>,
+    },
+    SetHostGARuleId {
+        rule_id: String,
+        response: oneshot::Sender<()>,
+    },
     SetWireServerRules {
         rules: Option<ComputedAuthorizationItem>,
         response: oneshot::Sender<()>,
@@ -86,6 +93,13 @@ enum KeyKeeperAction {
         response: oneshot::Sender<()>,
     },
     GetImdsRules {
+        response: oneshot::Sender<Option<ComputedAuthorizationItem>>,
+    },
+    SetHostGARules {
+        rules: Option<ComputedAuthorizationItem>,
+        response: oneshot::Sender<()>,
+    },
+    GetHostGARules {
         response: oneshot::Sender<Option<ComputedAuthorizationItem>>,
     },
     GetNotify {
@@ -110,10 +124,14 @@ impl KeyKeeperSharedState {
             let mut wireserver_rule_id: String = String::new();
             // The rule ID for the IMDS endpoints
             let mut imds_rule_id: String = String::new();
+            // The rule ID for the HostGA endpoints
+            let mut hostga_rule_id: String = String::new();
             // The authorization rules for the WireServer endpoints
             let mut wireserver_rules: Option<ComputedAuthorizationItem> = None;
             // The authorization rules for the IMDS endpoints
             let mut imds_rules: Option<ComputedAuthorizationItem> = None;
+            // The authorization rules for the HostGAPlugin endpoints
+            let mut hostga_rules: Option<ComputedAuthorizationItem> = None;
 
             let notify = Arc::new(Notify::new());
             loop {
@@ -189,6 +207,23 @@ impl KeyKeeperSharedState {
                             ));
                         }
                     }
+                    Some(KeyKeeperAction::GetHostGARuleId { response }) => {
+                        if let Err(rule_id) = response.send(hostga_rule_id.clone()) {
+                            logger::write_warning(format!(
+                                "Failed to send response to KeyKeeperAction::GetHostGARuleId '{}'",
+                                rule_id
+                            ));
+                        }
+                    }
+                    Some(KeyKeeperAction::SetHostGARuleId { rule_id, response }) => {
+                        hostga_rule_id = rule_id.to_string();
+                        if response.send(()).is_err() {
+                            logger::write_warning(format!(
+                                "Failed to send response to KeyKeeperAction::SetHostGARuleId '{}'",
+                                rule_id
+                            ));
+                        }
+                    }
                     Some(KeyKeeperAction::SetWireServerRules { rules, response }) => {
                         wireserver_rules = rules;
                         if response.send(()).is_err() {
@@ -219,6 +254,23 @@ impl KeyKeeperSharedState {
                         if response.send(imds_rules.clone()).is_err() {
                             logger::write_warning(
                                 "Failed to send response to KeyKeeperAction::GetImdsRules"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    Some(KeyKeeperAction::SetHostGARules { rules, response }) => {
+                        hostga_rules = rules;
+                        if response.send(()).is_err() {
+                            logger::write_warning(
+                                "Failed to send response to KeyKeeperAction::SetHostGARules"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    Some(KeyKeeperAction::GetHostGARules { response }) => {
+                        if response.send(hostga_rules.clone()).is_err() {
+                            logger::write_warning(
+                                "Failed to send response to KeyKeeperAction::GetHostGARules"
                                     .to_string(),
                             );
                         }
@@ -434,6 +486,56 @@ impl KeyKeeperSharedState {
         }
     }
 
+    pub async fn get_hostga_rule_id(&self) -> Result<String> {
+        let (response, receiver) = oneshot::channel();
+        self.0
+            .send(KeyKeeperAction::GetHostGARuleId { response })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "KeyKeeperAction::GetHostGARuleId".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        receiver
+            .await
+            .map_err(|e| Error::RecvError("KeyKeeperAction::GetHostGARuleId".to_string(), e))
+    }
+
+    async fn set_hostga_rule_id(&self, rule_id: String) -> Result<()> {
+        let (response, receiver) = oneshot::channel();
+        self.0
+            .send(KeyKeeperAction::SetHostGARuleId { rule_id, response })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "KeyKeeperAction::SetHostGARuleId".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        receiver
+            .await
+            .map_err(|e| Error::RecvError("KeyKeeperAction::SetHostGARuleId".to_string(), e))
+    }
+
+    /// Update the HostGA rule ID
+    /// # Arguments
+    /// * `rule_id` - String
+    /// # Returns
+    /// * `bool` - true if the rule ID is update successfully
+    /// *        - false if rule ID is the same as the current state  
+    /// * `String` - the rule Id before the update operation
+    /// * `Error` - Error if the rule ID is not read or updated successfully
+    pub async fn update_hostga_rule_id(&self, rule_id: String) -> Result<(bool, String)> {
+        let old_rule_id = self.get_hostga_rule_id().await?;
+        if old_rule_id == rule_id {
+            Ok((false, old_rule_id))
+        } else {
+            self.set_hostga_rule_id(rule_id).await?;
+            Ok((true, old_rule_id))
+        }
+    }
+
     pub async fn set_wireserver_rules(&self, rules: Option<AuthorizationItem>) -> Result<()> {
         let (response, receiver) = oneshot::channel();
         self.0
@@ -496,6 +598,35 @@ impl KeyKeeperSharedState {
         receiver
             .await
             .map_err(|e| Error::RecvError("KeyKeeperAction::GetImdsRules".to_string(), e))
+    }
+
+    pub async fn set_hostga_rules(&self, rules: Option<AuthorizationItem>) -> Result<()> {
+        let (response, receiver) = oneshot::channel();
+        self.0
+            .send(KeyKeeperAction::SetHostGARules {
+                rules: rules.map(ComputedAuthorizationItem::from_authorization_item),
+                response,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError("KeyKeeperAction::SetHostGARules".to_string(), e.to_string())
+            })?;
+        receiver
+            .await
+            .map_err(|e| Error::RecvError("KeyKeeperAction::SetHostGARules".to_string(), e))
+    }
+
+    pub async fn get_hostga_rules(&self) -> Result<Option<ComputedAuthorizationItem>> {
+        let (response, receiver) = oneshot::channel();
+        self.0
+            .send(KeyKeeperAction::GetHostGARules { response })
+            .await
+            .map_err(|e| {
+                Error::SendError("KeyKeeperAction::GetHostGARules".to_string(), e.to_string())
+            })?;
+        receiver
+            .await
+            .map_err(|e| Error::RecvError("KeyKeeperAction::GetHostGARules".to_string(), e))
     }
 
     pub async fn get_notify(&self) -> Result<Arc<Notify>> {

@@ -58,6 +58,7 @@
 use crate::common::logger;
 use crate::common::result::Result;
 use crate::{common::error::Error, proxy::proxy_summary::ProxySummary};
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     ModuleState, ProxyAgentDetailStatus, ProxyConnectionSummary,
 };
@@ -121,6 +122,7 @@ pub enum AgentStatusModule {
     TelemetryLogger,
     Redirector,
     ProxyServer,
+    ProxyAgentStatus,
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +142,8 @@ impl AgentStatusSharedState {
             let mut redirector_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
             let mut proxy_server_state = ModuleState::UNKNOWN;
             let mut proxy_server_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
+            let mut proxy_agent_status_state = ModuleState::UNKNOWN;
+            let mut proxy_agent_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
 
             // The proxy connection summary from the proxy
             let mut proxy_summary: HashMap<String, ProxyConnectionSummary> = HashMap::new();
@@ -194,6 +198,13 @@ impl AgentStatusSharedState {
                                     proxy_server_status_message = message;
                                 }
                             }
+                            AgentStatusModule::ProxyAgentStatus => {
+                                if proxy_agent_status_message == message {
+                                    updated = false;
+                                } else {
+                                    proxy_agent_status_message = message;
+                                }
+                            }
                         }
                         if response.send(updated).is_err() {
                             logger::write_warning(format!("Failed to send response to AgentStatusAction::SetStatusMessage for module {:?}", module));
@@ -210,6 +221,9 @@ impl AgentStatusSharedState {
                             }
                             AgentStatusModule::Redirector => redirector_status_message.clone(),
                             AgentStatusModule::ProxyServer => proxy_server_status_message.clone(),
+                            AgentStatusModule::ProxyAgentStatus => {
+                                proxy_agent_status_message.clone()
+                            }
                         };
                         if let Err(message) = response.send(message) {
                             logger::write_warning(format!(
@@ -239,6 +253,9 @@ impl AgentStatusSharedState {
                             AgentStatusModule::ProxyServer => {
                                 proxy_server_state = state.clone();
                             }
+                            AgentStatusModule::ProxyAgentStatus => {
+                                proxy_agent_status_state = state.clone();
+                            }
                         }
                         if let Err(state) = response.send(state) {
                             logger::write_warning(format!("Failed to send response to AgentStatusAction::SetState '{:?}' for module '{:?}'", state, module));
@@ -251,6 +268,7 @@ impl AgentStatusSharedState {
                             AgentStatusModule::TelemetryLogger => telemetry_logger_state.clone(),
                             AgentStatusModule::Redirector => redirector_state.clone(),
                             AgentStatusModule::ProxyServer => proxy_server_state.clone(),
+                            AgentStatusModule::ProxyAgentStatus => proxy_agent_status_state.clone(),
                         };
                         if let Err(state) = response.send(state) {
                             logger::write_warning(format!(
@@ -535,7 +553,7 @@ impl AgentStatusSharedState {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
             .send(AgentStatusAction::SetStatusMessage {
-                message,
+                message: message.to_string(),
                 module: module.clone(),
                 response: response_tx,
             })
@@ -546,12 +564,24 @@ impl AgentStatusSharedState {
                     e.to_string(),
                 )
             })?;
-        response_rx.await.map_err(|e| {
+        let update = response_rx.await.map_err(|e| {
             Error::RecvError(
                 format!("AgentStatusAction::SetStatusMessage ({:?})", module),
                 e,
             )
-        })
+        })?;
+
+        // Log the event if the status message is updated
+        if update {
+            event_logger::write_event(
+                LoggerLevel::Warn,
+                message,
+                "set_module_status_message",
+                &format!("{:?}", module),
+                logger::AGENT_LOGGER_KEY,
+            );
+        }
+        Ok(update)
     }
 
     pub async fn get_module_status(&self, module: AgentStatusModule) -> ProxyAgentDetailStatus {
@@ -574,7 +604,7 @@ impl AgentStatusSharedState {
         };
         if message.len() > MAX_STATUS_MESSAGE_LENGTH {
             event_logger::write_event(
-                event_logger::WARN_LEVEL,
+                LoggerLevel::Warn,
                 format!(
                     "Status message is too long, truncating to {} characters. Message: {}",
                     MAX_STATUS_MESSAGE_LENGTH, message

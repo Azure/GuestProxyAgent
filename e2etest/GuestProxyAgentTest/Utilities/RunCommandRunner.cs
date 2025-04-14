@@ -18,24 +18,25 @@ namespace GuestProxyAgentTest.Utilities
         /// </summary>
         /// <param name="vmr">virtual machine resource, used to specify the azure virtual machine instance</param>
         /// <param name="runCommandSettingBuilder">builder for run command setting</param>
+        /// <param name="cancellationToken">cancellation token</param>
         /// <param name="runCommandParameterSetter">parameter setter for the run command script</param>
         /// <returns></returns>
         public static async Task<RunCommandOutputDetails> ExecuteRunCommandOnVM(VirtualMachineResource vmr
             , RunCommandSettingBuilder runCommandSettingBuilder
+            , CancellationToken cancellationToken
             , Func<RunCommandSettingBuilder, RunCommandSettingBuilder> runCommandParameterSetter = null!)
         {
             var vmrcs = vmr.GetVirtualMachineRunCommands();
             Console.WriteLine("Creating runcommand on vm.");
 
-            if(null != runCommandParameterSetter)
+            if (null != runCommandParameterSetter)
             {
                 runCommandSettingBuilder = runCommandParameterSetter(runCommandSettingBuilder);
             }
 
             var runCommandSetting = runCommandSettingBuilder.Build();
 
-            await vmrcs.CreateOrUpdateAsync(WaitUntil.Completed, runCommandSetting.runCommandName, toVMRunCommandData(runCommandSetting));
-            
+            await vmrcs.CreateOrUpdateAsync(WaitUntil.Completed, runCommandSetting.runCommandName, toVMRunCommandData(runCommandSetting), cancellationToken: cancellationToken);
             var iv = vmrcs.Get(runCommandSetting.runCommandName, "InstanceView").Value.Data.InstanceView;
             return new RunCommandOutputDetails
             {
@@ -59,13 +60,11 @@ namespace GuestProxyAgentTest.Utilities
                 OutputBlobUri = new Uri(runCommandSetting.outputBlobSAS),
                 ErrorBlobUri = new Uri(runCommandSetting.errorBlobSAS),
             };
-            foreach(var x in runCommandSetting.runCommandParameters.Select(kv => new RunCommandInputParameter(kv.Key, kv.Value)))
+            foreach (var x in runCommandSetting.runCommandParameters.Select(kv => new RunCommandInputParameter(kv.Key, kv.Value)))
             {
                 res.Parameters.Add(x);
             }
             return res;
         }
     }
-
-    
 };

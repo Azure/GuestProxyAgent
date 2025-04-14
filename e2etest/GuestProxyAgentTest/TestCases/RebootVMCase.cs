@@ -27,9 +27,9 @@ namespace GuestProxyAgentTest.TestCases
             };
 
             var vmr = context.VirtualMachineResource;
-            await vmr.RestartAsync(Azure.WaitUntil.Completed);
             try
             {
+                await vmr.RestartAsync(Azure.WaitUntil.Completed, cancellationToken: context.CancellationToken);
                 var iv = await vmr.InstanceViewAsync();
                 context.TestResultDetails = new TestCaseResultDetails
                 {
@@ -50,7 +50,7 @@ namespace GuestProxyAgentTest.TestCases
             var startTime = DateTime.UtcNow;
             while (true)
             {
-                var instanceView = await vmr.InstanceViewAsync();
+                var instanceView = await vmr.InstanceViewAsync(cancellationToken: context.CancellationToken);
                 if (instanceView?.Value?.Statuses?.Count > 0 && (instanceView.Value.Statuses[0].DisplayStatus == "Provisioning succeeded"
                     || instanceView.Value.Statuses[0].DisplayStatus == "VM running"))
                 {

@@ -1,22 +1,23 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::common::cli;
 use proxy_agent_shared::{
-    logger_manager::{self, LoggerLevel},
+    logger::{logger_manager, LoggerLevel},
     misc_helpers,
 };
 
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";
 
 pub fn write(message: String) {
-    log(LoggerLevel::Verbose, message);
+    log(LoggerLevel::Trace, message);
 }
 
 pub fn write_information(message: String) {
-    log(LoggerLevel::Information, message);
+    log(LoggerLevel::Info, message);
 }
 
 pub fn write_warning(message: String) {
-    log(LoggerLevel::Warning, message);
+    log(LoggerLevel::Warn, message);
 }
 
 pub fn write_error(message: String) {
@@ -24,18 +25,22 @@ pub fn write_error(message: String) {
 }
 
 fn log(log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Verbose {
+    if log_level != LoggerLevel::Trace {
         write_console_log(message.to_string());
     };
     logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
 }
 
 pub fn write_console_log(message: String) {
-    println!(
-        "{} {}",
-        misc_helpers::get_date_time_string_with_milliseconds(),
-        message
-    );
+    if cli::CLI.is_console_mode() {
+        println!(
+            "{} {}",
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            message
+        );
+    } else {
+        println!("{}", message);
+    }
 }
 
 #[cfg(not(windows))]

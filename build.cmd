@@ -7,6 +7,7 @@ set Configuration=%1
 Set Target=%2
 set CleanBuild=%3
 set ContinueAtConvertBpfToNative=%4
+set out_path=%5
 if "%Configuration%"=="" (SET Configuration=debug)
 echo Configuration=%Configuration%
 
@@ -15,22 +16,17 @@ Set build_target=x86_64-pc-windows-msvc
 if "%Target%"=="arm64" (
     Set build_target=aarch64-pc-windows-msvc
     SET eBPF_Platform="arm64"
-    
-    REM Install the latest Windows Driver Kit (WDK) NuGet packages
-    nuget.exe install Microsoft.Windows.WDK.arm64 -Version 10.0.26100.2454
 ) else (
     Set build_target=x86_64-pc-windows-msvc
     Set Target=amd64
-    REM Install the latest Windows Driver Kit (WDK) NuGet packages
-    nuget.exe install Microsoft.Windows.WDK.x64 -Version 10.0.26100.2454
 )
-SET out_path=%root_path%out
+if "%out_path%"=="" (SET out_path=%root_path%out)
 SET out_dir=%out_path%\%build_target%\%Configuration%
 echo out_path=%out_path%
 echo out_dir=%out_dir%
 
-SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\bin
-SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.17.1\build\native\include
+SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.0.19.2\build\native\bin
+SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.0.19.2\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 
 if "%CleanBuild%"=="clean" (
@@ -48,9 +44,16 @@ if  %ERRORLEVEL% NEQ 0 (
     echo call nuget restore with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
+if "%Target%"=="arm64" (
+    REM Install the latest Windows Driver Kit (WDK) NuGet packages
+    nuget.exe install Microsoft.Windows.WDK.arm64 -Version 10.0.26100.2454
+) else (
+    REM Install the latest Windows Driver Kit (WDK) NuGet packages
+    nuget.exe install Microsoft.Windows.WDK.x64 -Version 10.0.26100.2454
+)
 
 echo ======= rustup update to a particular version of the Rust toolchain
-SET rustup_version=1.80.0
+SET rustup_version=1.85.0
 call rustup update %rustup_version%
 REM This command sets a specific Rust toolchain version for the current directory. 
 REM It means that whenever you are in this directory, Rust commands will use the specified toolchain version, regardless of the global default.
@@ -72,8 +75,8 @@ xcopy /Y %root_path%\Setup\Windows\*.* %out_package_dir%\
 
 echo ======= build ebpf program
 SET ebpf_path=%root_path%\ebpf
-echo call clang -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
-call clang -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
+echo call clang -I"%ebpf_path%" -I "%eBPF_for_Windows_inc_path%" -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
+call clang -I"%ebpf_path%" -I "%eBPF_for_Windows_inc_path%" -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
 if  %ERRORLEVEL% NEQ 0 (
     echo call clang failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -132,8 +135,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configuration%\
 
     echo ======= run rust proxy_agent_shared tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     if  %ERRORLEVEL% NEQ 0 (
         echo call cargo test proxy_agent_shared with exit-code: %errorlevel%
         exit /b %errorlevel%
@@ -165,8 +168,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 
     echo ======= run rust proxy_agent tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     if  %ERRORLEVEL% NEQ 0 (
         echo call cargo test proxy_agent with exit-code: %errorlevel%
         exit /b %errorlevel%
@@ -194,8 +197,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Configuration%\
 
     echo ======= run rust proxy_agent_extension tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     if  %ERRORLEVEL% NEQ 0 (
         echo call cargo test proxy_agent_extension with exit-code: %errorlevel%
         exit /b %errorlevel%

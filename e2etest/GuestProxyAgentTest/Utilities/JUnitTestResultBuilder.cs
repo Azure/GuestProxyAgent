@@ -26,7 +26,6 @@ namespace GuestProxyAgentTest.Utilities
             this.testResultFolder = testResultFolder;
         }
 
-        
         /// <summary>
         /// Add success test result, it will merge stdoutput with customoutput.
         /// </summary>
@@ -123,7 +122,7 @@ namespace GuestProxyAgentTest.Utilities
                     testsuites.AppendChild(testSuiteElement);
                     testSuiteMap[testScenarioName] = (doc, testSuiteElement);
                 }
-                doc = testSuiteMap[testScenarioName].Item1; 
+                doc = testSuiteMap[testScenarioName].Item1;
                 var testSuite = testSuiteMap[testScenarioName].Item2;
                 testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
                 testSuite.SetAttribute("failures", StringAdd(testSuite.GetAttribute("failures"), 1));
@@ -131,7 +130,7 @@ namespace GuestProxyAgentTest.Utilities
                 XmlElement failedTestCaseElement = doc.CreateElement("testcase");
                 failedTestCaseElement.SetAttribute("name", testName);
                 failedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
-                failedTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds/1000).ToString());
+                failedTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds / 1000).ToString());
                 testSuite.AppendChild(failedTestCaseElement);
 
                 XmlElement systemOutElement = doc.CreateElement("system-out");
@@ -157,6 +156,43 @@ namespace GuestProxyAgentTest.Utilities
             return this;
         }
 
+        public JunitTestResultBuilder AddAbortedTestResult(string testScenarioName, string testName, string message)
+        {
+            lock (this)
+            {
+                XmlDocument doc = null!;
+                if (!testSuiteMap.ContainsKey(testScenarioName))
+                {
+                    doc = new XmlDocument();
+                    var testsuites = doc.CreateElement("testsuites");
+                    doc.AppendChild(testsuites);
+                    XmlElement testSuiteElement = doc.CreateElement("testsuite");
+                    testSuiteElement.SetAttribute("name", testGroupName + "." + testScenarioName);
+                    testSuiteElement.SetAttribute("tests", "0");
+                    testSuiteElement.SetAttribute("errors", "0");
+                    testSuiteElement.SetAttribute("failures", "0");
+                    testSuiteElement.SetAttribute("skipped", "0");
+                    testSuiteElement.SetAttribute("timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss"));
+                    testsuites.AppendChild(testSuiteElement);
+                    testSuiteMap[testScenarioName] = (doc, testSuiteElement);
+                }
+                doc = testSuiteMap[testScenarioName].Item1;
+                var testSuite = testSuiteMap[testScenarioName].Item2;
+                testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
+                testSuite.SetAttribute("skipped", StringAdd(testSuite.GetAttribute("skipped"), 1));
+                XmlElement abortedTestCaseElement = doc.CreateElement("testcase");
+                abortedTestCaseElement.SetAttribute("name", testName);
+                abortedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
+                abortedTestCaseElement.SetAttribute("time", "0");
+                testSuite.AppendChild(abortedTestCaseElement);
+                XmlElement abortedElement = doc.CreateElement("skipped");
+                abortedElement.SetAttribute("message", "Test case aborted.");
+                abortedElement.InnerText = message;
+                abortedTestCaseElement.AppendChild(abortedElement);
+            }
+            return this;
+        }
+
         /// <summary>
         /// build and save the test result to file
         /// </summary>
@@ -164,7 +200,7 @@ namespace GuestProxyAgentTest.Utilities
         public List<string> Build()
         {
             List<string> result = new List<string>();
-            foreach(KeyValuePair<string, (XmlDocument, XmlElement)> kv in testSuiteMap)
+            foreach (KeyValuePair<string, (XmlDocument, XmlElement)> kv in testSuiteMap)
             {
                 var doc = kv.Value.Item1;
                 var resultPath = Path.Combine(this.testResultGroupFolder, kv.Key + "-TestResults.xml");

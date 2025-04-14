@@ -51,10 +51,15 @@ use crate::common::error::Error;
 use crate::common::helpers;
 use crate::common::result::Result;
 use crate::common::{config, logger};
+use crate::provision;
 use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
+use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
+use crate::shared_state::SharedState;
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
@@ -62,6 +67,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(not(windows))]
 pub use linux::BpfObject;
@@ -103,27 +109,43 @@ pub struct Redirector {
     redirector_shared_state: RedirectorSharedState,
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
+    cancellation_token: CancellationToken,
+    telemetry_shared_state: TelemetrySharedState,
+    provision_shared_state: ProvisionSharedState,
 }
 
 impl Redirector {
-    pub fn new(
-        local_port: u16,
-        redirector_shared_state: RedirectorSharedState,
-        key_keeper_shared_state: KeyKeeperSharedState,
-        agent_status_shared_state: AgentStatusSharedState,
-    ) -> Self {
+    pub fn new(local_port: u16, shared_state: &SharedState) -> Self {
         Redirector {
             local_port,
-            redirector_shared_state,
-            key_keeper_shared_state,
-            agent_status_shared_state,
+            cancellation_token: shared_state.get_cancellation_token(),
+            key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
+            telemetry_shared_state: shared_state.get_telemetry_shared_state(),
+            provision_shared_state: shared_state.get_provision_shared_state(),
+            agent_status_shared_state: shared_state.get_agent_status_shared_state(),
+            redirector_shared_state: shared_state.get_redirector_shared_state(),
         }
     }
 
+    const MAX_RETRIES: usize = 5;
+    const RETRY_INTERVAL_MS: u64 = 10;
+
     pub async fn start(&self) {
+        let message = "eBPF redirector is starting";
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
+            .await
+        {
+            logger::write_error(format!(
+                "Failed to set error status '{}' for redirector: {}",
+                message, e
+            ));
+        }
+
         let level = match self.start_impl().await {
-            Ok(_) => event_logger::INFO_LEVEL,
-            Err(_) => event_logger::ERROR_LEVEL,
+            Ok(_) => LoggerLevel::Info,
+            Err(_) => LoggerLevel::Error,
         };
         event_logger::write_event(
             level,
@@ -135,12 +157,7 @@ impl Redirector {
     }
 
     async fn start_impl(&self) -> Result<()> {
-        #[cfg(windows)]
-        {
-            self.initialized()?;
-        }
-
-        for _ in 0..5 {
+        for _ in 0..Self::MAX_RETRIES {
             match self.start_internal().await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
@@ -148,13 +165,18 @@ impl Redirector {
                         .await;
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(Self::RETRY_INTERVAL_MS)).await;
         }
 
         Err(Error::Bpf(BpfErrorType::FailedToStartRedirector))
     }
 
     async fn start_internal(&self) -> Result<()> {
+        #[cfg(windows)]
+        {
+            self.initialized()?;
+        }
+
         let mut bpf_object = self.load_bpf_object()?;
 
         logger::write_information("Success loaded bpf object.".to_string());
@@ -250,6 +272,16 @@ impl Redirector {
             logger::write_error(format!("Failed to set module state in shared state: {e}"));
         }
 
+        // report redirector ready for provision
+        provision::redirector_ready(
+            self.cancellation_token.clone(),
+            self.key_keeper_shared_state.clone(),
+            self.telemetry_shared_state.clone(),
+            self.provision_shared_state.clone(),
+            self.agent_status_shared_state.clone(),
+        )
+        .await;
+
         Ok(())
     }
 
@@ -258,14 +290,6 @@ impl Redirector {
             .get_module_status(AgentStatusModule::Redirector)
             .await
             .message
-    }
-
-    pub async fn is_started(&self) -> bool {
-        self.agent_status_shared_state
-            .get_module_status(AgentStatusModule::Redirector)
-            .await
-            .status
-            == ModuleState::RUNNING
     }
 
     async fn set_error_status(&self, message: String) {
@@ -279,13 +303,6 @@ impl Redirector {
                 message, e
             ));
         }
-        event_logger::write_event(
-            event_logger::ERROR_LEVEL,
-            message,
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
     }
 }
 
@@ -419,6 +436,11 @@ pub use windows::update_imds_redirect_policy;
 pub use linux::update_wire_server_redirect_policy;
 #[cfg(windows)]
 pub use windows::update_wire_server_redirect_policy;
+
+#[cfg(not(windows))]
+pub use linux::update_hostga_redirect_policy;
+#[cfg(windows)]
+pub use windows::update_hostga_redirect_policy;
 
 #[cfg(test)]
 mod tests {
