@@ -27,7 +27,14 @@ use std::time::Duration;
 /// service::start_service(shared_state).await;
 /// ```
 pub async fn start_service(shared_state: SharedState) {
-    setup_loggers(config::get_logs_dir(), config::get_file_log_level());
+    let log_folder = config::get_logs_dir();
+    if log_folder == PathBuf::from("") {
+        logger::write_console_log(
+            "The log folder is not set, skip write to GPA managed file log.".to_string(),
+        );
+    } else {
+        setup_loggers(log_folder, config::get_file_log_level());
+    }
 
     let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}({}), elapsed: {}",

@@ -88,8 +88,8 @@ use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::telemetry::event_reader::EventReader;
 use proxy_agent_shared::logger::LoggerLevel;
-use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -378,7 +378,7 @@ pub async fn start_event_threads(
     tokio::spawn({
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
-            config::get_logs_dir(),
+            PathBuf::from(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FOLDER),
             cancellation_token.clone(),
             key_keeper_shared_state.clone(),
             agent_status_shared_state.clone(),

@@ -37,14 +37,6 @@ impl RollingLogger {
         }
     }
 
-    fn get_log_header(severity: &str) -> String {
-        format!(
-            "{} {}",
-            misc_helpers::get_date_time_string_with_milliseconds(),
-            severity
-        )
-    }
-
     fn open_file(&self) -> Result<LineWriter<File>> {
         misc_helpers::try_create_folder(&self.log_dir)?;
 
@@ -58,10 +50,25 @@ impl RollingLogger {
         Ok(LineWriter::new(f))
     }
 
+    /// write a message to the log file, and roll the log file if needed
+    /// the message will be prefixed with the log level and timestamp
     pub fn write(&self, level: Level, message: String) -> Result<()> {
-        let log_header = Self::get_log_header(&format!("[{}]    ", level))[..34].to_string();
-        let message = format!("{}{}", log_header, message);
+        let message = format!("{}{}", crate::logger::get_log_header(level), message);
         self.write_line(message)
+    }
+
+    /// write list of messages to the log file, and roll the log file if needed
+    pub fn write_many(&self, messages: Vec<String>) -> Result<()> {
+        self.roll_if_needed()?;
+
+        if let Ok(mut writer) = self.open_file() {
+            for message in messages {
+                writer.write_all(message.as_bytes())?;
+                writer.write_all(b"\n")?;
+            }
+            writer.flush()?;
+        }
+        Ok(())
     }
 
     fn write_line(&self, message: String) -> Result<()> {

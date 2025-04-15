@@ -33,6 +33,16 @@ impl Default for BpfObject {
 // Redirector implementation for Windows platform
 impl super::Redirector {
     pub fn initialized(&self) -> Result<()> {
+        // Add retry logic to load the eBPF API
+        // This is a workaround for the issue where the eBPF API is not loaded properly
+        for _ in 0..Self::MAX_RETRIES {
+            if bpf_api::try_load_ebpf_api() {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(Self::RETRY_INTERVAL_MS));
+        }
+
+        // If the eBPF API is still not loaded, last retry and return error if it fails
         if !bpf_api::try_load_ebpf_api() {
             return Err(Error::Bpf(BpfErrorType::GetBpfApi));
         }

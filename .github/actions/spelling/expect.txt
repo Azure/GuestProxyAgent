@@ -3,6 +3,7 @@ AAFFBB
 aarch
 abe
 addrpair
+almalinux
 ATL
 ATLMFC
 autobuild
@@ -24,6 +25,7 @@ Bufs
 BUILDIN
 buildroot
 buildshell
+byos
 cacheline
 cbl
 ccbdee
@@ -98,6 +100,7 @@ fffi
 ffi
 FIXEDFILEINFO
 FOF
+FSETID
 FSO
 fsprogs
 fstorage
@@ -138,6 +141,7 @@ jobsjob
 joutvhu
 JScript
 keyonly
+kinvolk
 kotlin
 kprobe
 ktime
@@ -162,6 +166,7 @@ metabuild
 MFC
 microsoftcblmariner
 microsoftlosangeles
+mnt
 msasn
 msp
 msrc
@@ -213,10 +218,13 @@ Redist
 refcnt
 registrykey
 relativeurl
+resf
 reuseport
 rgr
 rgs
+rhel
 RINGBUF
+rockylinux
 rolename
 rootdir
 rpmbuild
@@ -234,12 +242,15 @@ schtasks
 scm
 secauthz
 serice
+SETFCAP
+SETPCAP
 shd
 sids
 sigid
 SIO
 skc
 sku
+sles
 sln
 smp
 spellright
@@ -253,6 +264,8 @@ stdoutput
 subsecond
 substatus
 Substatuses
+SUIDSGID
+suse
 Swatinem
 SWbem
 sysinfoapi
@@ -271,6 +284,7 @@ thiserror
 timedout
 timeup
 tlsv
+tmpfs
 tokio
 topdir
 totalentries

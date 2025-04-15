@@ -37,6 +37,14 @@ pub fn set_logger_level(log_level: Level) {
     MAX_LOG_LEVEL.set(log_level).unwrap();
 }
 
+pub fn get_logger_level() -> Level {
+    let level = match MAX_LOG_LEVEL.get() {
+        Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
+        None => Level::Trace,
+    };
+    level
+}
+
 fn get_logger(logger_key: Option<String>) -> Option<&'static RollingLogger> {
     if let Some(loggers) = LOGGERS.get() {
         let key = match logger_key {
@@ -49,11 +57,7 @@ fn get_logger(logger_key: Option<String>) -> Option<&'static RollingLogger> {
 }
 
 pub fn log(logger_key: String, log_level: Level, message: String) {
-    let level = match MAX_LOG_LEVEL.get() {
-        Some(l) => *l, // No need to use `clone` on type `Level` which implements the `Copy` trait
-        None => Level::Trace,
-    };
-    if log_level > level {
+    if log_level > get_logger_level() {
         return;
     }
 
@@ -90,6 +94,14 @@ pub fn write_warn(message: String) {
 
 pub fn write_err(message: String) {
     write_log(Level::Error, message);
+}
+
+pub fn write_many(logger_key: Option<String>, messages: Vec<String>) {
+    if let Some(logger) = get_logger(logger_key) {
+        if let Err(e) = logger.write_many(messages) {
+            eprintln!("Error writing to log: {}", e);
+        }
+    }
 }
 
 #[cfg(test)]
