@@ -7,11 +7,6 @@ pub const PLUGIN_FAILED_AUTH_NAME: &str = "ProxyAgentFailedAuthenticationSummary
 pub const HANDLER_ENVIRONMENT_FILE: &str = "HandlerEnvironment.json";
 pub const HANDLER_LOG_FILE: &str = "ProxyAgentExtension.log";
 pub const SERVICE_LOG_FILE: &str = "ProxyAgentExtensionService.log";
-#[cfg(windows)]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FILE: &str =
-    "C:\\WindowsAzure\\ProxyAgent\\Logs\\status.json";
-#[cfg(not(windows))]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FILE: &str = "/var/log/azure-proxy-agent/status.json";
 pub const EXTENSION_SERVICE_NAME: &str = "GuestProxyAgentVMExtension";
 #[cfg(not(windows))]
 pub const EXTENSION_PROCESS_NAME: &str = "ProxyAgentExt";
@@ -66,12 +61,6 @@ pub const EXIT_CODE_UPDATE_TO_VERSION_ENV_VAR_NOTFOUND: i32 = 9;
 pub const EXIT_CODE_WRITE_CURRENT_SEQ_NO_ERROR: i32 = 10;
 
 pub const MIN_SUPPORTED_OS_BUILD: u32 = 17763;
-#[cfg(not(windows))]
-pub const MIN_SUPPORTED_MARINER_OS_BUILD: u32 = 2;
-#[cfg(not(windows))]
-pub const MIN_SUPPORTED_UBUNTU_OS_BUILD: u32 = 22;
-#[cfg(not(windows))]
-pub const MIN_SUPPORTED_AZURE_LINUX_OS_BUILD: u32 = 3;
 
 pub const STATE_KEY_READ_PROXY_AGENT_STATUS_FILE: &str = "ReadProxyAgentStatusFile";
 pub const STATE_KEY_FILE_VERSION: &str = "FileVersion";
@@ -82,3 +71,18 @@ pub const EBPF_SUBSTATUS_NAME: &str = "EbpfStatus";
 
 pub const MAX_CONNECTION_SUMMARY_LEN: usize = 100;
 pub const MAX_FAILED_AUTH_SUMMARY_LEN: usize = 50;
+
+#[cfg(not(windows))]
+pub mod linux {
+    pub const MIN_SUPPORTED_MARINER_OS_VERSION_MAJOR: u32 = 2;
+    pub const MIN_SUPPORTED_UBUNTU_OS_VERSION_MAJOR: u32 = 20;
+    pub const MIN_SUPPORTED_AZURE_LINUX_OS_VERSION_MAJOR: u32 = 3;
+
+    pub const RED_HAT_OS_NAME: &str = "red hat enterprise linux";
+    pub const MIN_RED_HAT_OS_VERSION_MAJOR: u32 = 9;
+    pub const ROCKY_OS_NAME: &str = "rocky linux";
+    pub const MIN_ROCKY_OS_VERSION_MAJOR: u32 = 9;
+    pub const SUSE_OS_NAME: &str = "suse linux enterprise server";
+    pub const MIN_SUSE_OS_VERSION_MAJOR: u32 = 15;
+    pub const MIN_SUSE_OS_VERSION_MINOR: u32 = 4;
+}

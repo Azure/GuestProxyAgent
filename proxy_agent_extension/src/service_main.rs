@@ -5,8 +5,9 @@ use crate::constants;
 use crate::logger;
 use crate::structs::*;
 use proxy_agent_shared::logger::LoggerLevel;
-use proxy_agent_shared::proxy_agent_aggregate_status::GuestProxyAgentAggregateStatus;
-use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
+use proxy_agent_shared::proxy_agent_aggregate_status::{
+    self, GuestProxyAgentAggregateStatus, ProxyConnectionSummary,
+};
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use service_state::ServiceState;
@@ -317,7 +318,8 @@ fn report_proxy_agent_aggregate_status(
     service_state: &mut ServiceState,
 ) {
     let aggregate_status_file_path =
-        PathBuf::from(constants::PROXY_AGENT_AGGREGATE_STATUS_FILE.to_string());
+        PathBuf::from(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FOLDER)
+            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
 
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
     match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(

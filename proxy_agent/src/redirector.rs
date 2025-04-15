@@ -127,6 +127,9 @@ impl Redirector {
         }
     }
 
+    const MAX_RETRIES: usize = 5;
+    const RETRY_INTERVAL_MS: u64 = 10;
+
     pub async fn start(&self) {
         let message = "eBPF redirector is starting";
         if let Err(e) = self
@@ -154,7 +157,7 @@ impl Redirector {
     }
 
     async fn start_impl(&self) -> Result<()> {
-        for _ in 0..5 {
+        for _ in 0..Self::MAX_RETRIES {
             match self.start_internal().await {
                 Ok(_) => return Ok(()),
                 Err(e) => {
@@ -162,7 +165,7 @@ impl Redirector {
                         .await;
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(Self::RETRY_INTERVAL_MS)).await;
         }
 
         Err(Error::Bpf(BpfErrorType::FailedToStartRedirector))
@@ -300,13 +303,6 @@ impl Redirector {
                 message, e
             ));
         }
-        event_logger::write_event(
-            LoggerLevel::Error,
-            message,
-            "start",
-            "redirector",
-            logger::AGENT_LOGGER_KEY,
-        );
     }
 }
 
