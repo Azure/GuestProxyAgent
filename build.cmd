@@ -28,10 +28,7 @@ echo out_dir=%out_dir%
 REM Set the path to the eBPF-for-Windows binaries and include files,
 REM We build ARM64 binaries on x64 machine, so we need to set the path to the x64 binaries
 SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.x64.0.21.0\build\native\bin
-REM Set the path to the eBPF-for-Windows include files, no changes in ARM64 and x64,
-REM so we use the x64 include files for both building ARM64 and x64
-REM if ARM64 has different include files, we need to set the path to the ARM64 include files later
-SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.x64.0.21.0\build\native\include
+SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.%eBPF_Platform%.0.21.0\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 
 if "%CleanBuild%"=="clean" (
