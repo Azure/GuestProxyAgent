@@ -34,6 +34,7 @@ features = [
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",
   "Win32_System_SystemInformation",
+  "Win32_Storage_FileSystem",
 ]
 
 [target.'cfg(not(windows))'.dependencies]
