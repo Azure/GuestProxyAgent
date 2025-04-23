@@ -76,7 +76,6 @@ fn init_ebpf_lib() -> Option<Library> {
                             "redirector",
                             logger::AGENT_LOGGER_KEY,
                         );
-                        return None;
                     }
                 }
             }
