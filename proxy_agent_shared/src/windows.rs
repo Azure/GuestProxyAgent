@@ -278,7 +278,6 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     }
 
     // get VS_FIXEDFILEINFO
-    // Ref: https://learn.microsoft.com/en-us/windows/win32/api/version/ns-version-vs_fixedfileinfo
     let mut fixed_file_info = MaybeUninit::<VS_FIXEDFILEINFO>::uninit();
     let mut fixed_file_info_size = 0;
     let result = unsafe {

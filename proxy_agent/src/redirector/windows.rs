@@ -54,7 +54,7 @@ impl super::Redirector {
 
         if let Some(ebpf_api_version) = bpf_api::get_ebpf_api_version() {
             // eBPF program has to work with the same version of eBPF API if windows eBPF had break changes
-            // our latest eBPF program may not work with the older version of winodws eBPF API
+            // our latest eBPF program may not work with the older version of windows eBPF API
             // in some cases, the windows eBPF may not able, or be allowed to update,
             // so we need to load the eBPF program with the same version of eBPF API
             let file_ext = bpf_file_path.extension().unwrap_or_default();
