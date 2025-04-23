@@ -18,7 +18,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "windows-service",
- "windows-sys 0.42.0",
  "winres",
 ]
 

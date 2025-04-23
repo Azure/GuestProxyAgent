@@ -11,7 +11,10 @@ use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_sys::Win32::Storage::FileSystem::{
-    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    GetFileVersionInfoSizeW, // version.dll
+    GetFileVersionInfoW,
+    VerQueryValueW,
+    VS_FIXEDFILEINFO,
 };
 use windows_sys::Win32::System::SystemInformation::SYSTEM_INFO;
 use winreg::enums::*;
@@ -278,7 +281,7 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     }
 
     // get VS_FIXEDFILEINFO
-    let mut fixed_file_info = MaybeUninit::<VS_FIXEDFILEINFO>::uninit();
+    let mut fixed_file_info = MaybeUninit::<*mut VS_FIXEDFILEINFO>::uninit();
     let mut fixed_file_info_size = 0;
     let result = unsafe {
         VerQueryValueW(
@@ -307,11 +310,11 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     }
 
     // get the product version from VS_FIXEDFILEINFO
-    let fixed_file_info = unsafe { fixed_file_info.assume_init() };
-    let major = fixed_file_info.dwFileVersionMS >> 16;
-    let minor = fixed_file_info.dwFileVersionMS & 0xFFFF;
-    let build = fixed_file_info.dwFileVersionLS >> 16;
-    let revision = fixed_file_info.dwFileVersionLS & 0xFFFF;
+    let fixed_file_info = unsafe { *fixed_file_info.assume_init() };
+    let major = fixed_file_info.dwProductVersionMS >> 16;
+    let minor = fixed_file_info.dwProductVersionMS & 0xFFFF;
+    let build = fixed_file_info.dwProductVersionLS >> 16;
+    let revision = fixed_file_info.dwProductVersionLS & 0xFFFF;
     let version =
         Version::from_major_minor_build_revision(major, minor, Some(build), Some(revision));
     Ok(version)
