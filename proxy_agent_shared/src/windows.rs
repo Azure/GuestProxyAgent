@@ -313,12 +313,8 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     let minor = fixed_file_info.dwFileVersionMS & 0xFFFF;
     let build = fixed_file_info.dwFileVersionLS >> 16;
     let revision = fixed_file_info.dwFileVersionLS & 0xFFFF;
-    let version = Version::from_major_minor_build_revision(
-        major as u32,
-        minor as u32,
-        Some(build),
-        Some(revision),
-    );
+    let version =
+        Version::from_major_minor_build_revision(major, minor, Some(build), Some(revision));
     Ok(version)
 }
 
