@@ -77,7 +77,7 @@ impl super::Redirector {
             }
 
             logger::write(format!(
-                "eBPF API version: '{}' found, eBPF file with api version: '{}'{}found.",
+                "eBPF API version: '{}' found, eBPF program file with api version: '{}'{}found.",
                 ebpf_api_version,
                 file_path.display(),
                 if file_found { " " } else { " not " },
