@@ -57,10 +57,11 @@ impl super::Redirector {
             // our latest eBPF program may not work with the older version of windows eBPF API
             // in some cases, the windows eBPF may not able, or be allowed to update,
             // so we need to load the eBPF program with the same version of eBPF API
+            // the versioned eBPF program is named as <program_name>.<major>.<minor>.<extension>
             let file_ext = bpf_file_path.extension().unwrap_or_default();
             let file_name = bpf_file_path.file_stem().unwrap_or_default();
             let file_name = format!(
-                "{}.{}_{}.{}",
+                "{}.{}.{}.{}",
                 file_name.to_string_lossy(),
                 ebpf_api_version.major,
                 ebpf_api_version.minor,
