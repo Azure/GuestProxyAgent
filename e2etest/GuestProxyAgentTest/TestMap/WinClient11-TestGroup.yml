@@ -1,0 +1,12 @@
+groupName: WinClient11
+vmImagePublisher: microsoftwindowsdesktop
+vmImageOffer: windows-11
+vmImageSku: win11-24h2-ent
+vmImageVersion: latest
+scenarios:
+  - name: BVTScenario
+    className: GuestProxyAgentTest.TestScenarios.BVTScenario
+  - name: BugFixesScenario
+    className: GuestProxyAgentTest.TestScenarios.BugFixesScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
