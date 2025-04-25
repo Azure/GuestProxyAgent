@@ -1,0 +1,2 @@
+testGroupList:
+  - include: WinClient11-Arm64-TestGroup.yml
