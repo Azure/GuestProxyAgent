@@ -6,8 +6,16 @@ use crate::result::Result;
 use crate::version::Version;
 use std::ffi::OsStr;
 use std::mem::MaybeUninit;
+use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+use windows_sys::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, // version.dll
+    GetFileVersionInfoW,
+    VerQueryValueW,
+    VS_FIXEDFILEINFO,
+};
 use windows_sys::Win32::System::SystemInformation::SYSTEM_INFO;
 use winreg::enums::*;
 use winreg::RegKey;
@@ -232,6 +240,86 @@ pub fn ensure_service_running(service_name: &str) -> (bool, String) {
     (true, message)
 }
 
+pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
+    if !file_path.exists() {
+        return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
+            format!("File path does not exist: {}", file_path.display()),
+        )));
+    }
+    if !file_path.is_file() {
+        return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
+            format!("File path is not a file: {}", file_path.display()),
+        )));
+    }
+    if !file_path.is_absolute() {
+        return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
+            format!("File path is not absolute: {}", file_path.display()),
+        )));
+    }
+
+    let file_path = file_path
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
+    let size = unsafe { GetFileVersionInfoSizeW(file_path.as_ptr(), std::ptr::null_mut()) };
+    if size == 0 {
+        return Err(Error::WindowsApi(
+            "GetFileVersionInfoSizeW".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    let mut buffer = vec![0u8; size as usize];
+    if unsafe { GetFileVersionInfoW(file_path.as_ptr(), 0, size, buffer.as_mut_ptr() as *mut _) }
+        == 0
+    {
+        return Err(Error::WindowsApi(
+            "GetFileVersionInfoW".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // get VS_FIXEDFILEINFO
+    let mut fixed_file_info = MaybeUninit::<*mut VS_FIXEDFILEINFO>::uninit();
+    let mut fixed_file_info_size = 0;
+    let result = unsafe {
+        VerQueryValueW(
+            buffer.as_mut_ptr() as *mut _,
+            "\\".encode_utf16()
+                .chain(Some(0))
+                .collect::<Vec<u16>>()
+                .as_ptr(),
+            fixed_file_info.as_mut_ptr() as *mut _,
+            &mut fixed_file_info_size,
+        )
+    };
+    if result == 0 {
+        return Err(Error::WindowsApi(
+            "VerQueryValueW".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+    if fixed_file_info_size != std::mem::size_of::<VS_FIXEDFILEINFO>() as u32 {
+        return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
+            format!(
+                "Invalid VS_FIXEDFILEINFO size '{}' returned",
+                fixed_file_info_size
+            ),
+        )));
+    }
+
+    // get the product version from VS_FIXEDFILEINFO
+    let fixed_file_info = unsafe { *fixed_file_info.assume_init() };
+    let major = fixed_file_info.dwProductVersionMS >> 16;
+    let minor = fixed_file_info.dwProductVersionMS & 0xFFFF;
+    let build = fixed_file_info.dwProductVersionLS >> 16;
+    let revision = fixed_file_info.dwProductVersionLS & 0xFFFF;
+    let version =
+        Version::from_major_minor_build_revision(major, minor, Some(build), Some(revision));
+    Ok(version)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -262,5 +350,23 @@ mod tests {
             "unknown", processor_arch,
             "processor arch cannot be 'unknown'"
         );
+    }
+
+    #[test]
+    fn get_file_product_version_test() {
+        let system_path = std::env::var("SystemRoot").unwrap_or("C:\\Windows".to_string());
+        let file_path = std::path::Path::new(&system_path)
+            .join("System32")
+            .join("kernel32.dll");
+        let version = match super::get_file_product_version(&file_path) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Failed to get file product version: {}", e);
+                assert!(false, "Failed to get file product version");
+                return;
+            }
+        };
+        println!("kernel32.dll File product version: {}", version);
+        assert_eq!(version.major, 10, "major version mismatch");
     }
 }
