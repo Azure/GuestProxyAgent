@@ -318,7 +318,7 @@ fn report_proxy_agent_aggregate_status(
     service_state: &mut ServiceState,
 ) {
     let aggregate_status_file_path =
-        PathBuf::from(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FOLDER)
+        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
             .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
 
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
