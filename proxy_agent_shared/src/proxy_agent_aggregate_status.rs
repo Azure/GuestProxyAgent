@@ -1,13 +1,20 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 #[cfg(windows)]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "C:\\WindowsAzure\\ProxyAgent\\Logs\\";
+const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Logs\\";
 #[cfg(not(windows))]
-pub const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
+const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
 pub const PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME: &str = "status.json";
+
+pub fn get_proxy_agent_aggregate_status_folder() -> std::path::PathBuf {
+    let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER)
+        .unwrap_or(PROXY_AGENT_AGGREGATE_STATUS_FOLDER.to_string());
+    PathBuf::from(path)
+}
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub enum ModuleState {

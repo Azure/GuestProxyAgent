@@ -544,7 +544,7 @@
                 End If
             End Sub
 
-            ' This function unzips the ProxyAgent package into %SystemDrive%\WindowsAzure\ProxyAgent folder.
+            ' This function unzips the ProxyAgent package into %SYSTEMDRIVE%\WindowsAzure\ProxyAgent folder.
             Sub UnzipProxyAgentPackage
                 On Error Resume Next
                 Dim objProxyAgentZipLocation
