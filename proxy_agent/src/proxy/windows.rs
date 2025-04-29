@@ -125,7 +125,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
             "LsaGetLogonSessionData with login'{}' success, but user name is empty.",
             logon_id
         ));
-        // return OK with empty user name and groups
+        // return OK with UNDEFINED user name and empty groups
         return Ok((super::UNDEFINED.to_string(), Vec::new()));
     }
     let mut domain_user_name = user_name.clone();
