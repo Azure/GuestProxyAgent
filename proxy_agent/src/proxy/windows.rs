@@ -118,8 +118,8 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
     } else {
-        //When calling LsaGetLogonSessionData and receiving a successful return code, 
-        // but finding that PSECURITY_LOGON_SESSION_DATA->UserName.Length is 0, 
+        //When calling LsaGetLogonSessionData and receiving a successful return code,
+        // but finding that PSECURITY_LOGON_SESSION_DATA->UserName.Length is 0,
         // it typically means that the logon session exists but does not have an associated username.
         logger::write_warning(format!(
             "LsaGetLogonSessionData with login'{}' success, but user name is empty.",
