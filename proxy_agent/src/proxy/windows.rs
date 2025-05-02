@@ -118,13 +118,15 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
     } else {
-        let e = std::io::Error::last_os_error();
-        return Err(Error::WindowsApi(
-            WindowsApiErrorType::LsaGetLogonSessionData(format!(
-                "could not get the user name: {}",
-                e
-            )),
+        // When calling LsaGetLogonSessionData and receiving a successful return code,
+        // but finding that SECURITY_LOGON_SESSION_DATA->UserName.Length is 0,
+        // it typically means that the logon session exists but does not have an associated username.
+        logger::write_warning(format!(
+            "LsaGetLogonSessionData with login'{}' success, but user name is empty.",
+            logon_id
         ));
+        // return OK with UNDEFINED user name and empty groups
+        return Ok((super::UNDEFINED.to_string(), Vec::new()));
     }
     let mut domain_user_name = user_name.clone();
     if session_data.LogonDomain.Length != 0 {
@@ -178,7 +180,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
 }
 
 fn from_unicode_string(unicode_string: &UNICODE_STRING) -> String {
-    let mut v = vec![0u16; unicode_string.MaximumLength as usize];
+    let mut v = vec![0u16; unicode_string.Length as usize];
     unsafe {
         std::ptr::copy_nonoverlapping(
             unicode_string.Buffer,
@@ -376,13 +378,6 @@ mod tests {
                 println!("UserName: {}", user_name);
                 println!("UserGroups: {}", user_groups.join(", "));
                 assert_ne!(String::new(), user_name, "user_name cannot be empty.");
-                if user_name.to_lowercase() == "undefined" {
-                    println!("user_name cannot be 'undefined'");
-                    continue;
-                }
-                if user_groups.is_empty() {
-                    return;
-                }
             }
             // Couldn't find any user with group in our internal test environment
             // assert!(

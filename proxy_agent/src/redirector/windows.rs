@@ -50,8 +50,42 @@ impl super::Redirector {
     }
 
     pub fn load_bpf_object(&self) -> Result<BpfObject> {
+        let mut bpf_file_path = super::get_ebpf_file_path();
+
+        if let Some(ebpf_api_version) = bpf_api::get_ebpf_api_version() {
+            // eBPF program has to work with the same version of eBPF API if windows eBPF had break changes
+            // our latest eBPF program may not work with the older version of windows eBPF API
+            // in some cases, the windows eBPF may not able, or be allowed to update,
+            // so we need to load the eBPF program with the same version of eBPF API
+            // the versioned eBPF program is named as <program_name>.<major>.<minor>.<extension>
+            let file_ext = bpf_file_path.extension().unwrap_or_default();
+            let file_name = bpf_file_path.file_stem().unwrap_or_default();
+            let file_name = format!(
+                "{}.{}.{}.{}",
+                file_name.to_string_lossy(),
+                ebpf_api_version.major,
+                ebpf_api_version.minor,
+                file_ext.to_string_lossy()
+            );
+            let file_path = bpf_file_path.with_file_name(file_name);
+            let file_found: bool;
+            if file_path.exists() && file_path.is_file() {
+                bpf_file_path = file_path.to_path_buf();
+                file_found = true;
+            } else {
+                file_found = false;
+            }
+
+            logger::write(format!(
+                "eBPF API version: '{}' found, eBPF program file with api version: '{}'{}found.",
+                ebpf_api_version,
+                file_path.display(),
+                if file_found { " " } else { " not " },
+            ));
+        }
+
         let mut bpf_object = BpfObject::new();
-        bpf_object.load_bpf_object(&super::get_ebpf_file_path())?;
+        bpf_object.load_bpf_object(&bpf_file_path)?;
         Ok(bpf_object)
     }
 

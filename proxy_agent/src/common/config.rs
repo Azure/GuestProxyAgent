@@ -121,16 +121,25 @@ impl Config {
         })
     }
 
-    pub fn get_log_folder(&self) -> &str {
-        &self.logFolder
+    pub fn get_log_folder(&self) -> String {
+        match misc_helpers::resolve_env_variables(&self.logFolder) {
+            Ok(val) => val,
+            Err(_) => self.logFolder.clone(),
+        }
     }
 
-    pub fn get_event_folder(&self) -> &str {
-        &self.eventFolder
+    pub fn get_event_folder(&self) -> String {
+        match misc_helpers::resolve_env_variables(&self.eventFolder) {
+            Ok(val) => val,
+            Err(_) => self.eventFolder.clone(),
+        }
     }
 
-    pub fn get_latch_key_folder(&self) -> &str {
-        &self.latchKeyFolder
+    pub fn get_latch_key_folder(&self) -> String {
+        match misc_helpers::resolve_env_variables(&self.latchKeyFolder) {
+            Ok(val) => val,
+            Err(_) => self.latchKeyFolder.clone(),
+        }
     }
 
     pub fn get_monitor_interval(&self) -> u64 {
@@ -256,7 +265,8 @@ mod tests {
     }
 
     fn create_config_file(file_path: PathBuf) -> Config {
-        let data = r#"{
+        let data = if cfg!(not(windows)) {
+            r#"{
             "logFolder": "C:\\logFolderName",
             "eventFolder": "C:\\eventFolderName",
             "latchKeyFolder": "C:\\latchKeyFolderName",
@@ -266,7 +276,21 @@ mod tests {
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
             "ebpfProgramName": "ebpfProgramName"
-        }"#;
+        }"#
+        } else {
+            r#"{
+            "logFolder": "%SYSTEMDRIVE%\\logFolderName",
+            "eventFolder": "%SYSTEMDRIVE%\\eventFolderName",
+            "latchKeyFolder": "%SYSTEMDRIVE%\\latchKeyFolderName",
+            "monitorIntervalInSeconds": 60,
+            "pollKeyStatusIntervalInSeconds": 15,
+            "wireServerSupport": 2,
+            "hostGAPluginSupport": 1,
+            "imdsSupport": 1,
+            "ebpfProgramName": "ebpfProgramName"
+        }"#
+        };
+
         File::create(&file_path)
             .unwrap()
             .write_all(data.as_bytes())

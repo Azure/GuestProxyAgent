@@ -1,9 +1,10 @@
-use std::fmt::{Display, Formatter};
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use crate::error::{Error, ParseVersionErrorType};
 use crate::result::Result;
+use std::fmt::{Display, Formatter};
 
+#[derive(Clone)]
 pub struct Version {
     pub major: u32,
     pub minor: u32,
