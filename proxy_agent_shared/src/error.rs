@@ -18,6 +18,10 @@ pub enum Error {
     #[error("Failed to create regex with error: {0}")]
     Regex(#[from] regex::Error),
 
+    #[cfg(windows)]
+    #[error("WindowsApi '{0}' failed with error: {1}")]
+    WindowsApi(String, std::io::Error),
+
     #[error("{0}")]
     ParseVersion(ParseVersionErrorType),
 

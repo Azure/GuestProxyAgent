@@ -378,7 +378,7 @@ pub async fn start_event_threads(
     tokio::spawn({
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
-            PathBuf::from(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FOLDER),
+            proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
             cancellation_token.clone(),
             key_keeper_shared_state.clone(),
             agent_status_shared_state.clone(),

@@ -1,21 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NoWarn>CS8603,SYSLIB0028</NoWarn>
-    <RestoreAdditionalProjectSources>
+    <!-- <RestoreAdditionalProjectSources>
+      private preview feed for Azure SDK for .NET packages
       https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
-    </RestoreAdditionalProjectSources>
+    </RestoreAdditionalProjectSources> -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.11.4" />
     <PackageReference Include="Azure.ResourceManager" Version="1.13.0" />
-    <PackageReference Include="Azure.ResourceManager.Compute" Version="1.7.0-alpha.20240925.1" />
-    <PackageReference Include="Azure.ResourceManager.Network" Version="1.7.0" />
-    <PackageReference Include="Azure.ResourceManager.Resources" Version="1.7.0" />
+    <PackageReference Include="Azure.ResourceManager.Compute" Version="1.9" />
+    <PackageReference Include="Azure.ResourceManager.Network" Version="1.9" />
+    <PackageReference Include="Azure.ResourceManager.Resources" Version="1.9" />
     <PackageReference Include="Azure.ResourceManager.Storage" Version="1.1.1" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.16.0" />
     <PackageReference Include="Microsoft.Azure.Management.ResourceManager.Fluent" Version="1.38.1" />

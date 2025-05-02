@@ -80,6 +80,7 @@ ebpfapi
 EBPFCORE
 egor
 ele
+ent
 entriesread
 EStorage
 etest
@@ -166,6 +167,7 @@ metabuild
 MFC
 microsoftcblmariner
 microsoftlosangeles
+microsoftwindowsdesktop
 mnt
 msasn
 msp

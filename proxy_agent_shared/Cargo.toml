@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.29"
+version = "1.0.30"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,7 +13,7 @@ thread-id = "4.0.0"
 serde = "1.0.152"
 serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
-regex = "1.9.5"               # match file name 
+regex = "1.11"               # match file name 
 thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
@@ -34,6 +34,7 @@ features = [
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",
   "Win32_System_SystemInformation",
+  "Win32_Storage_FileSystem",
 ]
 
 [target.'cfg(not(windows))'.dependencies]

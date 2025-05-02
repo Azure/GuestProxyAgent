@@ -4,7 +4,7 @@ use crate::{
     error::{CommandErrorType, Error},
     result::Result,
 };
-use regex::bytes::Regex;
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::{
@@ -203,7 +203,7 @@ pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBu
             continue;
         }
         let file_name = get_file_name(&file_full_path);
-        if regex.is_match(file_name.as_bytes()) {
+        if regex.is_match(&file_name) {
             files.push(file_full_path);
         }
     }
@@ -287,6 +287,23 @@ pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
             output.message(),
         ))
     }
+}
+
+/// This function replaces all occurrences of %VAR% in the input string with the value of the environment variable VAR
+/// If the environment variable is not set, it returns the original string with VAR unchanged.
+/// # Arguments
+/// * `input` - The input string to resolve environment variables in
+/// # Returns
+/// A Result containing the resolved string or an error if the regex pattern is invalid
+pub fn resolve_env_variables(input: &str) -> Result<String> {
+    let re = Regex::new(r"%(\w+)%")?;
+    let ret = re
+        .replace_all(input, |caps: &regex::Captures| {
+            std::env::var(&caps[1]).unwrap_or_else(|_| caps[1].to_string())
+        })
+        .to_string();
+
+    Ok(ret)
 }
 
 #[cfg(test)]
@@ -498,5 +515,21 @@ mod tests {
         assert_eq!(test.date_time_unix_nano, cloned.date_time_unix_nano);
         assert_eq!(test.long_os_version, cloned.long_os_version);
         assert_eq!(test.current_exe_dir, cloned.current_exe_dir);
+    }
+
+    #[test]
+    fn resolve_env_variables_test() {
+        let input = r"%SYSTEMDRIVE%\%WindowsAzure%\ProxyAgent\Package_1.0.0";
+        let expected = format!(
+            "{}\\WindowsAzure\\ProxyAgent\\Package_1.0.0",
+            env::var("SYSTEMDRIVE").unwrap_or("SYSTEMDRIVE".to_string())
+        );
+        let resolved = super::resolve_env_variables(input).unwrap();
+        assert_eq!(expected, resolved, "resolved string mismatch");
+
+        let input = "/var/log/azure-proxy-agent/";
+        let expected = "/var/log/azure-proxy-agent/".to_string();
+        let resolved = super::resolve_env_variables(input).unwrap();
+        assert_eq!(expected, resolved, "resolved string mismatch");
     }
 }
