@@ -16,7 +16,7 @@ pub fn get_log_header(level: LoggerLevel) -> String {
         HEADER_LENGTH,
     )
 }
- 
+
 fn get_log_header_with_length(
     level: LoggerLevel,
     date_time_string: String,
@@ -26,7 +26,7 @@ fn get_log_header_with_length(
         .chars()
         .take(length)
         .collect::<String>();
- 
+
     // padding if the header is shorter than HEADER_LENGTH
     if header.len() < length {
         let padding = " ".repeat(length - header.len());
@@ -65,28 +65,18 @@ mod tests {
             "2023-10-01 12:00:00.000".to_string(),
             34,
         );
-        assert_eq!(
-            header,
-            "2023-10-01 12:00:00.000 [INFO]    "
-        );
+        assert_eq!(header, "2023-10-01 12:00:00.000 [INFO]    ");
         let header = super::get_log_header_with_length(
             Level::Error,
             "2023-10-01 12:00:00.000".to_string(),
             34,
         );
-        assert_eq!(
-            header,
-            "2023-10-01 12:00:00.000 [ERROR]   "
-        );
+        assert_eq!(header, "2023-10-01 12:00:00.000 [ERROR]   ");
         let header = super::get_log_header_with_length(
             Level::Warn,
             "2023-10-01 12:00:00.00".to_string(),
             34,
         );
-        assert_eq!(
-            header,
-            "2023-10-01 12:00:00.00 [WARN]     "
-        );
+        assert_eq!(header, "2023-10-01 12:00:00.00 [WARN]     ");
     }
-
 }
