@@ -70,6 +70,10 @@ pub fn get_file_log_level() -> LoggerLevel {
     SYSTEM_CONFIG.get_file_log_level()
 }
 
+pub fn get_file_log_level_for_events() -> Option<LoggerLevel> {
+    SYSTEM_CONFIG.get_file_log_level_for_events()
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -89,6 +93,8 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(not(windows))]
     cgroupRoot: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fileLogLevelForEvents: Option<String>,
 }
 
 impl Default for Config {
@@ -178,6 +184,14 @@ impl Config {
             Some(cgroup) => PathBuf::from(cgroup),
             None => PathBuf::from(constants::CGROUP_ROOT),
         }
+    }
+
+    pub fn get_file_log_level_for_events(&self) -> Option<LoggerLevel> {
+        if let Some(file_log_level) = &self.fileLogLevelForEvents {
+            let log_level = LoggerLevel::from_str(file_log_level).unwrap_or(LoggerLevel::Info);
+            return Some(log_level);
+        }
+        None
     }
 }
 

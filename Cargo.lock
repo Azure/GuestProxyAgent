@@ -801,6 +801,7 @@ dependencies = [
 name = "proxy_agent_shared"
 version = "9.9.9"
 dependencies = [
+ "backtrace",
  "concurrent-queue",
  "ctor",
  "log",

@@ -290,15 +290,32 @@ impl ConnectionLogger {
     }
 
     pub fn write(&mut self, logger_level: LoggerLevel, message: String) {
+        let message = format!(
+            "{}[{}] - {}",
+            self.http_connection_id, self.tcp_connection_id, message
+        );
+        if let Some(log_for_event) = crate::common::config::get_file_log_level_for_events() {
+            if log_for_event >= logger_level {
+                // write to event
+                let (module_name, caller_name) = proxy_agent_shared::logger::get_caller_info(
+                    "proxy_agent::proxy::proxy_connection",
+                );
+                proxy_agent_shared::telemetry::event_logger::write_event_only(
+                    logger_level,
+                    message.to_string(),
+                    &caller_name,
+                    &module_name,
+                );
+            }
+        }
+
         if logger_level > logger_manager::get_logger_level() {
             return;
         }
 
         self.queue.push(format!(
-            "{}{}[{}] - {}",
+            "{}{}",
             logger::get_log_header(logger_level),
-            self.http_connection_id,
-            self.tcp_connection_id,
             message
         ));
     }
