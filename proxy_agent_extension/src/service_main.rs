@@ -1050,16 +1050,22 @@ mod tests {
         let connection_summary_len = 1024 * 2; // 2 KB
         let failed_auth_summary: String = "a".repeat(1024); // 1 KB
         let max_size = 4; // 4 KB
-        let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary, max_size);
+        let result = super::trim_proxy_agent_status_file(
+            connection_summary_len,
+            failed_auth_summary,
+            max_size,
+        );
         assert!(result.is_none());
 
         // Case 2: total size exceeds max_size, should drop connection summary and keep failed_auth_summary the same
         let connection_summary_len = 1024 * 3; // 3 KB
         let failed_auth_summary: String = "a".repeat(1024 * 3); // 3 KB
         let max_size = 5; // 5 KB
-        let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary.clone(), max_size);
+        let result = super::trim_proxy_agent_status_file(
+            connection_summary_len,
+            failed_auth_summary.clone(),
+            max_size,
+        );
         assert!(result.is_some());
         let (conn_msg, failed_auth_msg) = result.unwrap();
         assert!(conn_msg.contains("Proxy agent connection message size exceeds max size"));
@@ -1069,8 +1075,11 @@ mod tests {
         let connection_summary_len = 1024 * 1; // 1 KB
         let failed_auth_summary: String = "a".repeat(1024 * 10); // 10 KB
         let max_size = 2; // 2 KB
-        let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary.clone(), max_size);
+        let result = super::trim_proxy_agent_status_file(
+            connection_summary_len,
+            failed_auth_summary.clone(),
+            max_size,
+        );
         assert!(result.is_some());
         let (conn_msg, failed_auth_msg) = result.unwrap();
         assert!(conn_msg.contains("Proxy agent connection message size exceeds max size"));
@@ -1080,8 +1089,11 @@ mod tests {
         let connection_summary_len = 1024 * 2; // 2 KB
         let failed_auth_summary: String = "a".repeat(1024 * 2); // 2 KB
         let max_size = 4; // 4 KB
-        let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary, max_size);
+        let result = super::trim_proxy_agent_status_file(
+            connection_summary_len,
+            failed_auth_summary,
+            max_size,
+        );
         assert!(result.is_none());
     }
 }
