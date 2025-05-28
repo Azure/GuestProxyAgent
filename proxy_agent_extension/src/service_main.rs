@@ -341,7 +341,7 @@ fn report_proxy_agent_aggregate_status(
                 proxyagent_file_version_in_extension,
                 status,
                 status_state_obj,
-                service_state,            
+                service_state,         
             );
         }
         Err(e) => {
@@ -477,8 +477,7 @@ fn extension_substatus(
             );
             match serde_json::to_string(&proxy_agent_aggregate_connection_status_obj) {
                 Ok(proxy_agent_aggregate_connection_status) => {
-                    substatus_proxy_agent_connection_message =
-                        proxy_agent_aggregate_connection_status;
+                    substatus_proxy_agent_connection_message = proxy_agent_aggregate_connection_status;
                 }
                 Err(e) => {
                     let error_message = format!(
@@ -523,16 +522,14 @@ fn extension_substatus(
             substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
         }
 
-        match trim_proxy_agent_status_file(
+        if let Some((trimmed_connection_message, trimmed_failed_auth_message)) = trim_proxy_agent_status_file(
             substatus_proxy_agent_connection_message.len(),
             substatus_failed_auth_message.len(),
             constants::MAX_SUBSTATUS_SIZE,
-        ) {
-            Some((trimmed_connection_message, trimmed_failed_auth_message)) => {
-                substatus_proxy_agent_connection_message = trimmed_connection_message;
-                substatus_failed_auth_message = trimmed_failed_auth_message;
-            }
-            None => {}
+        )
+        {
+            substatus_proxy_agent_connection_message = trimmed_connection_message;
+            substatus_failed_auth_message = trimmed_failed_auth_message;
         }
 
         status.substatus = {
@@ -587,7 +584,7 @@ fn trim_proxy_agent_status_file(connection_summary_len: usize, failed_auth_len: 
     let substatus_failed_auth_message_size = failed_auth_len / 1024;
     if substatus_proxy_agent_connection_message_size + substatus_failed_auth_message_size > max_size {
         logger::write("Substatus of proxy agent connection message and failed auth message size exceeds max size, dropping connection summary".to_string());
-        let substatus_proxy_agent_connection_message = 
+        let substatus_proxy_agent_connection_message =
             "Proxy agent connection message size exceeds max size, dropping connection summary from status file. Connection logs are available in ProxyAgentConnection.log".to_string();
         let mut substatus_failed_auth_message = String::new();
         if substatus_failed_auth_message_size > max_size {
@@ -602,7 +599,7 @@ fn trim_proxy_agent_status_file(connection_summary_len: usize, failed_auth_len: 
             substatus_failed_auth_message,
         ));
     } 
-    return None;
+    None
 }
 
 fn get_top_proxy_connection_summary(

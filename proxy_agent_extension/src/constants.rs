@@ -71,6 +71,7 @@ pub const EBPF_SUBSTATUS_NAME: &str = "EbpfStatus";
 
 pub const MAX_CONNECTION_SUMMARY_LEN: usize = 100;
 pub const MAX_FAILED_AUTH_SUMMARY_LEN: usize = 50;
+// Max KB of substatus string for connection summary and failed authentication summary
 pub const MAX_SUBSTATUS_SIZE: usize = 80;
 
 #[cfg(not(windows))]
