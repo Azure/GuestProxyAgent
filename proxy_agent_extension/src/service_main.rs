@@ -526,7 +526,7 @@ fn extension_substatus(
         if let Some((trimmed_connection_message, trimmed_failed_auth_message)) =
             trim_proxy_agent_status_file(
                 substatus_proxy_agent_connection_message.len(),
-                substatus_failed_auth_message.len(),
+                substatus_failed_auth_message.clone(),
                 constants::MAX_PROXYAGENT_CONNECTION_DATA_SIZE_IN_KB,
             )
         {
@@ -581,32 +581,22 @@ fn extension_substatus(
 
 fn trim_proxy_agent_status_file(
     connection_summary_len: usize,
-    failed_auth_len: usize,
+    substatus_failed_auth_message: String,
     max_size: usize,
 ) -> Option<(String, String)> {
-    // To ensure status file size does not exceed max file size, remove the substatus_proxy_agent_connection_message if the summary size is too large,
-    // if file size still exceeds max size trim substatus_failed_auth_message
     let substatus_proxy_agent_connection_message_size = connection_summary_len / 1024;
-    let substatus_failed_auth_message_size = failed_auth_len / 1024;
+    let substatus_failed_auth_message_size = substatus_failed_auth_message.len() / 1024;
     if substatus_proxy_agent_connection_message_size + substatus_failed_auth_message_size > max_size
     {
         logger::write("Substatus of proxy agent connection message and failed auth message size exceeds max size, dropping connection summary".to_string());
-        let substatus_proxy_agent_connection_message =
-            "Proxy agent connection message size exceeds max size, dropping connection summary from status file. Connection logs are available in ProxyAgentConnection.log".to_string();
-        let mut substatus_failed_auth_message = String::new();
-        if substatus_failed_auth_message_size > max_size {
-            logger::write(
-                "Substatus failed auth message size exceeds max limit, trimming it".to_string(),
-            );
-            let trimmed_message = ""
-                .chars()
-                .take(max_size - substatus_proxy_agent_connection_message_size)
-                .collect::<String>();
-            substatus_failed_auth_message = trimmed_message;
+        let mut trimmed_failed_auth_message = substatus_failed_auth_message;
+        let allowed_bytes = max_size * 1024; // max_size is in KB
+        if trimmed_failed_auth_message.len() > allowed_bytes {
+            trimmed_failed_auth_message = trimmed_failed_auth_message[..allowed_bytes].to_string();
         }
         return Some((
-            substatus_proxy_agent_connection_message,
-            substatus_failed_auth_message,
+            "Proxy agent connection message size exceeds max size, dropping connection summary from status file. Connection logs are available in ProxyAgentConnection.log".to_string(),
+            trimmed_failed_auth_message,
         ));
     }
     None
@@ -1058,40 +1048,40 @@ mod tests {
     fn test_trim_proxy_agent_status_file_cases() {
         // Case 1: total size is under max_size, should return None
         let connection_summary_len = 1024 * 2; // 2 KB
-        let failed_auth_len = 1024 * 1; // 1 KB
+        let failed_auth_summary: String = "a".repeat(1024); // 1 KB
         let max_size = 4; // 4 KB
         let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_len, max_size);
+            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary, max_size);
         assert!(result.is_none());
 
-        // Case 2: total size exceeds max_size, should drop connection summary
+        // Case 2: total size exceeds max_size, should drop connection summary and keep failed_auth_summary the same
         let connection_summary_len = 1024 * 3; // 3 KB
-        let failed_auth_len = 1024 * 3; // 3 KB
+        let failed_auth_summary: String = "a".repeat(1024 * 3); // 3 KB
         let max_size = 5; // 5 KB
         let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_len, max_size);
+            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary.clone(), max_size);
         assert!(result.is_some());
         let (conn_msg, failed_auth_msg) = result.unwrap();
         assert!(conn_msg.contains("Proxy agent connection message size exceeds max size"));
-        assert_eq!(failed_auth_msg, "");
+        assert_eq!(failed_auth_msg, "a".repeat(1024 * 3));
 
-        // Case 3: failed_auth_len alone exceeds max_size
+        // Case 3: failed_auth_summary alone exceeds max_size, should drop connection summary and trim failed_auth_summary
         let connection_summary_len = 1024 * 1; // 1 KB
-        let failed_auth_len = 1024 * 10; // 10 KB
+        let failed_auth_summary: String = "a".repeat(1024 * 10); // 10 KB
         let max_size = 2; // 2 KB
         let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_len, max_size);
+            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary.clone(), max_size);
         assert!(result.is_some());
         let (conn_msg, failed_auth_msg) = result.unwrap();
         assert!(conn_msg.contains("Proxy agent connection message size exceeds max size"));
-        assert_eq!(failed_auth_msg, "");
+        assert_eq!(failed_auth_msg, "a".repeat(2048));
 
         // Case 4: total size exactly equals max_size, should return None
         let connection_summary_len = 1024 * 2; // 2 KB
-        let failed_auth_len = 1024 * 2; // 2 KB
+        let failed_auth_summary: String = "a".repeat(1024 * 2); // 2 KB
         let max_size = 4; // 4 KB
         let result =
-            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_len, max_size);
+            super::trim_proxy_agent_status_file(connection_summary_len, failed_auth_summary, max_size);
         assert!(result.is_none());
     }
 }
