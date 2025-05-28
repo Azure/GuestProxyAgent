@@ -464,7 +464,7 @@ fn extension_substatus(
                     error_message
                 }
             };
-        let substatus_proxy_agent_connection_message: String;
+        let mut substatus_proxy_agent_connection_message: String;
         if !proxy_agent_aggregate_status_top_level
             .proxyConnectionSummary
             .is_empty()
@@ -494,7 +494,7 @@ fn extension_substatus(
             substatus_proxy_agent_connection_message =
                 "proxy connection summary is empty".to_string();
         }
-        let substatus_failed_auth_message: String;
+        let mut substatus_failed_auth_message: String;
         if !proxy_agent_aggregate_status_top_level
             .failedAuthenticateSummary
             .is_empty()
@@ -522,7 +522,25 @@ fn extension_substatus(
             logger::write("proxy failed auth summary is empty".to_string());
             substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
         }
+        // To ensure status file size does not exceed max file size, remove the substatus_proxy_agent_connection_message if the summary size is too large, 
+        // if file size still exceeds max size trim substatus_failed_auth_message
+        let substatus_proxy_agent_connection_message_size = 
+            substatus_proxy_agent_connection_message.len() / 1024;
+        let substatus_failed_auth_message_size = substatus_failed_auth_message.len() / 1024;
 
+        if substatus_proxy_agent_connection_message_size + substatus_failed_auth_message_size > constants::MAX_SUBSTATUS_SIZE {
+            logger::write("Substatus of proxy agent connection message and failed auth message size exceeds max size, dropping connection summary".to_string());
+            substatus_proxy_agent_connection_message = 
+                "Proxy agent connection message size exceeds max size, dropping connection summary from status file. Connection logs are available in ProxyAgentConnection.log".to_string();
+            if substatus_failed_auth_message_size > constants::MAX_SUBSTATUS_SIZE {
+                logger::write("Substatus failed auth message size exceeds max limit, trimming it".to_string());
+                let trimmed_message = substatus_failed_auth_message
+                    .chars()
+                    .take(constants::MAX_SUBSTATUS_SIZE - substatus_proxy_agent_connection_message_size)
+                    .collect::<String>();
+                substatus_failed_auth_message = trimmed_message;
+            }
+        } 
         status.substatus = {
             vec![
                 SubStatus {
