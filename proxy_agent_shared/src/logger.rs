@@ -18,30 +18,34 @@ pub fn get_log_header(level: LoggerLevel) -> String {
 }
 
 pub fn get_caller_info(module_to_skip: &str) -> (String, String) {
-    // unit test, the callstack end with address `proxy_agent_shared::logger::get_caller_info::h7bc59e9a5e48ecd1
-    #[cfg(test)]
-    let function_last_index = 1;
-    #[cfg(not(test))]
-    let function_last_index = 0;
+    const ASYNC_FUNCTION_NAME: &str = "{{closure}}";
 
     let bt = backtrace::Backtrace::new();
     for frame in bt.frames().iter() {
         for symbol in frame.symbols() {
             if let Some(name) = symbol.name() {
                 let name_str = name.to_string();
-                println!("name_str: {}", name_str);
                 // Skip internal frames, current function frame and `module_to_skip` to find the first relevant caller
                 if !name_str.contains("backtrace::")
                     && !name_str.contains("proxy_agent_shared::logger::get_caller_info")
                     && !name_str.contains(module_to_skip)
                 {
+                    // If the name contains `{{closure}}`, it indicates an async function
+                    // We need to find the first segment that contains the async function name
+                    // Example: `azure_proxy_agent::proxy::proxy_server::ProxyServer::handle_new_tcp_connection::{{closure}}::{{closure}}::h537d19fb7a504d22`
                     let seg = name_str.split("::").collect::<Vec<_>>();
                     let seg_len = seg.len();
+                    let mut function_last_index = 0;
+                    for i in 0..seg_len {
+                        if seg[seg_len - 1 - i] == ASYNC_FUNCTION_NAME {
+                            function_last_index = i + 1;
+                        }
+                    }
                     let caller_name = seg
                         .get(seg_len - 1 - function_last_index)
                         .unwrap_or(&"unknown")
                         .to_string();
-                    // Get the module name from the first to second last segment
+                    // Get the module name from the first to `function_last_index` segment
                     let module_name = seg
                         .into_iter()
                         .map(String::from)
@@ -81,8 +85,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn invoke_get_caller_info_test() {
+    #[tokio::test]
+    async fn invoke_get_caller_info_test() {
         test_get_caller_info_test("invoke_get_caller_info_test");
     }
 
