@@ -274,6 +274,12 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            proxy_agent_shared::logger::LoggerLevel::Info,
+            config.get_file_log_level_for_events().unwrap(),
+            "get_file_log_level_for_events mismatch"
+        );
+
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -289,7 +295,8 @@ mod tests {
             "wireServerSupport": 2,
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
-            "ebpfProgramName": "ebpfProgramName"
+            "ebpfProgramName": "ebpfProgramName",
+            "fileLogLevelForEvents": "Info"
         }"#
         } else {
             r#"{
@@ -301,7 +308,8 @@ mod tests {
             "wireServerSupport": 2,
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
-            "ebpfProgramName": "ebpfProgramName"
+            "ebpfProgramName": "ebpfProgramName",
+            "fileLogLevelForEvents": "Info"
         }"#
         };
 
