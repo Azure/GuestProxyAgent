@@ -18,6 +18,7 @@ thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
+backtrace = "0.3"             # used for get the caller module and function name
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service

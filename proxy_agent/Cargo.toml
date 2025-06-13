@@ -16,7 +16,7 @@ serde-xml-rs = "0.6.0"        # xml Deserializer
 bitflags = "2.6.0"            # support bitflag enum
 hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
-regex = "1.11"               # match process name in cmdline
+regex = "1.11"                # match process name in cmdline
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros", "sync"] }
 tokio-util = "0.7.11"
 http = "1.1.0"

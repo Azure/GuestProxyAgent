@@ -128,25 +128,27 @@ pub fn write_event(
     module_name: &str,
     logger_key: &str,
 ) {
+    write_event_only(level, message.to_string(), method_name, module_name);
+
+    // wrap file log within event log
+    logger_manager::log(logger_key.to_string(), level, message);
+}
+
+pub fn write_event_only(level: Level, message: String, method_name: &str, module_name: &str) {
     let event_message = if message.len() > MAX_MESSAGE_LENGTH {
         message[..MAX_MESSAGE_LENGTH].to_string()
     } else {
         message.to_string()
     };
-    let logger_key = logger_key.to_string();
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
         method_name.to_string(),
         module_name.to_string(),
     )) {
-        Ok(()) => {
-            // wrap file log within event log
-            logger_manager::log(logger_key, level, message);
-        }
+        Ok(()) => {}
         Err(e) => {
-            logger_manager::log(
-                logger_key,
+            logger_manager::write_log(
                 Level::Warn,
                 format!("Failed to push event to the queue with error: {}", e),
             );
