@@ -11,18 +11,23 @@ use once_cell::sync::Lazy;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
+use windows_sys::Wdk::System::Threading::{
+    NtQueryInformationProcess, // ntdll.dll
+    PROCESSINFOCLASS,
+};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
-use windows_sys::Win32::Security::Authentication::Identity::SECURITY_LOGON_SESSION_DATA;
+use windows_sys::Win32::Security::Authentication::Identity::{
+    LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
+};
 use windows_sys::Win32::System::ProcessStatus::{
     K32GetModuleBaseNameW,   // kernel32.dll
     K32GetModuleFileNameExW, // kernel32.dll
 };
+use windows_sys::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use windows_sys::Win32::System::Threading::{
-    NtQueryInformationProcess, // ntdll.dll
-    OpenProcess,               //kernel32.dll
+    OpenProcess, //kernel32.dll
 };
-use windows_sys::Win32::System::Threading::{PROCESSINFOCLASS, PROCESS_BASIC_INFORMATION};
 
 const LG_INCLUDE_INDIRECT: u32 = 1u32;
 const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
@@ -179,7 +184,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     Ok((user_name, user_groups))
 }
 
-fn from_unicode_string(unicode_string: &UNICODE_STRING) -> String {
+fn from_unicode_string(unicode_string: &LSA_UNICODE_STRING) -> String {
     let mut v = vec![0u16; unicode_string.Length as usize];
     unsafe {
         std::ptr::copy_nonoverlapping(

@@ -64,6 +64,8 @@ static_vcruntime = "2.0.0"    # Statically link the VCRuntime when using the MSV
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.52.0"
 features = [
+  "Wdk_Foundation",
+  "Wdk_System_Threading",
   "Win32_Foundation",
   "Win32_Networking_WinSock",
   "Win32_System_IO",
@@ -76,7 +78,7 @@ features = [
   "Win32_System_ProcessStatus",
   "Win32_System_Kernel",
   "Win32_Security_Cryptography",
-  "Win32_System_Memory",
+  "Win32_System_Memory"
 ]
 
 [features]

@@ -174,11 +174,11 @@ pub fn get_processor_arch() -> String {
             .Anonymous
             .wProcessorArchitecture
         {
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_INTEL => "x86", // 0
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_ARM => "ARM", // 5
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_IA64 => "IA64", // 6
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_AMD64 => "AMD64", // 9
-            12 => "ARM64", // 12 - ARM64 is missed here
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_INTEL => "x86", // 0
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_ARM => "ARM", // 5
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_IA64 => "IA64", // 6
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_AMD64 => "AMD64", // 9
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_ARM64 => "ARM64", // 12
             _ => "unknown",
         }
         .to_owned()
