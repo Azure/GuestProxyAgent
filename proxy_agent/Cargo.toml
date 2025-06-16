@@ -62,7 +62,7 @@ winres = "0.1.12"             # Rust Windows resource helper to add file version
 static_vcruntime = "2.0.0"    # Statically link the VCRuntime when using the MSVC toolchain
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.42.0"
+version = "0.52.0"
 features = [
   "Win32_Foundation",
   "Win32_Networking_WinSock",
