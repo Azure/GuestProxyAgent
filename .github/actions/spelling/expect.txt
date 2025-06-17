@@ -158,7 +158,7 @@ logdir
 Loggerhas
 logon
 Lrs
-Lsa
+lsa
 ltsc
 luid
 macikgo
