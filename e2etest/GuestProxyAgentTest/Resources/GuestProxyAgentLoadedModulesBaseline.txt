@@ -38,3 +38,5 @@ version.dll
 combase.dll
 oleaut32.dll
 msvcp_win.dll
+symsrv.dll
+shlwapi.dll
