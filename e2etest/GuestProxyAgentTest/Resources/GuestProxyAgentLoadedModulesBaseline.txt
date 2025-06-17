@@ -35,3 +35,6 @@ WLDAP32.dll
 crypt32.dll
 msasn1.dll
 version.dll
+combase.dll
+oleaut32.dll
+msvcp_win.dll
