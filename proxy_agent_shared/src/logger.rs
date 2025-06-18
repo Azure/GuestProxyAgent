@@ -6,6 +6,9 @@ use crate::misc_helpers;
 pub mod logger_manager;
 pub mod rolling_logger;
 
+#[cfg(windows)]
+pub mod windows_event_logger;
+
 pub type LoggerLevel = log::Level;
 
 pub fn get_log_header(level: LoggerLevel) -> String {
