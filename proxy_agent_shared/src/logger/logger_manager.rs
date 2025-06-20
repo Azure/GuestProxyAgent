@@ -65,11 +65,11 @@ pub fn set_loggers(
     }
 }
 
-pub fn set_system_logger(max_log_level: LoggerLevel, service_name: &str) {
+pub fn set_system_logger(max_log_level: LoggerLevel, _service_name: &str) {
     #[cfg(windows)]
     {
         if !WINDOWS_ETW_APPLICATION_LOGGER.initialized() {
-            match ApplicationEventWritter::new(service_name) {
+            match ApplicationEventWritter::new(_service_name) {
                 Ok(logger) => {
                     if let Err(e) = WINDOWS_ETW_APPLICATION_LOGGER.set(logger) {
                         write_system_log(

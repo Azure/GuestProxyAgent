@@ -3,6 +3,7 @@ AAFFBB
 aarch
 abe
 addrpair
+advapi
 almalinux
 ATL
 ATLMFC
@@ -88,7 +89,9 @@ etest
 etestoutputs
 etestsharedstorage
 EToken
+etw
 EUID
+EVENTLOG
 evt
 exampledatadiskname
 exampleosdiskname
@@ -325,6 +328,7 @@ wdk
 wdksetup
 Werror
 westus
+wevtapi
 WFP
 winapi
 windowsazureguestagent
