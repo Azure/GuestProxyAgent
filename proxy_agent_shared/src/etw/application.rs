@@ -450,7 +450,8 @@ mod tests {
                     .unwrap()
                     .event_data
                     .unwrap()
-                    .data.unwrap()
+                    .data
+                    .unwrap()
                     .iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<_>>()
