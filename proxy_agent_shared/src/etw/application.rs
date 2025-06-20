@@ -383,7 +383,7 @@ mod tests {
         let start_time = chrono::Utc::now();
         let end_time = start_time + chrono::Duration::seconds(60);
 
-        let source_name = "TestApplication";
+        let source_name = "GuestProxyAgent_TestApplication";
         let message = "This is a test log message";
         let event_writer = ApplicationEventWritter::new(source_name).unwrap();
         event_writer.write(LoggerLevel::Info, message.to_string());
