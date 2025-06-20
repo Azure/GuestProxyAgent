@@ -8,5 +8,6 @@
     "ebpfProgramName": "ebpf_cgroup.o",
     "cgroupRoot": "/sys/fs/cgroup",
     "fileLogLevel": "Trace",
-    "fileLogLevelForEvents": "Info"
+    "fileLogLevelForEvents": "Info",
+    "fileLogLevelForSystemEvents": "Info"
 }

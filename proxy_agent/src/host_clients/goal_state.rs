@@ -89,15 +89,20 @@ pub struct SharedConfig {
 #[derive(Deserialize, Serialize, PartialEq)]
 #[allow(non_snake_case)]
 struct DeploymentField {
+    #[serde(rename = "@name")]
     name: String,
+    #[serde(rename = "@guid")]
     guid: String,
+    #[serde(rename = "@incarnation")]
     incarnation: String,
 }
 
 #[derive(Deserialize, Serialize, PartialEq)]
 #[allow(non_snake_case)]
 struct RoleField {
+    #[serde(rename = "@guid")]
     guid: String,
+    #[serde(rename = "@name")]
     name: String,
 }
 
@@ -110,7 +115,9 @@ struct InstancesField {
 #[derive(Deserialize, Serialize, PartialEq)]
 #[allow(non_snake_case)]
 struct SharedConfigInstance {
+    #[serde(rename = "@id")]
     id: String,
+    #[serde(rename = "@address")]
     address: String,
 }
 

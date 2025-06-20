@@ -4,8 +4,8 @@
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
 use crate::common::error::{Error, HyperErrorType};
-use crate::common::hyper_client;
 use crate::common::result::Result;
+use crate::common::{config, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
@@ -309,7 +309,10 @@ impl ConnectionLogger {
             }
         }
 
-        if logger_level > logger_manager::get_logger_level() {
+        if logger_level > logger_manager::get_max_logger_level()
+            || config::get_logs_dir() == std::path::PathBuf::from("")
+        {
+            // If the logger level is higher than the max logger level or logs directory is not set, skip logging
             return;
         }
 

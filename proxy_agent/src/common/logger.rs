@@ -1,9 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::cli;
 use proxy_agent_shared::{
     logger::{logger_manager, LoggerLevel},
-    misc_helpers,
     telemetry::event_logger,
 };
 
@@ -28,10 +26,6 @@ pub fn write_error(message: String) {
 }
 
 fn log(log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Trace {
-        write_console_log(message.to_string());
-    };
-
     if let Some(log_for_event) = config::get_file_log_level_for_events() {
         if log_for_event >= log_level {
             // write to event
@@ -47,18 +41,6 @@ fn log(log_level: LoggerLevel, message: String) {
     }
 
     logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
-}
-
-pub fn write_console_log(message: String) {
-    if cli::CLI.is_console_mode() {
-        println!(
-            "{} {}",
-            misc_helpers::get_date_time_string_with_milliseconds(),
-            message
-        );
-    } else {
-        println!("{}", message);
-    }
 }
 
 #[cfg(not(windows))]
