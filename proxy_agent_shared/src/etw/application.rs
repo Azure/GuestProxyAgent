@@ -184,7 +184,7 @@ mod tests {
         #[derive(Debug, Deserialize, Serialize)]
         pub struct EventData {
             #[serde(rename = "Data")]
-            pub data: Vec<String>,
+            pub data: Option<Vec<String>>,
         }
 
         pub struct WindowsEventReader {
@@ -450,7 +450,7 @@ mod tests {
                     .unwrap()
                     .event_data
                     .unwrap()
-                    .data
+                    .data.unwrap()
                     .iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<_>>()
