@@ -127,8 +127,8 @@ mod tests {
         pub struct Event {
             #[serde(rename = "System")]
             pub system: System,
-            #[serde(rename = "EventData")]
-            pub event_data: EventData,
+            #[serde(rename = "EventData", skip_serializing_if = "Option::is_none")]
+            pub event_data: Option<EventData>,
         }
 
         #[derive(Debug, Deserialize, Serialize)]
@@ -449,6 +449,7 @@ mod tests {
                 event
                     .unwrap()
                     .event_data
+                    .unwrap()
                     .data
                     .iter()
                     .map(|d| d.to_string())
