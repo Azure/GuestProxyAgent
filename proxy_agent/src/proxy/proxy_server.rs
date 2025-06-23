@@ -794,7 +794,6 @@ impl ProxyServer {
             errorDetails: error_details,
         };
         if let Ok(json) = serde_json::to_string(&summary) {
-            logger::write_console_log(json.to_string());
             event_logger::write_event(
                 LoggerLevel::Info,
                 json,

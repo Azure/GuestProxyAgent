@@ -7,5 +7,6 @@
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "redirect.bpf.sys",
     "fileLogLevel": "Trace",
-    "fileLogLevelForEvents": "Info"
+    "fileLogLevelForEvents": "Info",
+    "fileLogLevelForSystemEvents": "Info"
 }
