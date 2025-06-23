@@ -225,11 +225,27 @@ pub async fn start_event_logger() {
     logger::write("starting event logger".to_string());
     tokio::spawn({
         async move {
-            let interval: std::time::Duration = std::time::Duration::from_secs(60);
+            let interval = std::time::Duration::from_secs(60);
             let max_event_file_count: usize = 50;
             let exe_path = misc_helpers::get_current_exe_dir();
-            let event_folder =
-                PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
+            // Get the events folder from the handler environment
+            let events_folder_str = match get_handler_environment(&exe_path).eventsFolder {
+                Some(folder) => folder,
+                None => {
+                    logger::write("No events folder specified, skipping event logger start.".to_string());
+                    return;
+                }
+            };
+            let event_folder = PathBuf::from(events_folder_str.clone());
+            // Check if the events folder exists
+            if !event_folder.exists() {
+                logger::write(format!(
+                    "Events folder does not exist: {:?}. Skipping event logger start.",
+                    event_folder
+                ));
+                return;
+            }
+
             telemetry::event_logger::start(event_folder, interval, max_event_file_count, |_| {
                 async {
                     // do nothing
@@ -358,12 +374,19 @@ mod tests {
         //Write the deserialized json object to HandlerEnvironment.json file
         _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
 
+        // Create the events folder as specified in the handler environment
+        let events_folder = temp_test_path.join("test_kusto");
+        _ = misc_helpers::try_create_folder(&events_folder);
+
+        // Check if the events folder exists
+        assert!(events_folder.exists(), "Events folder should exist");
+
         let handler_env = super::get_handler_environment(&temp_test_path);
         assert_eq!(handler_env.logFolder, "log".to_string());
         assert_eq!(handler_env.configFolder, "config".to_string());
         assert_eq!(handler_env.statusFolder, "status".to_string());
         assert_eq!(handler_env.heartbeatFile, "heartbeat.json".to_string());
-        assert_eq!(handler_env.eventsFolder, "test_kusto".to_string());
+        assert_eq!(handler_env.eventsFolder, Some("test_kusto".to_string()));
         assert_eq!(handler_env.deploymentid, None);
         assert_eq!(handler_env.rolename, None);
         assert_eq!(handler_env.instance, None);
