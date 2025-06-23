@@ -232,7 +232,9 @@ pub async fn start_event_logger() {
             let events_folder_str = match get_handler_environment(&exe_path).eventsFolder {
                 Some(folder) => folder,
                 None => {
-                    logger::write("No events folder specified, skipping event logger start.".to_string());
+                    logger::write(
+                        "No events folder specified, skipping event logger start.".to_string(),
+                    );
                     return;
                 }
             };
