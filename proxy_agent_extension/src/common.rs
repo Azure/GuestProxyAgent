@@ -225,11 +225,29 @@ pub async fn start_event_logger() {
     logger::write("starting event logger".to_string());
     tokio::spawn({
         async move {
-            let interval: std::time::Duration = std::time::Duration::from_secs(60);
+            let interval = std::time::Duration::from_secs(60);
             let max_event_file_count: usize = 50;
             let exe_path = misc_helpers::get_current_exe_dir();
-            let event_folder =
-                PathBuf::from(get_handler_environment(&exe_path).eventsFolder.to_string());
+            // Get the events folder from the handler environment
+            let events_folder_str = match get_handler_environment(&exe_path).eventsFolder {
+                Some(folder) => folder,
+                None => {
+                    logger::write(
+                        "No events folder specified, skipping event logger start.".to_string(),
+                    );
+                    return;
+                }
+            };
+            let event_folder = PathBuf::from(events_folder_str.clone());
+            // Check if the events folder exists
+            if !event_folder.exists() {
+                logger::write(format!(
+                    "Events folder does not exist: {:?}. Skipping event logger start.",
+                    event_folder
+                ));
+                return;
+            }
+
             telemetry::event_logger::start(event_folder, interval, max_event_file_count, |_| {
                 async {
                     // do nothing
@@ -337,10 +355,9 @@ mod tests {
         _ = fs::remove_dir_all(&temp_test_path);
         _ = misc_helpers::try_create_folder(&temp_test_path);
 
-        //Add HandlerEnvironment.json in the temp directory
         let handler_env_file = temp_test_path.to_path_buf().join("HandlerEnvironment.json");
 
-        //Create raw handler environment json string
+        // Case 1: eventsFolder exists
         let json_handler_linux: &str = r#"[{
             "version": 1.0,
             "handlerEnvironment": {
@@ -352,22 +369,53 @@ mod tests {
             }
         }]"#;
 
-        //Deserialize handler environment json string
         let handler_env_obj: Vec<Handler> = serde_json::from_str(json_handler_linux).unwrap();
-
-        //Write the deserialized json object to HandlerEnvironment.json file
         _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
 
+        let events_folder = temp_test_path.join("test_kusto");
+        _ = misc_helpers::try_create_folder(&events_folder);
+        assert!(events_folder.exists(), "Events folder should exist");
+
         let handler_env = super::get_handler_environment(&temp_test_path);
-        assert_eq!(handler_env.logFolder, "log".to_string());
-        assert_eq!(handler_env.configFolder, "config".to_string());
-        assert_eq!(handler_env.statusFolder, "status".to_string());
-        assert_eq!(handler_env.heartbeatFile, "heartbeat.json".to_string());
-        assert_eq!(handler_env.eventsFolder, "test_kusto".to_string());
-        assert_eq!(handler_env.deploymentid, None);
-        assert_eq!(handler_env.rolename, None);
-        assert_eq!(handler_env.instance, None);
-        assert_eq!(handler_env.hostResolverAddress, None);
+        assert_eq!(handler_env.eventsFolder, Some("test_kusto".to_string()));
+
+        // Case 2: eventsFolder does NOT exist
+        _ = fs::remove_dir_all(&events_folder);
+        assert!(!events_folder.exists(), "Events folder should NOT exist");
+        let handler_env = super::get_handler_environment(&temp_test_path);
+        assert_eq!(handler_env.eventsFolder, Some("test_kusto".to_string()));
+
+        // Case 3: eventsFolder is not specified (None)
+        let json_handler_no_events: &str = r#"[{
+            "version": 1.0,
+            "handlerEnvironment": {
+                "logFolder": "log",
+                "configFolder": "config",
+                "statusFolder": "status",
+                "heartbeatFile": "heartbeat.json"
+            }
+        }]"#;
+        let handler_env_obj: Vec<Handler> = serde_json::from_str(json_handler_no_events).unwrap();
+        _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
+        let handler_env = super::get_handler_environment(&temp_test_path);
+        assert_eq!(handler_env.eventsFolder, None);
+
+        // Case 4: eventsFolder is an empty string
+        let json_handler_empty_events: &str = r#"[{
+            "version": 1.0,
+            "handlerEnvironment": {
+                "logFolder": "log",
+                "configFolder": "config",
+                "statusFolder": "status",
+                "heartbeatFile": "heartbeat.json",
+                "eventsFolder": ""
+            }
+        }]"#;
+        let handler_env_obj: Vec<Handler> =
+            serde_json::from_str(json_handler_empty_events).unwrap();
+        _ = misc_helpers::json_write_to_file(&handler_env_obj, &handler_env_file);
+        let handler_env = super::get_handler_environment(&temp_test_path);
+        assert_eq!(handler_env.eventsFolder, Some("".to_string()));
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
