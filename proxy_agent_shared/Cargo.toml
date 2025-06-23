@@ -23,6 +23,8 @@ backtrace = "0.3"             # used for get the caller module and function name
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
 winreg = "0.11.0"             # windows reg read/write
+serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
+chrono = "0.4.41"             # parse date time string
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.52.0"
@@ -31,6 +33,7 @@ features = [
   "Win32_Networking_WinSock",
   "Win32_System_IO",
   "Win32_Security",
+  "Win32_System_EventLog",
   "Win32_System_WindowsProgramming",
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",

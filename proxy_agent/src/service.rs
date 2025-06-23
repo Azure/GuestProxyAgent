@@ -27,11 +27,13 @@ use std::time::Duration;
 /// service::start_service(shared_state).await;
 /// ```
 pub async fn start_service(shared_state: SharedState) {
+    if let Some(max_log_level) = config::get_file_log_level_for_system_events() {
+        logger_manager::set_system_logger(max_log_level, constants::PROXY_AGENT_SERVICE_NAME);
+    }
+
     let log_folder = config::get_logs_dir();
     if log_folder == PathBuf::from("") {
-        logger::write_console_log(
-            "The log folder is not set, skip write to GPA managed file log.".to_string(),
-        );
+        println!("The log folder is not set, skip write to GPA managed file log.");
     } else {
         setup_loggers(log_folder, config::get_file_log_level());
     }
@@ -78,8 +80,6 @@ pub async fn start_service(shared_state: SharedState) {
 }
 
 fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
-    logger_manager::set_logger_level(max_logger_level);
-
     let agent_logger = RollingLogger::create_new(
         log_folder.clone(),
         "ProxyAgent.log".to_string(),
@@ -98,7 +98,11 @@ fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
         ConnectionLogger::CONNECTION_LOGGER_KEY.to_string(),
         connection_logger,
     );
-    logger_manager::set_loggers(loggers, logger::AGENT_LOGGER_KEY.to_string());
+    logger_manager::set_loggers(
+        loggers,
+        logger::AGENT_LOGGER_KEY.to_string(),
+        max_logger_level,
+    );
 }
 
 /// Start the service and wait until the service is stopped.

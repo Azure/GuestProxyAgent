@@ -49,6 +49,19 @@ fn read_reg_string(key_name: &str, value_name: &str, default_value: String) -> S
     default_value
 }
 
+pub fn set_reg_string(key_name: &str, value_name: &str, value: String) -> Result<()> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let (key, _) = hklm.create_subkey(key_name)?;
+    key.set_value(value_name, &value)?;
+    Ok(())
+}
+
+pub fn remove_reg_key(key_name: &str) -> Result<()> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    hklm.delete_subkey_all(key_name)?;
+    Ok(())
+}
+
 const OS_VERSION_REGISTRY_KEY: &str = "Software\\Microsoft\\Windows NT\\CurrentVersion";
 const PRODUCT_NAME_VAL_STRING: &str = "ProductName";
 const CURRENT_MAJOR_VERSION_NUMBER_STRING: &str = "CurrentMajorVersionNumber";
@@ -368,5 +381,22 @@ mod tests {
         };
         println!("kernel32.dll File product version: {}", version);
         assert_eq!(version.major, 10, "major version mismatch");
+    }
+
+    #[test]
+    fn reg_set_test() {
+        let key_name = "Software\\TestKey";
+        let value_name = "TestValue";
+        let value = "TestValueData".to_string();
+
+        // Set the registry value
+        super::set_reg_string(key_name, value_name, value.clone()).unwrap();
+
+        // Read the registry value
+        let read_value = super::read_reg_string(key_name, value_name, "".to_string());
+        assert_eq!(value, read_value, "Registry value mismatch");
+
+        // Clean up
+        super::remove_reg_key(key_name).unwrap();
     }
 }
