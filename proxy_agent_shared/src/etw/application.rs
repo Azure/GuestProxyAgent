@@ -324,6 +324,10 @@ mod tests {
                         if event.system.provider.name == Some(self.source_name.clone()) {
                             // Check if the event is within the specified time range
                             let time_created = event.system.time_created.system_time.clone();
+                            println!(
+                                "Event '{}' Time Created: {:?}",
+                                self.source_name, time_created
+                            );
                             if let Some(start_time) = self.start_time {
                                 match time_created.clone() {
                                     Some(time) => {
