@@ -91,7 +91,7 @@ async fn get_user(
     } else {
         let user = User::from_logon_id(logon_id)?;
         if let Err(e) = proxy_server_shared_state.add_user(user.clone()).await {
-            println!("Failed to add user: {} to cache", e);
+            println!("Failed to add user: {e} to cache");
         }
         Ok(user)
     }

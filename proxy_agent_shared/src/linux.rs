@@ -47,8 +47,7 @@ pub fn get_os_version() -> String {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to read os-release file in get_os_version(): {} with error: {}",
-                    OS_RELEASE_PATH, e
+                    "Failed to read os-release file in get_os_version(): {OS_RELEASE_PATH} with error: {e}",
                 );
                 logger_manager::write_warn(message);
                 return "Unknown".to_string();
@@ -78,8 +77,7 @@ pub fn get_os_type() -> String {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to read os-release file in get_os_type(): {} with error: {}",
-                    OS_RELEASE_PATH, e
+                    "Failed to read os-release file in get_os_type(): {OS_RELEASE_PATH} with error: {e}",
                 );
                 logger_manager::write_warn(message);
                 return "Unknown".to_string();

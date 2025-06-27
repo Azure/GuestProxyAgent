@@ -58,6 +58,19 @@ then
 fi
 echo "======= BuildEnvironment is $BuildEnvironment"
 
+echo "======= cargo fmt & clippy with the latest stable toolchain"
+# remove the override if set before and use the default toolchain, 
+rustup override unset
+rustup update stable
+rustup component add clippy rustfmt
+cargo fmt --all
+cargo clippy -- -D warnings
+error_code=$?
+if [ $error_code -ne 0 ]
+then 
+    echo "cargo clippy with exit-code: $error_code"
+    exit $error_code
+fi
 
 echo "======= rustup update to a particular version"
 rustup_version=1.85.0
@@ -69,18 +82,6 @@ rustup override set $rustup_version
 rustup target install $build_target
 
 cargo install cargo-deb
-
-echo "======= cargo fmt & clippy"
-runthis rustup component add --toolchain $rustup_version-$gnu_target rustfmt
-cargo fmt --all
-runthis rustup component add --toolchain $rustup_version-$gnu_target clippy
-cargo clippy -- -D warnings
-error_code=$?
-if [ $error_code -ne 0 ]
-then 
-    echo "cargo clippy with exit-code: $error_code"
-    exit $error_code
-fi
 
 echo "======= build proxy_agent_shared"
 cargo_toml=$root_path/proxy_agent_shared/Cargo.toml

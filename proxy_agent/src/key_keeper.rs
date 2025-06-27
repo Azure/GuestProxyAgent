@@ -175,7 +175,7 @@ impl KeyKeeper {
         let notify = match self.key_keeper_shared_state.get_notify().await {
             Ok(notify) => notify,
             Err(e) => {
-                logger::write_error(format!("Failed to get notify: {}", e));
+                logger::write_error(format!("Failed to get notify: {e}"));
                 return;
             }
         };
@@ -187,8 +187,7 @@ impl KeyKeeper {
             .await
         {
             logger::write_error(format!(
-                "Failed to set key_keeper module state to 'Running' with error: {} ",
-                e
+                "Failed to set key_keeper module state to 'Running' with error: {e} "
             ));
         }
 
@@ -205,8 +204,7 @@ impl KeyKeeper {
                     Ok(state) => state,
                     Err(e) => {
                         logger::write_warning(format!(
-                            "Failed to get current secure channel state: {}",
-                            e
+                            "Failed to get current secure channel state: {e}"
                         ));
                         UNKNOWN_STATE.to_string()
                     }
@@ -229,10 +227,10 @@ impl KeyKeeper {
                     // this is to handle quicker response to the secure channel state change during VM provisioning.
                     _ = notify.notified() => {
                         if  current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
-                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{}', reset states and start poll status now.", current_state));
+                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{current_state}', reset states and start poll status now."));
                             provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
                             if let Err(e) =  self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await{
-                                logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {}", e));
+                                logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {e}"));
                             }
 
                             if start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
@@ -253,7 +251,7 @@ impl KeyKeeper {
                             let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
                             if continue_sleep > 0 {
                                 let continue_sleep = Duration::from_millis(continue_sleep as u64);
-                                let message = format!("poll_secure_channel_status task notified but secure channel state is '{}', continue with sleep wait for {:?}.", current_state, continue_sleep);
+                                let message = format!("poll_secure_channel_status task notified but secure channel state is '{current_state}', continue with sleep wait for {continue_sleep:?}.");
                                 logger::write_warning(message);
                                 tokio::time::sleep(continue_sleep).await;
                             }
@@ -292,12 +290,12 @@ impl KeyKeeper {
             let status = match key::get_status(&self.base_url).await {
                 Ok(s) => s,
                 Err(e) => {
-                    self.update_status_message(format!("Failed to get key status - {}", e), true)
+                    self.update_status_message(format!("Failed to get key status - {e}"), true)
                         .await;
                     continue;
                 }
             };
-            self.update_status_message(format!("Got key status successfully: {}.", status), true)
+            self.update_status_message(format!("Got key status successfully: {status}."), true)
                 .await;
 
             let mut access_control_rules_changed = false;
@@ -313,21 +311,20 @@ impl KeyKeeper {
                 Ok((updated, old_wire_server_rule_id)) => {
                     if updated {
                         logger::write_warning(format!(
-                            "Wireserver rule id changed from '{}' to '{}'.",
-                            old_wire_server_rule_id, wireserver_rule_id
+                            "Wireserver rule id changed from '{old_wire_server_rule_id}' to '{wireserver_rule_id}'."
                         ));
                         if let Err(e) = self
                             .key_keeper_shared_state
                             .set_wireserver_rules(status.get_wireserver_rules())
                             .await
                         {
-                            logger::write_error(format!("Failed to set wireserver rules: {}", e));
+                            logger::write_error(format!("Failed to set wireserver rules: {e}"));
                         }
                         access_control_rules_changed = true;
                     }
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to update wireserver rule id: {}", e));
+                    logger::write_warning(format!("Failed to update wireserver rule id: {e}"));
                 }
             }
 
@@ -339,21 +336,20 @@ impl KeyKeeper {
                 Ok((updated, old_imds_rule_id)) => {
                     if updated {
                         logger::write_warning(format!(
-                            "IMDS rule id changed from '{}' to '{}'.",
-                            old_imds_rule_id, imds_rule_id
+                            "IMDS rule id changed from '{old_imds_rule_id}' to '{imds_rule_id}'."
                         ));
                         if let Err(e) = self
                             .key_keeper_shared_state
                             .set_imds_rules(status.get_imds_rules())
                             .await
                         {
-                            logger::write_error(format!("Failed to set imds rules: {}", e));
+                            logger::write_error(format!("Failed to set imds rules: {e}"));
                         }
                         access_control_rules_changed = true;
                     }
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to update imds rule id: {}", e));
+                    logger::write_warning(format!("Failed to update imds rule id: {e}"));
                 }
             }
 
@@ -365,21 +361,20 @@ impl KeyKeeper {
                 Ok((updated, old_hostga_rule_id)) => {
                     if updated {
                         logger::write_warning(format!(
-                            "HostGA rule id changed from '{}' to '{}'.",
-                            old_hostga_rule_id, hostga_rule_id
+                            "HostGA rule id changed from '{old_hostga_rule_id}' to '{hostga_rule_id}'."
                         ));
                         if let Err(e) = self
                             .key_keeper_shared_state
                             .set_hostga_rules(status.get_hostga_rules())
                             .await
                         {
-                            logger::write_error(format!("Failed to set HostGA rules: {}", e));
+                            logger::write_error(format!("Failed to set HostGA rules: {e}"));
                         }
                         access_control_rules_changed = true;
                     }
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to update HostGA rule id: {}", e));
+                    logger::write_warning(format!("Failed to update HostGA rule id: {e}"));
                 }
             }
 
@@ -416,7 +411,7 @@ impl KeyKeeper {
                             if let Err(e) =
                                 self.key_keeper_shared_state.update_key(key.clone()).await
                             {
-                                logger::write_warning(format!("Failed to update key: {}", e));
+                                logger::write_warning(format!("Failed to update key: {e}"));
                             }
 
                             let message = helpers::write_startup_event(
@@ -440,7 +435,7 @@ impl KeyKeeper {
                         Err(e) => {
                             event_logger::write_event(
                                 LoggerLevel::Info,
-                                format!("Failed to fetch local key details with error: {:?}. Will try acquire the key details from Server.", e),
+                                format!("Failed to fetch local key details with error: {e:?}. Will try acquire the key details from Server."),
                                 "poll_secure_channel_status",
                                 "key_keeper",
                                 logger::AGENT_LOGGER_KEY,
@@ -458,7 +453,7 @@ impl KeyKeeper {
                         Ok(k) => k,
                         Err(e) => {
                             self.update_status_message(
-                                format!("Failed to acquire key details: {:?}", e),
+                                format!("Failed to acquire key details: {e:?}"),
                                 true,
                             )
                             .await;
@@ -471,11 +466,11 @@ impl KeyKeeper {
                     match Self::store_key(&self.key_dir, &key) {
                         Ok(()) => {
                             logger::write_information(format!(
-                        "Successfully acquired the key '{}' details from server and saved locally.", guid));
+                        "Successfully acquired the key '{guid}' details from server and saved locally."));
                         }
                         Err(e) => {
                             self.update_status_message(
-                                format!("Failed to save key details to file: {:?}", e),
+                                format!("Failed to save key details to file: {e:?}"),
                                 true,
                             )
                             .await;
@@ -487,8 +482,7 @@ impl KeyKeeper {
                     if let Err(e) = Self::check_key(&self.key_dir, &key) {
                         self.update_status_message(
                             format!(
-                                "Failed to check the key '{}' details saved locally: {:?}.",
-                                guid, e
+                                "Failed to check the key '{guid}' details saved locally: {e:?}."
                             ),
                             true,
                         )
@@ -501,7 +495,7 @@ impl KeyKeeper {
                                 if let Err(e) =
                                     self.key_keeper_shared_state.update_key(key.clone()).await
                                 {
-                                    logger::write_warning(format!("Failed to update key: {}", e));
+                                    logger::write_warning(format!("Failed to update key: {e}"));
                                 }
 
                                 let message = helpers::write_startup_event(
@@ -521,7 +515,7 @@ impl KeyKeeper {
                                 .await;
                             }
                             Err(e) => {
-                                logger::write_warning(format!("Failed to attest the key: {:?}", e));
+                                logger::write_warning(format!("Failed to attest the key: {e:?}"));
                                 continue;
                             }
                         }
@@ -567,7 +561,7 @@ impl KeyKeeper {
 
                             // clear key in memory for disabled state
                             if let Err(e) = self.key_keeper_shared_state.clear_key().await {
-                                logger::write_warning(format!("Failed to clear key: {}", e));
+                                logger::write_warning(format!("Failed to clear key: {e}"));
                             }
                             provision::key_latched(
                                 self.cancellation_token.clone(),
@@ -581,7 +575,7 @@ impl KeyKeeper {
                     }
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to update secure channel state: {}", e));
+                    logger::write_warning(format!("Failed to update secure channel state: {e}"));
                 }
             }
         }
@@ -600,7 +594,7 @@ impl KeyKeeper {
                 }
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to set module status message: {}", e));
+                logger::write_warning(format!("Failed to set module status message: {e}"));
             }
         }
     }
@@ -690,8 +684,7 @@ impl KeyKeeper {
 
         serde_json::from_str::<Key>(&key_data).map_err(|e| {
             Error::Key(crate::common::error::KeyErrorType::FetchLocalKey(format!(
-                "Parse key data with error: {}",
-                e
+                "Parse key data with error: {e}"
             )))
         })
     }
@@ -760,8 +753,7 @@ impl KeyKeeper {
             .await
         {
             logger::write_warning(format!(
-                "Failed to set key_keeper module state to 'Stopped' with error: {} ",
-                e
+                "Failed to set key_keeper module state to 'Stopped' with error: {e} "
             ));
         }
     }

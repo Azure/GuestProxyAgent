@@ -81,8 +81,7 @@ impl ProvisionSharedState {
                         provision_state |= state;
                         if let Err(new_state) = response.send(provision_state.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to ProvisionAction::UpdateState with new state '{:?}'",
-                                new_state
+                                "Failed to send response to ProvisionAction::UpdateState with new state '{new_state:?}'"
                             ));
                         }
                     }
@@ -90,16 +89,14 @@ impl ProvisionSharedState {
                         provision_state &= !state;
                         if let Err(new_state) = response.send(provision_state.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to ProvisionAction::ResetState with new state '{:?}'",
-                                new_state
+                                "Failed to send response to ProvisionAction::ResetState with new state '{new_state:?}'"
                             ));
                         }
                     }
                     ProvisionAction::GetState { response } => {
                         if let Err(state) = response.send(provision_state.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to ProvisionAction::GetState with state '{:?}'",
-                                state
+                                "Failed to send response to ProvisionAction::GetState with state '{state:?}'"
                             ));
                         }
                     }
@@ -114,8 +111,7 @@ impl ProvisionSharedState {
                             response.send(provision_event_log_threads_initialized)
                         {
                             logger::write_warning(format!(
-                                "Failed to send response to ProvisionAction::GetEventLogsThreadsInitialized with initialized '{:?}'",
-                                initialized
+                                "Failed to send response to ProvisionAction::GetEventLogsThreadsInitialized with initialized '{initialized:?}'"
                             ));
                         }
                     }
@@ -135,8 +131,7 @@ impl ProvisionSharedState {
                     ProvisionAction::GetProvisionFinished { response } => {
                         if let Err(finished) = response.send(provision_finished_time_tick) {
                             logger::write_warning(format!(
-                                "Failed to send response to ProvisionAction::GetProvisionFinished with finished '{:?}'",
-                                finished
+                                "Failed to send response to ProvisionAction::GetProvisionFinished with finished '{finished:?}'"
                             ));
                         }
                     }

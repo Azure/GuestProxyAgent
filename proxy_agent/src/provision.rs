@@ -596,10 +596,7 @@ pub mod provision_query {
                 let state = match self.get_current_provision_status(first_loop).await {
                     Ok(state) => state,
                     Err(e) => {
-                        println!(
-                            "Failed to query the current provision state with error: {}.",
-                            e
-                        );
+                        println!("Failed to query the current provision state with error: {e}.");
                         ProvisionState::new(false, String::new())
                     }
                 };

@@ -160,16 +160,14 @@ impl KeyKeeperSharedState {
                         current_secure_channel_state = state.to_string();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::SetSecureChannelState '{}' ",
-                                state
+                                "Failed to send response to KeyKeeperAction::SetSecureChannelState '{state}' "
                             ));
                         }
                     }
                     Some(KeyKeeperAction::GetSecureChannelState { response }) => {
                         if let Err(state) = response.send(current_secure_channel_state.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::GetSecureChannelState '{}'",
-                                state
+                                "Failed to send response to KeyKeeperAction::GetSecureChannelState '{state}'"                                
                             ));
                         }
                     }
@@ -177,16 +175,14 @@ impl KeyKeeperSharedState {
                         wireserver_rule_id = rule_id.to_string();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::SetWireServerRuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::SetWireServerRuleId '{rule_id}'"                                
                             ));
                         }
                     }
                     Some(KeyKeeperAction::GetWireServerRuleId { response }) => {
                         if let Err(rule_id) = response.send(wireserver_rule_id.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::GetWireServerRuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::GetWireServerRuleId '{rule_id}'"                                
                             ));
                         }
                     }
@@ -194,24 +190,21 @@ impl KeyKeeperSharedState {
                         imds_rule_id = rule_id.to_string();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::SetImdsRuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::SetImdsRuleId '{rule_id}'"                                
                             ));
                         }
                     }
                     Some(KeyKeeperAction::GetImdsRuleId { response }) => {
                         if let Err(rule_id) = response.send(imds_rule_id.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::GetImdsRuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::GetImdsRuleId '{rule_id}'"
                             ));
                         }
                     }
                     Some(KeyKeeperAction::GetHostGARuleId { response }) => {
                         if let Err(rule_id) = response.send(hostga_rule_id.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::GetHostGARuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::GetHostGARuleId '{rule_id}'"                                
                             ));
                         }
                     }
@@ -219,8 +212,7 @@ impl KeyKeeperSharedState {
                         hostga_rule_id = rule_id.to_string();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::SetHostGARuleId '{}'",
-                                rule_id
+                                "Failed to send response to KeyKeeperAction::SetHostGARuleId '{rule_id}'"                                
                             ));
                         }
                     }

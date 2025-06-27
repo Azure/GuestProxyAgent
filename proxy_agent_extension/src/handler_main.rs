@@ -144,12 +144,11 @@ fn get_update_tag_file() -> PathBuf {
 fn update_tag_file_exists() -> bool {
     let update_tag_file = get_update_tag_file();
     if update_tag_file.exists() {
-        logger::write(format!("update tag file exists: {:?}", update_tag_file));
+        logger::write(format!("update tag file exists: {update_tag_file:?}"));
         true
     } else {
         logger::write(format!(
-            "update tag file does not exist: {:?}",
-            update_tag_file
+            "update tag file does not exist: {update_tag_file:?}"
         ));
         false
     }
@@ -165,12 +164,12 @@ fn get_exe_parent() -> PathBuf {
             Path::new("")
         }
     };
-    logger::write(format!("exe parent: {:?}", exe_parent));
+    logger::write(format!("exe parent: {exe_parent:?}"));
     exe_parent.to_path_buf()
 }
 
 async fn handle_command(command: ExtensionCommand, config_seq_no: String) {
-    logger::write(format!("entering handle command: {:?}", command));
+    logger::write(format!("entering handle command: {command:?}"));
     let status_folder = HANDLER_ENVIRONMENT.statusFolder.to_string();
     let status_folder_path: PathBuf = PathBuf::from(&status_folder);
     match command {
@@ -200,28 +199,26 @@ fn uninstall_handler() {
                 match str::from_utf8(&output.stdout) {
                     Ok(output_string) => {
                         logger::write(format!(
-                            "uninstalling GuestProxyAgent, output: {}",
-                            output_string
+                            "uninstalling GuestProxyAgent, output: {output_string}"
                         ));
                     }
                     Err(e) => {
-                        logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                        logger::write(format!("error in uninstalling GuestProxyAgent: {e:?}"));
                     }
                 }
                 match str::from_utf8(&output.stderr) {
                     Ok(output_string) => {
                         logger::write(format!(
-                            "output stderr for uninstall GuestProxyAgent: {}",
-                            output_string
+                            "output stderr for uninstall GuestProxyAgent: {output_string}"
                         ));
                     }
                     Err(e) => {
-                        logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                        logger::write(format!("error in uninstalling GuestProxyAgent: {e:?}"));
                     }
                 }
             }
             Err(e) => {
-                logger::write(format!("error in uninstalling GuestProxyAgent: {:?}", e));
+                logger::write(format!("error in uninstalling GuestProxyAgent: {e:?}"));
             }
         }
     }
@@ -240,7 +237,7 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
             }
         }
         Err(e) => {
-            logger::write(format!("error in updating current seq no: {:?}", e));
+            logger::write(format!("error in updating current seq no: {e:?}"));
             process::exit(constants::EXIT_CODE_WRITE_CURRENT_SEQ_NO_ERROR);
         }
     }
@@ -273,13 +270,12 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
                     Ok(child) => {
                         let pid = child.id();
                         logger::write(format!(
-                            "ProxyAgentExt started with pid: {}, do not start new one.",
-                            pid
+                            "ProxyAgentExt started with pid: {pid}, do not start new one."
                         ));
                         break;
                     }
                     Err(e) => {
-                        logger::write(format!("error in starting ProxyAgentExt: {:?}", e));
+                        logger::write(format!("error in starting ProxyAgentExt: {e:?}"));
                     }
                 }
             }
@@ -294,7 +290,7 @@ async fn enable_handler(status_folder: PathBuf, config_seq_no: String) {
                 "update tag file removed: {:?}",
                 update_tag_file.to_path_buf()
             )),
-            Err(e) => logger::write(format!("error in removing update tag file: {:?}", e)),
+            Err(e) => logger::write(format!("error in removing update tag file: {e:?}")),
         }
     }
 }
@@ -312,7 +308,7 @@ fn get_linux_extension_long_running_process() -> Option<i32> {
 
     for p in system.processes_by_exact_name(constants::EXTENSION_PROCESS_NAME) {
         let cmd = p.cmd();
-        logger::write(format!("cmd: {:?}", cmd));
+        logger::write(format!("cmd: {cmd:?}"));
         if cmd.len() == 1 {
             logger::write(format!("ProxyAgentExt running with pid: {}", p.pid()));
             return Some(p.pid().as_u32() as i32);
@@ -334,10 +330,10 @@ async fn disable_handler() {
                 let p = NixPid::from_raw(pid);
                 match kill(p, SIGKILL) {
                     Ok(_) => {
-                        logger::write(format!("ProxyAgentExt process with pid: {} killed", pid));
+                        logger::write(format!("ProxyAgentExt process with pid: {pid} killed"));
                     }
                     Err(e) => {
-                        logger::write(format!("error in killing ProxyAgentExt process: {:?}", e));
+                        logger::write(format!("error in killing ProxyAgentExt process: {e:?}"));
                     }
                 }
             }
@@ -357,14 +353,14 @@ fn reset_handler() {
             "update tag file removed: {:?}",
             update_tag_file.to_path_buf()
         )),
-        Err(e) => logger::write(format!("error in removing update tag file: {:?}", e)),
+        Err(e) => logger::write(format!("error in removing update tag file: {e:?}")),
     }
     match fs::remove_file(&seq_no_file) {
         Ok(_) => logger::write(format!(
             "seq no file removed: {:?}",
             seq_no_file.to_path_buf()
         )),
-        Err(e) => logger::write(format!("error in removing seq no file: {:?}", e)),
+        Err(e) => logger::write(format!("error in removing seq no file: {e:?}")),
     }
 }
 
@@ -374,7 +370,7 @@ async fn update_handler() {
         let version = match std::env::var("VERSION") {
             Ok(ver) => ver,
             Err(e) => {
-                logger::write(format!("error in getting VERSION from env::var: {:?}", e));
+                logger::write(format!("error in getting VERSION from env::var: {e:?}"));
                 process::exit(constants::EXIT_CODE_UPDATE_TO_VERSION_ENV_VAR_NOTFOUND);
             }
         };
@@ -403,7 +399,7 @@ async fn update_handler() {
                     break;
                 }
                 Err(e) => {
-                    logger::write(format!("error in creating update tag file: {:?}", e));
+                    logger::write(format!("error in creating update tag file: {e:?}"));
                 }
             }
         }

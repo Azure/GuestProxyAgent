@@ -207,7 +207,7 @@ impl AgentStatusSharedState {
                             }
                         }
                         if response.send(updated).is_err() {
-                            logger::write_warning(format!("Failed to send response to AgentStatusAction::SetStatusMessage for module {:?}", module));
+                            logger::write_warning(format!("Failed to send response to AgentStatusAction::SetStatusMessage for module {module:?}"));
                         }
                     }
                     AgentStatusAction::GetStatusMessage { module, response } => {
@@ -227,8 +227,7 @@ impl AgentStatusSharedState {
                         };
                         if let Err(message) = response.send(message) {
                             logger::write_warning(format!(
-                                "Failed to send response to AgentStatusAction::GetStatusMessage for module '{:?}' with message '{:?}'",
-                                module,message
+                                "Failed to send response to AgentStatusAction::GetStatusMessage for module '{module:?}' with message '{message:?}'"
                             ));
                         }
                     }
@@ -258,7 +257,7 @@ impl AgentStatusSharedState {
                             }
                         }
                         if let Err(state) = response.send(state) {
-                            logger::write_warning(format!("Failed to send response to AgentStatusAction::SetState '{:?}' for module '{:?}'", state, module));
+                            logger::write_warning(format!("Failed to send response to AgentStatusAction::SetState '{state:?}' for module '{module:?}'"));
                         }
                     }
                     AgentStatusAction::GetState { module, response } => {
@@ -272,8 +271,7 @@ impl AgentStatusSharedState {
                         };
                         if let Err(state) = response.send(state) {
                             logger::write_warning(format!(
-                                "Failed to send response to AgentStatusAction::GetState for module '{:?}' with state '{:?}'",
-                                module,state
+                                "Failed to send response to AgentStatusAction::GetState for module '{module:?}' with state '{state:?}'"
                             ));
                         }
                     }
@@ -342,8 +340,7 @@ impl AgentStatusSharedState {
                     AgentStatusAction::GetConnectionCount { response } => {
                         if let Err(count) = response.send(http_connection_count) {
                             logger::write_warning(format!(
-                                "Failed to send response to AgentStatusAction::GetConnectionCount with count '{:?}'",
-                                count
+                                "Failed to send response to AgentStatusAction::GetConnectionCount with count '{count:?}'"
                             ));
                         }
                     }
@@ -352,8 +349,7 @@ impl AgentStatusSharedState {
                         http_connection_count = http_connection_count.overflowing_add(1).0;
                         if let Err(count) = response.send(http_connection_count) {
                             logger::write_warning(format!(
-                                "Failed to send response to AgentStatusAction::IncreaseConnectionCount with count '{:?}'",
-                                count
+                                "Failed to send response to AgentStatusAction::IncreaseConnectionCount with count '{count:?}'"
                             ));
                         }
                     }
@@ -362,8 +358,7 @@ impl AgentStatusSharedState {
                         tcp_connection_count = tcp_connection_count.overflowing_add(1).0;
                         if let Err(count) = response.send(tcp_connection_count) {
                             logger::write_warning(format!(
-                                "Failed to send response to AgentStatusAction::IncreaseTcpConnectionCount with count '{:?}'",
-                                count
+                                "Failed to send response to AgentStatusAction::IncreaseTcpConnectionCount with count '{count:?}'"
                             ));
                         }
                     }
@@ -483,13 +478,13 @@ impl AgentStatusSharedState {
             .await
             .map_err(|e| {
                 Error::SendError(
-                    format!("AgentStatusAction::GetState ({:?})", module),
+                    format!("AgentStatusAction::GetState ({module:?})"),
                     e.to_string(),
                 )
             })?;
         response_rx
             .await
-            .map_err(|e| Error::RecvError(format!("AgentStatusAction::GetState ({:?})", module), e))
+            .map_err(|e| Error::RecvError(format!("AgentStatusAction::GetState ({module:?})"), e))
     }
 
     pub async fn set_module_state(
@@ -507,13 +502,13 @@ impl AgentStatusSharedState {
             .await
             .map_err(|e| {
                 Error::SendError(
-                    format!("AgentStatusAction::SetState ({:?})", module),
+                    format!("AgentStatusAction::SetState ({module:?})"),
                     e.to_string(),
                 )
             })?;
         response_rx
             .await
-            .map_err(|e| Error::RecvError(format!("AgentStatusAction::SetState ({:?})", module), e))
+            .map_err(|e| Error::RecvError(format!("AgentStatusAction::SetState ({module:?})"), e))
     }
 
     pub async fn get_module_status_message(&self, module: AgentStatusModule) -> Result<String> {
@@ -526,13 +521,13 @@ impl AgentStatusSharedState {
             .await
             .map_err(|e| {
                 Error::SendError(
-                    format!("AgentStatusAction::GetStatusMessage ({:?})", module),
+                    format!("AgentStatusAction::GetStatusMessage ({module:?})"),
                     e.to_string(),
                 )
             })?;
         response_rx.await.map_err(|e| {
             Error::RecvError(
-                format!("AgentStatusAction::GetStatusMessage ({:?})", module),
+                format!("AgentStatusAction::GetStatusMessage ({module:?})"),
                 e,
             )
         })
@@ -560,13 +555,13 @@ impl AgentStatusSharedState {
             .await
             .map_err(|e| {
                 Error::SendError(
-                    format!("AgentStatusAction::SetStatusMessage ({:?})", module),
+                    format!("AgentStatusAction::SetStatusMessage ({module:?})"),
                     e.to_string(),
                 )
             })?;
         let update = response_rx.await.map_err(|e| {
             Error::RecvError(
-                format!("AgentStatusAction::SetStatusMessage ({:?})", module),
+                format!("AgentStatusAction::SetStatusMessage ({module:?})"),
                 e,
             )
         })?;
@@ -577,7 +572,7 @@ impl AgentStatusSharedState {
                 LoggerLevel::Warn,
                 message,
                 "set_module_status_message",
-                &format!("{:?}", module),
+                &format!("{module:?}"),
                 logger::AGENT_LOGGER_KEY,
             );
         }
@@ -588,7 +583,7 @@ impl AgentStatusSharedState {
         let state = match self.get_module_state(module.clone()).await {
             Ok(state) => state,
             Err(e) => {
-                logger::write_warning(format!("Error getting module '{:?}' status: {}", module, e));
+                logger::write_warning(format!("Error getting module '{module:?}' status: {e}"));
                 ModuleState::UNKNOWN
             }
         };
@@ -596,8 +591,7 @@ impl AgentStatusSharedState {
             Ok(message) => message,
             Err(e) => {
                 logger::write_warning(format!(
-                    "Error getting module '{:?}' status message: {}",
-                    module, e
+                    "Error getting module '{module:?}' status message: {e}"
                 ));
                 super::UNKNOWN_STATUS_MESSAGE.to_string()
             }
@@ -606,11 +600,10 @@ impl AgentStatusSharedState {
             event_logger::write_event(
                 LoggerLevel::Warn,
                 format!(
-                    "Status message is too long, truncating to {} characters. Message: {}",
-                    MAX_STATUS_MESSAGE_LENGTH, message
+                    "Status message is too long, truncating to {MAX_STATUS_MESSAGE_LENGTH} characters. Message: {message}"
                 ),
                 "get_status",
-                &format!("{:?}", module),
+                &format!("{state:?}"),
                 logger::AGENT_LOGGER_KEY,
             );
             message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);

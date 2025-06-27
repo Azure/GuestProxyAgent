@@ -419,8 +419,7 @@ impl KeyStatus {
             && key_delivery_method != constants::KEY_DELIVERY_METHOD_VTPM
         {
             validate_message.push_str(&format!(
-                "keyDeliveryMethod '{}' is invalid; ",
-                key_delivery_method
+                "keyDeliveryMethod '{key_delivery_method}' is invalid; "
             ));
         }
 
@@ -444,7 +443,7 @@ impl KeyStatus {
                     && state != super::MUST_SIG_WIRESERVER_IMDS
                 {
                     validate_message
-                        .push_str(&format!("secureChannelState '{}' is invalid; ", state));
+                        .push_str(&format!("secureChannelState '{state}' is invalid; "));
                     validate_result = false;
                 }
             }
@@ -528,7 +527,7 @@ impl KeyStatus {
                             None => return super::DISABLE_STATE.to_string(),
                         }
 
-                        format!("{} - {} - {}", wireserver, imds, hostga)
+                        format!("{wireserver} - {imds} - {hostga}")
                     } else {
                         super::DISABLE_STATE.to_string()
                     }
@@ -720,7 +719,7 @@ const KEY_URL: &str = "/secure-channel/key";
 
 pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
     let (host, port) = hyper_client::host_port_from_uri(base_url)?;
-    let url = format!("http://{}:{}{}", host, port, STATUS_URL);
+    let url = format!("http://{host}:{port}{STATUS_URL}");
     let url: Uri = url.parse().map_err(|e| {
         Error::Key(KeyErrorType::ParseKeyUrl(
             base_url.to_string(),
@@ -739,7 +738,7 @@ pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
 
 pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
     let (host, port) = hyper_client::host_port_from_uri(base_url)?;
-    let url = format!("http://{}:{}{}", host, port, KEY_URL);
+    let url = format!("http://{host}:{port}{KEY_URL}");
     let url: Uri = url.parse().map_err(|e| {
         Error::Key(KeyErrorType::ParseKeyUrl(
             base_url.to_string(),

@@ -99,8 +99,7 @@ async fn monitor_thread() {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
                 format!(
-                    "Current seq_no: {} does not match cached seq no {}",
-                    current_seq_no, cache_seq_no
+                    "Current seq_no: {current_seq_no} does not match cached seq no {cache_seq_no}"
                 ),
                 "monitor_thread",
                 "service_main",
@@ -125,9 +124,8 @@ async fn monitor_thread() {
                 // Call setup tool to install or update proxy agent service
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
-                    format!("Version mismatch between file versions. ProxyAgentService File Version: {}, ProxyAgent in Extension File Version: {}", 
-                        proxyagent_service_file_version,
-                        proxyagent_file_version_in_extension),
+                    format!("Version mismatch between file versions. ProxyAgentService File Version: {proxyagent_service_file_version}, ProxyAgent in Extension File Version: {proxyagent_file_version_in_extension}"
+                        ),
                     "monitor_thread",
                     "service_main",
                     logger_key,
@@ -301,7 +299,7 @@ fn backup_proxyagent(setup_tool: &String) {
         Err(e) => {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
-                format!("Error in running Backup Proxy Agent command: {}", e),
+                format!("Error in running Backup Proxy Agent command: {e}"),
                 "backup_proxyagent",
                 "service_main",
                 &logger::get_logger_key(),
@@ -345,8 +343,7 @@ fn report_proxy_agent_aggregate_status(
             );
         }
         Err(e) => {
-            let error_message =
-                format!("Error in reading proxy agent aggregate status file: {}", e);
+            let error_message = format!("Error in reading proxy agent aggregate status file: {e}");
             write_state_event(
                 constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
                 constants::ERROR_STATUS,
@@ -409,7 +406,7 @@ fn extension_substatus(
         proxy_agent_aggregate_status_obj.version.to_string();
     if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         status.status = status_state_obj.update_state(false);
-        let version_mismatch_message = format!("Proxy agent aggregate status file version {} does not match proxy agent file version in extension {}", proxy_agent_aggregate_status_file_version, proxyagent_file_version_in_extension);
+        let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
         write_state_event(
             constants::STATE_KEY_FILE_VERSION,
             constants::ERROR_STATUS,
@@ -459,7 +456,7 @@ fn extension_substatus(
                 Ok(proxy_agent_aggregate_status) => proxy_agent_aggregate_status,
                 Err(e) => {
                     let error_message =
-                        format!("Error in serializing proxy agent aggregate status: {}", e);
+                        format!("Error in serializing proxy agent aggregate status: {e}");
                     logger::write(error_message.to_string());
                     error_message
                 }
@@ -482,8 +479,7 @@ fn extension_substatus(
                 }
                 Err(e) => {
                     let error_message = format!(
-                        "Error in serializing proxy agent aggregate connection status: {}",
-                        e
+                        "Error in serializing proxy agent aggregate connection status: {e}"
                     );
                     logger::write(error_message.to_string());
                     substatus_proxy_agent_connection_message = error_message;
@@ -511,8 +507,7 @@ fn extension_substatus(
                 }
                 Err(e) => {
                     let error_message = format!(
-                        "Error in serializing proxy agent aggregate failed auth status: {}",
-                        e
+                        "Error in serializing proxy agent aggregate failed auth status: {e}"
                     );
                     logger::write(error_message.to_string());
                     substatus_failed_auth_message = error_message;
@@ -631,7 +626,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             Err(e) => {
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
-                    format!("Error in running Restore Proxy Agent command: {}", e),
+                    format!("Error in running Restore Proxy Agent command: {e}"),
                     "restore_purge_proxyagent",
                     "service_main",
                     &logger::get_logger_key(),
@@ -663,7 +658,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
             Err(e) => {
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
-                    format!("Error in running Purge Proxy Agent command: {}", e),
+                    format!("Error in running Purge Proxy Agent command: {e}"),
                     "restore_purge_proxyagent",
                     "service_main",
                     &logger::get_logger_key(),
@@ -724,7 +719,7 @@ fn report_proxy_agent_service_status(
         Err(e) => {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
-                format!("Error in running Update Proxy Agent command: {}", e),
+                format!("Error in running Update Proxy Agent command: {e}"),
                 "report_proxy_agent_service_status",
                 "service_main",
                 &logger::get_logger_key(),
@@ -734,7 +729,7 @@ fn report_proxy_agent_service_status(
             status.code = constants::STATUS_CODE_NOT_OK;
             status.status = status_state_obj.update_state(false);
             status.formattedMessage.message =
-                format!("Update Proxy Agent command failed with error: {}", e);
+                format!("Update Proxy Agent command failed with error: {e}");
             status.substatus = Default::default();
             common::report_status(status_folder, seq_no, status);
         }

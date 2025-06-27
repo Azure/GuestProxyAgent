@@ -268,13 +268,13 @@ pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
     if !proxy_agent_exe.exists() {
         return Err(Error::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("File '{}' does not found", proxy_agent_exe_str),
+            format!("File '{proxy_agent_exe_str}' does not found"),
         )));
     }
     if !proxy_agent_exe.is_file() {
         return Err(Error::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("'{}' is not a file", proxy_agent_exe_str),
+            format!("'{proxy_agent_exe_str}' is not a file"),
         )));
     }
 

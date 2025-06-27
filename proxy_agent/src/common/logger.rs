@@ -64,11 +64,11 @@ pub fn write_serial_console_log(message: String) {
     {
         Ok(mut serial_console) => {
             if serial_console.write_all(message.as_bytes()).is_err() {
-                eprintln!("Failed to write to serial console: {}", message);
+                eprintln!("Failed to write to serial console: {message}");
             }
         }
         Err(e) => {
-            eprintln!("Failed to open serial console: {}", e);
+            eprintln!("Failed to open serial console: {e}");
         }
     }
 }
