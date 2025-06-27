@@ -382,7 +382,9 @@ mod tests {
         use super::ApplicationEventWritter;
         use crate::logger::LoggerLevel;
 
-        let start_time = chrono::Utc::now();
+        // According to the test log, it indicates that Windows Container may have few milliseconds difference against its current host time.
+        // Therefore, we set the start time to 1 second before the current time.
+        let start_time = chrono::Utc::now() - chrono::Duration::seconds(1);
         let end_time = start_time + chrono::Duration::seconds(60);
 
         let source_name = "GuestProxyAgent_TestApplication";
