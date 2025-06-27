@@ -31,16 +31,14 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
         .map_err(|e| Error::Acl(AclErrorType::Sid(BUILDIN_ADMIN_SID.to_string()), e))?;
 
     logger::write(format!(
-        "acl_directory: removing all the remaining access rules for folder {}.",
-        dir_str
+        "acl_directory: removing all the remaining access rules for folder {dir_str}."
     ));
 
     match acl.all() {
         Ok(entries) => {
             logger::write(format!(
-                "acl_directory: get '{}' access rules for folder {}.",
-                entries.len(),
-                dir_str
+                "acl_directory: get '{len}' access rules for folder {dir_str}.",
+                len = entries.len()
             ));
             for entry in entries {
                 match entry.sid {
@@ -55,12 +53,11 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
                             None, // remove all, including inherited permissions
                         ) {
                             Ok(r) => {
-                                logger::write(format!("acl_directory: removed '{}' entry.", r));
+                                logger::write(format!("acl_directory: removed '{r}' entry."));
                             }
                             Err(e) => {
                                 logger::write_warning(format!(
-                                    "acl_directory: remove_entry failed with error '{}' entry.",
-                                    e
+                                    "acl_directory: remove_entry failed with error '{e}' entry.",
                                 ));
                             }
                         }
@@ -77,8 +74,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     }
 
     logger::write(format!(
-        "acl_directory: Adding new access rules for the target directory {}.",
-        dir_str
+        "acl_directory: Adding new access rules for the target directory {dir_str}."
     ));
     let flags = (CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE) as u8;
     let mask = FULL_CONTROL;
@@ -90,8 +86,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     ) {
         Ok(r) => {
             logger::write(format!(
-                "acl_directory: Adding new access rules for sid {} with result {}.",
-                LOCAL_SYSTEM_SID, r
+                "acl_directory: Adding new access rules for sid {LOCAL_SYSTEM_SID} with result {r}.",
             ));
         }
         Err(e) => {
@@ -109,8 +104,7 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     ) {
         Ok(r) => {
             logger::write(format!(
-                "acl_directory: Adding new access rules for sid {} with result {}.",
-                BUILDIN_ADMIN_SID, r
+                "acl_directory: Adding new access rules for sid {BUILDIN_ADMIN_SID} with result {r}."
             ));
         }
         Err(e) => {

@@ -58,10 +58,8 @@ impl ApplicationEventWritter {
 
         // register event source in the Windows Registry
         // `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\Application\{source_name}`
-        let key_name = format!(
-            r"SYSTEM\CurrentControlSet\Services\EventLog\Application\{}",
-            source_name
-        );
+        let key_name =
+            format!(r"SYSTEM\CurrentControlSet\Services\EventLog\Application\{source_name}");
         let value = crate::misc_helpers::resolve_env_variables(
             r"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll",
         )?;

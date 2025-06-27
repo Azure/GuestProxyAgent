@@ -18,7 +18,7 @@ static CURRENT_SYS_INFO: Lazy<(u64, usize)> = Lazy::new(|| {
         let ram_in_mb = match windows::get_memory_in_mb() {
             Ok(ram) => ram,
             Err(e) => {
-                logger::write_error(format!("get_memory_in_mb failed: {}", e));
+                logger::write_error(format!("get_memory_in_mb failed: {e}"));
                 0
             }
         };

@@ -27,7 +27,7 @@ pub fn try_load_ebpf_api() -> bool {
             if let Err(e) = EBPF_API.set(ebpf_api) {
                 event_logger::write_event(
                     LoggerLevel::Error,
-                    format!("{}", e),
+                    format!("{e}"),
                     "try_load_ebpf_api",
                     "redirector",
                     logger::AGENT_LOGGER_KEY,
@@ -61,7 +61,7 @@ fn init_ebpf_lib() -> Option<Library> {
                         if let Err(e) = EBPF_API_VERSION.set(v) {
                             event_logger::write_event(
                                 LoggerLevel::Error,
-                                format!("{}", e),
+                                format!("{e}"),
                                 "EBPF_API_VERSION.set",
                                 "redirector",
                                 logger::AGENT_LOGGER_KEY,
@@ -71,7 +71,7 @@ fn init_ebpf_lib() -> Option<Library> {
                     Err(e) => {
                         event_logger::write_event(
                             LoggerLevel::Warn,
-                            format!("{}", e),
+                            format!("{e}"),
                             "get_file_product_version",
                             "redirector",
                             logger::AGENT_LOGGER_KEY,
@@ -85,7 +85,7 @@ fn init_ebpf_lib() -> Option<Library> {
         Err(e) => {
             event_logger::write_event(
                 LoggerLevel::Warn,
-                format!("{}", e),
+                format!("{e}"),
                 "load_ebpf_api",
                 "redirector",
                 logger::AGENT_LOGGER_KEY,
@@ -101,7 +101,7 @@ fn init_ebpf_lib() -> Option<Library> {
         Err(e) => {
             event_logger::write_event(
                 LoggerLevel::Warn,
-                format!("{}", e),
+                format!("{e}"),
                 "load_ebpf_api",
                 "redirector",
                 logger::AGENT_LOGGER_KEY,

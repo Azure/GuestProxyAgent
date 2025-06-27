@@ -610,8 +610,7 @@ impl KeyKeeper {
                     &key_file,
                     serde_json::to_string(&key).map_err(|e| {
                         Error::Key(KeyErrorType::StoreLocalKey(format!(
-                            "serialize key error: {:?} ",
-                            e
+                            "serialize key error: {e:?} "
                         )))
                     })?,
                 )
@@ -697,8 +696,7 @@ impl KeyKeeper {
                 #[cfg(windows)]
                 {
                     logger::write_information(format!(
-                        "Failed to fetch .encrypted file with error: {}. Fallback to fetch .key file for windows platform.",
-                        _e
+                        "Failed to fetch .encrypted file with error: {_e}. Fallback to fetch .key file for windows platform."
                     ));
                 }
 

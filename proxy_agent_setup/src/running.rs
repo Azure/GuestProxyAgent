@@ -49,7 +49,7 @@ pub fn proxy_agent_version_target_folder(proxy_agent_exe: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         let path = proxy_agent_parent_folder();
-        path.join(format!("Package_{}", proxy_agent_version))
+        path.join(format!("Package_{proxy_agent_version}"))
     }
     #[cfg(not(windows))]
     {

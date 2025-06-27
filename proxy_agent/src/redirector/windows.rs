@@ -122,8 +122,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
     if result != 0 {
         let error = unsafe { WinSock::WSAGetLastError() };
         return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT result: {}, WSAGetLastError: {}",
-            result, error,
+            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT result: {result}, WSAGetLastError: {error}",
         ))));
     }
 
@@ -131,8 +130,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
     // since the result is 0 even if there is no redirect context in this socket stream.
     if redirect_context_returned != redirect_context_size {
         return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT returned size: {}, expected size: {}",
-            redirect_context_returned, redirect_context_size,
+            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT returned size: {redirect_context_returned}, expected size: {redirect_context_size}",
         ))));
     }
 
@@ -153,8 +151,7 @@ pub async fn update_wire_server_redirect_policy(
                     constants::WIRE_SERVER_PORT,
                 ) {
                     logger::write_error(format!(
-                        "Failed to update bpf map for wireserver redirect policy with result: {}",
-                        e
+                        "Failed to update bpf map for wireserver redirect policy with result: {e}"
                     ));
                 } else {
                     logger::write(
@@ -167,8 +164,7 @@ pub async fn update_wire_server_redirect_policy(
             constants::WIRE_SERVER_PORT,
         ) {
             logger::write_error(format!(
-                "Failed to delete bpf map for wireserver redirect policy with result: {}",
-                e
+                "Failed to delete bpf map for wireserver redirect policy with result: {e}"
             ));
         } else {
             logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());

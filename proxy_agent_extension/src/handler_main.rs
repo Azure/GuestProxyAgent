@@ -58,7 +58,7 @@ pub async fn program_start(command: ExtensionCommand, config_seq_no: String) {
 fn check_windows_os_version(version: Version) -> bool {
     match version.build {
         Some(build) => {
-            logger::write(format!("OS build version: {}", build));
+            logger::write(format!("OS build version: {build}"));
             build >= constants::MIN_SUPPORTED_OS_BUILD
         }
         None => false,

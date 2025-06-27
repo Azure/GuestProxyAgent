@@ -74,14 +74,14 @@ pub fn set_system_logger(max_log_level: LoggerLevel, _service_name: &str) {
                     if let Err(e) = WINDOWS_ETW_APPLICATION_LOGGER.set(logger) {
                         write_system_log(
                             LoggerLevel::Error,
-                            format!("Failed to set Windows Application ETW logger: {}", e),
+                            format!("Failed to set Windows Application ETW logger: {e}"),
                         );
                     }
                 }
                 Err(e) => {
                     write_system_log(
                         LoggerLevel::Error,
-                        format!("Failed to create Windows Application ETW logger: {}", e),
+                        format!("Failed to create Windows Application ETW logger: {e}"),
                     );
                 }
             }
