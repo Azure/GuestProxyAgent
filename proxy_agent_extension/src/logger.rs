@@ -23,7 +23,7 @@ pub fn init_logger(log_folder: String, log_name: &str) {
 
     if !LOGGER_KEY.initialized() {
         if let Err(e) = LOGGER_KEY.set(log_name.to_string()) {
-            eprintln!("Failed to set logger key: {}", e);
+            eprintln!("Failed to set logger key: {e}");
         };
     }
 }

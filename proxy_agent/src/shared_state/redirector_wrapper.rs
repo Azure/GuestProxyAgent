@@ -61,16 +61,14 @@ impl RedirectorSharedState {
                         local_port = new_local_port;
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to RedirectorAction::SetLocalPort '{}'",
-                                new_local_port
+                                "Failed to send response to RedirectorAction::SetLocalPort '{new_local_port}'"                                
                             ));
                         }
                     }
                     RedirectorAction::GetLocalPort { response } => {
                         if let Err(port) = response.send(local_port) {
                             logger::write_warning(format!(
-                                "Failed to send response to RedirectorAction::GetLocalPort '{}'",
-                                port
+                                "Failed to send response to RedirectorAction::GetLocalPort '{port}'"
                             ));
                         }
                     }

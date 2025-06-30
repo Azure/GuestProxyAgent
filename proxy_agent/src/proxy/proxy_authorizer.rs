@@ -66,7 +66,7 @@ impl Authorizer for WireServer {
             } else {
                 if rules.mode == AuthorizationMode::Audit {
                     logger.write(
-                            LoggerLevel::Info, format!("WireServer request {} denied in audit mode, continue forward the request", request_url));
+                            LoggerLevel::Info, format!("WireServer request {request_url} denied in audit mode, continue forward the request"));
                     return AuthorizeResult::OkWithAudit;
                 }
                 return AuthorizeResult::Forbidden;
@@ -104,8 +104,7 @@ impl Authorizer for Imds {
                     logger.write(
                         LoggerLevel::Info,
                         format!(
-                            "IMDS request {} denied in audit mode, continue forward the request",
-                            request_url
+                            "IMDS request {request_url} denied in audit mode, continue forward the request"
                         ),
                     );
                     return AuthorizeResult::OkWithAudit;
@@ -143,7 +142,7 @@ impl Authorizer for GAPlugin {
             } else {
                 if rules.mode == AuthorizationMode::Audit {
                     logger.write(
-                            LoggerLevel::Info, format!("HostGAPlugin request {} denied in audit mode, continue forward the request", request_url));
+                            LoggerLevel::Info, format!("HostGAPlugin request {request_url} denied in audit mode, continue forward the request"));
                     return AuthorizeResult::OkWithAudit;
                 }
                 return AuthorizeResult::Forbidden;

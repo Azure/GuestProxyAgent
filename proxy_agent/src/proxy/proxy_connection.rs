@@ -39,7 +39,7 @@ impl Client {
         let full_url = req.uri().to_string();
         self.sender.send_request(req).await.map_err(|e| {
             Error::Hyper(HyperErrorType::Custom(
-                format!("Failed to send request to {}", full_url),
+                format!("Failed to send request to {full_url}"),
                 e,
             ))
         })
@@ -91,7 +91,7 @@ impl TcpConnectionContext {
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Error,
-                            format!("Failed to get claims from audit entry: {}", e),
+                            format!("Failed to get claims from audit entry: {e}"),
                         );
                         // return None for claims
                         None
@@ -154,22 +154,20 @@ impl TcpConnectionContext {
                 logger.write(
                     LoggerLevel::Trace,
                     format!(
-                        "Found audit entry with client_source_port '{}' successfully",
-                        client_source_port
+                        "Found audit entry with client_source_port '{client_source_port}' successfully"
                     ),
                 );
                 match redirector::remove_audit(client_source_port, redirector_shared_state).await {
                     Ok(_) => logger.write(
                         LoggerLevel::Trace,
                         format!(
-                            "Removed audit entry with client_source_port '{}' successfully",
-                            client_source_port
+                            "Removed audit entry with client_source_port '{client_source_port}' successfully"
                         ),
                     ),
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Warn,
-                            format!("Failed to remove audit entry: {}", e),
+                            format!("Failed to remove audit entry: {e}"),
                         );
                     }
                 }
@@ -178,8 +176,7 @@ impl TcpConnectionContext {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to find audit entry with client_source_port '{}' with error: {}",
-                    client_source_port, e
+                    "Failed to find audit entry with client_source_port '{client_source_port}' with error: {e}"
                 );
                 logger.write(LoggerLevel::Warn, message.clone());
 
@@ -206,7 +203,7 @@ impl TcpConnectionContext {
                         Err(e) => {
                             logger.write(
                                 LoggerLevel::Warn,
-                                format!("Failed to get lookup_audit_from_stream with error: {}", e),
+                                format!("Failed to get lookup_audit_from_stream with error: {e}"),
                             );
                             Err(Error::FindAuditEntryError(message))
                         }

@@ -58,10 +58,8 @@ impl ApplicationEventWritter {
 
         // register event source in the Windows Registry
         // `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\Application\{source_name}`
-        let key_name = format!(
-            r"SYSTEM\CurrentControlSet\Services\EventLog\Application\{}",
-            source_name
-        );
+        let key_name =
+            format!(r"SYSTEM\CurrentControlSet\Services\EventLog\Application\{source_name}");
         let value = crate::misc_helpers::resolve_env_variables(
             r"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll",
         )?;
@@ -326,6 +324,10 @@ mod tests {
                         if event.system.provider.name == Some(self.source_name.clone()) {
                             // Check if the event is within the specified time range
                             let time_created = event.system.time_created.system_time.clone();
+                            println!(
+                                "Event '{}' Time Created: {:?}",
+                                self.source_name, time_created
+                            );
                             if let Some(start_time) = self.start_time {
                                 match time_created.clone() {
                                     Some(time) => {
@@ -380,7 +382,9 @@ mod tests {
         use super::ApplicationEventWritter;
         use crate::logger::LoggerLevel;
 
-        let start_time = chrono::Utc::now();
+        // According to the test log, it indicates that Windows Container may have few milliseconds difference against its current host time.
+        // Therefore, we set the start time to 1 second before the current time.
+        let start_time = chrono::Utc::now() - chrono::Duration::seconds(1);
         let end_time = start_time + chrono::Duration::seconds(60);
 
         let source_name = "GuestProxyAgent_TestApplication";

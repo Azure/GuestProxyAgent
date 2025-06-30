@@ -127,8 +127,7 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
         Ok(_) => {}
         Err(e) => {
             logger::write(format!(
-                "Failed to create folder {:?}, error: {:?}",
-                dst_folder, e
+                "Failed to create folder {dst_folder:?}, error: {e:?}"
             ));
         }
     }
@@ -139,12 +138,11 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
                 let dst_file = dst_folder.join(&file_name);
                 match fs::copy(&file, &dst_file) {
                     Ok(_) => {
-                        logger::write(format!("Copied {:?} to {:?}", file, dst_file));
+                        logger::write(format!("Copied {file:?} to {dst_file:?}"));
                     }
                     Err(e) => {
                         logger::write(format!(
-                            "Failed to copy {:?} to {:?}, error: {:?}",
-                            file, dst_file, e
+                            "Failed to copy {file:?} to {dst_file:?}, error: {e:?}"
                         ));
                     }
                 }
@@ -152,8 +150,7 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
         }
         Err(e) => {
             logger::write(format!(
-                "Failed to get files from {:?}, error: {:?}",
-                src_folder, e
+                "Failed to get files from {src_folder:?}, error: {e:?}"
             ));
         }
     }
@@ -162,12 +159,11 @@ fn copy_proxy_agent_files(src_folder: PathBuf, dst_folder: PathBuf) {
 async fn stop_service() {
     match service::stop_service(SERVICE_NAME).await {
         Ok(_) => {
-            logger::write(format!("Stopped service {} successfully", SERVICE_NAME));
+            logger::write(format!("Stopped service {SERVICE_NAME} successfully"));
         }
         Err(e) => {
             logger::write(format!(
-                "Stopped service {} failed, error: {:?}",
-                SERVICE_NAME, e
+                "Stopped service {SERVICE_NAME} failed, error: {e:?}"
             ));
         }
     }
@@ -188,13 +184,10 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
     {
         match linux::setup_service(SERVICE_NAME, _service_config_folder_path) {
             Ok(_) => {
-                logger::write(format!("Setup service {} successfully", SERVICE_NAME));
+                logger::write(format!("Setup service {SERVICE_NAME} successfully"));
             }
             Err(e) => {
-                logger::write(format!(
-                    "Setup service {} failed, error: {:?}",
-                    SERVICE_NAME, e
-                ));
+                logger::write(format!("Setup service {SERVICE_NAME} failed, error: {e:?}"));
                 process::exit(1);
             }
         }
@@ -207,12 +200,11 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
         setup::proxy_agent_exe_path(&proxy_agent_target_folder),
     ) {
         Ok(_) => {
-            logger::write(format!("Install service {} successfully", SERVICE_NAME));
+            logger::write(format!("Install service {SERVICE_NAME} successfully"));
         }
         Err(e) => {
             logger::write(format!(
-                "Install service {} failed, error: {:?}",
-                SERVICE_NAME, e
+                "Install service {SERVICE_NAME} failed, error: {e:?}",
             ));
             process::exit(1);
         }
@@ -243,8 +235,7 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
                 }
                 Err(e) => {
                     logger::write(format!(
-                        "ebpf_setup: failed to invoke script file '{}', error: '{:?}'.",
-                        setup_script_file_str, e
+                        "ebpf_setup: failed to invoke script file '{setup_script_file_str}', error: '{e:?}'."
                     ));
                 }
             }
@@ -253,25 +244,21 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
 
     match service::start_service(SERVICE_NAME, 5, Duration::from_secs(15)).await {
         Ok(_) => {
-            logger::write(format!("Service {} start successfully", SERVICE_NAME));
+            logger::write(format!("Service {SERVICE_NAME} start successfully"));
         }
         Err(e) => {
-            logger::write(format!(
-                "Service {} start failed, error: {:?}",
-                SERVICE_NAME, e
-            ));
+            logger::write(format!("Service {SERVICE_NAME} start failed, error: {e:?}"));
             process::exit(1);
         }
     }
-    logger::write(format!("Service {} start successfully", SERVICE_NAME));
+    logger::write(format!("Service {SERVICE_NAME} start successfully"));
 }
 
 fn check_backup_exists() -> bool {
     let proxy_agent_exe = setup::proxy_agent_exe_path(&backup::proxy_agent_backup_package_folder());
     if !proxy_agent_exe.exists() {
         logger::write(format!(
-            "GuestProxyAgent ({:?}) does not exists.",
-            proxy_agent_exe
+            "GuestProxyAgent ({proxy_agent_exe:?}) does not exists."
         ));
         return false;
     }
@@ -284,12 +271,11 @@ async fn uninstall_service() -> PathBuf {
 
     match service::stop_and_delete_service(SERVICE_NAME).await {
         Ok(_) => {
-            logger::write(format!("Uninstall service {} successfully", SERVICE_NAME));
+            logger::write(format!("Uninstall service {SERVICE_NAME} successfully"));
         }
         Err(e) => {
             logger::write(format!(
-                "Uninstall service {} failed, error: {:?}",
-                SERVICE_NAME, e
+                "Uninstall service {SERVICE_NAME} failed, error: {e:?}"
             ));
             process::exit(1);
         }
@@ -312,12 +298,11 @@ fn delete_package(_proxy_agent_running_folder: PathBuf) {
 fn delete_folder(folder_to_be_delete: PathBuf) {
     match fs::remove_dir_all(&folder_to_be_delete) {
         Ok(_) => {
-            logger::write(format!("Deleted folder {:?}", folder_to_be_delete));
+            logger::write(format!("Deleted folder {folder_to_be_delete:?}"));
         }
         Err(e) => {
             logger::write(format!(
-                "Failed to delete folder {:?}, error: {:?}",
-                folder_to_be_delete, e
+                "Failed to delete folder {folder_to_be_delete:?}, error: {e:?}"
             ));
         }
     }

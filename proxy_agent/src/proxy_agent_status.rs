@@ -92,7 +92,7 @@ impl ProxyAgentStatusTask {
             .set_module_status_message(status_message, AgentStatusModule::ProxyAgentStatus)
             .await
         {
-            logger::write_error(format!("Error updating agent status message: {}", e));
+            logger::write_error(format!("Error updating agent status message: {e}"));
         }
     }
 
@@ -104,7 +104,7 @@ impl ProxyAgentStatusTask {
         {
             Ok(message) => message,
             Err(e) => {
-                let message = format!("Error getting agent status message: {}", e);
+                let message = format!("Error getting agent status message: {e}");
                 logger::write_error(message.clone());
                 message
             }
@@ -131,7 +131,7 @@ impl ProxyAgentStatusTask {
             if status_report_time.elapsed() >= status_report_duration {
                 let status = match serde_json::to_string(&aggregate_status.proxyAgentStatus) {
                     Ok(status) => status,
-                    Err(e) => format!("Error serializing proxy agent status: {}", e),
+                    Err(e) => format!("Error serializing proxy agent status: {e}"),
                 };
                 event_logger::write_event(
                     LoggerLevel::Info,
@@ -152,7 +152,7 @@ impl ProxyAgentStatusTask {
                         .to_string(),
                 );
                 if let Err(e) = self.agent_status_shared_state.clear_all_summary().await {
-                    logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {}", e));
+                    logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {e}"));
                 }
                 start_time = Instant::now();
             }
@@ -249,7 +249,7 @@ impl ProxyAgentStatusTask {
             {
                 Ok(count) => count,
                 Err(e) => {
-                    logger::write_error(format!("Error getting connection count: {}", e));
+                    logger::write_error(format!("Error getting connection count: {e}"));
                     0
                 }
             },
@@ -267,7 +267,7 @@ impl ProxyAgentStatusTask {
             {
                 Ok(summary) => summary,
                 Err(e) => {
-                    logger::write_error(format!("Error getting connection summary: {}", e));
+                    logger::write_error(format!("Error getting connection summary: {e}"));
                     vec![]
                 }
             },
@@ -278,7 +278,7 @@ impl ProxyAgentStatusTask {
             {
                 Ok(summary) => summary,
                 Err(e) => {
-                    logger::write_error(format!("Error getting failed connection summary: {}", e));
+                    logger::write_error(format!("Error getting failed connection summary: {e}"));
                     vec![]
                 }
             },
@@ -289,8 +289,7 @@ impl ProxyAgentStatusTask {
         let full_file_path = self.status_dir.join("status.json");
         if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
             self.update_agent_status_message(format!(
-                "Error writing aggregate status to status file: {}",
-                e
+                "Error writing aggregate status to status file: {e}"
             ))
             .await;
         } else {

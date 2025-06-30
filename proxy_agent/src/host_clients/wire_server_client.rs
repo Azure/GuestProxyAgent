@@ -82,7 +82,7 @@ impl WireServerClient {
                 Err(e) => {
                     return Err(Error::WireServer(
                         WireServerErrorType::Telemetry,
-                        format!("Failed to send request {}", e),
+                        format!("Failed to send request {e}"),
                     ))
                 }
             };
@@ -91,10 +91,7 @@ impl WireServerClient {
         if !status.is_success() {
             return Err(Error::WireServer(
                 WireServerErrorType::Telemetry,
-                format!(
-                    "Failed to get response from {}, status code: {}",
-                    url, status
-                ),
+                format!("Failed to get response from {url}, status code: {status}"),
             ));
         }
 

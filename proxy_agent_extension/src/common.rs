@@ -61,7 +61,7 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
             ));
         }
         Err(e) => {
-            logger::write(format!("Error in creating HeartBeat file: {:?}", e));
+            logger::write(format!("Error in creating HeartBeat file: {e:?}"));
         }
     }
 }
@@ -69,7 +69,7 @@ pub fn report_heartbeat(heartbeat_file_path: PathBuf, heartbeat_obj: structs::He
 pub fn get_file_path(status_folder: PathBuf, config_seq_no: &str, file_extension: &str) -> PathBuf {
     let mut file: PathBuf = status_folder;
     if let Err(e) = misc_helpers::try_create_folder(&file) {
-        logger::write(format!("Error in creating folder: {:?}", e));
+        logger::write(format!("Error in creating folder: {e:?}"));
     }
     file.push(config_seq_no);
     file.set_extension(file_extension);
@@ -107,10 +107,10 @@ pub fn report_status(
     // TODO: retry if write failed
     match fs::write(&status_file, root_status) {
         Ok(_) => {
-            logger::write(format!("Status file created: {:?}", status_file));
+            logger::write(format!("Status file created: {status_file:?}"));
         }
         Err(e) => {
-            logger::write(format!("Error in creating status file: {:?}", e));
+            logger::write(format!("Error in creating status file: {e:?}"));
         }
     }
 }
@@ -128,12 +128,9 @@ pub fn update_current_seq_no(config_seq_no: &str, exe_path: &Path) -> Result<boo
     match fs::read_to_string(&current_seq_no_stored_file) {
         Ok(seq_no) => {
             if seq_no != *config_seq_no {
-                logger::write(format!(
-                    "updating seq no from {} to {}",
-                    seq_no, config_seq_no
-                ));
+                logger::write(format!("updating seq no from {seq_no} to {config_seq_no}"));
                 if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
-                    logger::write(format!("Error in writing seq no to file: {:?}", e));
+                    logger::write(format!("Error in writing seq no to file: {e:?}"));
                     return Err(Error::Io(e));
                 }
             } else {
@@ -148,7 +145,7 @@ pub fn update_current_seq_no(config_seq_no: &str, exe_path: &Path) -> Result<boo
                 current_seq_no_stored_file.display()
             ));
             if let Err(e) = fs::write(&current_seq_no_stored_file, config_seq_no) {
-                logger::write(format!("Error in writing seq no to file: {:?}", e));
+                logger::write(format!("Error in writing seq no to file: {e:?}"));
                 return Err(Error::Io(e));
             }
         }
@@ -161,11 +158,11 @@ pub fn get_current_seq_no(exe_path: &Path) -> String {
     let current_seq_no_stored_file: PathBuf = exe_path.join(constants::CURRENT_SEQ_NO_FILE);
     match fs::read_to_string(current_seq_no_stored_file) {
         Ok(seq_no) => {
-            logger::write(format!("Current seq no: {}", seq_no));
+            logger::write(format!("Current seq no: {seq_no}"));
             seq_no
         }
         Err(e) => {
-            logger::write(format!("Error reading current seq no file: {:?}", e));
+            logger::write(format!("Error reading current seq no file: {e:?}"));
             "".to_string()
         }
     }
@@ -242,8 +239,7 @@ pub async fn start_event_logger() {
             // Check if the events folder exists
             if !event_folder.exists() {
                 logger::write(format!(
-                    "Events folder does not exist: {:?}. Skipping event logger start.",
-                    event_folder
+                    "Events folder does not exist: {event_folder:?}. Skipping event logger start."
                 ));
                 return;
             }

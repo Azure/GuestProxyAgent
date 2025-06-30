@@ -21,14 +21,13 @@ pub async fn start_service_with_retry(
     duration: std::time::Duration,
 ) -> Result<()> {
     for i in 0..retry_count {
-        logger_manager::write_info(format!("Starting service {} attempt {}", service_name, i));
+        logger_manager::write_info(format!("Starting service '{service_name}' attempt {i}"));
 
         match start_service_once(service_name).await {
             Ok(service) => {
                 if service.current_state == ServiceState::Running {
                     logger_manager::write_info(format!(
-                        "Service {} is at Running state",
-                        service_name
+                        "Service '{service_name}' is at Running state"
                     ));
                     return Ok(());
                 }
@@ -43,19 +42,13 @@ pub async fn start_service_with_retry(
             }
             Err(e) => {
                 logger_manager::write_warn(
-                    format!(
-                        "Extension service {} start failed with error: {}",
-                        service_name, e
-                    )
-                    .to_string(),
+                    format!("Extension service '{service_name}' start failed with error: {e}")
+                        .to_string(),
                 );
                 if (i + 1) == retry_count {
                     logger_manager::write_err(
-                        format!(
-                            "Service {} failed to start after {} attempts",
-                            service_name, i
-                        )
-                        .to_string(),
+                        format!("Service '{service_name}' failed to start after {i} attempts")
+                            .to_string(),
                     );
                     return Err(e);
                 }
@@ -70,10 +63,10 @@ async fn start_service_once(service_name: &str) -> Result<ServiceStatus> {
     // Start service if it already isn't running
     let service = query_service_status(service_name)?;
     if service.current_state == ServiceState::Running {
-        logger_manager::write_info(format!("Service '{}' is already running", service_name));
+        logger_manager::write_info(format!("Service '{service_name}' is already running"));
         Ok(service)
     } else {
-        logger_manager::write_info(format!("Starting service '{}'", service_name));
+        logger_manager::write_info(format!("Starting service '{service_name}'"));
         let service_manager: ServiceManager =
             ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
                 .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
@@ -122,8 +115,7 @@ pub async fn stop_service(service_name: &str) -> Result<ServiceStatus> {
             }
             Err(e) => {
                 logger_manager::write_info(format!(
-                    "Stopped service {} failed, error: {:?}",
-                    service_name, e
+                    "Stopped service {service_name} failed, error: {e:?}"
                 ));
             }
         }

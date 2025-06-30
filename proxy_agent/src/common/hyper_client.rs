@@ -166,8 +166,7 @@ where
             Err(e) => Err(Error::Hyper(
                 HyperErrorType::Deserialize(
                     format!(
-                        "Failed to xml deserialize response body with content_type {} from: {} with error {}",
-                        content_type, body_string, e
+                        "Failed to xml deserialize response body with content_type {content_type} from: {body_string} with error {e}"
                     )
                 ),
             )),
@@ -178,8 +177,7 @@ where
             Err(e) => Err(Error::Hyper(
                 HyperErrorType::Deserialize(
                     format!(
-                        "Failed to json deserialize response body with {} from: {} with error {}",
-                        content_type, body_string, e
+                        "Failed to json deserialize response body with {content_type} from: {body_string} with error {e}"
                     )
                 ),
             )),
@@ -246,8 +244,7 @@ pub fn build_request(
     match request_builder.body(boxed_body) {
         Ok(r) => Ok(r),
         Err(e) => Err(Error::Hyper(HyperErrorType::RequestBuilder(format!(
-            "Failed to build request body: {}",
-            e
+            "Failed to build request body: {e}"
         )))),
     }
 }
@@ -268,7 +265,7 @@ where
     let mut sender = build_http_sender(host, port, log_fun).await?;
     sender.send_request(request).await.map_err(|e| {
         Error::Hyper(HyperErrorType::Custom(
-            format!("Failed to send request to {}", full_url),
+            format!("Failed to send request to {full_url}"),
             e,
         ))
     })
@@ -285,12 +282,12 @@ where
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     F: FnMut(String) + Send + 'static,
 {
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
         Err(e) => {
             return Err(Error::Io(
-                format!("Failed to open TCP connection to {}", addr),
+                format!("Failed to open TCP connection to {addr}"),
                 e,
             ))
         }
@@ -301,13 +298,13 @@ where
         .await
         .map_err(|e| {
             Error::Hyper(HyperErrorType::Custom(
-                format!("Failed to establish connection to {}", addr),
+                format!("Failed to establish connection to {addr}"),
                 e,
             ))
         })?;
     tokio::task::spawn(async move {
         if let Err(err) = conn.await {
-            log_fun(format!("Connection failed: {:?}", err));
+            log_fun(format!("Connection failed: {err:?}"));
         }
     });
 
@@ -428,7 +425,7 @@ fn get_path_and_canonicalized_parameters(url: &Uri) -> (String, String) {
             pairs.insert(
                 // add the query parameter value for sorting,
                 // just in case of duplicate keys by value lexicographically in ascending order.
-                format!("{}{}", key, value),
+                format!("{key}{value}"),
                 (key.to_lowercase(), value.to_string()),
             );
         }

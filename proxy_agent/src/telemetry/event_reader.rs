@@ -171,7 +171,7 @@ impl EventReader {
                     logger::write("success updated the vm metadata.".to_string());
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                    logger::write_warning(format!("Failed to read vm metadata with error {e}."));
                 }
             }
 
@@ -198,8 +198,7 @@ impl EventReader {
                     .process_events_and_clean(files, wire_server_client, vm_meta_data)
                     .await;
                 let message = format!(
-                    "Telemetry event reader sent {} events from {} files",
-                    event_count, file_count
+                    "Telemetry event reader sent {event_count} events from {file_count} files"
                 );
                 logger::write(message);
             }
@@ -248,7 +247,7 @@ impl EventReader {
             .set_vm_meta_data(Some(vm_meta_data.clone()))
             .await?;
 
-        logger::write(format!("Updated VM Metadata: {:?}", vm_meta_data));
+        logger::write(format!("Updated VM Metadata: {vm_meta_data:?}"));
         Ok(())
     }
 
@@ -301,9 +300,8 @@ impl EventReader {
                                 match serde_json::to_string(&event) {
                                     Ok(json) => {
                                         logger::write_warning(format!(
-                                        "Event data too large. Not sending to wire-server. Event: {}.",
-                                        json
-                                    ));
+                                            "Event data too large. Not sending to wire-server. Event: {json}.",
+                                        ));
                                     }
                                     Err(_) => {
                                         logger::write_warning(
@@ -345,8 +343,7 @@ impl EventReader {
                 }
                 Err(e) => {
                     logger::write_warning(format!(
-                        "Failed to send telemetry data to host with error: {}",
-                        e
+                        "Failed to send telemetry data to host with error: {e}"
                     ));
                     // wait 15 seconds and retry
                     tokio::time::sleep(Duration::from_secs(15)).await;

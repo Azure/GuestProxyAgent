@@ -40,7 +40,7 @@ pub fn set_loggers(
         if let Err(e) = MAX_LOG_LEVEL.set(max_log_level) {
             write_system_log(
                 LoggerLevel::Error,
-                format!("Failed to set logger level: {}", e),
+                format!("Failed to set logger level: {e}"),
             );
         }
     }
@@ -55,12 +55,12 @@ pub fn set_loggers(
 
     // set the loggers once
     if let Err(e) = LOGGERS.set(loggers) {
-        write_system_log(LoggerLevel::Error, format!("Failed to set loggers: {}", e));
+        write_system_log(LoggerLevel::Error, format!("Failed to set loggers: {e}"));
     };
     if let Err(e) = DEFAULT_LOGGER_KEY.set(default_logger_key) {
         write_system_log(
             LoggerLevel::Error,
-            format!("Failed to set default logger key: {}", e),
+            format!("Failed to set default logger key: {e}"),
         );
     }
 }
@@ -74,14 +74,14 @@ pub fn set_system_logger(max_log_level: LoggerLevel, _service_name: &str) {
                     if let Err(e) = WINDOWS_ETW_APPLICATION_LOGGER.set(logger) {
                         write_system_log(
                             LoggerLevel::Error,
-                            format!("Failed to set Windows Application ETW logger: {}", e),
+                            format!("Failed to set Windows Application ETW logger: {e}"),
                         );
                     }
                 }
                 Err(e) => {
                     write_system_log(
                         LoggerLevel::Error,
-                        format!("Failed to create Windows Application ETW logger: {}", e),
+                        format!("Failed to create Windows Application ETW logger: {e}"),
                     );
                 }
             }
@@ -92,7 +92,7 @@ pub fn set_system_logger(max_log_level: LoggerLevel, _service_name: &str) {
         if let Err(e) = MAX_SYSTEM_LOG_LEVEL.set(max_log_level) {
             write_system_log(
                 LoggerLevel::Error,
-                format!("Failed to set system logger level: {}", e),
+                format!("Failed to set system logger level: {e}"),
             );
         }
     }
@@ -128,7 +128,7 @@ fn internal_log(logger_key: Option<String>, log_level: LoggerLevel, message: Str
 
     if let Some(logger) = get_logger(logger_key) {
         if let Err(e) = logger.write(log_level, message) {
-            eprintln!("Error writing to log: {}", e);
+            eprintln!("Error writing to log: {e}");
         }
     }
 }
@@ -156,7 +156,7 @@ pub fn write_err(message: String) {
 pub fn write_many(logger_key: Option<String>, messages: Vec<String>) {
     if let Some(logger) = get_logger(logger_key) {
         if let Err(e) = logger.write_many(messages) {
-            eprintln!("Error writing to log: {}", e);
+            eprintln!("Error writing to log: {e}");
         }
     }
 }
@@ -168,9 +168,9 @@ fn write_system_log(log_level: LoggerLevel, message: String) {
 
     // Linux automatically captures console logs to syslog.
     if log_level == LoggerLevel::Error {
-        eprintln!("{}", message);
+        eprintln!("{message}",);
     } else {
-        println!("{}", message);
+        println!("{message}",);
     }
 
     #[cfg(windows)]

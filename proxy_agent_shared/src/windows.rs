@@ -26,11 +26,11 @@ fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) ->
         Ok(key) => match key.get_value(value_name) {
             Ok(val) => return Some(val),
             Err(e) => {
-                print!("{}", e);
+                print!("{e}");
             }
         },
         Err(e) => {
-            print!("{}", e);
+            print!("{e}");
         }
     }
 
@@ -87,7 +87,7 @@ pub fn get_os_version() -> Result<Version> {
                 Ok(u) => major = u,
                 Err(_) => {
                     return Err(Error::ParseVersion(ParseVersionErrorType::MajorBuild(
-                        format!("{} ({})", major_str, CURRENT_MAJOR_VERSION_NUMBER_STRING),
+                        format!("{major_str} ({CURRENT_MAJOR_VERSION_NUMBER_STRING})"),
                     )));
                 }
             }
@@ -111,7 +111,7 @@ pub fn get_os_version() -> Result<Version> {
                 Ok(u) => minor = u,
                 Err(_) => {
                     return Err(Error::ParseVersion(ParseVersionErrorType::MinorBuild(
-                        format!("{} ({})", major_str, CURRENT_MINOR_VERSION_NUMBER_STRING),
+                        format!("{major_str} ({CURRENT_MINOR_VERSION_NUMBER_STRING})"),
                     )));
                 }
             }
@@ -315,10 +315,7 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     }
     if fixed_file_info_size != std::mem::size_of::<VS_FIXEDFILEINFO>() as u32 {
         return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
-            format!(
-                "Invalid VS_FIXEDFILEINFO size '{}' returned",
-                fixed_file_info_size
-            ),
+            format!("Invalid VS_FIXEDFILEINFO size '{fixed_file_info_size}' returned"),
         )));
     }
 
