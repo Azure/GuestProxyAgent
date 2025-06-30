@@ -151,7 +151,12 @@ mod tests {
             "Verifying event log for source: {} between {} and {}",
             source_name, start_time, end_time
         );
-        let data = query_windows_event(event_log_name, source_name, Some(start_time), Some(end_time));
+        let data = query_windows_event(
+            event_log_name,
+            source_name,
+            Some(start_time),
+            Some(end_time),
+        );
         assert_eq!(
             data, message,
             "Event log data does not match the expected message"
