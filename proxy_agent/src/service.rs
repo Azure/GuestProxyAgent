@@ -28,7 +28,11 @@ use std::time::Duration;
 /// ```
 pub async fn start_service(shared_state: SharedState) {
     if let Some(max_log_level) = config::get_file_log_level_for_system_events() {
-        logger_manager::set_system_logger(max_log_level, constants::PROXY_AGENT_SERVICE_NAME);
+        logger_manager::set_system_logger(
+            max_log_level,
+            constants::WINDOWS_AZURE,
+            constants::PROXY_AGENT_SERVICE_NAME,
+        );
     }
 
     let log_folder = config::get_logs_dir();

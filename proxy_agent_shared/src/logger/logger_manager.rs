@@ -6,7 +6,7 @@
 
 use super::rolling_logger::RollingLogger;
 #[cfg(windows)]
-use crate::etw::application::ApplicationEventWritter;
+use crate::etw::etw_writter::WindowsEventWritter;
 use crate::logger::LoggerLevel;
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ static MAX_LOG_LEVEL: tokio::sync::OnceCell<LoggerLevel> = tokio::sync::OnceCell
 static MAX_SYSTEM_LOG_LEVEL: tokio::sync::OnceCell<LoggerLevel> =
     tokio::sync::OnceCell::const_new();
 #[cfg(windows)]
-static WINDOWS_ETW_APPLICATION_LOGGER: tokio::sync::OnceCell<ApplicationEventWritter> =
+static WINDOWS_ETW_LOGGER: tokio::sync::OnceCell<WindowsEventWritter> =
     tokio::sync::OnceCell::const_new();
 
 /// Setup the loggers and set the default logger key
@@ -65,23 +65,23 @@ pub fn set_loggers(
     }
 }
 
-pub fn set_system_logger(max_log_level: LoggerLevel, _service_name: &str) {
+pub fn set_system_logger(max_log_level: LoggerLevel, _event_log_name: &str, _service_name: &str) {
     #[cfg(windows)]
     {
-        if !WINDOWS_ETW_APPLICATION_LOGGER.initialized() {
-            match ApplicationEventWritter::new(_service_name) {
+        if !WINDOWS_ETW_LOGGER.initialized() {
+            match WindowsEventWritter::new(_event_log_name, _service_name) {
                 Ok(logger) => {
-                    if let Err(e) = WINDOWS_ETW_APPLICATION_LOGGER.set(logger) {
+                    if let Err(e) = WINDOWS_ETW_LOGGER.set(logger) {
                         write_system_log(
                             LoggerLevel::Error,
-                            format!("Failed to set Windows Application ETW logger: {e}"),
+                            format!("Failed to set Windows ETW logger: {e}"),
                         );
                     }
                 }
                 Err(e) => {
                     write_system_log(
                         LoggerLevel::Error,
-                        format!("Failed to create Windows Application ETW logger: {e}"),
+                        format!("Failed to create Windows ETW logger: {e}"),
                     );
                 }
             }
@@ -175,7 +175,7 @@ fn write_system_log(log_level: LoggerLevel, message: String) {
 
     #[cfg(windows)]
     {
-        if let Some(logger) = WINDOWS_ETW_APPLICATION_LOGGER.get() {
+        if let Some(logger) = WINDOWS_ETW_LOGGER.get() {
             logger.write(log_level, message);
         } else {
             eprintln!("Windows ETW Application logger is not initialized.");
