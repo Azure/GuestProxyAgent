@@ -222,6 +222,7 @@ RDFE
 redhat
 Redist
 refcnt
+registereventsourcew
 registrykey
 relativeurl
 resf
@@ -331,6 +332,7 @@ westus
 wevtapi
 WFP
 winapi
+winbase
 windowsazureguestagent
 winget
 winmgmts

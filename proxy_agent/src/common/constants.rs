@@ -7,6 +7,7 @@ pub const GA_PLUGIN_PORT: u16 = 32526u16;
 pub const IMDS_IP: &str = "169.254.169.254";
 pub const IMDS_PORT: u16 = 80u16;
 
+pub const WINDOWS_AZURE: &str = "Windows Azure";
 pub const PROXY_AGENT_SERVICE_NAME: &str = "GuestProxyAgent";
 pub const PROXY_AGENT_IP: &str = "127.0.0.1";
 pub const PROXY_AGENT_PORT: u16 = 3080;
