@@ -75,7 +75,7 @@ async fn monitor_thread() {
     let handler_environment = common::get_handler_environment(&exe_path);
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
     let mut cache_seq_no = String::new();
-    let proxyagent_file_version_in_extension = get_proxy_agent_file_version_in_extension();
+    let mut proxyagent_file_version_in_extension = String::new();
     let mut service_state = ServiceState::default();
     let mut status = StatusObj {
         name: constants::PLUGIN_NAME.to_string(),
@@ -94,7 +94,33 @@ async fn monitor_thread() {
     let mut restored_in_error = false;
     let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
     loop {
-        let current_seq_no = common::get_current_seq_no(&exe_path);
+        let current_seq_no: String = common::get_current_seq_no(&exe_path);
+        if proxyagent_file_version_in_extension.is_empty() {
+            // File version of proxy agent service already downloaded by VM Agent
+            let path = common::get_proxy_agent_exe_path();
+            proxyagent_file_version_in_extension =
+                match misc_helpers::get_proxy_agent_version(&path) {
+                    Ok(version) => version,
+                    Err(e) => {
+                        let error_message = format!(
+                            "Failed to get GuestProxyAgent version from file {} with error: {}",
+                            misc_helpers::path_to_string(&path),
+                            e
+                        );
+                        logger::write(error_message.clone());
+                        status.formattedMessage.message = error_message;
+                        status.code = constants::STATUS_CODE_NOT_OK;
+                        status.status = status_state_obj.update_state(false);
+                        common::report_status(
+                            status_folder_path.to_path_buf(),
+                            &current_seq_no,
+                            &status,
+                        );
+                        tokio::time::sleep(Duration::from_secs(15)).await;
+                        continue;
+                    }
+                };
+        }
         if cache_seq_no != current_seq_no {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
@@ -732,23 +758,6 @@ fn report_proxy_agent_service_status(
                 format!("Update Proxy Agent command failed with error: {e}");
             status.substatus = Default::default();
             common::report_status(status_folder, seq_no, status);
-        }
-    }
-}
-
-fn get_proxy_agent_file_version_in_extension() -> String {
-    // File version of proxy agent service already downloaded by VM Agent
-    let path = common::get_proxy_agent_exe_path();
-    match misc_helpers::get_proxy_agent_version(&path) {
-        Ok(version) => version,
-        Err(e) => {
-            logger::write(format!(
-                "Failed to get GuestProxyAgent version from file {} with error: {}",
-                misc_helpers::path_to_string(&path),
-                e
-            ));
-            // return empty string if failed to get version
-            "".to_string()
         }
     }
 }
