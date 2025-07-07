@@ -47,12 +47,12 @@ pub const WINDOWS_SUPPORTED_VERSIONS: &str = "10.0.17763";
 pub const INVALID_FILE_VERSION: &str = "0.0.0.0";
 pub const SERVICE_START_RETRY_COUNT: u32 = 5;
 pub const STATUS_CODE_OK: i32 = 0;
+pub const STATUS_CODE_NOT_OK: i32 = 4;
 
 // Non zero exit codes
 pub const EXIT_CODE_HANDLER_ENV_ERR: i32 = 1;
 pub const EXIT_CODE_SERVICE_UPDATE_ERR: i32 = 2;
 pub const EXIT_CODE_SERVICE_INSTALL_ERR: i32 = 3;
-pub const STATUS_CODE_NOT_OK: i32 = 4;
 pub const EXIT_CODE_SERVICE_UNINSTALL_ERR: i32 = 5;
 pub const EXIT_CODE_NOT_SUPPORTED_OS_VERSION: i32 = 6;
 pub const EXIT_CODE_SERVICE_START_ERR: i32 = 7;
