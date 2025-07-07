@@ -97,20 +97,28 @@ async fn monitor_thread() {
         if proxyagent_file_version_in_extension.is_empty() {
             // File version of proxy agent service already downloaded by VM Agent
             let path = common::get_proxy_agent_exe_path();
-            proxyagent_file_version_in_extension = match misc_helpers::get_proxy_agent_version(&path) {
-                Ok(version) => version,
-                Err(e) => {
-                    let error_message =
-                        format!("Failed to get GuestProxyAgent version from file {} with error: {}", misc_helpers::path_to_string(&path), e);
-                    logger::write(error_message);
-                    status.formattedMessage.message = error_message;
-                    status.code = constants::STATUS_CODE_NOT_OK;
-                    status.status = status_state_obj.update_state(false);
-                    common::report_status(status_folder_path.to_path_buf(), &cache_seq_no, &status);
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-            };
+            proxyagent_file_version_in_extension =
+                match misc_helpers::get_proxy_agent_version(&path) {
+                    Ok(version) => version,
+                    Err(e) => {
+                        let error_message = format!(
+                            "Failed to get GuestProxyAgent version from file {} with error: {}",
+                            misc_helpers::path_to_string(&path),
+                            e
+                        );
+                        logger::write(error_message.clone());
+                        status.formattedMessage.message = error_message;
+                        status.code = constants::STATUS_CODE_NOT_OK;
+                        status.status = status_state_obj.update_state(false);
+                        common::report_status(
+                            status_folder_path.to_path_buf(),
+                            &cache_seq_no,
+                            &status,
+                        );
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
         }
         let current_seq_no = common::get_current_seq_no(&exe_path);
         if cache_seq_no != current_seq_no {
