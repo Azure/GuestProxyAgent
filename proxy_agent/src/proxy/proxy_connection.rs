@@ -291,6 +291,12 @@ impl ConnectionLogger {
             "{}[{}] - {}",
             self.http_connection_id, self.tcp_connection_id, message
         );
+
+        // write to system log for connection logger explicitly,
+        // as the connection logger only writes to file when the connection is dropped and,
+        // connection logger file log does not write to system log implicitly.
+        logger_manager::write_system_log(logger_level, message.to_string());
+
         if let Some(log_for_event) = crate::common::config::get_file_log_level_for_events() {
             if log_for_event >= logger_level {
                 // write to event

@@ -161,7 +161,7 @@ pub fn write_many(logger_key: Option<String>, messages: Vec<String>) {
     }
 }
 
-fn write_system_log(log_level: LoggerLevel, message: String) {
+pub fn write_system_log(log_level: LoggerLevel, message: String) {
     if log_level > get_max_system_logger_level() {
         return;
     }
