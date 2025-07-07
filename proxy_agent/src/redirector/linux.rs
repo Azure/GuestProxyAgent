@@ -66,11 +66,11 @@ impl BpfObject {
                     let key = sock_addr_skip_process_entry::from_pid(pid);
                     let value = sock_addr_skip_process_entry::from_pid(pid);
                     match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
-                        Ok(_) => logger::write(format!("skip_process_map updated with {}", pid)),
+                        Ok(_) => logger::write(format!("skip_process_map updated with {pid}")),
                         Err(err) => {
                             return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                                 skip_process_map_name.to_string(),
-                                format!("insert pid: {}", pid),
+                                format!("insert pid: {pid}"),
                                 err.to_string(),
                             )));
                         }
@@ -156,8 +156,7 @@ impl BpfObject {
                         match program.attach(cgroup, CgroupAttachMode::Single) {
                             Ok(link_id) => {
                                 logger::write(format!(
-                                    "connect4 program attached with id {:?}.",
-                                    link_id
+                                    "connect4 program attached with id {link_id:?}."
                                 ));
                             }
                             Err(err) => {
@@ -211,8 +210,7 @@ impl BpfObject {
                     match program.attach("tcp_connect", 0) {
                         Ok(link_id) => {
                             logger::write(format!(
-                                "tcp_v4_connect program attached with id {:?}.",
-                                link_id
+                                "tcp_v4_connect program attached with id {link_id:?}."
                             ));
                         }
                         Err(err) => {
@@ -340,8 +338,7 @@ impl BpfObject {
                 }
                 Err(err) => {
                     logger::write(format!(
-                        "Failed to load HashMap 'policy_map' with error: {}",
-                        err
+                        "Failed to load HashMap 'policy_map' with error: {err}"
                     ));
                 }
             },
@@ -360,7 +357,7 @@ impl BpfObject {
                     audit_map.remove(&key.to_array()).map_err(|err| {
                         Error::Bpf(BpfErrorType::MapDeleteElem(
                             source_port.to_string(),
-                            format!("Error: {}", err),
+                            format!("Error: {err}"),
                         ))
                     })?;
                 }
@@ -402,7 +399,7 @@ impl super::Redirector {
             Err(e) => {
                 event_logger::write_event(
                     LoggerLevel::Warn,
-                    format!("Failed to get the cgroup2 mount path {}, fallback to use the cgroup2 path from config file.", e),
+                    format!("Failed to get the cgroup2 mount path {e}, fallback to use the cgroup2 path from config file."),
                     "start",
                     "redirector/linux",
                     logger::AGENT_LOGGER_KEY,
@@ -411,7 +408,7 @@ impl super::Redirector {
             }
         };
         if let Err(e) = bpf_object.attach_cgroup_program(cgroup2_path) {
-            let message = format!("Failed to attach cgroup program for redirection. {}", e);
+            let message = format!("Failed to attach cgroup program for redirection. {e}");
             event_logger::write_event(
                 LoggerLevel::Warn,
                 message.to_string(),

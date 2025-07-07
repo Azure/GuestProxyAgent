@@ -36,7 +36,7 @@ pub async fn run_service(_args: Vec<OsString>) -> Result<()> {
                         process_id: None,
                     };
                     if let Err(e) = status_handle.set_service_status(stop_state) {
-                        logger::write(format!("Failed to set service status to Stopped: {}", e));
+                        logger::write(format!("Failed to set service status to Stopped: {e}"));
                     }
                 } else {
                     // workaround to stop the service by exiting the process

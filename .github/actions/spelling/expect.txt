@@ -3,6 +3,7 @@ AAFFBB
 aarch
 abe
 addrpair
+advapi
 almalinux
 ATL
 ATLMFC
@@ -40,6 +41,7 @@ collectguestlogs
 commandline
 comspec
 consoleloggerparameters
+covrec
 CPlat
 cplusplus
 cpptools
@@ -87,7 +89,9 @@ etest
 etestoutputs
 etestsharedstorage
 EToken
+etw
 EUID
+EVENTLOG
 evt
 exampledatadiskname
 exampleosdiskname
@@ -157,7 +161,7 @@ logdir
 Loggerhas
 logon
 Lrs
-Lsa
+lsa
 ltsc
 luid
 macikgo
@@ -218,6 +222,7 @@ RDFE
 redhat
 Redist
 refcnt
+registereventsourcew
 registrykey
 relativeurl
 resf
@@ -324,8 +329,10 @@ wdk
 wdksetup
 Werror
 westus
+wevtapi
 WFP
 winapi
+winbase
 windowsazureguestagent
 winget
 winmgmts

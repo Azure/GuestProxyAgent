@@ -41,18 +41,15 @@ pub fn proxy_agent_version_target_folder(proxy_agent_exe: &Path) -> PathBuf {
         Ok(v) => v,
         Err(e) => {
             // This should not happen, if failed to get version, we should not proceed
-            logger::write(format!(
-                "Failed to get proxy agent version with error: {}",
-                e
-            ));
-            panic!("Failed to get proxy agent version with error: {}", e);
+            logger::write(format!("Failed to get proxy agent version with error: {e}"));
+            panic!("Failed to get proxy agent version with error: {e}");
         }
     };
     logger::write(format!("Proxy agent version: {}", &proxy_agent_version));
     #[cfg(windows)]
     {
         let path = proxy_agent_parent_folder();
-        path.join(format!("Package_{}", proxy_agent_version))
+        path.join(format!("Package_{proxy_agent_version}"))
     }
     #[cfg(not(windows))]
     {

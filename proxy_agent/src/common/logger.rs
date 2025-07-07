@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::cli;
 use proxy_agent_shared::{
     logger::{logger_manager, LoggerLevel},
-    misc_helpers,
+    telemetry::event_logger,
 };
+
+use super::config;
 
 pub const AGENT_LOGGER_KEY: &str = "Agent_Logger";
 
@@ -25,22 +26,21 @@ pub fn write_error(message: String) {
 }
 
 fn log(log_level: LoggerLevel, message: String) {
-    if log_level != LoggerLevel::Trace {
-        write_console_log(message.to_string());
-    };
-    logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
-}
-
-pub fn write_console_log(message: String) {
-    if cli::CLI.is_console_mode() {
-        println!(
-            "{} {}",
-            misc_helpers::get_date_time_string_with_milliseconds(),
-            message
-        );
-    } else {
-        println!("{}", message);
+    if let Some(log_for_event) = config::get_file_log_level_for_events() {
+        if log_for_event >= log_level {
+            // write to event
+            let (module_name, caller_name) =
+                proxy_agent_shared::logger::get_caller_info("proxy_agent::common::logger");
+            event_logger::write_event_only(
+                log_level,
+                message.to_string(),
+                &caller_name,
+                &module_name,
+            );
+        }
     }
+
+    logger_manager::log(AGENT_LOGGER_KEY.to_string(), log_level, message);
 }
 
 #[cfg(not(windows))]
@@ -64,11 +64,11 @@ pub fn write_serial_console_log(message: String) {
     {
         Ok(mut serial_console) => {
             if serial_console.write_all(message.as_bytes()).is_err() {
-                eprintln!("Failed to write to serial console: {}", message);
+                eprintln!("Failed to write to serial console: {message}");
             }
         }
         Err(e) => {
-            eprintln!("Failed to open serial console: {}", e);
+            eprintln!("Failed to open serial console: {e}");
         }
     }
 }

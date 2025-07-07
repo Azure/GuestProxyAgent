@@ -52,7 +52,7 @@ impl std::str::FromStr for AuthorizationMode {
             "disabled" => Ok(AuthorizationMode::Disabled),
             "audit" => Ok(AuthorizationMode::Audit),
             "enforce" => Ok(AuthorizationMode::Enforce),
-            _ => Err(format!("Invalid AuthorizationMode: {}", s)),
+            _ => Err(format!("Invalid AuthorizationMode: {s}")),
         }
     }
 }
@@ -84,7 +84,7 @@ impl ComputedAuthorizationItem {
             Ok(mode) => mode,
             Err(err) => {
                 // This should not happen, log the error and set the mode to disabled
-                logger::write_error(format!("Failed to parse authorization mode: {}", err));
+                logger::write_error(format!("Failed to parse authorization mode: {err}"));
                 AuthorizationMode::Disabled
             }
         };
@@ -184,7 +184,7 @@ impl ComputedAuthorizationItem {
                 any_privilege_matched = true;
                 logger.write(
                     LoggerLevel::Trace,
-                    format!("Request matched privilege '{}'.", privilege_name),
+                    format!("Request matched privilege '{privilege_name}'."),
                 );
 
                 if let Some(assignments) = self.privilegeAssignments.get(privilege_name) {
@@ -195,8 +195,7 @@ impl ComputedAuthorizationItem {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
-                                        "Request matched privilege '{}' and identity '{}'.",
-                                        privilege_name, identity_name
+                                        "Request matched privilege '{privilege_name}' and identity '{identity_name}'."
                                     ),
                                 );
                                 return true;
@@ -206,23 +205,21 @@ impl ComputedAuthorizationItem {
                     logger.write(
                         LoggerLevel::Trace,
                         format!(
-                            "Request matched privilege '{}' but no identity matched.",
-                            privilege_name
+                            "Request matched privilege '{privilege_name}' but no identity matched."
                         ),
                     );
                 } else {
                     logger.write(
                         LoggerLevel::Trace,
                         format!(
-                            "Request matched privilege '{}' but no identity assigned.",
-                            privilege_name
+                            "Request matched privilege '{privilege_name}' but no identity assigned."
                         ),
                     );
                 }
             } else {
                 logger.write(
                     LoggerLevel::Trace,
-                    format!("Request does not match privilege '{}'.", privilege_name),
+                    format!("Request does not match privilege '{privilege_name}'."),
                 );
             }
         }

@@ -97,7 +97,7 @@ async fn main() {
             match service_dispatcher::start(constants::PROXY_AGENT_SERVICE_NAME, ffi_service_main) {
                 Ok(_) => {}
                 Err(e) => {
-                    logger::write_error(format!("Error in starting the service dispatcher: {}", e));
+                    logger::write_error(format!("Error in starting the service dispatcher: {e}"));
                 }
             }
         }
@@ -121,7 +121,7 @@ fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
         .expect("You must provide the Tokio runtime handle before this function is called");
     handle.block_on(async {
         if let Err(e) = windows::run_service().await {
-            logger::write_error(format!("Error in running the service: {}", e));
+            logger::write_error(format!("Error in running the service: {e}"));
         }
     });
 }

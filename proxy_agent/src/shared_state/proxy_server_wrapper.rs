@@ -55,13 +55,13 @@ impl ProxyServerSharedState {
                         let id = user.logon_id;
                         users.insert(id, user);
                         if response.send(()).is_err() {
-                            logger::write_warning(format!("Failed to send response to ProxyServerAction::AddUser with id '{}'", id));
+                            logger::write_warning(format!("Failed to send response to ProxyServerAction::AddUser with id '{id}'"));
                         }
                     }
                     ProxyServerAction::GetUser { user_id, response } => {
                         let user = users.get(&user_id).cloned();
                         if response.send(user).is_err() {
-                            logger::write_warning(format!("Failed to send response to ProxyServerAction::GetUser with id '{}'", user_id));
+                            logger::write_warning(format!("Failed to send response to ProxyServerAction::GetUser with id '{user_id}'"));
                         }
                     }
                     #[cfg(test)]

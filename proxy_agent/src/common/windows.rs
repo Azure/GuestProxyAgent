@@ -12,7 +12,7 @@ use windows_sys::Win32::Security::Cryptography::{
     // msasn1.dll (ASN.1 library) is also used by crypt32.dll
     CryptProtectData,
     CryptUnprotectData,
-    CRYPTOAPI_BLOB,
+    CRYPT_INTEGER_BLOB,
 };
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
@@ -46,11 +46,11 @@ pub fn get_memory_in_mb() -> Result<u64> {
 
 pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()> {
     let data = key_data.as_bytes();
-    let data_in = CRYPTOAPI_BLOB {
+    let data_in = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
     };
-    let mut data_out = CRYPTOAPI_BLOB {
+    let mut data_out = CRYPT_INTEGER_BLOB {
         cbData: 0,
         pbData: std::ptr::null_mut(),
     };
@@ -73,7 +73,9 @@ pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()
 
     let encrypted_data =
         unsafe { std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec() };
-    unsafe { windows_sys::Win32::System::Memory::LocalFree(data_out.pbData as isize) };
+    unsafe {
+        windows_sys::Win32::Foundation::LocalFree(data_out.pbData as *mut ::core::ffi::c_void)
+    };
     std::fs::write(encrypted_file_path, encrypted_data).map_err(|e| {
         Error::Io(
             format!(
@@ -97,11 +99,11 @@ pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
             e,
         )
     })?;
-    let data_in = CRYPTOAPI_BLOB {
+    let data_in = CRYPT_INTEGER_BLOB {
         cbData: encrypted_data.len() as u32,
         pbData: encrypted_data.as_ptr() as *mut u8,
     };
-    let mut data_out = CRYPTOAPI_BLOB {
+    let mut data_out = CRYPT_INTEGER_BLOB {
         cbData: 0,
         pbData: std::ptr::null_mut(),
     };
@@ -125,7 +127,9 @@ pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
     let decrypted_data = unsafe {
         std::slice::from_raw_parts(data_out.pbData as *const u8, data_out.cbData as usize).to_vec()
     };
-    unsafe { windows_sys::Win32::System::Memory::LocalFree(data_out.pbData as isize) };
+    unsafe {
+        windows_sys::Win32::Foundation::LocalFree(data_out.pbData as *mut ::core::ffi::c_void)
+    };
     let key_data = String::from_utf8_lossy(&decrypted_data).to_string();
 
     Ok(key_data)

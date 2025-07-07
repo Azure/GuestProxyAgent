@@ -13,7 +13,7 @@ pub struct HandlerEnvironment {
     pub rolename: Option<String>,
     pub instance: Option<String>,
     pub hostResolverAddress: Option<String>,
-    pub eventsFolder: String,
+    pub eventsFolder: Option<String>,
 }
 impl Clone for HandlerEnvironment {
     fn clone(&self) -> Self {

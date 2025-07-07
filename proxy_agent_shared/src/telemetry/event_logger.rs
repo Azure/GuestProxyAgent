@@ -33,7 +33,7 @@ pub async fn start<F, Fut>(
     logger_manager::write_log(Level::Info, message.to_string());
 
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
-        let message = format!("Failed to create event folder with error: {}", e);
+        let message = format!("Failed to create event folder with error: {e}");
         set_status_fn(message.to_string());
     }
 
@@ -75,9 +75,8 @@ pub async fn start<F, Fut>(
         match misc_helpers::get_files(&event_dir) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
-                    logger_manager::write_log( Level::Warn,format!(
-                        "Event files exceed the max file count {}, drop and skip the write to disk.",
-                        max_event_file_count
+                    logger_manager::write_log(Level::Warn, format!(
+                        "Event files exceed the max file count {max_event_file_count}, drop and skip the write to disk."
                     ));
                     continue;
                 }
@@ -85,7 +84,7 @@ pub async fn start<F, Fut>(
             Err(e) => {
                 logger_manager::write_log(
                     Level::Warn,
-                    format!("Failed to get event files with error: {}", e),
+                    format!("Failed to get event files with error: {e}"),
                 );
             }
         }
@@ -128,27 +127,29 @@ pub fn write_event(
     module_name: &str,
     logger_key: &str,
 ) {
+    write_event_only(level, message.to_string(), method_name, module_name);
+
+    // wrap file log within event log
+    logger_manager::log(logger_key.to_string(), level, message);
+}
+
+pub fn write_event_only(level: Level, message: String, method_name: &str, module_name: &str) {
     let event_message = if message.len() > MAX_MESSAGE_LENGTH {
         message[..MAX_MESSAGE_LENGTH].to_string()
     } else {
         message.to_string()
     };
-    let logger_key = logger_key.to_string();
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
         method_name.to_string(),
         module_name.to_string(),
     )) {
-        Ok(()) => {
-            // wrap file log within event log
-            logger_manager::log(logger_key, level, message);
-        }
+        Ok(()) => {}
         Err(e) => {
-            logger_manager::log(
-                logger_key,
+            logger_manager::write_log(
                 Level::Warn,
-                format!("Failed to push event to the queue with error: {}", e),
+                format!("Failed to push event to the queue with error: {e}"),
             );
         }
     };

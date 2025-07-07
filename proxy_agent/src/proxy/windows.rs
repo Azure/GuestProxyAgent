@@ -11,18 +11,23 @@ use once_cell::sync::Lazy;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
+use windows_sys::Wdk::System::Threading::{
+    NtQueryInformationProcess, // ntdll.dll
+    PROCESSINFOCLASS,
+};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
-use windows_sys::Win32::Security::Authentication::Identity::SECURITY_LOGON_SESSION_DATA;
+use windows_sys::Win32::Security::Authentication::Identity::{
+    LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
+};
 use windows_sys::Win32::System::ProcessStatus::{
     K32GetModuleBaseNameW,   // kernel32.dll
     K32GetModuleFileNameExW, // kernel32.dll
 };
+use windows_sys::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use windows_sys::Win32::System::Threading::{
-    NtQueryInformationProcess, // ntdll.dll
-    OpenProcess,               //kernel32.dll
+    OpenProcess, //kernel32.dll
 };
-use windows_sys::Win32::System::Threading::{PROCESSINFOCLASS, PROCESS_BASIC_INFORMATION};
 
 const LG_INCLUDE_INDIRECT: u32 = 1u32;
 const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
@@ -36,8 +41,8 @@ fn load_netapi32_dll() -> Library {
     match unsafe { Library::new(dll_name) } {
         Ok(lib) => lib,
         Err(e) => {
-            logger::write_error(format!("Loading {} failed with error: {}.", dll_name, e));
-            panic!("Loading {} failed with error: {}", dll_name, e);
+            logger::write_error(format!("Loading {dll_name} failed with error: {e}."));
+            panic!("Loading {dll_name} failed with error: {e}");
         }
     }
 }
@@ -110,7 +115,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     if status != 0 {
         let e = std::io::Error::from_raw_os_error(status as i32);
         return Err(Error::WindowsApi(
-            WindowsApiErrorType::LsaGetLogonSessionData(format!("failed with os error: {}", e)),
+            WindowsApiErrorType::LsaGetLogonSessionData(format!("failed with os error: {e}")),
         ));
     }
 
@@ -122,8 +127,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
         // but finding that SECURITY_LOGON_SESSION_DATA->UserName.Length is 0,
         // it typically means that the logon session exists but does not have an associated username.
         logger::write_warning(format!(
-            "LsaGetLogonSessionData with login'{}' success, but user name is empty.",
-            logon_id
+            "LsaGetLogonSessionData with logon id '{logon_id}' success, but user name is empty."
         ));
         // return OK with UNDEFINED user name and empty groups
         return Ok((super::UNDEFINED.to_string(), Vec::new()));
@@ -166,8 +170,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     } else {
         let e = std::io::Error::from_raw_os_error(status as i32);
         logger::write_warning(format!(
-            "NetUserGetLocalGroups '{}' failed ({}) with os error: {}",
-            domain_user_name, status, e
+            "NetUserGetLocalGroups '{domain_user_name}' failed ({status}) with os error: {e}"
         ));
     }
 
@@ -179,7 +182,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     Ok((user_name, user_groups))
 }
 
-fn from_unicode_string(unicode_string: &UNICODE_STRING) -> String {
+fn from_unicode_string(unicode_string: &LSA_UNICODE_STRING) -> String {
     let mut v = vec![0u16; unicode_string.Length as usize];
     unsafe {
         std::ptr::copy_nonoverlapping(
@@ -291,7 +294,7 @@ pub fn get_process_cmd(handler: isize) -> Result<String> {
                 std::io::Error::from_raw_os_error(status),
             )));
         }
-        println!("return_length: {}", return_length);
+        println!("return_length: {return_length}");
 
         let buf_len = (return_length as usize) / 2;
         let mut buffer: Vec<u16> = vec![0; buf_len + 1];
@@ -305,7 +308,7 @@ pub fn get_process_cmd(handler: isize) -> Result<String> {
             &mut return_length as *mut _,
         );
         if status < 0 {
-            eprintln!("NtQueryInformationProcess failed with status: {}", status);
+            eprintln!("NtQueryInformationProcess failed with status: {status}");
             return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
                 std::io::Error::from_raw_os_error(status),
             )));

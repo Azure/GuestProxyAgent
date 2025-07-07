@@ -17,7 +17,7 @@ pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> Result<u6
 }
 
 fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> Result<u64> {
-    let service_config_name = format!("{}.service", service_name);
+    let service_config_name = format!("{service_name}.service");
     let src_config_file_path = service_file_dir.join(&service_config_name);
     let dst_config_file_path = PathBuf::from(proxy_agent_shared::linux::SERVICE_CONFIG_FOLDER_PATH)
         .join(&service_config_name);
@@ -33,14 +33,12 @@ fn backup_service_config_file(backup_folder: PathBuf) {
     ) {
         Ok(_) => {
             logger::write(format!(
-                "Copied service config file to {:?}",
-                backup_service_file
+                "Copied service config file to {backup_service_file:?}"
             ));
         }
         Err(e) => {
             logger::write(format!(
-                "Failed to copy service config file to {:?}, error: {:?}",
-                backup_service_file, e
+                "Failed to copy service config file to {backup_service_file:?}, error: {e:?}"
             ));
         }
     }
@@ -49,17 +47,16 @@ fn backup_service_config_file(backup_folder: PathBuf) {
 fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
     if let Some(p) = dst_file.parent() {
         if let Err(e) = misc_helpers::try_create_folder(p) {
-            logger::write(format!("Failed to create folder {:?}, error: {:?}", p, e));
+            logger::write(format!("Failed to create folder {p:?}, error: {e:?}"));
         }
     }
     match fs::copy(&src_file, &dst_file) {
         Ok(_) => {
-            logger::write(format!("Copied file {:?} to {:?}", src_file, dst_file));
+            logger::write(format!("Copied file {src_file:?} to {dst_file:?}"));
         }
         Err(e) => {
             logger::write(format!(
-                "Failed to copy file {:?} to {:?}, error: {:?}",
-                src_file, dst_file, e
+                "Failed to copy file {src_file:?} to {dst_file:?}, error: {e:?}"
             ));
         }
     }
@@ -68,12 +65,11 @@ fn copy_file(src_file: PathBuf, dst_file: PathBuf) {
 fn delete_file(file_to_be_delete: PathBuf) {
     match fs::remove_file(&file_to_be_delete) {
         Ok(_) => {
-            logger::write(format!("Deleted file {:?}", file_to_be_delete));
+            logger::write(format!("Deleted file {file_to_be_delete:?}"));
         }
         Err(e) => {
             logger::write(format!(
-                "Failed to delete file {:?}, error: {:?}",
-                file_to_be_delete, e
+                "Failed to delete file {file_to_be_delete:?}, error: {e:?}"
             ));
         }
     }

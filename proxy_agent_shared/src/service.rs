@@ -99,18 +99,14 @@ pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
     {
         match windows_service::query_service_config(_service_name) {
             Ok(service_config) => {
-                logger_manager::write_info(format!(
-                    "Service {} successfully queried",
-                    _service_name
-                ));
+                logger_manager::write_info(
+                    format!("Service {_service_name} successfully queried",),
+                );
                 service_config.executable_path.to_path_buf()
             }
             Err(e) => {
-                logger_manager::write_info(format!(
-                    "Service {} query failed: {}",
-                    _service_name, e
-                ));
-                eprintln!("Service {} query failed: {}", _service_name, e);
+                logger_manager::write_info(format!("Service {_service_name} query failed: {e}",));
+                eprintln!("Service {_service_name} query failed: {e}");
                 PathBuf::new()
             }
         }
@@ -129,14 +125,13 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
         match windows_service::query_service_config(_service_name) {
             Ok(_service_config) => {
                 message = format!(
-                    "check_service_installed: Ebpf Driver: {} successfully queried.",
-                    _service_name
+                    "check_service_installed: Ebpf Driver: {_service_name} successfully queried.",
                 );
                 (true, message)
             }
             Err(e) => {
                 message = format!(
-                    "check_service_installed: Ebpf Driver: {} unsuccessfully queried with error: {}.", _service_name, e
+                    "check_service_installed: Ebpf Driver: {_service_name} unsuccessfully queried with error: {e}"
                 );
                 (false, message)
             }

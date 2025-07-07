@@ -40,8 +40,7 @@ pub async fn run_service() -> Result<()> {
                     };
                     if let Err(e) = status_handle.set_service_status(stop_state) {
                         logger::write_error(format!(
-                            "Failed to set service status to Stopped: {}",
-                            e
+                            "Failed to set service status to Stopped: {e}"
                         ));
                     }
                 } else {

@@ -60,10 +60,7 @@ impl BpfObject {
             let error_code = libbpf_get_error()?;
             return Err(Error::Bpf(BpfErrorType::OpenBpfObject(
                 bpf_file_path.display().to_string(),
-                format!(
-                    "bpf_object__open return null pointer with error code '{}'",
-                    error_code
-                ),
+                format!("bpf_object__open return null pointer with error code '{error_code}'",),
             )));
         }
 
@@ -84,7 +81,7 @@ impl BpfObject {
         } else {
             return Err(Error::Bpf(BpfErrorType::LoadBpfObject(
                 bpf_file_path.display().to_string(),
-                format!("bpf_object__load return with error code '{}'", result),
+                format!("bpf_object__load return with error code '{result}'"),
             )));
         }
 
@@ -109,7 +106,7 @@ impl BpfObject {
         let program_name = "authorize_connect4";
         let connect4_program = match bpf_object__find_program_by_name(self.0, program_name) {
             Ok(p) => {
-                logger::write_information(format!("Found {} program.", program_name));
+                logger::write_information(format!("Found {program_name} program."));
                 p
             }
             Err(e) => {
@@ -141,7 +138,7 @@ impl BpfObject {
                 if r != 0 {
                     return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                         program_name.to_string(),
-                        format!("ebpf_prog_attach return with error code '{}'", r),
+                        format!("ebpf_prog_attach return with error code '{r}'"),
                     )));
                 }
                 logger::write_information(
@@ -157,7 +154,7 @@ impl BpfObject {
                                 if r != 0 {
                                     return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                                         program_name.to_string(),
-                                        format!("bpf_link_destroy return with error code '{}'", r),
+                                        format!("bpf_link_destroy return with error code '{r}'"),
                                     )));
                                 }
                                 logger::write_information("Success destroyed link.".to_string());
@@ -165,7 +162,7 @@ impl BpfObject {
                             Err(e) => {
                                 return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                                     program_name.to_string(),
-                                    format!("bpf_link_destroy return with error '{}'", e),
+                                    format!("bpf_link_destroy return with error '{e}'"),
                                 )));
                             }
                         }
@@ -173,7 +170,7 @@ impl BpfObject {
                     Err(e) => {
                         return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                             program_name.to_string(),
-                            format!("bpf_link_disconnect return with error '{}'", e),
+                            format!("bpf_link_disconnect return with error '{e}'"),
                         )));
                     }
                 }
@@ -181,7 +178,7 @@ impl BpfObject {
             Err(e) => {
                 return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                     program_name.to_string(),
-                    format!("ebpf_prog_attach return with error '{}'", e),
+                    format!("ebpf_prog_attach return with error '{e}'"),
                 )));
             }
         }
@@ -231,14 +228,14 @@ impl BpfObject {
             Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                 map_name.to_string(),
                 endpoint_name.to_string(),
-                format!("bpf_map_update_elem returned error {}", e),
+                format!("bpf_map_update_elem returned error {e}"),
             ))
         })?;
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                 map_name.to_string(),
                 endpoint_name.to_string(),
-                format!("bpf_map_update_elem returned error code {}", result),
+                format!("bpf_map_update_elem returned error code {result}"),
             )));
         }
 
@@ -260,7 +257,7 @@ impl BpfObject {
             return;
         }
         if let Err(e) = bpf_object__close(self.0) {
-            logger::write_error(format!("bpf_object__close with error: {}", e));
+            logger::write_error(format!("bpf_object__close with error: {e}"));
         }
 
         self.0 = std::ptr::null::<bpf_object>().cast_mut();
@@ -297,14 +294,14 @@ impl BpfObject {
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
                 source_port.to_string(),
-                format!("Error: {}", e),
+                format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
                 source_port.to_string(),
-                format!("Result: {}", result),
+                format!("Result: {result}"),
             )));
         }
 
@@ -341,15 +338,15 @@ impl BpfObject {
         .map_err(|e| {
             Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                 map_name.to_string(),
-                format!("insert pid: {}", pid),
-                format!("bpf_map_update_elem returned error {}", e),
+                format!("insert pid: {pid}"),
+                format!("bpf_map_update_elem returned error {e}"),
             ))
         })?;
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
                 map_name.to_string(),
-                format!("insert pid: {}", pid),
-                format!("bpf_map_update_elem returned error code {}", result),
+                format!("insert pid: {pid}"),
+                format!("bpf_map_update_elem returned error code {result}"),
             )));
         }
 
@@ -374,14 +371,14 @@ impl BpfObject {
             bpf_map_delete_elem(map_fd, &key as *const destination_entry_t as *const c_void)
                 .map_err(|e| {
                     Error::Bpf(BpfErrorType::MapDeleteElem(
-                        format!("dest_ipv4: {}, dest_port: {}", dest_ipv4, dest_port),
-                        format!("Error: {}", e),
+                        format!("dest_ipv4: {dest_ipv4}, dest_port: {dest_port}"),
+                        format!("Error: {e}"),
                     ))
                 })?;
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
-                format!("dest_ipv4: {}, dest_port: {}", dest_ipv4, dest_port),
-                format!("Result: {}", result),
+                format!("dest_ipv4: {dest_ipv4}, dest_port: {dest_port}"),
+                format!("Result: {result}"),
             )));
         }
 
@@ -400,14 +397,14 @@ impl BpfObject {
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapDeleteElem(
                 source_port.to_string(),
-                format!("Error: {}", e),
+                format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
                 source_port.to_string(),
-                format!("Result: {}", result),
+                format!("Result: {result}"),
             )));
         }
 
