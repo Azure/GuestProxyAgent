@@ -94,6 +94,7 @@ async fn monitor_thread() {
     let mut restored_in_error = false;
     let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
     loop {
+        let current_seq_no: String = common::get_current_seq_no(&exe_path);
         if proxyagent_file_version_in_extension.is_empty() {
             // File version of proxy agent service already downloaded by VM Agent
             let path = common::get_proxy_agent_exe_path();
@@ -112,7 +113,7 @@ async fn monitor_thread() {
                         status.status = status_state_obj.update_state(false);
                         common::report_status(
                             status_folder_path.to_path_buf(),
-                            &cache_seq_no,
+                            &current_seq_no,
                             &status,
                         );
                         tokio::time::sleep(Duration::from_secs(15)).await;
@@ -120,7 +121,6 @@ async fn monitor_thread() {
                     }
                 };
         }
-        let current_seq_no = common::get_current_seq_no(&exe_path);
         if cache_seq_no != current_seq_no {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
