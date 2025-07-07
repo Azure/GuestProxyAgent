@@ -70,6 +70,14 @@ pub fn get_file_log_level() -> LoggerLevel {
     SYSTEM_CONFIG.get_file_log_level()
 }
 
+pub fn get_file_log_level_for_events() -> Option<LoggerLevel> {
+    SYSTEM_CONFIG.get_file_log_level_for_events()
+}
+
+pub fn get_file_log_level_for_system_events() -> Option<LoggerLevel> {
+    SYSTEM_CONFIG.get_file_log_level_for_system_events()
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -89,6 +97,10 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg(not(windows))]
     cgroupRoot: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fileLogLevelForEvents: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fileLogLevelForSystemEvents: Option<String>,
 }
 
 impl Default for Config {
@@ -179,6 +191,22 @@ impl Config {
             None => PathBuf::from(constants::CGROUP_ROOT),
         }
     }
+
+    pub fn get_file_log_level_for_events(&self) -> Option<LoggerLevel> {
+        if let Some(file_log_level) = &self.fileLogLevelForEvents {
+            let log_level = LoggerLevel::from_str(file_log_level).unwrap_or(LoggerLevel::Info);
+            return Some(log_level);
+        }
+        None
+    }
+
+    pub fn get_file_log_level_for_system_events(&self) -> Option<LoggerLevel> {
+        if let Some(file_log_level) = &self.fileLogLevelForSystemEvents {
+            let log_level = LoggerLevel::from_str(file_log_level).unwrap_or(LoggerLevel::Info);
+            return Some(log_level);
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -260,6 +288,18 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            proxy_agent_shared::logger::LoggerLevel::Info,
+            config.get_file_log_level_for_events().unwrap(),
+            "get_file_log_level_for_events mismatch"
+        );
+
+        assert_eq!(
+            proxy_agent_shared::logger::LoggerLevel::Info,
+            config.get_file_log_level_for_system_events().unwrap(),
+            "get_file_log_level_for_system_events mismatch"
+        );
+
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);
     }
@@ -275,7 +315,9 @@ mod tests {
             "wireServerSupport": 2,
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
-            "ebpfProgramName": "ebpfProgramName"
+            "ebpfProgramName": "ebpfProgramName",
+            "fileLogLevelForEvents": "Info",
+            "fileLogLevelForSystemEvents": "Info"
         }"#
         } else {
             r#"{
@@ -287,7 +329,9 @@ mod tests {
             "wireServerSupport": 2,
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
-            "ebpfProgramName": "ebpfProgramName"
+            "ebpfProgramName": "ebpfProgramName",
+            "fileLogLevelForEvents": "Info",
+            "fileLogLevelForSystemEvents": "Info"
         }"#
         };
 

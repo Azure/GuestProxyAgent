@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 pub mod error;
+#[cfg(windows)]
+pub mod etw;
 pub mod logger;
 pub mod misc_helpers;
 pub mod proxy_agent_aggregate_status;

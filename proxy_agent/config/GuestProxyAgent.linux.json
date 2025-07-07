@@ -7,5 +7,7 @@
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "ebpf_cgroup.o",
     "cgroupRoot": "/sys/fs/cgroup",
-    "fileLogLevel": "Info"
+    "fileLogLevel": "Info",
+    "fileLogLevelForEvents": "Info",
+    "fileLogLevelForSystemEvents": "Info"
 }

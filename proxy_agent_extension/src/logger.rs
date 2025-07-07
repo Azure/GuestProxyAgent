@@ -19,11 +19,11 @@ pub fn init_logger(log_folder: String, log_name: &str) {
     );
     let mut loggers = std::collections::HashMap::new();
     loggers.insert(log_name.to_string(), logger);
-    logger_manager::set_loggers(loggers, log_name.to_string());
+    logger_manager::set_loggers(loggers, log_name.to_string(), LoggerLevel::Trace);
 
     if !LOGGER_KEY.initialized() {
         if let Err(e) = LOGGER_KEY.set(log_name.to_string()) {
-            eprintln!("Failed to set logger key: {}", e);
+            eprintln!("Failed to set logger key: {e}");
         };
     }
 }

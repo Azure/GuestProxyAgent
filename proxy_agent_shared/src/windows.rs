@@ -26,11 +26,11 @@ fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) ->
         Ok(key) => match key.get_value(value_name) {
             Ok(val) => return Some(val),
             Err(e) => {
-                print!("{}", e);
+                print!("{e}");
             }
         },
         Err(e) => {
-            print!("{}", e);
+            print!("{e}");
         }
     }
 
@@ -47,6 +47,19 @@ fn read_reg_string(key_name: &str, value_name: &str, default_value: String) -> S
     }
 
     default_value
+}
+
+pub fn set_reg_string(key_name: &str, value_name: &str, value: String) -> Result<()> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let (key, _) = hklm.create_subkey(key_name)?;
+    key.set_value(value_name, &value)?;
+    Ok(())
+}
+
+pub fn remove_reg_key(key_name: &str) -> Result<()> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    hklm.delete_subkey_all(key_name)?;
+    Ok(())
 }
 
 const OS_VERSION_REGISTRY_KEY: &str = "Software\\Microsoft\\Windows NT\\CurrentVersion";
@@ -74,7 +87,7 @@ pub fn get_os_version() -> Result<Version> {
                 Ok(u) => major = u,
                 Err(_) => {
                     return Err(Error::ParseVersion(ParseVersionErrorType::MajorBuild(
-                        format!("{} ({})", major_str, CURRENT_MAJOR_VERSION_NUMBER_STRING),
+                        format!("{major_str} ({CURRENT_MAJOR_VERSION_NUMBER_STRING})"),
                     )));
                 }
             }
@@ -98,7 +111,7 @@ pub fn get_os_version() -> Result<Version> {
                 Ok(u) => minor = u,
                 Err(_) => {
                     return Err(Error::ParseVersion(ParseVersionErrorType::MinorBuild(
-                        format!("{} ({})", major_str, CURRENT_MINOR_VERSION_NUMBER_STRING),
+                        format!("{major_str} ({CURRENT_MINOR_VERSION_NUMBER_STRING})"),
                     )));
                 }
             }
@@ -174,11 +187,11 @@ pub fn get_processor_arch() -> String {
             .Anonymous
             .wProcessorArchitecture
         {
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_INTEL => "x86", // 0
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_ARM => "ARM", // 5
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_IA64 => "IA64", // 6
-            windows_sys::Win32::System::Diagnostics::Debug::PROCESSOR_ARCHITECTURE_AMD64 => "AMD64", // 9
-            12 => "ARM64", // 12 - ARM64 is missed here
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_INTEL => "x86", // 0
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_ARM => "ARM", // 5
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_IA64 => "IA64", // 6
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_AMD64 => "AMD64", // 9
+            windows_sys::Win32::System::SystemInformation::PROCESSOR_ARCHITECTURE_ARM64 => "ARM64", // 12
             _ => "unknown",
         }
         .to_owned()
@@ -302,10 +315,7 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     }
     if fixed_file_info_size != std::mem::size_of::<VS_FIXEDFILEINFO>() as u32 {
         return Err(Error::ParseVersion(ParseVersionErrorType::InvalidString(
-            format!(
-                "Invalid VS_FIXEDFILEINFO size '{}' returned",
-                fixed_file_info_size
-            ),
+            format!("Invalid VS_FIXEDFILEINFO size '{fixed_file_info_size}' returned"),
         )));
     }
 
@@ -368,5 +378,22 @@ mod tests {
         };
         println!("kernel32.dll File product version: {}", version);
         assert_eq!(version.major, 10, "major version mismatch");
+    }
+
+    #[test]
+    fn reg_set_test() {
+        let key_name = "Software\\TestKey";
+        let value_name = "TestValue";
+        let value = "TestValueData".to_string();
+
+        // Set the registry value
+        super::set_reg_string(key_name, value_name, value.clone()).unwrap();
+
+        // Read the registry value
+        let read_value = super::read_reg_string(key_name, value_name, "".to_string());
+        assert_eq!(value, read_value, "Registry value mismatch");
+
+        // Clean up
+        super::remove_reg_key(key_name).unwrap();
     }
 }

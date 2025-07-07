@@ -10,19 +10,16 @@ use std::path::PathBuf;
 pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     let dir_str = misc_helpers::path_to_string(&dir_to_acl);
     logger::write(format!(
-        "acl_directory: start to set root-only permission to folder {}.",
-        dir_str
+        "acl_directory: start to set root-only permission to folder {dir_str}."
     ));
 
     match chown(&dir_to_acl, Some(Uid::from_raw(0)), Some(Gid::from_raw(0))) {
         Ok(_) => logger::write(format!(
-            "acl_directory: successfully set root-only permission to folder {}.",
-            dir_str
+            "acl_directory: successfully set root-only permission to folder {dir_str}."
         )),
         Err(e) => {
             logger::write(format!(
-                "acl_directory: failed to set root-only permission to folder {}. Error: {:?}",
-                dir_str, e
+                "acl_directory: failed to set root-only permission to folder {dir_str}. Error: {e:?}"
             ));
         }
     }
@@ -31,13 +28,11 @@ pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {
     let permissions = fs::Permissions::from_mode(0o700);
     match fs::set_permissions(dir_to_acl, permissions) {
         Ok(_) => logger::write(format!(
-            "acl_directory: successfully set root-only permission to folder {}.",
-            dir_str
+            "acl_directory: successfully set root-only permission to folder {dir_str}."
         )),
         Err(e) => {
             logger::write(format!(
-                "acl_directory: failed to set root-only permission to folder {}. Error: {:?}",
-                dir_str, e
+                "acl_directory: failed to set root-only permission to folder {dir_str}. Error: {e:?}"
             ));
         }
     }

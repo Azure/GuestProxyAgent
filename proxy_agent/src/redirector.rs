@@ -138,8 +138,7 @@ impl Redirector {
             .await
         {
             logger::write_error(format!(
-                "Failed to set error status '{}' for redirector: {}",
-                message, e
+                "Failed to set error status '{message}' for redirector: {e}"
             ));
         }
 
@@ -299,8 +298,7 @@ impl Redirector {
             .await
         {
             logger::write_error(format!(
-                "Failed to set error status '{}' for redirector: {}",
-                message, e
+                "Failed to set error status '{message}' for redirector: {e}"
             ));
         }
     }
@@ -339,7 +337,7 @@ pub fn ip_to_string(ip: u32) -> String {
 pub fn string_to_ip(ip_str: &str) -> u32 {
     let ip_str_seg: Vec<&str> = ip_str.split('.').collect();
     if ip_str_seg.len() != 4 {
-        logger::write_warning(format!("string_to_ip:: ip_str {} is invalid", ip_str));
+        logger::write_warning(format!("string_to_ip:: ip_str {ip_str} is invalid"));
         return 0;
     }
 
@@ -353,8 +351,7 @@ pub fn string_to_ip(ip_str: &str) -> u32 {
             }
             Err(e) => {
                 logger::write_warning(format!(
-                    "string_to_ip:: error parsing ip segment {} with error: {}",
-                    ip_str, e
+                    "string_to_ip:: error parsing ip segment {ip_str} with error: {e}"
                 ));
                 return 0;
             }

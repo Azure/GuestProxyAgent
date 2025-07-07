@@ -18,18 +18,22 @@ thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
+backtrace = "0.3"             # used for get the caller module and function name
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
 winreg = "0.11.0"             # windows reg read/write
+serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
+chrono = "0.4.41"             # parse date time string
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.42.0"
+version = "0.52.0"
 features = [
   "Win32_Foundation",
   "Win32_Networking_WinSock",
   "Win32_System_IO",
   "Win32_Security",
+  "Win32_System_EventLog",
   "Win32_System_WindowsProgramming",
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",

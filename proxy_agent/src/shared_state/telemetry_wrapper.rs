@@ -46,16 +46,14 @@ impl TelemetrySharedState {
                         vm_meta_data = meta_data.clone();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to TelemetryAction::SetVmMetaData '{:?}'",
-                                meta_data,
+                                "Failed to send response to TelemetryAction::SetVmMetaData '{meta_data:?}'"
                             ));
                         }
                     }
                     Some(TelemetryAction::GetVmMetaData { response }) => {
                         if let Err(meta_data) = response.send(vm_meta_data.clone()) {
                             logger::write_warning(format!(
-                                "Failed to send response to TelemetryAction::GetVmMetaData '{:?}'",
-                                meta_data,
+                                "Failed to send response to TelemetryAction::GetVmMetaData '{meta_data:?}'"
                             ));
                         }
                     }

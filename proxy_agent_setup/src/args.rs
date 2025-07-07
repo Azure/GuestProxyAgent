@@ -48,9 +48,9 @@ impl Display for Command {
         match self {
             Command::Backup => write!(f, "backup"),
             Command::Restore { delete_backup } => {
-                write!(f, "restore delete_backup={}", delete_backup)
+                write!(f, "restore delete_backup={delete_backup}")
             }
-            Command::Uninstall { uninstall_mode } => write!(f, "uninstall {}", uninstall_mode),
+            Command::Uninstall { uninstall_mode } => write!(f, "uninstall {uninstall_mode}"),
             Command::Install => write!(f, "install"),
             Command::Purge => write!(f, "purge"),
         }

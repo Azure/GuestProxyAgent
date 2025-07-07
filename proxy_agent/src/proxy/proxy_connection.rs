@@ -4,8 +4,8 @@
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
 use crate::common::error::{Error, HyperErrorType};
-use crate::common::hyper_client;
 use crate::common::result::Result;
+use crate::common::{config, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
@@ -39,7 +39,7 @@ impl Client {
         let full_url = req.uri().to_string();
         self.sender.send_request(req).await.map_err(|e| {
             Error::Hyper(HyperErrorType::Custom(
-                format!("Failed to send request to {}", full_url),
+                format!("Failed to send request to {full_url}"),
                 e,
             ))
         })
@@ -91,7 +91,7 @@ impl TcpConnectionContext {
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Error,
-                            format!("Failed to get claims from audit entry: {}", e),
+                            format!("Failed to get claims from audit entry: {e}"),
                         );
                         // return None for claims
                         None
@@ -154,22 +154,20 @@ impl TcpConnectionContext {
                 logger.write(
                     LoggerLevel::Trace,
                     format!(
-                        "Found audit entry with client_source_port '{}' successfully",
-                        client_source_port
+                        "Found audit entry with client_source_port '{client_source_port}' successfully"
                     ),
                 );
                 match redirector::remove_audit(client_source_port, redirector_shared_state).await {
                     Ok(_) => logger.write(
                         LoggerLevel::Trace,
                         format!(
-                            "Removed audit entry with client_source_port '{}' successfully",
-                            client_source_port
+                            "Removed audit entry with client_source_port '{client_source_port}' successfully"
                         ),
                     ),
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Warn,
-                            format!("Failed to remove audit entry: {}", e),
+                            format!("Failed to remove audit entry: {e}"),
                         );
                     }
                 }
@@ -178,8 +176,7 @@ impl TcpConnectionContext {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to find audit entry with client_source_port '{}' with error: {}",
-                    client_source_port, e
+                    "Failed to find audit entry with client_source_port '{client_source_port}' with error: {e}"
                 );
                 logger.write(LoggerLevel::Warn, message.clone());
 
@@ -206,7 +203,7 @@ impl TcpConnectionContext {
                         Err(e) => {
                             logger.write(
                                 LoggerLevel::Warn,
-                                format!("Failed to get lookup_audit_from_stream with error: {}", e),
+                                format!("Failed to get lookup_audit_from_stream with error: {e}"),
                             );
                             Err(Error::FindAuditEntryError(message))
                         }
@@ -290,15 +287,41 @@ impl ConnectionLogger {
     }
 
     pub fn write(&mut self, logger_level: LoggerLevel, message: String) {
-        if logger_level > logger_manager::get_logger_level() {
+        let message = format!(
+            "{}[{}] - {}",
+            self.http_connection_id, self.tcp_connection_id, message
+        );
+
+        // write to system log for connection logger explicitly,
+        // as the connection logger only writes to file when the connection is dropped and,
+        // connection logger file log does not write to system log implicitly.
+        logger_manager::write_system_log(logger_level, message.to_string());
+
+        if let Some(log_for_event) = crate::common::config::get_file_log_level_for_events() {
+            if log_for_event >= logger_level {
+                // write to event
+                let (module_name, caller_name) = proxy_agent_shared::logger::get_caller_info(
+                    "proxy_agent::proxy::proxy_connection",
+                );
+                proxy_agent_shared::telemetry::event_logger::write_event_only(
+                    logger_level,
+                    message.to_string(),
+                    &caller_name,
+                    &module_name,
+                );
+            }
+        }
+
+        if logger_level > logger_manager::get_max_logger_level()
+            || config::get_logs_dir() == std::path::PathBuf::from("")
+        {
+            // If the logger level is higher than the max logger level or logs directory is not set, skip logging
             return;
         }
 
         self.queue.push(format!(
-            "{}{}[{}] - {}",
+            "{}{}",
             logger::get_log_header(logger_level),
-            self.http_connection_id,
-            self.tcp_connection_id,
             message
         ));
     }

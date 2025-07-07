@@ -91,7 +91,7 @@ async fn get_user(
     } else {
         let user = User::from_logon_id(logon_id)?;
         if let Err(e) = proxy_server_shared_state.add_user(user.clone()).await {
-            println!("Failed to add user: {} to cache", e);
+            println!("Failed to add user: {e} to cache");
         }
         Ok(user)
     }
@@ -166,7 +166,7 @@ impl Process {
         #[cfg(windows)]
         {
             let handler = windows::get_process_handler(pid).unwrap_or_else(|e| {
-                println!("Failed to get process handler: {}", e);
+                println!("Failed to get process handler: {e}");
                 0
             });
             let base_info = windows::query_basic_process_info(handler);
@@ -178,7 +178,7 @@ impl Process {
                 Err(e) => {
                     process_full_path = PathBuf::default();
                     cmd = UNDEFINED.to_string();
-                    println!("Failed to query basic process info: {}", e);
+                    println!("Failed to query basic process info: {e}");
                 }
             }
         }

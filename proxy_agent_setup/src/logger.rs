@@ -15,10 +15,10 @@ fn force_init_logger(log_folder: PathBuf, log_name: &str) {
     let logger = RollingLogger::create_new(log_folder, log_name.to_string(), 20 * 1024 * 1024, 30);
     let mut loggers = std::collections::HashMap::new();
     loggers.insert(log_name.to_string(), logger);
-    logger_manager::set_loggers(loggers, log_name.to_string());
+    logger_manager::set_loggers(loggers, log_name.to_string(), LoggerLevel::Trace);
 }
 
 pub fn write(message: String) {
-    println!("{}", message);
+    println!("{message}");
     logger_manager::log(LOGGER_KEY.to_string(), LoggerLevel::Info, message);
 }
