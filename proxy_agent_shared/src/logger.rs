@@ -22,7 +22,7 @@ fn get_log_header_with_length(
     date_time_string: String,
     length: usize,
 ) -> String {
-    let header = format!("{} [{}]    ", date_time_string, level)
+    let header = format!("{date_time_string} [{level}]    ")
         .chars()
         .take(length)
         .collect::<String>();
@@ -30,7 +30,7 @@ fn get_log_header_with_length(
     // padding if the header is shorter than HEADER_LENGTH
     if header.len() < length {
         let padding = " ".repeat(length - header.len());
-        return format!("{}{}", header, padding);
+        return format!("{header}{padding}");
     }
     header
 }
