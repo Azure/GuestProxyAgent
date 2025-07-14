@@ -88,8 +88,8 @@ xcopy /Y %out_dir%\redirect.bpf.o %out_package_proxyagent_dir%\
 echo ======= convert redirect.bpf.o to redirect.bpf.sys
 call %eBPF_for_Windows_bin_path%\export_program_info.exe --clear
 call %eBPF_for_Windows_bin_path%\export_program_info.exe
-echo call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
-call powershell.exe %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
+echo call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
+call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
 if  %ERRORLEVEL% NEQ 0 (
     echo call Convert-BpfToNative.ps1 failed with exit-code: %errorlevel%
     if "%ContinueAtConvertBpfToNative%"=="" (
