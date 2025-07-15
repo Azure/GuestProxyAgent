@@ -11,6 +11,7 @@ use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::logger::rolling_logger::RollingLogger;
 use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
+use proxy_agent_shared::proxy_agent_aggregate_status;
 use proxy_agent_shared::telemetry::event_logger;
 
 use std::path::PathBuf;
@@ -59,7 +60,7 @@ pub async fn start_service(shared_state: SharedState) {
                 .parse()
                 .unwrap(),
             config::get_keys_dir(),
-            config::get_logs_dir(),
+            proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
             config::get_poll_key_status_duration(),
             &shared_state,
         );
