@@ -395,7 +395,7 @@ mod tests {
         #[cfg(not(windows))]
         {
             program = "sh";
-            args = vec!["-c"];
+            args = vec![];
             script_file_name = "test.sh";
             script_content = r#"echo "this is stdout message"
             >&2 echo "This is stderr message"
