@@ -6,54 +6,6 @@
 //! The proxy agent status contains the 'connection summary' of the proxy server.
 //! The proxy agent status contains the 'failed connection summary' of the proxy server.
 //! The proxy agent status contains the 'connection count' of the proxy server.
-//! Example
-//! ```rust
-//! use proxy_agent::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
-//! use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
-//! use proxy_agent_shared::telemetry::event_logger;
-//! use std::collections::HashMap;
-//! use std::time::Duration;
-//! use tokio::time;
-//!
-//! #[tokio::main]
-//! async fn main() {
-//!    let agent_status_shared_state = AgentStatusSharedState::start_new();
-//!
-//!    let module = AgentStatusModule::KeyKeeper;
-//!    let state = ModuleState::RUNNING;
-//!    let status_message = "KeyKeeper is running".to_string();
-//!    agent_status_shared_state.set_module_state(state.clone(), module.clone()).await.unwrap();
-//!    agent_status_shared_state.set_module_status_message(status_message.clone(), module.clone()).await.unwrap();
-//!    let get_state = agent_status_shared_state.get_module_state(module.clone()).await.unwrap();
-//!    let get_status_message = agent_status_shared_state.get_module_status_message(module.clone()).await.unwrap();
-//!    assert_eq!(state, get_state);
-//!    assert_eq!(status_message, get_status_message);
-//!    let connection_summary = ProxyConnectionSummary {
-//!       count: 1,
-//!       key: "key".to_string(),
-//!    };
-//!    agent_status_shared_state.add_one_connection_summary(connection_summary.clone()).await.unwrap();
-//!    let get_all_connection_summary = agent_status_shared_state.get_all_connection_summary().await.unwrap();
-//!    assert_eq!(1, get_all_connection_summary.len());
-//!    assert_eq!(connection_summary, get_all_connection_summary[0]);
-//!
-//!    let failed_connection_summary = ProxyConnectionSummary {
-//!       count: 1,
-//!       key: "key".to_string(),
-//!    };
-//!    agent_status_shared_state.add_one_failed_connection_summary(failed_connection_summary.clone()).await.unwrap();
-//!    let get_all_failed_connection_summary = agent_status_shared_state.get_all_failed_connection_summary().await.unwrap();
-//!    assert_eq!(1, get_all_failed_connection_summary.len());
-//!    assert_eq!(failed_connection_summary, get_all_failed_connection_summary[0]);
-//!    agent_status_shared_state.clear_all_summary().await.unwrap();
-//!
-//!    let get_connection_count = agent_status_shared_state.get_connection_count().await.unwrap();
-//!    assert_eq!(0, get_connection_count);
-//!    agent_status_shared_state.increase_connection_count().await.unwrap();
-//!    let get_connection_count = agent_status_shared_state.get_connection_count().await.unwrap();
-//!    assert_eq!(1, get_connection_count);
-//! }
-//! ```
 
 use crate::common::logger;
 use crate::common::result::Result;
@@ -671,5 +623,156 @@ impl AgentStatusSharedState {
                 e,
             )
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{proxy::proxy_summary::ProxySummary, shared_state};
+    use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
+    use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn test_agent_status_shared_state() {
+        let agent_status_shared_state = AgentStatusSharedState::start_new();
+
+        let modules = vec![
+            AgentStatusModule::KeyKeeper,
+            AgentStatusModule::TelemetryReader,
+            AgentStatusModule::TelemetryLogger,
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyServer,
+            AgentStatusModule::ProxyAgentStatus,
+        ];
+
+        for module in modules {
+            let state = agent_status_shared_state
+                .get_module_state(module.clone())
+                .await
+                .unwrap();
+            assert_eq!(ModuleState::UNKNOWN, state);
+            let status_message = agent_status_shared_state
+                .get_module_status_message(module.clone())
+                .await
+                .unwrap();
+            assert_eq!(shared_state::UNKNOWN_STATUS_MESSAGE, status_message);
+
+            let state = ModuleState::RUNNING;
+            let status_message = format!("{:?} is running", module);
+            agent_status_shared_state
+                .set_module_state(state.clone(), module.clone())
+                .await
+                .unwrap();
+            agent_status_shared_state
+                .set_module_status_message(status_message.clone(), module.clone())
+                .await
+                .unwrap();
+            let get_state = agent_status_shared_state
+                .get_module_state(module.clone())
+                .await
+                .unwrap();
+            let get_status_message = agent_status_shared_state
+                .get_module_status_message(module.clone())
+                .await
+                .unwrap();
+            assert_eq!(state, get_state);
+            assert_eq!(status_message, get_status_message);
+        }
+
+        let tcp_id = agent_status_shared_state
+            .increase_tcp_connection_count()
+            .await
+            .unwrap();
+        assert_eq!(1, tcp_id);
+
+        let connection_id = agent_status_shared_state
+            .increase_connection_count()
+            .await
+            .unwrap();
+        assert_eq!(1, connection_id);
+        let connection_count = agent_status_shared_state
+            .get_connection_count()
+            .await
+            .unwrap();
+        assert_eq!(1, connection_count);
+
+        let connection_summary = ProxySummary {
+            id: connection_id,
+            method: "GET".to_string(),
+            url: "/status".to_string(),
+            clientIp: "127.0.0.1".to_string(),
+            clientPort: 6080,
+            ip: "127.0.0.1".to_string(),
+            port: 8080,
+            userId: 999,
+            userName: "user1".to_string(),
+            userGroups: vec!["group1".to_string()],
+            processFullPath: PathBuf::from("C:\\path\\to\\process.exe"),
+            processCmdLine: "process --arg1 --arg2".to_string(),
+            runAsElevated: true,
+            responseStatus: "200 OK".to_string(),
+            elapsedTime: 123,
+            errorDetails: "".to_string(),
+        };
+        agent_status_shared_state
+            .add_one_connection_summary(connection_summary.clone())
+            .await
+            .unwrap();
+        let get_all_connection_summary = agent_status_shared_state
+            .get_all_connection_summary()
+            .await
+            .unwrap();
+        assert_eq!(1, get_all_connection_summary.len());
+        assert_eq!(1, get_all_connection_summary[0].count);
+
+        let connection_id = agent_status_shared_state
+            .increase_connection_count()
+            .await
+            .unwrap();
+        assert_eq!(2, connection_id);
+
+        let failed_connection_summary = ProxySummary {
+            id: connection_id,
+            method: "GET".to_string(),
+            url: "/status".to_string(),
+            clientIp: "127.0.0.1".to_string(),
+            clientPort: 6080,
+            ip: "127.0.0.1".to_string(),
+            port: 8080,
+            userId: 999,
+            userName: "user1".to_string(),
+            userGroups: vec!["group1".to_string()],
+            processFullPath: PathBuf::from("C:\\path\\to\\process.exe"),
+            processCmdLine: "process --arg1 --arg2".to_string(),
+            runAsElevated: true,
+            responseStatus: "500 Internal Server Error".to_string(),
+            elapsedTime: 123,
+            errorDetails: "Some error occurred".to_string(),
+        };
+        agent_status_shared_state
+            .add_one_failed_connection_summary(failed_connection_summary.clone())
+            .await
+            .unwrap();
+        let get_all_failed_connection_summary = agent_status_shared_state
+            .get_all_failed_connection_summary()
+            .await
+            .unwrap();
+        assert_eq!(1, get_all_failed_connection_summary.len());
+
+        // clear all summaries
+        agent_status_shared_state.clear_all_summary().await.unwrap();
+        let get_all_connection_summary = agent_status_shared_state
+            .get_all_connection_summary()
+            .await
+            .unwrap();
+        assert_eq!(0, get_all_connection_summary.len());
+
+        // connection count should not be reset
+        let connection_id = agent_status_shared_state
+            .increase_connection_count()
+            .await
+            .unwrap();
+        assert_eq!(3, connection_id);
     }
 }

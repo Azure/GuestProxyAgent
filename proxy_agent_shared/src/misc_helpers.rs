@@ -380,10 +380,12 @@ mod tests {
         let program: &str;
         let script_content: &str;
         let script_file_name: &str;
+        let mut args: Vec<&str>;
 
         #[cfg(windows)]
         {
             program = "powershell.exe";
+            args = vec!["-ExecutionPolicy", "Bypass", "-File"];
             script_file_name = "test.ps1";
             script_content = r#"write-host "this is stdout message"
             write-error "This is stderr message"
@@ -393,6 +395,7 @@ mod tests {
         #[cfg(not(windows))]
         {
             program = "sh";
+            args = vec!["-c"];
             script_file_name = "test.sh";
             script_content = r#"echo "this is stdout message"
             >&2 echo "This is stderr message"
@@ -403,10 +406,13 @@ mod tests {
         let script_file_path = temp_test_path.join(script_file_name);
         _ = fs::write(&script_file_path, script_content);
 
+        let script_file_path_str = super::path_to_string(&script_file_path);
+        args.push(&script_file_path_str);
+
         let default_error_code = -1;
         let output = super::execute_command(
             program,
-            vec![&super::path_to_string(&script_file_path)],
+            args,
             default_error_code,
         )
         .unwrap();

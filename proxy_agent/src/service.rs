@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 #[cfg(windows)]
-pub mod windows;
+pub mod windows_main;
 
 use crate::common::{config, constants, helpers, logger};
 use crate::key_keeper::KeyKeeper;
