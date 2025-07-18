@@ -665,7 +665,10 @@ mod tests {
             key_keeper.get_current_key_guid().await.unwrap(),
             Some("test_guid".to_string())
         );
-        assert_eq!(key_keeper.get_current_key_incarnation().await.unwrap(), Some(1));
+        assert_eq!(
+            key_keeper.get_current_key_incarnation().await.unwrap(),
+            Some(1)
+        );
         key_keeper.clear_key().await.unwrap();
         assert_eq!(key_keeper.get_current_key_value().await.unwrap(), None);
 
@@ -686,15 +689,12 @@ mod tests {
             .unwrap();
         assert!(updated);
         assert_eq!(old_rule_id, "");
-        assert_eq!(
-            key_keeper.get_wireserver_rule_id().await.unwrap(),
-            rule_id
-        );
+        assert_eq!(key_keeper.get_wireserver_rule_id().await.unwrap(), rule_id);
         let rules = AuthorizationItem {
             defaultAccess: "allow".to_string(),
             mode: "audit".to_string(),
             id: rule_id.to_string(),
-            rules: None
+            rules: None,
         };
         key_keeper
             .set_wireserver_rules(Some(rules.clone()))
@@ -703,14 +703,8 @@ mod tests {
         let retrieved_rules = key_keeper.get_wireserver_rules().await.unwrap();
         assert!(retrieved_rules.is_some());
         let retrieved_rules = retrieved_rules.unwrap();
-        assert_eq!(
-            rules.id,
-            retrieved_rules.id
-        );
-        assert_eq!(
-            true,
-            retrieved_rules.defaultAllowed
-        );
+        assert_eq!(rules.id, retrieved_rules.id);
+        assert_eq!(true, retrieved_rules.defaultAllowed);
         assert_eq!(
             authorization_rules::AuthorizationMode::Audit,
             retrieved_rules.mode
@@ -719,7 +713,7 @@ mod tests {
         assert_eq!(0, retrieved_rules.privileges.len());
         assert_eq!(0, retrieved_rules.identities.len());
 
-        // test IMDS Rule 
+        // test IMDS Rule
         let rule_id = "test_imds_rule_id".to_string();
         let (updated, old_rule_id) = key_keeper
             .update_imds_rule_id(rule_id.clone())
@@ -732,7 +726,7 @@ mod tests {
             defaultAccess: "deny".to_string(),
             mode: "enforce".to_string(),
             id: rule_id.to_string(),
-            rules: None
+            rules: None,
         };
         key_keeper
             .set_imds_rules(Some(rules.clone()))
@@ -741,19 +735,13 @@ mod tests {
         let retrieved_rules = key_keeper.get_imds_rules().await.unwrap();
         assert!(retrieved_rules.is_some());
         let retrieved_rules = retrieved_rules.unwrap();
-        assert_eq!(
-            rules.id,
-            retrieved_rules.id
-        );
-        assert_eq!(
-            false,
-            retrieved_rules.defaultAllowed
-        );
+        assert_eq!(rules.id, retrieved_rules.id);
+        assert_eq!(false, retrieved_rules.defaultAllowed);
         assert_eq!(
             authorization_rules::AuthorizationMode::Enforce,
             retrieved_rules.mode
         );
-     
+
         // test HostGA Rule
         let rule_id = "test_hostga_rule_id".to_string();
         let (updated, old_rule_id) = key_keeper

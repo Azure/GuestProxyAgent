@@ -410,12 +410,7 @@ mod tests {
         args.push(&script_file_path_str);
 
         let default_error_code = -1;
-        let output = super::execute_command(
-            program,
-            args,
-            default_error_code,
-        )
-        .unwrap();
+        let output = super::execute_command(program, args, default_error_code).unwrap();
         assert_eq!(1, output.exit_code(), "exit code mismatch");
         assert_eq!(
             "this is stdout message",
