@@ -48,7 +48,7 @@ const TEST_INTERNAL_FUNCTION: &str = "test::run_test"; // The test framework's i
 
 pub fn get_caller_info(module_to_skip: &str) -> (String, String) {
     let bt = backtrace::Backtrace::new();
-    
+
     for frame in bt.frames().iter() {
         for symbol in frame.symbols() {
             if let Some(name) = symbol.name() {
