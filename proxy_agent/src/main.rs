@@ -27,7 +27,7 @@ use std::{process, time::Duration};
 #[cfg(windows)]
 use common::logger;
 #[cfg(windows)]
-use service::windows;
+use service::windows_main;
 #[cfg(windows)]
 use std::ffi::OsString;
 #[cfg(windows)]
@@ -120,7 +120,7 @@ fn proxy_agent_windows_service_main(_args: Vec<OsString>) {
         .get()
         .expect("You must provide the Tokio runtime handle before this function is called");
     handle.block_on(async {
-        if let Err(e) = windows::run_service().await {
+        if let Err(e) = windows_main::run_service().await {
             logger::write_error(format!("Error in running the service: {e}"));
         }
     });

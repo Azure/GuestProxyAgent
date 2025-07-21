@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct ProxySummary {
     pub id: u128,
