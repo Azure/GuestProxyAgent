@@ -65,8 +65,8 @@ pub struct KeyKeeper {
     base_url: Uri,
     /// key_dir: the folder to save the key details
     key_dir: PathBuf,
-    /// log_dir: the folder to log the access control rule details
-    log_dir: PathBuf,
+    /// status_dir: the folder to log the access control rule details
+    status_dir: PathBuf,
     /// interval: the interval to poll the secure channel status
     interval: Duration,
     /// cancellation_token: the cancellation token to cancel the key keeper task
@@ -87,14 +87,14 @@ impl KeyKeeper {
     pub fn new(
         base_url: Uri,
         key_dir: PathBuf,
-        log_dir: PathBuf,
+        status_dir: PathBuf,
         interval: Duration,
         shared_state: &SharedState,
     ) -> Self {
         KeyKeeper {
             base_url,
             key_dir,
-            log_dir,
+            status_dir,
             interval,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
@@ -392,7 +392,7 @@ impl KeyKeeper {
                             hostga: hostga_rules,
                         },
                     );
-                    rules.write_all(&self.log_dir, constants::MAX_LOG_FILE_COUNT);
+                    rules.write_all(&self.status_dir, constants::MAX_LOG_FILE_COUNT);
                 }
             }
 
@@ -812,8 +812,8 @@ mod tests {
     async fn poll_secure_channel_status_tests() {
         let mut temp_test_path = env::temp_dir();
         temp_test_path.push("poll_secure_channel_status_tests");
-        let mut log_dir = temp_test_path.to_path_buf();
-        log_dir.push("Logs");
+        let mut status_dir = temp_test_path.to_path_buf();
+        status_dir.push("Logs");
         let mut keys_dir = temp_test_path.to_path_buf();
         keys_dir.push("Keys");
 
@@ -844,7 +844,7 @@ mod tests {
         let key_keeper = KeyKeeper {
             base_url: (format!("http://{}:{}/", ip, port)).parse().unwrap(),
             key_dir: cloned_keys_dir.clone(),
-            log_dir: cloned_keys_dir.clone(),
+            status_dir: cloned_keys_dir.clone(),
             interval: Duration::from_millis(10),
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
