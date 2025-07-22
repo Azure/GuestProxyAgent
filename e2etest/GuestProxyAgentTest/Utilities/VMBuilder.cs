@@ -8,7 +8,6 @@ using Azure.ResourceManager.Compute.Models;
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Resources;
 using GuestProxyAgentTest.Settings;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
 
 namespace GuestProxyAgentTest.Utilities
 {
@@ -24,7 +23,7 @@ namespace GuestProxyAgentTest.Utilities
         private string pubIpName = "";
         private string rgName = "";
         private string adminUsername = "testuser";
-        private string adminPassword = SdkContext.RandomResourceName("pP@1", 15);
+        private string adminPassword = new ResourceNamer("").RandomName("pP@1", 15);
 
         // In order to use the plan, we need to accept the terms first.
         // https://learn.microsoft.com/en-us/cli/azure/vm/image/terms?view=azure-cli-latest#az-vm-image-terms-accept
