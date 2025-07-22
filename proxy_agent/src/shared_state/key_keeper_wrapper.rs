@@ -640,3 +640,115 @@ impl KeyKeeperSharedState {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::proxy::authorization_rules;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_key_keeper_shared_state() {
+        let key_keeper = KeyKeeperSharedState::start_new();
+
+        // test Key
+        let mut key = Key::empty();
+        key.key = "test_key".to_string();
+        key.guid = "test_guid".to_string();
+        key.incarnationId = Some(1);
+        key_keeper.update_key(key.clone()).await.unwrap();
+        assert_eq!(
+            key_keeper.get_current_key_value().await.unwrap(),
+            Some("test_key".to_string())
+        );
+        assert_eq!(
+            key_keeper.get_current_key_guid().await.unwrap(),
+            Some("test_guid".to_string())
+        );
+        assert_eq!(
+            key_keeper.get_current_key_incarnation().await.unwrap(),
+            Some(1)
+        );
+        key_keeper.clear_key().await.unwrap();
+        assert_eq!(key_keeper.get_current_key_value().await.unwrap(), None);
+
+        // test Secure Channel State
+        let state = "test_state".to_string();
+        key_keeper
+            .update_current_secure_channel_state(state.clone())
+            .await
+            .unwrap();
+        let current_state = key_keeper.get_current_secure_channel_state().await.unwrap();
+        assert_eq!(state, current_state);
+
+        // test WireServer Rule
+        let rule_id = "test_wireserver_rule_id".to_string();
+        let (updated, old_rule_id) = key_keeper
+            .update_wireserver_rule_id(rule_id.clone())
+            .await
+            .unwrap();
+        assert!(updated);
+        assert_eq!(old_rule_id, "");
+        assert_eq!(key_keeper.get_wireserver_rule_id().await.unwrap(), rule_id);
+        let rules = AuthorizationItem {
+            defaultAccess: "allow".to_string(),
+            mode: "audit".to_string(),
+            id: rule_id.to_string(),
+            rules: None,
+        };
+        key_keeper
+            .set_wireserver_rules(Some(rules.clone()))
+            .await
+            .unwrap();
+        let retrieved_rules = key_keeper.get_wireserver_rules().await.unwrap();
+        assert!(retrieved_rules.is_some());
+        let retrieved_rules = retrieved_rules.unwrap();
+        assert_eq!(rules.id, retrieved_rules.id);
+        assert_eq!(true, retrieved_rules.defaultAllowed);
+        assert_eq!(
+            authorization_rules::AuthorizationMode::Audit,
+            retrieved_rules.mode
+        );
+        assert_eq!(0, retrieved_rules.privilegeAssignments.len());
+        assert_eq!(0, retrieved_rules.privileges.len());
+        assert_eq!(0, retrieved_rules.identities.len());
+
+        // test IMDS Rule
+        let rule_id = "test_imds_rule_id".to_string();
+        let (updated, old_rule_id) = key_keeper
+            .update_imds_rule_id(rule_id.clone())
+            .await
+            .unwrap();
+        assert!(updated);
+        assert_eq!(old_rule_id, "");
+        assert_eq!(key_keeper.get_imds_rule_id().await.unwrap(), rule_id);
+        let rules = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            id: rule_id.to_string(),
+            rules: None,
+        };
+        key_keeper
+            .set_imds_rules(Some(rules.clone()))
+            .await
+            .unwrap();
+        let retrieved_rules = key_keeper.get_imds_rules().await.unwrap();
+        assert!(retrieved_rules.is_some());
+        let retrieved_rules = retrieved_rules.unwrap();
+        assert_eq!(rules.id, retrieved_rules.id);
+        assert_eq!(false, retrieved_rules.defaultAllowed);
+        assert_eq!(
+            authorization_rules::AuthorizationMode::Enforce,
+            retrieved_rules.mode
+        );
+
+        // test HostGA Rule
+        let rule_id = "test_hostga_rule_id".to_string();
+        let (updated, old_rule_id) = key_keeper
+            .update_hostga_rule_id(rule_id.clone())
+            .await
+            .unwrap();
+        assert!(updated);
+        assert_eq!(old_rule_id, "");
+    }
+}
