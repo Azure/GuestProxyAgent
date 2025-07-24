@@ -397,6 +397,11 @@ impl KeyKeeper {
             }
 
             let state = status.get_secure_channel_state();
+            let secure_channel_state_updated = self
+                .key_keeper_shared_state
+                .update_current_secure_channel_state(state.to_string())
+                .await;
+
             // check if need fetch the key
             if state != DISABLE_STATE
                 && (status.keyGuid.is_none()  // key has not latched yet
@@ -523,12 +528,8 @@ impl KeyKeeper {
                 }
             }
 
-            // update the current secure channel state if different
-            match self
-                .key_keeper_shared_state
-                .update_current_secure_channel_state(state.to_string())
-                .await
-            {
+            // update redirect policy if current secure channel state updated
+            match secure_channel_state_updated {
                 Ok(updated) => {
                     if updated {
                         // update the redirector policy map
