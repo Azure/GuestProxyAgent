@@ -37,7 +37,7 @@ namespace GuestProxyAgentTest.Models
         {
             get
             {
-                return FailedCases.Count() == 0? "": $"Test Scenario:{ScenarioName} failed by test cases: {string.Join(',', FailedCases)}, Check the test case log for error details.";
+                return FailedCases.Count() == 0 ? "" : $"Test Scenario:{ScenarioName} failed by test cases: {string.Join(',', FailedCases)}, Check the test case log for error details.";
             }
         }
     }

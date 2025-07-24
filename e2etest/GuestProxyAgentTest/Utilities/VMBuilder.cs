@@ -172,7 +172,12 @@ namespace GuestProxyAgentTest.Utilities
                     Product = this.testScenarioSetting.VMImageDetails.Offer,
                 };
             }
-            
+
+            if (this.testScenarioSetting.VMImageDetails.IsArm64)
+            {
+                vmData.Tags.Add(Constants.ENFORCE_ARCHITECTURE_TYPE_FOR_EXTENSIONS, "true");
+            }
+
             return vmData;
         }
 
