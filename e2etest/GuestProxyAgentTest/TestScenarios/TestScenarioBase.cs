@@ -58,7 +58,8 @@ namespace GuestProxyAgentTest.TestScenarios
         {
             get
             {
-                return "Test Group: " + _testScenarioSetting.testGroupName + ", Test Scenario: " + _testScenarioSetting.testScenarioName + ": ";
+                // _testScenarioSetting may still null in constructor functions
+                return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName + ": ";
             }
         }
 
