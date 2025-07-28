@@ -1,13 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-using Azure.Core;
-using Azure.ResourceManager.Network.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace GuestProxyAgentTest.Utilities
 {
