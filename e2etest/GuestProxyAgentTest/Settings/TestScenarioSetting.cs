@@ -59,10 +59,9 @@ namespace GuestProxyAgentTest.Settings
         {
             get
             {
-                return Offer == null ? false : Offer.Contains("arm64", StringComparison.OrdinalIgnoreCase) ||
-                  Sku == null ? false : Sku.Contains("arm64", StringComparison.OrdinalIgnoreCase);
+                return (Offer == null ? false : Offer.Contains("arm64", StringComparison.OrdinalIgnoreCase)) ||
+                  (Sku == null ? false : Sku.Contains("arm64", StringComparison.OrdinalIgnoreCase));
             }
         }
-
     }
 }
