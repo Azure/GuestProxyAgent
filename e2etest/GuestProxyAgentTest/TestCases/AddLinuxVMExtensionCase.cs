@@ -24,7 +24,7 @@ namespace GuestProxyAgentTest.TestCases
             {
                 Location = GuestProxyAgentTest.Settings.TestSetting.Instance.location,
                 Publisher = "Microsoft.CPlat.ProxyAgent",
-                ExtensionType = "ProxyAgentLinuxTest",
+                ExtensionType = context.ScenarioSetting.VMImageDetails.IsArm64 ? "ProxyAgentLinuxARM64Test" : "ProxyAgentLinuxTest",
                 TypeHandlerVersion = "1.0",
                 AutoUpgradeMinorVersion = false,
                 EnableAutomaticUpgrade = false,

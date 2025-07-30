@@ -8,4 +8,6 @@ scenarios:
     className: GuestProxyAgentTest.TestScenarios.BVTScenario
   - name: BugFixesScenario
     className: GuestProxyAgentTest.TestScenarios.BugFixesScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
 
