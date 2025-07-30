@@ -16,7 +16,8 @@ namespace GuestProxyAgentTest.Utilities
         public static readonly string RUNCOMMAND_ERROR_OUTPUT_FILE_NAME = "runCommandErr.txt";
         public static readonly string RUNCOMMAND_CUSTOM_OUTPUT_SAS_PARAMETER_NAME = "customOutputJsonSAS";
         public static readonly string COULD_CLEANUP_TAG_NAME = "CouldCleanup";
-        public static readonly string ENFORCE_ARCHITECTURE_TYPE_FOR_EXTENSIONS = "EnforceArchitectureTypeForExtensions";
+        public static readonly string TAGS_ENFORCE_ARCHITECTURE_TYPE_FOR_EXTENSIONS = "EnforceArchitectureTypeForExtensions";
+        public static readonly string TAGS_MUST_NOT_REUSE_PREPROVISIONED_VM = "MustNotReusePreprovisionedVM";
         public const string INSTALL_LINUX_GUEST_PROXY_AGENT_PACKAGE_SCRIPT_NAME = "InstallGuestProxyAgentPackage.sh";
         public static readonly string GUEST_PROXY_AGENT_E2E_ACCESS_TOKEN_ENV = "GuestProxyAgentE2EAccessToken";
         public static readonly string GUEST_PROXY_AGENT_E2E_ACCESS_TOKEN_STORAGE_ACCOUNT_ENV = "GuestProxyAgentE2EAccessTokenForStorageAccount";
@@ -53,7 +54,7 @@ namespace GuestProxyAgentTest.Utilities
 
         public static bool IS_WINDOWS()
         {
-           return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         }
     }
 }

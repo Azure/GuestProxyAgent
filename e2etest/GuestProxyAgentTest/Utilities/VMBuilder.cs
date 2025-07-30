@@ -175,7 +175,9 @@ namespace GuestProxyAgentTest.Utilities
 
             if (this.testScenarioSetting.VMImageDetails.IsArm64)
             {
-                vmData.Tags.Add(Constants.ENFORCE_ARCHITECTURE_TYPE_FOR_EXTENSIONS, "true");
+                // workarounds to use ARM64 VM Extension
+                vmData.Tags.Add(Constants.TAGS_ENFORCE_ARCHITECTURE_TYPE_FOR_EXTENSIONS, "true");
+                vmData.Tags.Add(Constants.TAGS_MUST_NOT_REUSE_PREPROVISIONED_VM, "true");
             }
 
             return vmData;
