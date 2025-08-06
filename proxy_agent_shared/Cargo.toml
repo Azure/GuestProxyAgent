@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.34"
+version = "1.0.35"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
