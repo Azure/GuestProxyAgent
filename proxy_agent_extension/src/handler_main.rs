@@ -94,20 +94,20 @@ fn check_linux_os_supported(version: Version) -> bool {
     if linux_type.contains("ubuntu") {
         version.major >= constants::linux::MIN_SUPPORTED_UBUNTU_OS_VERSION_MAJOR
     } else if linux_type.contains("mariner") {
-        return version.major >= constants::linux::MIN_SUPPORTED_MARINER_OS_VERSION_MAJOR;
+        version.major >= constants::linux::MIN_SUPPORTED_MARINER_OS_VERSION_MAJOR
     } else if linux_type.contains("azure linux") {
-        return version.major >= constants::linux::MIN_SUPPORTED_AZURE_LINUX_OS_VERSION_MAJOR;
+        version.major >= constants::linux::MIN_SUPPORTED_AZURE_LINUX_OS_VERSION_MAJOR
     } else if linux_type.contains(constants::linux::RED_HAT_OS_NAME) {
-        return version.major >= constants::linux::MIN_RED_HAT_OS_VERSION_MAJOR;
+        version.major >= constants::linux::MIN_RED_HAT_OS_VERSION_MAJOR
     } else if linux_type.contains(constants::linux::ROCKY_OS_NAME) {
-        return version.major >= constants::linux::MIN_ROCKY_OS_VERSION_MAJOR;
+        version.major >= constants::linux::MIN_ROCKY_OS_VERSION_MAJOR
     } else if linux_type.contains(constants::linux::SUSE_OS_NAME) {
         // SUSE 15 SP4+ is supported
-        return version.major > constants::linux::MIN_SUSE_OS_VERSION_MAJOR
+        version.major > constants::linux::MIN_SUSE_OS_VERSION_MAJOR
             || (version.major == constants::linux::MIN_SUSE_OS_VERSION_MAJOR
-                && version.minor >= constants::linux::MIN_SUSE_OS_VERSION_MINOR);
+                && version.minor >= constants::linux::MIN_SUSE_OS_VERSION_MINOR)
     } else {
-        return false;
+        false
     }
 }
 
