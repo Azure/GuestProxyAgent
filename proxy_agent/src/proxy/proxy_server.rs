@@ -239,7 +239,7 @@ impl ProxyServer {
         };
         let mut tcp_connection_logger = ConnectionLogger::new(tcp_connection_id, 0);
         tcp_connection_logger.write(
-            LoggerLevel::Trace,
+            LoggerLevel::Info,
             format!("Accepted new tcp connection [{tcp_connection_id}]."),
         );
 
