@@ -691,9 +691,9 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                 );
             }
         }
-        return true;
+        true
     } else {
-        return false;
+        false
     }
 }
 
