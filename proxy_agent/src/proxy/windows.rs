@@ -88,14 +88,15 @@ fn net_user_get_local_groups(
     }
 }
 
-const BUILTIN_SYSTEM_LOGIN_ID: u64 = 0x3e7; // SYSTEM user login id
+const BUILTIN_SYSTEM_LOGIN_ID_999: u64 = 0x3e7; // SYSTEM user login id
+const BUILTIN_SYSTEM_LOGIN_ID_998: u64 = 0x3e6; // SYSTEM user login id
 static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(load_users);
 fn load_users() -> HashMap<u64, &'static str> {
     let mut users = HashMap::new();
     users.insert(0x3e4, "NETWORK SERVICE");
     users.insert(0x3e5, "LOCAL SERVICE");
-    users.insert(0x3e6, "SYSTEM");
-    users.insert(0x3e7, "SYSTEM");
+    users.insert(BUILTIN_SYSTEM_LOGIN_ID_998, "SYSTEM");
+    users.insert(BUILTIN_SYSTEM_LOGIN_ID_999, "SYSTEM");
     users.insert(0x3e8, "IIS_IUSRS");
     users.insert(0x3e9, "IUSR");
     users
@@ -109,7 +110,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
     // if it is, return the user name and an empty group list
     // https://learn.microsoft.com/en-us/windows/security/identity-protection/access-control/local-accounts#default-local-system-accounts
     // It's an internal account that doesn't show up in User Manager, and it can't be added to any groups.
-    if logon_id == BUILTIN_SYSTEM_LOGIN_ID {
+    if logon_id == BUILTIN_SYSTEM_LOGIN_ID_998 || logon_id == BUILTIN_SYSTEM_LOGIN_ID_999 {
         // if logon_id is the SYSTEM user, return it directly
         return Ok((BUILTIN_USERS[&logon_id].to_string(), Vec::new()));
     }
