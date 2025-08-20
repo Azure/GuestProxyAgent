@@ -714,7 +714,9 @@ fn report_proxy_agent_service_status(
 ) {
     match output {
         Ok(output) => {
-            let message = "Successfully Executed Setup Tool Install Command for Proxy Agent Version Upgrade".to_string();
+            let message =
+                "Successfully Executed Setup Tool Install Command for Proxy Agent Version Upgrade"
+                    .to_string();
             logger::write(format!(
                 "{}: {}",
                 message.clone(),
@@ -746,7 +748,8 @@ fn report_proxy_agent_service_status(
                     .unwrap_or(constants::STATUS_CODE_NOT_OK);
                 status.status = status_state_obj.update_state(false);
                 status.formattedMessage.message =
-                    "Execute Install Command in Proxy Agent Setup Tool failed with error".to_string();
+                    "Execute Install Command in Proxy Agent Setup Tool failed with error"
+                        .to_string();
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             }
