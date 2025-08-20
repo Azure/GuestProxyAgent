@@ -85,7 +85,7 @@ async fn monitor_thread() {
         status: constants::SUCCESS_STATUS.to_string(),
         formattedMessage: FormattedMessage {
             lang: constants::LANG_EN_US.to_string(),
-            message: "Update Proxy Agent command output successfully".to_string(),
+            message: "Starting Proxy Agent Thread".to_string(),
         },
         substatus: Default::default(),
     };
@@ -156,6 +156,7 @@ async fn monitor_thread() {
                     "service_main",
                     logger_key,
                 );
+                logger.write("Calling setup tool to install or update proxy agent service");
                 let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
                 backup_proxyagent(&setup_tool);
                 let mut install_command = Command::new(&setup_tool);
@@ -164,6 +165,7 @@ async fn monitor_thread() {
                 let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
                 proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new());
                 install_command.arg("install");
+                logger.write("Completed version backup, starting install command in setup tool");
                 let output = install_command.output();
                 report_proxy_agent_service_status(
                     output,
@@ -172,9 +174,10 @@ async fn monitor_thread() {
                     &mut status,
                     &mut status_state_obj,
                 );
-                // Time taken to update proxy agent service
+                logger.write("Completed proxy agent version upgrade through setup tool");
+                // Time taken to backup and install proxy agent service
                 proxy_agent_update_command.write_event(
-                    "Update Proxy Agent command completed",
+                    "Successfully Updated Proxy Agent Version",
                     "monitor_thread",
                     "service_main",
                     logger_key,
@@ -310,6 +313,11 @@ fn backup_proxyagent(setup_tool: &String) {
             } else {
                 LoggerLevel::Warn
             };
+            if event_level == LoggerLevel::Info {
+                logger.write("Backup Proxy Agent successfully completed");
+            } else {
+                logger.write("Backup Proxy Agent failed");
+            }
             telemetry::event_logger::write_event(
                 event_level,
                 format!(
@@ -706,24 +714,25 @@ fn report_proxy_agent_service_status(
 ) {
     match output {
         Ok(output) => {
+            let message = "Successfully Executed Setup Tool Install Command for Proxy Agent Version Upgrade".to_string();
             logger::write(format!(
-                "Update Proxy Agent command output: {}",
+                "{}: {}",
+                message.clone(),
                 String::from_utf8_lossy(&output.stdout)
             ));
             if output.status.success() {
-                logger::write("Update Proxy Agent command output successfully".to_string());
+                logger::write(message.clone());
                 status.configurationAppliedTime = misc_helpers::get_date_time_string();
                 status.code = constants::STATUS_CODE_OK;
                 status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message =
-                    "Update Proxy Agent command output successfully".to_string();
+                status.formattedMessage.message = message;
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             } else {
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
                     format!(
-                        "Update Proxy Agent command failed with error: {}",
+                        "Execute Install Command in Proxy Agent Setup Tool failed with error: {}",
                         String::from_utf8_lossy(&output.stderr)
                     ),
                     "report_proxy_agent_service_status",
@@ -737,7 +746,7 @@ fn report_proxy_agent_service_status(
                     .unwrap_or(constants::STATUS_CODE_NOT_OK);
                 status.status = status_state_obj.update_state(false);
                 status.formattedMessage.message =
-                    "Update Proxy Agent command failed with error".to_string();
+                    "Execute Install Command in Proxy Agent Setup Tool failed with error".to_string();
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             }
@@ -745,7 +754,7 @@ fn report_proxy_agent_service_status(
         Err(e) => {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
-                format!("Error in running Update Proxy Agent command: {e}"),
+                format!("Error in running Install Proxy Agent Command Through Setup Tool: {e}"),
                 "report_proxy_agent_service_status",
                 "service_main",
                 &logger::get_logger_key(),
@@ -755,7 +764,7 @@ fn report_proxy_agent_service_status(
             status.code = constants::STATUS_CODE_NOT_OK;
             status.status = status_state_obj.update_state(false);
             status.formattedMessage.message =
-                format!("Update Proxy Agent command failed with error: {e}");
+                format!("Execute Install Command in Proxy Agent Setup Tool failed with error: {e}");
             status.substatus = Default::default();
             common::report_status(status_folder, seq_no, status);
         }
