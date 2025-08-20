@@ -85,7 +85,7 @@ async fn monitor_thread() {
         status: constants::SUCCESS_STATUS.to_string(),
         formattedMessage: FormattedMessage {
             lang: constants::LANG_EN_US.to_string(),
-            message: "Starting Proxy Agent Thread".to_string(),
+            message: "Started ProxyAgent Extension Monitoring thread.".to_string(),
         },
         substatus: Default::default(),
     };
@@ -754,9 +754,7 @@ fn report_proxy_agent_service_status(
                     .code()
                     .unwrap_or(constants::STATUS_CODE_NOT_OK);
                 status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message =
-                    "Execute Install Command in Proxy Agent Setup Tool Output Status Not Success"
-                        .to_string();
+                status.formattedMessage.message = err_message.clone();
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             }
