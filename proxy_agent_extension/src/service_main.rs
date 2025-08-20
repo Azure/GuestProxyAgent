@@ -156,7 +156,7 @@ async fn monitor_thread() {
                     "service_main",
                     logger_key,
                 );
-                logger.write("Calling setup tool to install or update proxy agent service");
+                logger::write("Calling setup tool to install or update proxy agent service");
                 let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
                 backup_proxyagent(&setup_tool);
                 let mut install_command = Command::new(&setup_tool);
@@ -165,7 +165,7 @@ async fn monitor_thread() {
                 let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
                 proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new());
                 install_command.arg("install");
-                logger.write("Completed version backup, starting install command in setup tool");
+                logger::write("Completed version backup, starting install command in setup tool");
                 let output = install_command.output();
                 report_proxy_agent_service_status(
                     output,
@@ -174,7 +174,7 @@ async fn monitor_thread() {
                     &mut status,
                     &mut status_state_obj,
                 );
-                logger.write("Completed proxy agent version upgrade through setup tool");
+                logger::write("Completed proxy agent version upgrade through setup tool");
                 // Time taken to backup and install proxy agent service
                 proxy_agent_update_command.write_event(
                     "Successfully Updated Proxy Agent Version",
@@ -314,9 +314,9 @@ fn backup_proxyagent(setup_tool: &String) {
                 LoggerLevel::Warn
             };
             if event_level == LoggerLevel::Info {
-                logger.write("Backup Proxy Agent successfully completed");
+                logger::write("Backup Proxy Agent successfully completed");
             } else {
-                logger.write("Backup Proxy Agent failed");
+                logger::write("Backup Proxy Agent failed");
             }
             telemetry::event_logger::write_event(
                 event_level,
