@@ -156,9 +156,6 @@ async fn monitor_thread() {
                     "service_main",
                     logger_key,
                 );
-                logger::write(
-                    "Calling setup tool to install or update proxy agent service".to_string(),
-                );
                 let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
                 backup_proxyagent(&setup_tool);
                 let mut install_command = Command::new(&setup_tool);
@@ -167,9 +164,6 @@ async fn monitor_thread() {
                 let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
                 proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new());
                 install_command.arg("install");
-                logger::write(
-                    "Completed version backup, starting install command in setup tool".to_string(),
-                );
                 let output = install_command.output();
                 report_proxy_agent_service_status(
                     output,
@@ -178,10 +172,6 @@ async fn monitor_thread() {
                     &mut status,
                     &mut status_state_obj,
                 );
-                logger::write(
-                    "Completed proxy agent version upgrade through setup tool".to_string(),
-                );
-                // Time taken to backup and install proxy agent service
                 proxy_agent_update_command.write_event(
                     "Successfully Updated Proxy Agent Version",
                     "monitor_thread",
@@ -324,7 +314,6 @@ fn backup_proxyagent(setup_tool: &String) {
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
-            logger::write(message.clone());
             telemetry::event_logger::write_event(
                 event_level,
                 message.clone(),
@@ -335,9 +324,8 @@ fn backup_proxyagent(setup_tool: &String) {
         }
         Err(e) => {
             let message = format!("Error in running Backup Proxy Agent command: {e}");
-            logger::write(message.clone());
             telemetry::event_logger::write_event(
-                LoggerLevel::Info,
+                LoggerLevel::Warn,
                 message.clone(),
                 "backup_proxyagent",
                 "service_main",
@@ -723,12 +711,12 @@ fn report_proxy_agent_service_status(
                 "Successfully Executed Setup Tool Install Command for Proxy Agent Version Upgrade"
                     .to_string();
             logger::write(format!(
-                "{}: {}",
+                "{} with stdoutput: {}, stderr: {}",
                 message.clone(),
-                String::from_utf8_lossy(&output.stdout)
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
             ));
             if output.status.success() {
-                logger::write(message.clone());
                 status.configurationAppliedTime = misc_helpers::get_date_time_string();
                 status.code = constants::STATUS_CODE_OK;
                 status.status = status_state_obj.update_state(false);
@@ -741,13 +729,12 @@ fn report_proxy_agent_service_status(
                     String::from_utf8_lossy(&output.stderr)
                 );
                 telemetry::event_logger::write_event(
-                    LoggerLevel::Info,
+                    LoggerLevel::Warn,
                     err_message.clone(),
                     "report_proxy_agent_service_status",
                     "service_main",
                     &logger::get_logger_key(),
                 );
-                logger::write(err_message.clone());
                 status.configurationAppliedTime = misc_helpers::get_date_time_string();
                 status.code = output
                     .status
@@ -764,13 +751,12 @@ fn report_proxy_agent_service_status(
                 "Failed to execute Install Proxy Agent Command Through Setup Tool with error: {e}"
             );
             telemetry::event_logger::write_event(
-                LoggerLevel::Info,
+                LoggerLevel::Warn,
                 err_message.clone(),
                 "report_proxy_agent_service_status",
                 "service_main",
                 &logger::get_logger_key(),
             );
-            logger::write(err_message.clone());
             // report proxyagent service update failed state
             status.configurationAppliedTime = misc_helpers::get_date_time_string();
             status.code = constants::STATUS_CODE_NOT_OK;
