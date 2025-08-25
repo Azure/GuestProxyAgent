@@ -172,6 +172,13 @@ async fn monitor_thread() {
                     &mut status,
                     &mut status_state_obj,
                 );
+                // Time taken to update proxy agent service
+                proxy_agent_update_command.write_event(
+                    "Updating Proxy Agent Version",
+                    "monitor_thread",
+                    "service_main",
+                    logger_key,
+                );
             }
         }
         // Read proxy agent aggregate status file and get ProxyAgentAggregateStatus object
