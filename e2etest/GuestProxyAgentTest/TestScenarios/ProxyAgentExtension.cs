@@ -14,47 +14,23 @@ namespace GuestProxyAgentTest.TestScenarios
             string zipFile = Settings.TestSetting.Instance.zipFilePath;
             string withoutExt = Path.GetFileNameWithoutExtension(zipFile);
             string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
-            string proxyAgentVersion = "";
-            string exePath = "";
-            try
-            {
-                ZipFile.ExtractToDirectory(zipFile, extractPath);
-                Console.WriteLine("Extraction successful!");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"An error occurred: {ex.Message}");
-            }
+            // Passing in 0 version number for the first validation case
+            string proxyAgentVersionBeforeUpdate = "0";
+            string proxyAgentVersion = Settings.TestSetting.Instance.proxyAgentVersion;
+            ConsoleLog(string.Format("Received ProxyAgent Version:{0}", proxyAgentVersion));
+
             if (!Constants.IS_WINDOWS())
             {
                 AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
                 AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
                 AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
                 AddTestCase(new EnableProxyAgentCase());
-                exePath = extractPath + "/ProxyAgent/ProxyAgent/azure-proxy-agent";
             }
             else
             {
                 EnableProxyAgentForNewVM = true;
-                exePath = extractPath + "\\ProxyAgent\\ProxyAgent\\GuestProxyAgent.exe";
             }
-            var process = new Process()
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = exePath,
-                    Arguments = "--version",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                }
-            };
-            process.Start();
-            proxyAgentVersion = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            // Passing in 0 version number for the first validation case
-            string proxyAgentVersionBeforeUpdate = "0";
+
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));

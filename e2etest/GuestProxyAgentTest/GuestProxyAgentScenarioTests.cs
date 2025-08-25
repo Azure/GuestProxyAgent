@@ -21,7 +21,7 @@ namespace GuestProxyAgentTest
         public async Task StartAsync(List<TestScenarioSetting> testScenarioList)
         {
             var groupTestResultBuilderMap = new Dictionary<string, JunitTestResultBuilder>();
-            foreach(var testGroupName in testScenarioList.Select(x => x.testGroupName).ToHashSet())
+            foreach (var testGroupName in testScenarioList.Select(x => x.testGroupName).ToHashSet())
             {
                 groupTestResultBuilderMap[testGroupName] = new JunitTestResultBuilder(TestSetting.Instance.testResultFolder, testGroupName);
             }
@@ -57,7 +57,6 @@ namespace GuestProxyAgentTest
                         testScenarioStatusDetails.Status = ScenarioTestStatus.Completed;
                         testScenarioStatusDetails.ErrorMessage = "Failed to create the scenario class instance: " + testScenario.testScenarioClassName;
                     }
-
                 }
                 catch (Exception ex)
                 {
@@ -72,6 +71,10 @@ namespace GuestProxyAgentTest
                     {
                         taskList.Add(testScenarioTask);
                     }
+                    var message = string.Format("Test Group: {0}, Test Scenario: {1}: {2} ({3})"
+                        , testScenario.testGroupName, testScenario.testScenarioName
+                        , testScenarioStatusDetails.Result, testScenarioStatusDetails.ErrorMessage);
+                    Console.WriteLine(message);
                 }
             }
             var stopMonitor = new ManualResetEvent(false);
@@ -91,7 +94,7 @@ namespace GuestProxyAgentTest
             {
                 Console.WriteLine($"Test execution exception: {ex.Message}");
             }
-            
+
             stopMonitor.Set();
 
             foreach (var groupName in groupTestResultBuilderMap.Keys)
