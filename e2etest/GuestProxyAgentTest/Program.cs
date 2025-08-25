@@ -23,13 +23,15 @@ namespace GuestProxyAgentTest
             var testConfigFilePath = args[0];
             var testResultFolder = args[1];
             var guestProxyAgentZipFilePath = args[2];
+            var proxyAgentVersion = args[3];
             var test_arm64 = false;
-            if (args.Length > 3 && args[3].Equals("arm64", StringComparison.InvariantCultureIgnoreCase))
+            if (args.Length > 4 && args[4].Equals("arm64", StringComparison.InvariantCultureIgnoreCase))
             {
                 test_arm64 = true;
             }
+          
 
-            TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder);
+            TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder, proxyAgentVersion);
 
             VMHelper.Instance.CleanupOldTestResourcesAndForget();
 

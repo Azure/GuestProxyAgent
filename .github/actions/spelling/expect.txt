@@ -210,6 +210,7 @@ pprev
 prandom
 predef
 prefmaxlen
+preprovisioned
 printk
 PROCESSINFOCLASS
 proxyagent
@@ -342,6 +343,7 @@ wireserver
 wireserverand
 wireserverandimds
 WMI
+workarounds
 WORKDIR
 WScript
 wsf
