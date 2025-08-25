@@ -458,7 +458,7 @@ impl ProxyServer {
                 return Ok(Self::closed_response(StatusCode::MISDIRECTED_REQUEST));
             }
         };
-        http_connection_context.log(LoggerLevel::Trace, claim_details.to_string());
+        http_connection_context.log(LoggerLevel::Info, claim_details.to_string());
 
         // authenticate the connection
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
@@ -560,6 +560,13 @@ impl ProxyServer {
         }
 
         // start new request to the Host endpoint
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!(
+                "Start new request to {} {}",
+                http_connection_context.method, http_connection_context.url
+            ),
+        );
         let request = match Self::convert_request(proxy_request).await {
             Ok(r) => r,
             Err(e) => {
@@ -570,7 +577,21 @@ impl ProxyServer {
                 return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
             }
         };
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!(
+                "Forwarding request to {} {}",
+                http_connection_context.method, http_connection_context.url
+            ),
+        );
         let proxy_response = http_connection_context.send_request(request).await;
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!(
+                "Received response from {} {}",
+                http_connection_context.method, http_connection_context.url
+            ),
+        );
         self.forward_response(proxy_response, http_connection_context)
             .await
     }
@@ -923,7 +944,22 @@ impl ProxyServer {
         }
 
         // start new request to the Host endpoint
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!(
+                "Forwarding request to {} {}",
+                http_connection_context.method, http_connection_context.url
+            ),
+        );
         let proxy_response = http_connection_context.send_request(proxy_request).await;
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!(
+                "Received response from {} {}",
+                http_connection_context.method, http_connection_context.url
+            ),
+        );
+        // forward the response to the client
         self.forward_response(proxy_response, http_connection_context)
             .await
     }
