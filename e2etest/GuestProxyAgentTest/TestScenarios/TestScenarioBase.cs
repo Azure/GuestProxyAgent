@@ -58,7 +58,8 @@ namespace GuestProxyAgentTest.TestScenarios
         {
             get
             {
-                return "Test Group: " + _testScenarioSetting.testGroupName + ", Test Scenario: " + _testScenarioSetting.testScenarioName + ": ";
+                // _testScenarioSetting may still null in constructor functions
+                return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName + ": ";
             }
         }
 
@@ -153,6 +154,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 var vmCreateTestName = "CreateVM";
                 try
                 {
+                    ConsoleLog(string.Format("Creating {0} VM...", _testScenarioSetting.VMImageDetails.IsArm64 ? "ARM64" : "AMD64"));
                     vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
                     ConsoleLog("VM Create succeed");
                     sw.Stop();
