@@ -174,7 +174,7 @@ async fn monitor_thread() {
                 );
                 // Time taken to update proxy agent service
                 proxy_agent_update_command.write_event(
-                    "Updating Proxy Agent Version",
+                    "Update Proxy Agent command completed",
                     "monitor_thread",
                     "service_main",
                     logger_key,
