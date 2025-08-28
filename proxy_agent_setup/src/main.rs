@@ -187,7 +187,7 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
                 logger::write(format!("Setup service {SERVICE_NAME} successfully"));
             }
             Err(e) => {
-                logger::write(format!("Setup service {SERVICE_NAME} failed, error: {e:?}"));
+                logger::write_error(format!("Setup service {SERVICE_NAME} failed, error: {e:?}"));
                 process::exit(1);
             }
         }
@@ -203,7 +203,7 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
             logger::write(format!("Install service {SERVICE_NAME} successfully"));
         }
         Err(e) => {
-            logger::write(format!(
+            logger::write_error(format!(
                 "Install service {SERVICE_NAME} failed, error: {e:?}",
             ));
             process::exit(1);
@@ -247,7 +247,7 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
             logger::write(format!("Service {SERVICE_NAME} start successfully"));
         }
         Err(e) => {
-            logger::write(format!("Service {SERVICE_NAME} start failed, error: {e:?}"));
+            logger::write_error(format!("Service {SERVICE_NAME} start failed, error: {e:?}"));
             process::exit(1);
         }
     }
@@ -274,7 +274,7 @@ async fn uninstall_service() -> PathBuf {
             logger::write(format!("Uninstall service {SERVICE_NAME} successfully"));
         }
         Err(e) => {
-            logger::write(format!(
+            logger::write_error(format!(
                 "Uninstall service {SERVICE_NAME} failed, error: {e:?}"
             ));
             process::exit(1);
