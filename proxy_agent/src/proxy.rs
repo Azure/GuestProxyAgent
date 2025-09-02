@@ -181,6 +181,10 @@ impl Process {
                     println!("Failed to query basic process info: {e}");
                 }
             }
+            // close the handle
+            if let Err(e) = windows::close_process_handler(handler) {
+                println!("Failed to close process handler: {e}");
+            }
         }
         #[cfg(not(windows))]
         {

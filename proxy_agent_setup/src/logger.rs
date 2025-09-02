@@ -22,3 +22,8 @@ pub fn write(message: String) {
     println!("{message}");
     logger_manager::log(LOGGER_KEY.to_string(), LoggerLevel::Info, message);
 }
+
+pub fn write_error(message: String) {
+    eprintln!("{message}");
+    logger_manager::log(LOGGER_KEY.to_string(), LoggerLevel::Error, message);
+}

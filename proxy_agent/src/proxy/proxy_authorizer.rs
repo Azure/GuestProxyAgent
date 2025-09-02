@@ -198,11 +198,11 @@ pub fn get_authorizer(ip: String, port: u16, claims: Claims) -> Box<dyn Authoriz
     if ip == constants::WIRE_SERVER_IP && port == constants::WIRE_SERVER_PORT {
         Box::new(WireServer { claims })
     } else if ip == constants::GA_PLUGIN_IP && port == constants::GA_PLUGIN_PORT {
-        return Box::new(GAPlugin { claims });
+        Box::new(GAPlugin { claims })
     } else if ip == constants::IMDS_IP && port == constants::IMDS_PORT {
-        return Box::new(Imds { claims });
+        Box::new(Imds { claims })
     } else if ip == constants::PROXY_AGENT_IP && port == constants::PROXY_AGENT_PORT {
-        return Box::new(ProxyAgent {});
+        Box::new(ProxyAgent {})
     } else {
         Box::new(Default {})
     }
