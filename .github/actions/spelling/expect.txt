@@ -34,6 +34,7 @@ ccbf
 cicd
 cimv
 cla
+closehandle
 cmds
 codeofconduct
 codeql
@@ -120,6 +121,7 @@ gpalinuxdev
 gpawindev
 guestproxyagentmsis
 guiddef
+handleapi
 hklm
 hlist
 hostga
@@ -195,6 +197,7 @@ ntdll
 NTSTATUS
 onscreen
 onebranch
+openprocess
 oneshot
 opencode
 opensource
@@ -213,6 +216,7 @@ prefmaxlen
 preprovisioned
 printk
 PROCESSINFOCLASS
+processthreadsapi
 proxyagent
 proxyagentextensionvalidation
 proxyagentvalidation
