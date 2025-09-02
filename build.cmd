@@ -243,7 +243,8 @@ xcopy /Y %out_dir%\proxy_agent_setup.pdb %out_package_dir%\
 
 echo ======= copy to ProxyAgent folder
 xcopy /Y %out_dir%\azure-proxy-agent.exe %out_package_proxyagent_dir%\GuestProxyAgent.exe*
-xcopy /Y %out_dir%\azure_proxy_agent.pdb %out_package_proxyagent_dir%\GuestProxyAgent.pdb*
+REM do NOT rename pdb file, as it is used by the debugger to load the symbols automatically
+xcopy /Y %out_dir%\azure_proxy_agent.pdb %out_package_proxyagent_dir%\
 xcopy /Y %out_dir%\GuestProxyAgent.json %out_package_proxyagent_dir%\
 
 SET out_package_proxyagent_extension_dir=%out_package_dir%\ProxyAgent_Extension
@@ -254,7 +255,7 @@ for %%F in (%extension_src_path%\*.cmd) do (
     echo Found file: %%F
     xcopy /Y %%F %out_package_proxyagent_extension_dir%\
 )
-xcopy /Y %out_dir%\ProxyAgentExt.exe %out_package_proxyagent_extension_dir%\
+xcopy /Y %out_dir%\ProxyAgentExt.* %out_package_proxyagent_extension_dir%\
 
 echo ======= copy e2e test project to Package folder
 SET out_package_e2etest_dir=%out_package_dir%\e2etest

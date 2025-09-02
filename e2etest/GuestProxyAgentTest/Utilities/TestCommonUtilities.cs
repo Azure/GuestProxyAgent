@@ -16,9 +16,9 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="guestProxyAgentZipFilePath"></param>
         /// <param name="testConfigFilePath"></param>
         /// <param name="testResultFolder"></param>
-        public static void TestSetup(string guestProxyAgentZipFilePath, string testConfigFilePath, string testResultFolder)
+        public static void TestSetup(string guestProxyAgentZipFilePath, string testConfigFilePath, string testResultFolder, string proxyAgentVersion)
         {
-            TestSetting.Init(YamlUtils.DeserializeYaml<TestConfig>(testConfigFilePath), guestProxyAgentZipFilePath, testResultFolder);
+            TestSetting.Init(YamlUtils.DeserializeYaml<TestConfig>(testConfigFilePath), guestProxyAgentZipFilePath, testResultFolder, proxyAgentVersion);
             StorageHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId);
             VMHelper.Init(TestSetting.Instance.tenantId, TestSetting.Instance.appClientId, TestSetting.Instance.subscriptionId);
 

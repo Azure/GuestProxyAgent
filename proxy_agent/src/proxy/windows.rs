@@ -15,7 +15,7 @@ use windows_sys::Wdk::System::Threading::{
     NtQueryInformationProcess, // ntdll.dll
     PROCESSINFOCLASS,
 };
-use windows_sys::Win32::Foundation::{BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
+use windows_sys::Win32::Foundation::{CloseHandle, BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::{
     LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
@@ -88,13 +88,15 @@ fn net_user_get_local_groups(
     }
 }
 
+const BUILTIN_SYSTEM_LOGIN_ID_999: u64 = 0x3e7; // SYSTEM user login id
+const BUILTIN_SYSTEM_LOGIN_ID_998: u64 = 0x3e6; // SYSTEM user login id
 static BUILTIN_USERS: Lazy<HashMap<u64, &str>> = Lazy::new(load_users);
 fn load_users() -> HashMap<u64, &'static str> {
     let mut users = HashMap::new();
     users.insert(0x3e4, "NETWORK SERVICE");
     users.insert(0x3e5, "LOCAL SERVICE");
-    users.insert(0x3e6, "SYSTEM");
-    users.insert(0x3e7, "SYSTEM");
+    users.insert(BUILTIN_SYSTEM_LOGIN_ID_998, "SYSTEM");
+    users.insert(BUILTIN_SYSTEM_LOGIN_ID_999, "SYSTEM");
     users.insert(0x3e8, "IIS_IUSRS");
     users.insert(0x3e9, "IUSR");
     users
@@ -104,6 +106,15 @@ fn load_users() -> HashMap<u64, &'static str> {
     Get user name and user group names
 */
 pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
+    // Check if the logon_id is a built-in SYSTEM user
+    // if it is, return the user name and an empty group list
+    // https://learn.microsoft.com/en-us/windows/security/identity-protection/access-control/local-accounts#default-local-system-accounts
+    // It's an internal account that doesn't show up in User Manager, and it can't be added to any groups.
+    if logon_id == BUILTIN_SYSTEM_LOGIN_ID_998 || logon_id == BUILTIN_SYSTEM_LOGIN_ID_999 {
+        // if logon_id is the SYSTEM user, return it directly
+        return Ok((BUILTIN_USERS[&logon_id].to_string(), Vec::new()));
+    }
+
     let mut user_name;
     let luid = LUID {
         LowPart: (logon_id & 0xFFFFFFFF) as u32, // get lower part of 32 bits
@@ -258,21 +269,50 @@ pub fn query_basic_process_info(handler: isize) -> Result<PROCESS_BASIC_INFORMAT
         Ok(process_basic_information)
     }
 }
+
+/// Get process handler by pid
+/// # Arguments
+/// * `pid` - Process ID
+/// # Returns
+/// * `Result<HANDLE>` - Process handler
+/// # Errors
+/// * `Error::Invalid` - If the pid is 0
+/// * `Error::WindowsApi` - If the OpenProcess call fails
+/// # Safety
+/// This function is safe to call as it does not dereference any raw pointers.
+/// However, the caller is responsible for closing the process handler using `close_process_handler`
+/// when it is no longer needed to avoid resource leaks.
 pub fn get_process_handler(pid: u32) -> Result<HANDLE> {
     if pid == 0 {
         return Err(Error::Invalid("pid 0".to_string()));
     }
     let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
 
-    unsafe {
-        let handler = OpenProcess(options, FALSE, pid);
-        if handler == 0 {
+    // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
+    let handler = unsafe { OpenProcess(options, FALSE, pid) };
+    if handler == 0 {
+        return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
+            std::io::Error::last_os_error(),
+        )));
+    }
+    Ok(handler)
+}
+
+/// Close process handler
+/// # Arguments
+/// * `handler` - Process handler
+/// # Returns
+/// * `Result<()>` - Ok if successful, Err if failed
+pub fn close_process_handler(handler: HANDLE) -> Result<()> {
+    if handler != 0 {
+        // https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
+        if 0 != unsafe { CloseHandle(handler) } {
             return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
                 std::io::Error::last_os_error(),
             )));
         }
-        Ok(handler)
     }
+    Ok(())
 }
 
 pub fn get_process_cmd(handler: isize) -> Result<String> {

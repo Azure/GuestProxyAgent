@@ -34,6 +34,7 @@ ccbf
 cicd
 cimv
 cla
+closehandle
 cmds
 codeofconduct
 codeql
@@ -120,6 +121,7 @@ gpalinuxdev
 gpawindev
 guestproxyagentmsis
 guiddef
+handleapi
 hklm
 hlist
 hostga
@@ -195,6 +197,7 @@ ntdll
 NTSTATUS
 onscreen
 onebranch
+openprocess
 oneshot
 opencode
 opensource
@@ -210,8 +213,10 @@ pprev
 prandom
 predef
 prefmaxlen
+preprovisioned
 printk
 PROCESSINFOCLASS
+processthreadsapi
 proxyagent
 proxyagentextensionvalidation
 proxyagentvalidation
@@ -342,6 +347,7 @@ wireserver
 wireserverand
 wireserverandimds
 WMI
+workarounds
 WORKDIR
 WScript
 wsf
