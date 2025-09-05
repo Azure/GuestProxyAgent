@@ -1,5 +1,6 @@
 [Unit]
 Description=Microsoft Azure GuestProxyAgent
+DefaultDependencies=no      # azure-proxy-agent supposed to be an early boot and late system shutdown service
 After=local-fs.target
 Before=network-pre.target
 Wants=network-pre.target
