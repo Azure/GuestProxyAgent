@@ -29,13 +29,11 @@ fn log(log_level: LoggerLevel, message: String) {
     if let Some(log_for_event) = config::get_file_log_level_for_events() {
         if log_for_event >= log_level {
             // write to event
-            let (module_name, caller_name) =
-                proxy_agent_shared::logger::get_caller_info("proxy_agent::common::logger");
             event_logger::write_event_only(
                 log_level,
                 message.to_string(),
-                &caller_name,
-                &module_name,
+                "CommonLogger",
+                "ProxyAgent",
             );
         }
     }
