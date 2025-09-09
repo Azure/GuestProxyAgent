@@ -811,7 +811,7 @@ impl ProxyServer {
         }
 
         http_connection_context.log(
-            LoggerLevel::Info,
+            LoggerLevel::Trace,
             "Starting report connection summary event.".to_string(),
         );
         let summary = ProxySummary {
