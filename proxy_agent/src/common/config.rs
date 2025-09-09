@@ -105,6 +105,8 @@ pub struct Config {
     fileLogLevelForEvents: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fileLogLevelForSystemEvents: Option<String>,
+    /// Enable HTTP proxy trace logging, default to false if not set
+    /// This is an optional config, mainly for manual debugging purpose
     #[serde(skip_serializing_if = "Option::is_none")]
     enableHttpProxyTrace: Option<bool>,
 }
