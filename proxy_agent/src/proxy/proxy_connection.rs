@@ -15,6 +15,7 @@ use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
 use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
+use proxy_agent_shared::misc_helpers;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
@@ -243,9 +244,38 @@ pub struct HttpConnectionContext {
     pub url: hyper::Uri,
     pub tcp_connection_context: TcpConnectionContext,
     pub logger: ConnectionLogger,
+    pub stages: Vec<String>,
 }
 
 impl HttpConnectionContext {
+    pub fn new(
+        id: u128,
+        method: hyper::Method,
+        url: hyper::Uri,
+        tcp_connection_context: TcpConnectionContext,
+    ) -> Self {
+        let logger = ConnectionLogger::new(tcp_connection_context.id, id);
+        Self {
+            id,
+            now: Instant::now(),
+            method,
+            url,
+            tcp_connection_context,
+            logger,
+            stages: Vec::new(),
+        }
+    }
+
+    fn add_stage(&mut self, value: String) {
+        self.stages.push(format!(
+            "[{}] - {} - {} - {}",
+            self.id,
+            self.now.elapsed().as_millis(),
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            value
+        ));
+    }
+
     pub fn should_skip_sig(&self) -> bool {
         hyper_client::should_skip_sig(&self.method, &self.url)
     }
@@ -255,6 +285,10 @@ impl HttpConnectionContext {
     }
 
     pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
+        if config::get_enable_http_proxy_trace() {
+            self.add_stage(message.clone());
+        }
+
         self.logger.write(logger_level, message)
     }
 
@@ -267,6 +301,14 @@ impl HttpConnectionContext {
         request: hyper::Request<RequestBody>,
     ) -> Result<hyper::Response<hyper::body::Incoming>> {
         self.tcp_connection_context.send_request(request).await
+    }
+}
+
+impl Drop for HttpConnectionContext {
+    fn drop(&mut self) {
+        if !self.stages.is_empty() {
+            logger_manager::write_system_log(LoggerLevel::Warn, self.stages.join("\n"));
+        }
     }
 }
 

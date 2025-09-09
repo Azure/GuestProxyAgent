@@ -175,7 +175,7 @@ impl KeyKeeperSharedState {
                         wireserver_rule_id = rule_id.to_string();
                         if response.send(()).is_err() {
                             logger::write_warning(format!(
-                                "Failed to send response to KeyKeeperAction::SetWireServerRuleId '{rule_id}'"                                
+                                "Failed to send response to KeyKeeperAction::SetWireServerRuleId '{rule_id}'"
                             ));
                         }
                     }

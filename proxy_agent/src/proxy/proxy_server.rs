@@ -379,14 +379,12 @@ impl ProxyServer {
             }
         };
 
-        let mut http_connection_context = HttpConnectionContext {
-            id: connection_id,
-            now: std::time::Instant::now(),
-            url: request.uri().clone(),
-            method: request.method().clone(),
-            tcp_connection_context: tcp_connection_context.clone(),
-            logger: ConnectionLogger::new(tcp_connection_context.id, connection_id),
-        };
+        let mut http_connection_context = HttpConnectionContext::new(
+            connection_id,
+            request.method().clone(),
+            request.uri().clone(),
+            tcp_connection_context.clone(),
+        );
         http_connection_context.log(
             LoggerLevel::Info,
             format!(
@@ -417,6 +415,10 @@ impl ProxyServer {
                 .await;
         }
 
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Getting destination IP and port.".to_string(),
+        );
         let ip = match tcp_connection_context.destination_ip {
             Some(ip) => ip,
             None => {
@@ -431,6 +433,10 @@ impl ProxyServer {
             }
         };
         let port = tcp_connection_context.destination_port;
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Getting claims from the tcp_connection_context.".to_string(),
+        );
         let claims = match tcp_connection_context.claims {
             Some(c) => c.clone(),
             None => {
@@ -480,6 +486,7 @@ impl ProxyServer {
                 return Ok(Self::closed_response(StatusCode::INTERNAL_SERVER_ERROR));
             }
         };
+        http_connection_context.log(LoggerLevel::Trace, "Authorizing the request.".to_string());
         let result = proxy_authorizer::authorize(
             ip.to_string(),
             port,
@@ -509,7 +516,10 @@ impl ProxyServer {
             }
         }
 
-        // forward the request to the target server
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Forwarding request to target server.".to_string(),
+        );
         let mut proxy_request = request;
 
         // Add required headers
@@ -563,7 +573,7 @@ impl ProxyServer {
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
-                "Start new request to {} {}",
+                "Create new http request to the target server {} {}",
                 http_connection_context.method, http_connection_context.url
             ),
         );
@@ -580,7 +590,7 @@ impl ProxyServer {
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
-                "Forwarding request to {} {}",
+                "Sending request to the target server: {} {}",
                 http_connection_context.method, http_connection_context.url
             ),
         );
@@ -588,7 +598,7 @@ impl ProxyServer {
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
-                "Received response from {} {}",
+                "Received response from the target server: {} {}",
                 http_connection_context.method, http_connection_context.url
             ),
         );
@@ -720,6 +730,10 @@ impl ProxyServer {
             }
         };
 
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Converting response to the client format.".to_string(),
+        );
         let mut logger = http_connection_context.logger.clone();
         let (head, body) = proxy_response.into_parts();
         let frame_stream = body.map_frame(move |frame| {
@@ -738,6 +752,7 @@ impl ProxyServer {
         });
         let mut response = Response::from_parts(head, frame_stream.boxed());
 
+        http_connection_context.log(LoggerLevel::Trace, "Adding proxy agent header.".to_string());
         // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
         response.headers_mut().insert(
             HeaderName::from_static(constants::AUTHORIZATION_HEADER),
@@ -751,6 +766,11 @@ impl ProxyServer {
             "".to_string(),
         )
         .await;
+
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Returning response to the client.".to_string(),
+        );
         Ok(response)
     }
 
@@ -761,6 +781,10 @@ impl ProxyServer {
         log_authorize_failed: bool,
         mut error_details: String,
     ) {
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            format!("Http connection finished with status code: {response_status}."),
+        );
         let elapsed_time = http_connection_context.now.elapsed();
         let claims = match &http_connection_context.tcp_connection_context.claims {
             Some(c) => c.clone(),
@@ -786,6 +810,10 @@ impl ProxyServer {
             error_details.truncate(MAX_ERROR_DETAILS_LEN);
         }
 
+        http_connection_context.log(
+            LoggerLevel::Info,
+            "Starting report connection summary event.".to_string(),
+        );
         let summary = ProxySummary {
             id: http_connection_context.id,
             userId: claims.userId,
@@ -817,6 +845,11 @@ impl ProxyServer {
                 ConnectionLogger::CONNECTION_LOGGER_KEY,
             );
         };
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Starting add connection summary for status reporting.".to_string(),
+        );
+
         if log_authorize_failed {
             if let Err(e) = self
                 .agent_status_shared_state
@@ -838,6 +871,10 @@ impl ProxyServer {
                 format!("Failed to add connection summary: {e}"),
             );
         }
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Finished log_connection_summary.".to_string(),
+        );
     }
 
     // We create some utility functions to make Empty and Full bodies
@@ -866,6 +903,10 @@ impl ProxyServer {
         request: Request<Limited<Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         let (head, body) = request.into_parts();
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Starting to collect the client request body.".to_string(),
+        );
         let whole_body = match body.collect().await {
             Ok(data) => data.to_bytes(),
             Err(e) => {
@@ -893,6 +934,10 @@ impl ProxyServer {
 
         // sign the request
         // Add header x-ms-azure-host-authorization
+        http_connection_context.log(
+            LoggerLevel::Trace,
+            "Starting to compute the signature.".to_string(),
+        );
         if let (Some(key), Some(key_guid)) = (
             self.key_keeper_shared_state
                 .get_current_key_value()
@@ -947,7 +992,7 @@ impl ProxyServer {
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
-                "Forwarding request to {} {}",
+                "Forwarding request to the target server: {} {}",
                 http_connection_context.method, http_connection_context.url
             ),
         );
@@ -955,7 +1000,7 @@ impl ProxyServer {
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
-                "Received response from {} {}",
+                "Received response from the target server: {} {}",
                 http_connection_context.method, http_connection_context.url
             ),
         );
