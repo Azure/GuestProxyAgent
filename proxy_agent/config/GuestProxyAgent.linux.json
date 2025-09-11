@@ -1,5 +1,5 @@
 {
-    "logFolder": "/var/log/azure-proxy-agent",
+    "logFolder": "",
     "eventFolder": "/var/log/azure-proxy-agent/events",
     "latchKeyFolder": "/var/lib/azure-proxy-agent/keys",
     "monitorIntervalInSeconds": 60,
@@ -7,7 +7,7 @@
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "ebpf_cgroup.o",
     "cgroupRoot": "/sys/fs/cgroup",
-    "fileLogLevel": "Trace",
+    "fileLogLevel": "Info",
     "fileLogLevelForEvents": "Info",
     "fileLogLevelForSystemEvents": "Info"
 }

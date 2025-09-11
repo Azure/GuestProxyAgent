@@ -1,12 +1,12 @@
 {
-    "logFolder": "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Logs",
+    "logFolder": "",
     "eventFolder": "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Events",
     "latchKeyFolder": "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Keys",
     "monitorIntervalInSeconds": 60,
     "pollKeyStatusIntervalInSeconds": 15,
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "redirect.bpf.sys",
-    "fileLogLevel": "Trace",
+    "fileLogLevel": "Info",
     "fileLogLevelForEvents": "Info",
     "fileLogLevelForSystemEvents": "Info"
 }
