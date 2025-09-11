@@ -63,4 +63,6 @@ execute_after_dh_auto_install:
           $(TARGET)/usr/sbin
 	install -m0644 proxy_agent/config/GuestProxyAgent.linux.json \
           $(TARGET)/etc/azure/proxy-agent.json
+	install -m0644 proxy_agent_setup/src/linux/azure-proxy-agent.service \
+		  debian/azure-proxy-agent.service
 	dh_installsystemd
