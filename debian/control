@@ -47,7 +47,7 @@ Build-Depends:
  librust-uzers-dev <!upstream-cargo>,
  rustc
 
-Package: azure-guest-proxy-agent
+Package: azure-proxy-agent
 Architecture: amd64 arm64
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Suggests: btrfs-progs, xfsprogs, grub2, udev, e2fsprogs, systemd
