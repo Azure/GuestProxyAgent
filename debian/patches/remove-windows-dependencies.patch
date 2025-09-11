@@ -3,6 +3,454 @@ From: Zhidong Peng <zpeng@microsoft.com>
 Date: Wed, 10 Sep 2025 14:00:00 -0700
 Forwarded: yes
 
+Index: GuestProxyAgent/Cargo.lock
+===================================================================
+--- GuestProxyAgent.orig/Cargo.lock
++++ GuestProxyAgent/Cargo.lock
+@@ -63,21 +63,6 @@ version = "0.2.18"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+ 
+-[[package]]
+-name = "android-tzdata"
+-version = "0.1.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
+-
+-[[package]]
+-name = "android_system_properties"
+-version = "0.1.5"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
+-dependencies = [
+- "libc",
+-]
+-
+ [[package]]
+ name = "anstream"
+ version = "0.6.15"
+@@ -186,7 +171,6 @@ dependencies = [
+  "hyper-util",
+  "itertools",
+  "libc",
+- "libloading",
+  "nix",
+  "once_cell",
+  "proxy_agent_shared",
+@@ -195,7 +179,6 @@ dependencies = [
+  "serde-xml-rs",
+  "serde_derive",
+  "serde_json",
+- "static_vcruntime",
+  "sysinfo",
+  "thiserror",
+  "tokio",
+@@ -204,11 +187,6 @@ dependencies = [
+  "tower-http",
+  "uuid",
+  "uzers",
+- "winapi",
+- "windows-acl",
+- "windows-service",
+- "windows-sys",
+- "winres",
+ ]
+ 
+ [[package]]
+@@ -232,12 +210,6 @@ version = "2.6.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
+ 
+-[[package]]
+-name = "bumpalo"
+-version = "3.18.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "793db76d6187cd04dff33004d8e6c9cc4e05cd330500379d2394209271b4aeee"
+-
+ [[package]]
+ name = "byteorder"
+ version = "1.5.0"
+@@ -250,15 +222,6 @@ version = "1.7.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "8318a53db07bb3f8dca91a600466bdb3f2eaadeedfdbcf02e1accbad9271ba50"
+ 
+-[[package]]
+-name = "cc"
+-version = "1.2.27"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d487aa071b5f64da6f19a3e848e3578944b726ee5a4854b82172f02aa876bfdc"
+-dependencies = [
+- "shlex",
+-]
+-
+ [[package]]
+ name = "cfg-if"
+ version = "1.0.0"
+@@ -271,20 +234,6 @@ version = "0.2.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+ 
+-[[package]]
+-name = "chrono"
+-version = "0.4.41"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
+-dependencies = [
+- "android-tzdata",
+- "iana-time-zone",
+- "js-sys",
+- "num-traits",
+- "wasm-bindgen",
+- "windows-link",
+-]
+-
+ [[package]]
+ name = "clap"
+ version = "4.5.18"
+@@ -425,16 +374,6 @@ version = "1.0.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+ 
+-[[package]]
+-name = "field-offset"
+-version = "0.3.6"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f"
+-dependencies = [
+- "memoffset",
+- "rustc_version",
+-]
+-
+ [[package]]
+ name = "fnv"
+ version = "1.0.7"
+@@ -638,30 +577,6 @@ dependencies = [
+  "tokio",
+ ]
+ 
+-[[package]]
+-name = "iana-time-zone"
+-version = "0.1.63"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b0c919e5debc312ad217002b8048a17b7d83f80703865bbfcfebb0458b0b27d8"
+-dependencies = [
+- "android_system_properties",
+- "core-foundation-sys",
+- "iana-time-zone-haiku",
+- "js-sys",
+- "log",
+- "wasm-bindgen",
+- "windows-core 0.61.2",
+-]
+-
+-[[package]]
+-name = "iana-time-zone-haiku"
+-version = "0.1.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
+-dependencies = [
+- "cc",
+-]
+-
+ [[package]]
+ name = "indexmap"
+ version = "2.7.1"
+@@ -693,32 +608,12 @@ version = "1.0.11"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
+ 
+-[[package]]
+-name = "js-sys"
+-version = "0.3.77"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1cfaf33c695fc6e08064efbc1f72ec937429614f25eef83af942d0e227c3a28f"
+-dependencies = [
+- "once_cell",
+- "wasm-bindgen",
+-]
+-
+ [[package]]
+ name = "libc"
+ version = "0.2.171"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+ 
+-[[package]]
+-name = "libloading"
+-version = "0.8.5"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
+-dependencies = [
+- "cfg-if",
+- "windows-targets",
+-]
+-
+ [[package]]
+ name = "log"
+ version = "0.4.26"
+@@ -880,7 +775,6 @@ name = "proxy_agent_shared"
+ version = "1.0.36"
+ dependencies = [
+  "backtrace",
+- "chrono",
+  "concurrent-queue",
+  "ctor",
+  "log",
+@@ -888,16 +782,12 @@ dependencies = [
+  "os_info",
+  "regex",
+  "serde",
+- "serde-xml-rs",
+  "serde_derive",
+  "serde_json",
+  "thiserror",
+  "thread-id",
+  "time",
+  "tokio",
+- "windows-service",
+- "windows-sys",
+- "winreg",
+ ]
+ 
+ [[package]]
+@@ -994,33 +884,12 @@ version = "0.1.24"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
+ 
+-[[package]]
+-name = "rustc_version"
+-version = "0.4.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+-dependencies = [
+- "semver",
+-]
+-
+-[[package]]
+-name = "rustversion"
+-version = "1.0.21"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
+-
+ [[package]]
+ name = "ryu"
+ version = "1.0.18"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
+ 
+-[[package]]
+-name = "semver"
+-version = "1.0.23"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+-
+ [[package]]
+ name = "serde"
+ version = "1.0.210"
+@@ -1065,12 +934,6 @@ dependencies = [
+  "serde",
+ ]
+ 
+-[[package]]
+-name = "shlex"
+-version = "1.3.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+-
+ [[package]]
+ name = "slab"
+ version = "0.4.9"
+@@ -1387,70 +1250,6 @@ version = "0.11.0+wasi-snapshot-preview1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
+ 
+-[[package]]
+-name = "wasm-bindgen"
+-version = "0.2.100"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1edc8929d7499fc4e8f0be2262a241556cfc54a0bea223790e71446f2aab1ef5"
+-dependencies = [
+- "cfg-if",
+- "once_cell",
+- "rustversion",
+- "wasm-bindgen-macro",
+-]
+-
+-[[package]]
+-name = "wasm-bindgen-backend"
+-version = "0.2.100"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "2f0a0651a5c2bc21487bde11ee802ccaf4c51935d0d3d42a6101f98161700bc6"
+-dependencies = [
+- "bumpalo",
+- "log",
+- "proc-macro2",
+- "quote",
+- "syn",
+- "wasm-bindgen-shared",
+-]
+-
+-[[package]]
+-name = "wasm-bindgen-macro"
+-version = "0.2.100"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "7fe63fc6d09ed3792bd0897b314f53de8e16568c2b3f7982f468c0bf9bd0b407"
+-dependencies = [
+- "quote",
+- "wasm-bindgen-macro-support",
+-]
+-
+-[[package]]
+-name = "wasm-bindgen-macro-support"
+-version = "0.2.100"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "8ae87ea40c9f689fc23f209965b6fb8a99ad69aeeb0231408be24920604395de"
+-dependencies = [
+- "proc-macro2",
+- "quote",
+- "syn",
+- "wasm-bindgen-backend",
+- "wasm-bindgen-shared",
+-]
+-
+-[[package]]
+-name = "wasm-bindgen-shared"
+-version = "0.2.100"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
+-dependencies = [
+- "unicode-ident",
+-]
+-
+-[[package]]
+-name = "widestring"
+-version = "0.4.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "c168940144dd21fd8046987c16a46a33d5fc84eec29ef9dcddc2ac9e31526b7c"
+-
+ [[package]]
+ name = "widestring"
+ version = "1.1.0"
+@@ -1485,22 +1284,10 @@ version = "0.52.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be"
+ dependencies = [
+- "windows-core 0.52.0",
++ "windows-core",
+  "windows-targets",
+ ]
+ 
+-[[package]]
+-name = "windows-acl"
+-version = "0.3.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "177b1723986bcb4c606058e77f6e8614b51c7f9ad2face6f6fd63dd5c8b3cec3"
+-dependencies = [
+- "field-offset",
+- "libc",
+- "widestring 0.4.3",
+- "winapi",
+-]
+-
+ [[package]]
+ name = "windows-core"
+ version = "0.52.0"
+@@ -1510,56 +1297,6 @@ dependencies = [
+  "windows-targets",
+ ]
+ 
+-[[package]]
+-name = "windows-core"
+-version = "0.61.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
+-dependencies = [
+- "windows-implement",
+- "windows-interface",
+- "windows-link",
+- "windows-result",
+- "windows-strings",
+-]
+-
+-[[package]]
+-name = "windows-implement"
+-version = "0.60.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a47fddd13af08290e67f4acabf4b459f647552718f683a7b415d290ac744a836"
+-dependencies = [
+- "proc-macro2",
+- "quote",
+- "syn",
+-]
+-
+-[[package]]
+-name = "windows-interface"
+-version = "0.59.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "bd9211b69f8dcdfa817bfd14bf1c97c9188afa36f4750130fcdf3f400eca9fa8"
+-dependencies = [
+- "proc-macro2",
+- "quote",
+- "syn",
+-]
+-
+-[[package]]
+-name = "windows-link"
+-version = "0.1.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
+-
+-[[package]]
+-name = "windows-result"
+-version = "0.3.4"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
+-dependencies = [
+- "windows-link",
+-]
+-
+ [[package]]
+ name = "windows-service"
+ version = "0.7.0"
+@@ -1567,19 +1304,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "d24d6bcc7f734a4091ecf8d7a64c5f7d7066f45585c1861eba06449909609c8a"
+ dependencies = [
+  "bitflags",
+- "widestring 1.1.0",
++ "widestring",
+  "windows-sys",
+ ]
+ 
+-[[package]]
+-name = "windows-strings"
+-version = "0.4.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
+-dependencies = [
+- "windows-link",
+-]
+-
+ [[package]]
+ name = "windows-sys"
+ version = "0.52.0"
+@@ -1653,16 +1381,6 @@ version = "0.52.6"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+ 
+-[[package]]
+-name = "winreg"
+-version = "0.11.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "76a1a57ff50e9b408431e8f97d5456f2807f8eb2a2cd79b06068fc87f8ecf189"
+-dependencies = [
+- "cfg-if",
+- "winapi",
+-]
+-
+ [[package]]
+ name = "winres"
+ version = "0.1.12"
+
 Index: GuestProxyAgent/proxy_agent/Cargo.toml
 ===================================================================
 --- GuestProxyAgent.orig/proxy_agent/Cargo.toml
@@ -67,9 +515,9 @@ Index: GuestProxyAgent/proxy_agent_shared/Cargo.toml
 ===================================================================
 --- GuestProxyAgent.orig/proxy_agent_shared/Cargo.toml
 +++ GuestProxyAgent/proxy_agent_shared/Cargo.toml
-@@ -19,26 +19,5 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
- log = { version = "0.4.26", features = ["std"] }
+@@ -20,26 +20,5 @@ log = { version = "0.4.26", features = ["std"] }
  ctor = "0.3.6"                # used for test setup and clean up
+ backtrace = "0.3"             # used for get the caller module and function name
  
 -[target.'cfg(windows)'.dependencies]
 -windows-service = "0.7.0"     # windows NT service
