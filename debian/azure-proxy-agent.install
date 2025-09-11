@@ -1,0 +1,2 @@
+linux-ebpf/ebpf_cgroup.o usr/lib/azure-proxy-agent
+proxy_agent_setup/src/linux/azure-proxy-agent.service 

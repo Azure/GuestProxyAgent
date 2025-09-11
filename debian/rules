@@ -1,0 +1,66 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/default.mk
+include /usr/share/dpkg/architecture.mk
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+ebpf_path:=linux-ebpf
+ebpf_arch=$(subst amd64,x86,$(DEB_TARGET_ARCH))
+
+CARGO_OPTS+=--verbose --manifest-path proxy_agent/Cargo.toml
+BUILD_TYPE?=release
+
+%:
+	dh $@
+
+ifeq (release,$(BUILD_TYPE))
+  CARGO_OPTS+=--release
+endif
+
+ifeq (,$(filter upstream-cargo, $(DEB_BUILD_PROFILES)))
+# final offline build with packaged dependencies
+
+include /usr/share/rustc/architecture.mk
+export CARGO=/usr/share/cargo/bin/cargo
+export CARGO_HOME=$(shell pwd)/debian/cargo_home
+export CARGO_REGISTRY=$(shell pwd)/debian/cargo_registry
+export DEB_CARGO_CRATE=$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM)
+export DEB_HOST_RUST_TYPE
+
+CARGO_OPTS+=--offline
+
+execute_before_dh_auto_configure:
+	$(CARGO) prepare-debian $(CARGO_REGISTRY) --link-from-system $(CARGO_OPTS)
+	rm -f proxy_agent/Cargo.lock
+	rm -f .cargo/config
+endif
+
+override_dh_auto_build:
+	if test -f Cargo.lock; then mv Cargo.lock Cargo.lock.upstream; fi
+	cargo build $(CARGO_OPTS) 
+	clang -g -target bpf -O2 -I/usr/include/$(DEB_TARGET_GNU_TYPE) -D__TARGET_ARCH_$(ebpf_arch) \
+	  -c $(ebpf_path)/ebpf_cgroup.c -o $(ebpf_path)/ebpf_cgroup.o
+
+execute_after_dh_auto_clean:
+	if test -f Cargo.lock.upstream; then mv Cargo.lock.upstream Cargo.lock; fi
+	cd proxy_agent && cargo clean --verbose
+	rm -rf debian/azure-proxy-agent.service linux-ebpf/ebpf_cgroup.o
+ifeq (,$(filter upstream-cargo, $(DEB_BUILD_PROFILES)))
+	rm -rf $(CARGO_HOME) $(CARGO_REGISTRY)
+endif
+
+override_dh_auto_test: out_dir=$(CURDIR)/target/$(BUILD_TYPE)/deps
+override_dh_auto_test:
+ifneq (nocheck,$(findstring nocheck,$(DEB_BUILD_OPTIONS)))
+	mkdir -p $(out_dir)
+	cp -f -T proxy_agent/config/GuestProxyAgent.linux.json $(out_dir)/proxy-agent.json
+	cargo test --verbose --release --manifest-path proxy_agent/Cargo.toml -- --test-threads=1
+endif
+
+execute_after_dh_auto_install: TARGET=debian/azure-proxy-agent
+execute_after_dh_auto_install:
+	install -m0755 target/$(BUILD_TYPE)/azure-proxy-agent \
+          $(TARGET)/usr/sbin
+	install -m0644 proxy_agent/config/GuestProxyAgent.linux.json \
+          $(TARGET)/etc/azure/proxy-agent.json
+	dh_installsystemd

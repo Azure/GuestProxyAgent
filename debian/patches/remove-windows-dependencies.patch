@@ -1,0 +1,97 @@
+Subject: Remove Windows-specific dependencies from Cargo.toml files
+From: Zhidong Peng <zpeng@microsoft.com>
+Date: Wed, 10 Sep 2025 14:00:00 -0700
+Forwarded: yes
+
+Index: GuestProxyAgent/proxy_agent/Cargo.toml
+===================================================================
+--- GuestProxyAgent.orig/proxy_agent/Cargo.toml
++++ GuestProxyAgent/proxy_agent/Cargo.toml
+@@ -51,53 +51,5 @@ features = [
+   "user"
+ ]
+ 
+-[target.'cfg(windows)'.dependencies]
+-windows-service = "0.7.0"     # windows NT service
+-windows-acl = "0.3.0"         # ACL the latch key folder
+-winapi = "0.3.9"              # used by windows-acl PSID
+-libloading = "0.8.0"          # for dynamic load libraries
+-
+-[target.'cfg(windows)'.build-dependencies]
+-winres = "0.1.12"             # Rust Windows resource helper to add file version
+-static_vcruntime = "2.0.0"    # Statically link the VCRuntime when using the MSVC toolchain
+-
+-[target.'cfg(windows)'.dependencies.windows-sys]
+-version = "0.52.0"
+-features = [
+-  "Wdk_Foundation",
+-  "Wdk_System_Threading",
+-  "Win32_Foundation",
+-  "Win32_Networking_WinSock",
+-  "Win32_System_IO",
+-  "Win32_Security",
+-  "Win32_System_WindowsProgramming",
+-  "Win32_Security_Authentication_Identity", 
+-  "Win32_System_Diagnostics_Debug",
+-  "Win32_System_SystemInformation",
+-  "Win32_System_Threading",
+-  "Win32_System_ProcessStatus",
+-  "Win32_System_Kernel",
+-  "Win32_Security_Cryptography",
+-  "Win32_System_Memory"
+-]
+-
+ [features]
+ test-with-root = []
+-
+-[package.metadata.deb]
+-name = "azure-proxy-agent"
+-revision = "0"
+-maintainer = "AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>"
+-copyright = "2024, AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>"
+-license-file = ["../LICENSE", "4"]
+-extended-description = """\
+-The Azure Guest Proxy Agent is a daemon that runs on the Azure guest \
+-operating system and provides a proxy for the Azure Fabric Controller \
+-to communicate with the guest operating system."""
+-maintainer-scripts = "DEBIAN"
+-systemd-units = { enable = true }
+-assets = [
+-    ["azure-proxy-agent", "usr/sbin/azure-proxy-agent", "755"],  # Binary
+-    ["proxy-agent.json", "etc/azure/proxy-agent.json", "644"],
+-    ["ebpf_cgroup.o", "usr/lib/azure-proxy-agent/ebpf_cgroup.o", "644"],
+-]
+\ No newline at end of file
+
+Index: GuestProxyAgent/proxy_agent_shared/Cargo.toml
+===================================================================
+--- GuestProxyAgent.orig/proxy_agent_shared/Cargo.toml
++++ GuestProxyAgent/proxy_agent_shared/Cargo.toml
+@@ -19,26 +19,5 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+ log = { version = "0.4.26", features = ["std"] }
+ ctor = "0.3.6"                # used for test setup and clean up
+ 
+-[target.'cfg(windows)'.dependencies]
+-windows-service = "0.7.0"     # windows NT service
+-winreg = "0.11.0"             # windows reg read/write
+-serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
+-chrono = "0.4.41"             # parse date time string
+-
+-[target.'cfg(windows)'.dependencies.windows-sys]
+-version = "0.52.0"
+-features = [
+-  "Win32_Foundation",
+-  "Win32_Networking_WinSock",
+-  "Win32_System_IO",
+-  "Win32_Security",
+-  "Win32_System_EventLog",
+-  "Win32_System_WindowsProgramming",
+-  "Win32_Security_Authentication_Identity", 
+-  "Win32_System_Diagnostics_Debug",
+-  "Win32_System_SystemInformation",
+-  "Win32_Storage_FileSystem",
+-]
+-
+ [target.'cfg(not(windows))'.dependencies]
+ os_info = "3.7.0"   # read Linux OS version and arch
+\ No newline at end of file

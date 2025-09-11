@@ -1,0 +1,59 @@
+Source: azure-proxy-agent
+Maintainer: AzureRT ProxyAgent V Team <ARTProxyAgentVTeam@microsoft.com>
+Uploaders: Zhidong Peng <zpeng@microsoft.com>
+Homepage: https://github.com/Azure/GuestProxyAgent
+Section: admin
+Priority: optional
+Standards-Version: 4.6.2
+Build-Depends:
+ debhelper-compat (= 12),
+ clang,
+ libbpf-dev,
+ libbpfcc-dev,
+ llvm,
+ musl-tools,
+ librust-hex-dev <!upstream-cargo>,
+ librust-hmac-dev <!upstream-cargo>,
+ librust-version-check-dev <!upstream-cargo>,
+ librust-regex-dev <!upstream-cargo>,
+ librust-hmac-sha256-dev <!upstream-cargo>,
+ librust-itertools-dev <!upstream-cargo>,
+ librust-libloading-dev <!upstream-cargo>,
+ librust-serde-xml-rs-dev <!upstream-cargo>,
+ librust-url-dev <!upstream-cargo>,
+ librust-uuid-dev <!upstream-cargo>,
+ librust-aya-dev <!upstream-cargo>,
+ librust-hashbrown-dev <!upstream-cargo>,
+ librust-thread-priority-dev <!upstream-cargo>,
+ librust-sysinfo-dev <!upstream-cargo>,
+ librust-concurrent-queue-dev <!upstream-cargo>,
+ librust-thread-id-dev <!upstream-cargo>,
+ librust-time-dev <!upstream-cargo>,
+ librust-os-info-dev <!upstream-cargo>,
+ librust-nix-dev <!upstream-cargo>,
+ librust-clap-dev <!upstream-cargo>,
+ librust-http-dev <!upstream-cargo>,
+ librust-http-body-util-dev <!upstream-cargo>,
+ librust-hyper-dev <!upstream-cargo>,
+ librust-hyper-util-dev <!upstream-cargo>,
+ librust-tower-http-dev <!upstream-cargo>,
+ librust-thiserror-dev <!upstream-cargo>,
+ librust-uzers-dev <!upstream-cargo>,
+ rustc
+
+Package: azure-guest-proxy-agent
+Architecture: amd64 arm64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: btrfs-progs, xfsprogs, grub2, udev, e2fsprogs, systemd
+Description: Access control for Micosoft Azure link-local network services
+ The Azure guest proxy agent introduces features to control access to
+ potentially sensitive link-local HTTP endpoints within the Microsoft Azure
+ cloud environment.  (WireServer IP Endpoint [168.63.129.16] and Instance
+ Metadata Service IP Endpoint [169.254.169.254]).  It introduces a new
+ component (GuestProxyAgent) which leverages eBPF to intercept the http
+ query, and control the access at two levels:
+ .
+  * Default root only authorization for the WireServer endpoints
+    168.63.129.16
+  * Policy-based authorization where only approved communication is
+    allowed via the GuestProxyAgent based on user ID, process name, etc
