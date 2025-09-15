@@ -78,6 +78,10 @@ pub fn get_file_log_level_for_system_events() -> Option<LoggerLevel> {
     SYSTEM_CONFIG.get_file_log_level_for_system_events()
 }
 
+pub fn get_enable_http_proxy_trace() -> bool {
+    SYSTEM_CONFIG.enableHttpProxyTrace.unwrap_or(false)
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -101,6 +105,10 @@ pub struct Config {
     fileLogLevelForEvents: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fileLogLevelForSystemEvents: Option<String>,
+    /// Enable HTTP proxy trace logging, default to false if not set
+    /// This is an optional config, mainly for manual debugging purpose
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enableHttpProxyTrace: Option<bool>,
 }
 
 impl Default for Config {
@@ -298,6 +306,11 @@ mod tests {
             proxy_agent_shared::logger::LoggerLevel::Info,
             config.get_file_log_level_for_system_events().unwrap(),
             "get_file_log_level_for_system_events mismatch"
+        );
+
+        assert_eq!(
+            None, config.enableHttpProxyTrace,
+            "enableHttpProxyTrace mismatch"
         );
 
         // clean up
