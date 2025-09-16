@@ -2,7 +2,10 @@ use quick_xml::de::from_str;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::client::data_model::{error::ErrorDetails, wire_server_model::{GoalState, Versions}};
+use crate::client::data_model::{
+    error::ErrorDetails,
+    wire_server_model::{GoalState, Versions},
+};
 
 pub struct WireServerClient {
     base_url: String,

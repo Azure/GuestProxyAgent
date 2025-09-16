@@ -18,8 +18,8 @@ use windows::{
             CMSG_CTRL_DECRYPT, CMSG_CTRL_DECRYPT_PARA, CMSG_CTRL_DECRYPT_PARA_0,
             CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, CRYPT_ACQUIRE_COMPARE_KEY_FLAG,
             CRYPT_ACQUIRE_FLAGS, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CRYPT_BIT_BLOB,
-            CRYPT_INTEGER_BLOB, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
-            MS_KEY_STORAGE_PROVIDER, NCRYPT_ALLOW_EXPORT_FLAG, NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG,
+            CRYPT_INTEGER_BLOB, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, MS_KEY_STORAGE_PROVIDER,
+            NCRYPT_ALLOW_EXPORT_FLAG, NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG,
             NCRYPT_EXPORT_POLICY_PROPERTY, NCRYPT_HANDLE, NCRYPT_KEY_HANDLE,
             NCRYPT_LENGTH_PROPERTY, NCRYPT_PROV_HANDLE, NCRYPT_RSA_ALGORITHM, PKCS_7_ASN_ENCODING,
             X509_ASN_ENCODING,
@@ -32,7 +32,10 @@ use crate::client::data_model::error::ErrorDetails;
 
 pub struct CertificateDetails {
     pub public_key_der: Vec<u8>,
+    #[cfg(windows)]
     pub p_cert_ctx: *mut CERT_CONTEXT,
+    #[cfg(not(windows))]
+    pub private_key_der: Vec<u8>,
 }
 
 impl Drop for CertificateDetails {
@@ -48,14 +51,30 @@ impl Drop for CertificateDetails {
 pub fn generate_self_signed_certificate(
     subject_name: &str,
 ) -> Result<CertificateDetails, ErrorDetails> {
-    unsafe {
-        // Open KSP
-        let mut h_prov = NCRYPT_PROV_HANDLE(0);
-        NCryptOpenStorageProvider(&mut h_prov, MS_KEY_STORAGE_PROVIDER, 0)?;
+    #[cfg(windows)]
+    {
+        return generate_self_signed_certificate_windows(subject_name);
+    }
+    #[cfg(not(windows))]
+    {
+        todo!()
+    }
+}
 
-        // Create an RSA key
-        let key_name: Vec<u16> = Uuid::new_v4().to_string().encode_utf16().collect();
-        let mut h_key = NCRYPT_KEY_HANDLE(0);
+#[cfg(windows)]
+fn generate_self_signed_certificate_windows(
+    subject_name: &str,
+) -> Result<CertificateDetails, ErrorDetails> {
+    // Open KSP
+    let mut h_prov = NCRYPT_PROV_HANDLE(0);
+    unsafe {
+        NCryptOpenStorageProvider(&mut h_prov, MS_KEY_STORAGE_PROVIDER, 0)?;
+    }
+
+    // Create an RSA key
+    let key_name: Vec<u16> = Uuid::new_v4().to_string().encode_utf16().collect();
+    let mut h_key = NCRYPT_KEY_HANDLE(0);
+    unsafe {
         NCryptCreatePersistedKey(
             h_prov,
             &mut h_key,
@@ -64,9 +83,11 @@ pub fn generate_self_signed_certificate(
             windows::Win32::Security::Cryptography::CERT_KEY_SPEC(0),
             windows::Win32::Security::Cryptography::NCRYPT_FLAGS(0),
         )?;
+    }
 
+    let key_length: u32 = 2048;
+    unsafe {
         // Set key length property to 2048 bits
-        let key_length: u32 = 2048;
         NCryptSetProperty(
             h_key.into(),
             NCRYPT_LENGTH_PROPERTY,
@@ -87,12 +108,13 @@ pub fn generate_self_signed_certificate(
             h_key,
             windows::Win32::Security::Cryptography::NCRYPT_FLAGS(0),
         )?;
+    }
 
-        // Set up subject name for cert
-        let subject = format!("CN={}", subject_name);
-        let subject_w: Vec<u16> = subject.encode_utf16().chain(Some(0)).collect();
-        let mut size = 0u32;
-
+    // Set up subject name for cert
+    let subject = format!("CN={}", subject_name);
+    let subject_w: Vec<u16> = subject.encode_utf16().chain(Some(0)).collect();
+    let mut size = 0u32;
+    unsafe {
         CertStrToNameW(
             X509_ASN_ENCODING,
             PCWSTR(subject_w.as_ptr()),
@@ -102,7 +124,9 @@ pub fn generate_self_signed_certificate(
             &mut size,
             Some(std::ptr::null_mut()),
         )?;
-        let mut name_buf = vec![0u8; size as usize];
+    }
+    let mut name_buf = vec![0u8; size as usize];
+    unsafe {
         CertStrToNameW(
             X509_ASN_ENCODING,
             PCWSTR(subject_w.as_ptr()),
@@ -112,27 +136,29 @@ pub fn generate_self_signed_certificate(
             &mut size,
             Some(std::ptr::null_mut()),
         )?;
+    }
 
-        let subject_blob = CRYPT_INTEGER_BLOB {
-            cbData: size,
-            pbData: name_buf.as_mut_ptr(),
-        };
+    let subject_blob = CRYPT_INTEGER_BLOB {
+        cbData: size,
+        pbData: name_buf.as_mut_ptr(),
+    };
 
-        // Validity period
-        let mut start = GetSystemTime();
-        start.wYear -= 1;
-        let mut end = GetSystemTime();
-        end.wYear += 3;
+    // Validity period
+    let mut start = unsafe { GetSystemTime() };
+    start.wYear -= 1;
+    let mut end = unsafe { GetSystemTime() };
+    end.wYear += 3;
 
-        let mut exts = build_cert_extensions(HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(h_key.0))?;
+    let mut exts = build_cert_extensions(HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(h_key.0))?;
 
-        let cert_exts = CERT_EXTENSIONS {
-            cExtension: exts.len() as u32,
-            rgExtension: exts.as_mut_ptr(),
-        };
+    let cert_exts = CERT_EXTENSIONS {
+        cExtension: exts.len() as u32,
+        rgExtension: exts.as_mut_ptr(),
+    };
 
-        // Create cert
-        let cert_ctx = CertCreateSelfSignCertificate(
+    // Create cert
+    let cert_ctx = unsafe {
+        CertCreateSelfSignCertificate(
             Some(HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(h_key.0)),
             &subject_blob,
             windows::Win32::Security::Cryptography::CERT_CREATE_SELFSIGN_FLAGS(0),
@@ -141,26 +167,31 @@ pub fn generate_self_signed_certificate(
             Some(&start),
             Some(&end),
             Some(&cert_exts),
-        );
+        )
+    };
 
-        // Get cert data
-        let cert_der = std::slice::from_raw_parts(
+    // Get cert data
+    let cert_der = unsafe {
+        std::slice::from_raw_parts(
             (*cert_ctx).pbCertEncoded,
             (*cert_ctx).cbCertEncoded as usize,
-        );
+        )
+    };
 
-        let res = CertificateDetails {
-            public_key_der: cert_der.to_vec(),
-            p_cert_ctx: cert_ctx,
-        };
+    let res = CertificateDetails {
+        public_key_der: cert_der.to_vec(),
+        p_cert_ctx: cert_ctx,
+    };
 
-        // Cleanup
+    // Cleanup
+    unsafe {
         NCryptFreeObject(h_prov.into())?;
         NCryptFreeObject(h_key.into())?;
-        Ok(res)
-    }
+    };
+    Ok(res)
 }
 
+#[cfg(windows)]
 fn build_cert_extensions(
     h_key: HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
 ) -> Result<Vec<CERT_EXTENSION>, ErrorDetails> {
@@ -288,23 +319,31 @@ fn build_cert_extensions(
 pub fn decrypt_from_base64(
     base64_input: &str,
     cert_details: &CertificateDetails,
-) -> std::result::Result<String, ErrorDetails> {
-    let encrypted = base64_input.replace("\r", "").replace("\n", "");
-    let cms_blob = base64::engine::general_purpose::STANDARD.decode(encrypted)?;
-    let res = decrypt_with_cng(cert_details.p_cert_ctx, &cms_blob)?;
-    let res = String::from_utf8(res)?;
-    Ok(res)
+) -> Result<String, ErrorDetails> {
+    #[cfg(windows)]
+    {
+        return decrypt_from_base64_windows(base64_input, cert_details);
+    }
+    #[cfg(not(windows))]
+    {
+        todo!()
+    }
 }
 
-fn decrypt_with_cng(
-    p_cert_ctx: *const CERT_CONTEXT,
-    encrypted_payload: &[u8],
-) -> Result<Vec<u8>, ErrorDetails> {
+#[cfg(windows)]
+fn decrypt_from_base64_windows(
+    base64_input: &str,
+    cert_details: &CertificateDetails,
+) -> Result<String, ErrorDetails> {
+    let encrypted = base64_input.replace("\r", "").replace("\n", "");
+    let encrypted_payload = &base64::engine::general_purpose::STANDARD.decode(encrypted)?;
+    let p_cert_ctx = cert_details.p_cert_ctx;
+
+    // Acquire the private key handle using the CNG-compatible function.
+    let mut h_key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(0);
+    let mut key_spec = CERT_KEY_SPEC(0u32);
+    let mut must_free = BOOL(0);
     unsafe {
-        // Acquire the private key handle using the CNG-compatible function.
-        let mut h_key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(0);
-        let mut key_spec = CERT_KEY_SPEC(0u32);
-        let mut must_free = BOOL(0);
         CryptAcquireCertificatePrivateKey(
             p_cert_ctx,
             CRYPT_ACQUIRE_FLAGS(
@@ -316,71 +355,77 @@ fn decrypt_with_cng(
             &mut h_key,
             Some(&mut key_spec),
             Some(&mut must_free),
-        )?;
+        )
+    }?;
 
-        // Decode the encrypted message.
-        let msg_handle = CryptMsgOpenToDecode(
+    // Decode the encrypted message.
+    let msg_handle = unsafe {
+        CryptMsgOpenToDecode(
             X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0,
             0,
             0,
             None,
             None,
             None,
-        );
+        )
+    };
 
-        if msg_handle.is_null() {
-            return Err(ErrorDetails {
-                code: -1,
-                message: "Failed to open message handle to decrypt.".to_string(),
-            });
-        }
+    if msg_handle.is_null() {
+        return Err(ErrorDetails {
+            code: -1,
+            message: "Failed to open message handle to decrypt.".to_string(),
+        });
+    }
+    unsafe { CryptMsgUpdate(msg_handle, Some(encrypted_payload), true) }?;
+    // Create an instance of the nested struct (the union)
+    let anonymous_union = CMSG_CTRL_DECRYPT_PARA_0 {
+        hCryptProv: h_key.0,
+    };
 
-        CryptMsgUpdate(msg_handle, Some(encrypted_payload), true)?;
+    // Create the main struct instance
+    let mut decrypt_para = CMSG_CTRL_DECRYPT_PARA {
+        cbSize: std::mem::size_of::<CMSG_CTRL_DECRYPT_PARA>() as u32,
+        Anonymous: anonymous_union,
+        dwKeySpec: key_spec.0,
+        dwRecipientIndex: 0,
+    };
 
-        // Create an instance of the nested struct (the union)
-        let anonymous_union = CMSG_CTRL_DECRYPT_PARA_0 {
-            hCryptProv: h_key.0,
-        };
-
-        // Create the main struct instance
-        let mut decrypt_para = CMSG_CTRL_DECRYPT_PARA {
-            cbSize: std::mem::size_of::<CMSG_CTRL_DECRYPT_PARA>() as u32,
-            Anonymous: anonymous_union,
-            dwKeySpec: key_spec.0,
-            dwRecipientIndex: 0,
-        };
-
+    unsafe {
         CryptMsgControl(
             msg_handle,
             0,
             CMSG_CTRL_DECRYPT,
             Some(&mut decrypt_para as *mut _ as *mut _),
-        )?;
+        )
+    }?;
 
-        // Get the decrypted message size.
-        let mut content_size = 0;
-        CryptMsgGetParam(msg_handle, 2, 0, None, &mut content_size)?;
+    // Get the decrypted message size.
+    let mut content_size = 0;
+    unsafe { CryptMsgGetParam(msg_handle, 2, 0, None, &mut content_size) }?;
 
-        // Get the decrypted message content.
-        let mut decrypted_data_buffer = vec![0u8; content_size as usize];
+    // Get the decrypted message content.
+    let mut decrypted_data_buffer = vec![0u8; content_size as usize];
+    unsafe {
         CryptMsgGetParam(
             msg_handle,
             2,
             0,
             Some(decrypted_data_buffer.as_mut_ptr() as *mut _),
             &mut content_size,
-        )?;
+        )
+    }?;
 
-        CryptMsgClose(Some(msg_handle))?;
-        if must_free.as_bool() {
-            NCryptFreeObject(NCRYPT_HANDLE(h_key.0))?;
-        }
-
-        Ok(decrypted_data_buffer)
+    unsafe { CryptMsgClose(Some(msg_handle)) }?;
+    if must_free.as_bool() {
+        unsafe { NCryptFreeObject(NCRYPT_HANDLE(h_key.0)) }?;
     }
+
+    let res = String::from_utf8(decrypted_data_buffer)?;
+    Ok(res)
 }
 
-fn has_private_key(cert_ctx: *const CERT_CONTEXT) -> bool {
+#[cfg(windows)]
+pub fn has_private_key(cert_ctx: *const CERT_CONTEXT) -> bool {
     let mut h_key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(0);
     let mut key_spec = CERT_KEY_SPEC(0u32);
     let mut must_free = BOOL(0);
@@ -479,7 +524,7 @@ pub fn get_cert_by_thumbprint(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use windows::{
@@ -501,7 +546,7 @@ mod tests {
         assert!(decrypted.eq(org_str))
     }
 
-    pub fn encrypt(cert: &CertificateDetails, org_str: &str) -> String {
+    fn encrypt(cert: &CertificateDetails, org_str: &str) -> String {
         let mut info = CRYPT_ENCRYPT_MESSAGE_PARA::default();
         info.cbSize = std::mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32;
         info.dwMsgEncodingType = X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0;

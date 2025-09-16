@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod certificates_helper;
+pub mod client;
 pub mod error;
 #[cfg(windows)]
 pub mod etw;
@@ -13,8 +15,6 @@ pub mod telemetry;
 pub mod version;
 #[cfg(windows)]
 pub mod windows;
-pub mod client;
-pub mod certificates_helper;
 
 #[cfg(not(windows))]
 pub mod linux;

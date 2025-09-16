@@ -1,6 +1,8 @@
 use crate::certificates_helper::{decrypt_from_base64, generate_self_signed_certificate};
 use crate::client::data_model::error::ErrorDetails;
-use crate::client::data_model::hostga_plugin_model::{Certificates, RawCertificatesPayload, VMSettings};
+use crate::client::data_model::hostga_plugin_model::{
+    Certificates, RawCertificatesPayload, VMSettings,
+};
 use base64::Engine;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
