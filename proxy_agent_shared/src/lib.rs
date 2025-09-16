@@ -13,6 +13,8 @@ pub mod telemetry;
 pub mod version;
 #[cfg(windows)]
 pub mod windows;
+pub mod client;
+pub mod certificates_helper;
 
 #[cfg(not(windows))]
 pub mod linux;

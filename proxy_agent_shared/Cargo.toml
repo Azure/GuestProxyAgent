@@ -18,6 +18,10 @@ thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
+base64 = "0.22.1"
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
+quick-xml = { version = "0.38.0", features = ["serialize", "serde-types"]}
+uuid = { version = "1.8", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
@@ -42,3 +46,12 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.61.3"
+features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_SystemInformation",
+    "Win32_System_Memory",
+]
