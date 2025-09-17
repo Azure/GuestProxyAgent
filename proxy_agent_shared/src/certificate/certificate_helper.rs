@@ -22,7 +22,7 @@ pub fn generate_self_signed_certificate(
     {
         use crate::certificate::certificate_helper_windows::generate_self_signed_certificate_windows;
 
-        return generate_self_signed_certificate_windows(subject_name);
+        generate_self_signed_certificate_windows(subject_name)
     }
 
     #[cfg(not(windows))]
@@ -42,7 +42,7 @@ pub fn decrypt_from_base64(
     {
         use crate::certificate::certificate_helper_windows::decrypt_from_base64_windows;
 
-        return decrypt_from_base64_windows(base64_input, cert_details);
+        decrypt_from_base64_windows(base64_input, cert_details)
     }
 
     #[cfg(not(windows))]

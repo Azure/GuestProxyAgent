@@ -37,10 +37,10 @@ pub struct CertificateDetailsWindows {
 
 impl Drop for CertificateDetailsWindows {
     fn drop(&mut self) {
-        if !self.p_cert_ctx.is_null() {
-            if !unsafe { CertFreeCertificateContext(Some(self.p_cert_ctx)) }.as_bool() {
-                eprintln!("Failed to free certificate context.")
-            }
+        if !self.p_cert_ctx.is_null()
+            && !unsafe { CertFreeCertificateContext(Some(self.p_cert_ctx)) }.as_bool()
+        {
+            eprintln!("Failed to free certificate context.");
         }
     }
 }
@@ -49,7 +49,7 @@ impl CertificateDetails for CertificateDetailsWindows {
     type CertificateContext = *mut CERT_CONTEXT;
 
     fn get_certificate_context(&self) -> &Self::CertificateContext {
-        return &self.p_cert_ctx;
+        &self.p_cert_ctx
     }
 
     fn set_certificate_context(&mut self, cert_context: Self::CertificateContext) {

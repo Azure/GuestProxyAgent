@@ -65,25 +65,23 @@ impl WireServerClient {
                         code: -2,
                         message: format!("XML Deserialization Failed: {}", e),
                     })?;
-                    return Ok(result);
+                    Ok(result)
                 } else {
                     let status = resp.status();
-                    return Err(ErrorDetails {
+                    Err(ErrorDetails {
                         code: status.as_u16() as i32,
                         message: format!(
                             "Http Error Status: {}, Body: {}",
                             status,
                             resp.text().await.unwrap_or_default()
                         ),
-                    });
+                    })
                 }
             }
-            Err(e) => {
-                return Err(ErrorDetails {
-                    code: -3,
-                    message: format!("Request Error: {}", e),
-                });
-            }
+            Err(e) => Err(ErrorDetails {
+                code: -3,
+                message: format!("Request Error: {}", e),
+            }),
         }
     }
 }

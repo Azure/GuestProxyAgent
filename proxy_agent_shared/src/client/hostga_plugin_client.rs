@@ -91,13 +91,13 @@ impl HostGAPluginClient {
             return Ok(HostGAPluginResponse {
                 body: Some(serde_json::from_str::<Certificates>(&certs)?),
                 etag: raw_certs_resp.etag.clone(),
-                certificates_revision: raw_certs_resp.certificates_revision.clone(),
+                certificates_revision: raw_certs_resp.certificates_revision,
                 version: raw_certs_resp.version.clone(),
             });
         }
 
         Err(ErrorDetails {
-            message: format!("certificate payload is empty."),
+            message: "certificate payload is empty.".to_string(),
             code: -1,
         })
     }
@@ -147,9 +147,9 @@ impl HostGAPluginClient {
         if resp.status() == StatusCode::NOT_MODIFIED {
             let _hostgap_response: HostGAPluginResponse<T> = HostGAPluginResponse {
                 body: None,
-                etag: etag,
-                version: version,
-                certificates_revision: certificates_revision,
+                etag,
+                version,
+                certificates_revision,
             };
             return Ok(_hostgap_response);
         } else if resp.status().is_success() {
@@ -163,20 +163,20 @@ impl HostGAPluginClient {
             })?;
             return Ok(HostGAPluginResponse {
                 body: Option::Some(body_json),
-                etag: etag,
-                version: version,
-                certificates_revision: certificates_revision,
+                etag,
+                version,
+                certificates_revision,
             });
         }
 
         let status = resp.status();
-        return Err(ErrorDetails {
+        Err(ErrorDetails {
             code: status.as_u16() as i32,
             message: format!(
                 "Http Error Status: {}, Body: {}",
                 status,
                 resp.text().await.unwrap_or_default()
             ),
-        });
+        })
     }
 }
