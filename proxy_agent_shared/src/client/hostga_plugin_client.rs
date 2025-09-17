@@ -1,4 +1,4 @@
-use crate::certificates_helper::{decrypt_from_base64, generate_self_signed_certificate};
+use crate::certificate::certificate_helper::{decrypt_from_base64, generate_self_signed_certificate, CertificateDetails};
 use crate::client::data_model::error::ErrorDetails;
 use crate::client::data_model::hostga_plugin_model::{
     Certificates, RawCertificatesPayload, VMSettings,
@@ -54,8 +54,8 @@ impl HostGAPluginClient {
     ) -> Result<HostGAPluginResponse<Certificates>, ErrorDetails> {
         let cert = generate_self_signed_certificate(&Uuid::new_v4().to_string())?;
         //let cert = get_cert_by_thumbprint("9bf93bb248b4504626c5d1247da2e7c5f8e0a03a")?;
-        let cert_der = cert.public_key_der.clone();
-        let cert_base64 = base64::engine::general_purpose::STANDARD.encode(cert_der.clone());
+        let cert_der = cert.get_public_cert_der();
+        let cert_base64 = base64::engine::general_purpose::STANDARD.encode(cert_der);
 
         let mut headers = HeaderMap::new();
         headers.insert(
