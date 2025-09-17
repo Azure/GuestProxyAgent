@@ -1,14 +1,39 @@
 use base64::Engine;
 use uuid::Uuid;
-use windows::{core::{BOOL, PCWSTR, PSTR}, Win32::{Security::Cryptography::{szOID_KEY_USAGE, szOID_SUBJECT_KEY_IDENTIFIER, CertCreateSelfSignCertificate, CertFreeCertificateContext, CertStrToNameW, CryptAcquireCertificatePrivateKey, CryptEncodeObjectEx, CryptExportPublicKeyInfo, CryptHashPublicKeyInfo, CryptMsgClose, CryptMsgControl, CryptMsgGetParam, CryptMsgOpenToDecode, CryptMsgUpdate, NCryptCreatePersistedKey, NCryptFinalizeKey, NCryptFreeObject, NCryptOpenStorageProvider, NCryptSetProperty, CALG_SHA1, CERT_CONTEXT, CERT_DATA_ENCIPHERMENT_KEY_USAGE, CERT_DIGITAL_SIGNATURE_KEY_USAGE, CERT_EXTENSION, CERT_EXTENSIONS, CERT_KEY_CERT_SIGN_KEY_USAGE, CERT_KEY_ENCIPHERMENT_KEY_USAGE, CERT_KEY_SPEC, CERT_OFFLINE_CRL_SIGN_KEY_USAGE, CERT_PUBLIC_KEY_INFO, CERT_X500_NAME_STR, CMSG_CTRL_DECRYPT, CMSG_CTRL_DECRYPT_PARA, CMSG_CTRL_DECRYPT_PARA_0, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, CRYPT_ACQUIRE_COMPARE_KEY_FLAG, CRYPT_ACQUIRE_FLAGS, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CRYPT_BIT_BLOB, CRYPT_INTEGER_BLOB, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, MS_KEY_STORAGE_PROVIDER, NCRYPT_ALLOW_EXPORT_FLAG, NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG, NCRYPT_EXPORT_POLICY_PROPERTY, NCRYPT_HANDLE, NCRYPT_KEY_HANDLE, NCRYPT_LENGTH_PROPERTY, NCRYPT_PROV_HANDLE, NCRYPT_RSA_ALGORITHM, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING}, System::SystemInformation::GetSystemTime}};
+use windows::{
+    core::{BOOL, PCWSTR, PSTR},
+    Win32::{
+        Security::Cryptography::{
+            szOID_KEY_USAGE, szOID_SUBJECT_KEY_IDENTIFIER, CertCreateSelfSignCertificate,
+            CertFreeCertificateContext, CertStrToNameW, CryptAcquireCertificatePrivateKey,
+            CryptEncodeObjectEx, CryptExportPublicKeyInfo, CryptHashPublicKeyInfo, CryptMsgClose,
+            CryptMsgControl, CryptMsgGetParam, CryptMsgOpenToDecode, CryptMsgUpdate,
+            NCryptCreatePersistedKey, NCryptFinalizeKey, NCryptFreeObject,
+            NCryptOpenStorageProvider, NCryptSetProperty, CALG_SHA1, CERT_CONTEXT,
+            CERT_DATA_ENCIPHERMENT_KEY_USAGE, CERT_DIGITAL_SIGNATURE_KEY_USAGE, CERT_EXTENSION,
+            CERT_EXTENSIONS, CERT_KEY_CERT_SIGN_KEY_USAGE, CERT_KEY_ENCIPHERMENT_KEY_USAGE,
+            CERT_KEY_SPEC, CERT_OFFLINE_CRL_SIGN_KEY_USAGE, CERT_PUBLIC_KEY_INFO,
+            CERT_X500_NAME_STR, CMSG_CTRL_DECRYPT, CMSG_CTRL_DECRYPT_PARA,
+            CMSG_CTRL_DECRYPT_PARA_0, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG,
+            CRYPT_ACQUIRE_COMPARE_KEY_FLAG, CRYPT_ACQUIRE_FLAGS,
+            CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CRYPT_BIT_BLOB, CRYPT_INTEGER_BLOB,
+            HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, MS_KEY_STORAGE_PROVIDER, NCRYPT_ALLOW_EXPORT_FLAG,
+            NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG, NCRYPT_EXPORT_POLICY_PROPERTY, NCRYPT_HANDLE,
+            NCRYPT_KEY_HANDLE, NCRYPT_LENGTH_PROPERTY, NCRYPT_PROV_HANDLE, NCRYPT_RSA_ALGORITHM,
+            PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+        },
+        System::SystemInformation::GetSystemTime,
+    },
+};
 
-use crate::{certificate::certificate_helper::CertificateDetails, client::data_model::error::ErrorDetails};
+use crate::{
+    certificate::certificate_helper::CertificateDetails, client::data_model::error::ErrorDetails,
+};
 
 pub struct CertificateDetailsWindows {
     pub public_key_der: Vec<u8>,
     pub p_cert_ctx: *mut CERT_CONTEXT,
 }
-
 
 impl Drop for CertificateDetailsWindows {
     fn drop(&mut self) {
@@ -30,7 +55,7 @@ impl CertificateDetails for CertificateDetailsWindows {
     fn set_certificate_context(&mut self, cert_context: Self::CertificateContext) {
         self.p_cert_ctx = cert_context;
     }
-    
+
     fn get_public_cert_der(&self) -> &[u8] {
         &self.public_key_der
     }

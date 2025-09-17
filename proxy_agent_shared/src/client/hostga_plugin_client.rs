@@ -1,4 +1,6 @@
-use crate::certificate::certificate_helper::{decrypt_from_base64, generate_self_signed_certificate, CertificateDetails};
+use crate::certificate::certificate_helper::{
+    decrypt_from_base64, generate_self_signed_certificate, CertificateDetails,
+};
 use crate::client::data_model::error::ErrorDetails;
 use crate::client::data_model::hostga_plugin_model::{
     Certificates, RawCertificatesPayload, VMSettings,
