@@ -17,8 +17,8 @@
 //! ```
 
 use crate::common::constants;
+use crate::{logger::LoggerLevel, misc_helpers};
 use once_cell::sync::Lazy;
-use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{path::PathBuf, time::Duration};
@@ -221,7 +221,7 @@ impl Config {
 mod tests {
     use crate::common::config::Config;
     use crate::common::constants;
-    use proxy_agent_shared::misc_helpers;
+    use crate::misc_helpers;
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
@@ -297,13 +297,13 @@ mod tests {
         }
 
         assert_eq!(
-            proxy_agent_shared::logger::LoggerLevel::Info,
+            crate::logger::LoggerLevel::Info,
             config.get_file_log_level_for_events().unwrap(),
             "get_file_log_level_for_events mismatch"
         );
 
         assert_eq!(
-            proxy_agent_shared::logger::LoggerLevel::Info,
+            crate::logger::LoggerLevel::Info,
             config.get_file_log_level_for_system_events().unwrap(),
             "get_file_log_level_for_system_events mismatch"
         );

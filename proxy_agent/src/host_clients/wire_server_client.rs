@@ -20,16 +20,14 @@
 //! ```
 
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
-use crate::{
-    common::{
-        error::{Error, WireServerErrorType},
-        hyper_client, logger,
-        result::Result,
-    },
-    shared_state::key_keeper_wrapper::KeyKeeperSharedState,
-};
+use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use http::Method;
 use hyper::Uri;
+use proxy_agent_shared::common::{
+    error::{Error, WireServerErrorType},
+    hyper_client, logger,
+    result::Result,
+};
 use std::collections::HashMap;
 
 pub struct WireServerClient {

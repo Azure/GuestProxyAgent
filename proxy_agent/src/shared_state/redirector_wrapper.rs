@@ -19,10 +19,10 @@
 //! let bpf_object = redirector_shared_state.get_bpf_object().await.unwrap().unwrap();
 //! ```
 
-use crate::common::error::Error;
-use crate::common::logger;
-use crate::common::result::Result;
 use crate::redirector;
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::result::Result;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 

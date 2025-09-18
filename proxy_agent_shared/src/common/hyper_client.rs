@@ -37,6 +37,7 @@
 use super::error::{Error, HyperErrorType};
 use super::result::Result;
 use super::{constants, helpers};
+use crate::misc_helpers;
 use http::request::Builder;
 use http::request::Parts;
 use http::Method;
@@ -49,7 +50,6 @@ use hyper::Request;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
 use itertools::Itertools;
-use proxy_agent_shared::misc_helpers;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::net::TcpStream;

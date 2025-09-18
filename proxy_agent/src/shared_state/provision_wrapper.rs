@@ -28,10 +28,10 @@
 //! assert_eq!(get_provision_finished, false);
 //! ```
 
-use crate::common::error::Error;
-use crate::common::logger;
-use crate::common::result::Result;
 use crate::provision::ProvisionFlags;
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::result::Result;
 use proxy_agent_shared::misc_helpers;
 use tokio::sync::{mpsc, oneshot};
 

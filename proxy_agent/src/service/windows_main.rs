@@ -5,8 +5,8 @@
 //! The GPA service is implemented as a Windows service using the windows_service crate.
 //! It is started, stopped, and controlled by the Windows service manager.
 
-use crate::common::{constants, logger, result::Result};
 use crate::{service, shared_state::SharedState};
+use proxy_agent_shared::common::{constants, logger, result::Result};
 use std::time::Duration;
 use windows_service::service::{
     ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType,

@@ -40,9 +40,9 @@ pub mod proxy_summary;
 #[cfg(windows)]
 mod windows;
 
-use crate::common::result::Result;
 use crate::redirector::AuditEntry;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
+use proxy_agent_shared::common::result::Result;
 use serde_derive::{Deserialize, Serialize};
 use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 

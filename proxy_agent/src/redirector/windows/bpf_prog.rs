@@ -3,13 +3,13 @@
 use super::bpf_api::*;
 use super::bpf_obj::*;
 use super::BpfObject;
-use crate::common::constants;
-use crate::common::logger;
-use crate::common::{
+use crate::redirector::AuditEntry;
+use proxy_agent_shared::common::constants;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::{
     error::{BpfErrorType, Error},
     result::Result,
 };
-use crate::redirector::AuditEntry;
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
 use std::mem::size_of_val;

@@ -28,10 +28,10 @@
 //! tokio::spawn(proxy_agent_status_task.start());
 //! ```
 
-use crate::common::logger;
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+use proxy_agent_shared::common::logger;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{

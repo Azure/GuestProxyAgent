@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 pub mod acl;
-pub mod common;
 pub mod host_clients;
 pub mod key_keeper;
 pub mod provision;
@@ -16,16 +15,16 @@ pub mod telemetry;
 #[cfg(test)]
 pub mod test_mock;
 
-use common::cli::{Commands, CLI};
-use common::constants;
-use common::helpers;
 use provision::provision_query::ProvisionQuery;
+use proxy_agent_shared::common::cli::{Commands, CLI};
+use proxy_agent_shared::common::constants;
+use proxy_agent_shared::common::helpers;
 use proxy_agent_shared::misc_helpers;
 use shared_state::SharedState;
 use std::{process, time::Duration};
 
 #[cfg(windows)]
-use common::logger;
+use proxy_agent_shared::common::logger;
 #[cfg(windows)]
 use service::windows_main;
 #[cfg(windows)]

@@ -79,7 +79,6 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::{config, helpers, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
 use crate::proxy_agent_status;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -87,6 +86,7 @@ use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::telemetry::event_reader::EventReader;
+use proxy_agent_shared::common::{config, helpers, logger};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
@@ -535,7 +535,9 @@ pub async fn get_provision_state_internal(
 /// provision query module designed for GPA command line, serves for --status [--wait seconds] option
 /// It is used to query the provision status from GPA service via http request
 pub mod provision_query {
-    use crate::common::{constants, error::Error, helpers, hyper_client, logger, result::Result};
+    use proxy_agent_shared::common::{
+        constants, error::Error, helpers, hyper_client, logger, result::Result,
+    };
     use proxy_agent_shared::misc_helpers;
     use serde_derive::{Deserialize, Serialize};
     use std::{collections::HashMap, net::Ipv4Addr, time::Duration};

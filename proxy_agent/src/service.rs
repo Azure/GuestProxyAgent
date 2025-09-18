@@ -3,12 +3,12 @@
 #[cfg(windows)]
 pub mod windows_main;
 
-use crate::common::{config, constants, helpers, logger};
 use crate::key_keeper::KeyKeeper;
 use crate::proxy::proxy_connection::ConnectionLogger;
 use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
+use proxy_agent_shared::common::{config, constants, helpers, logger};
 use proxy_agent_shared::logger::rolling_logger::RollingLogger;
 use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use proxy_agent_shared::proxy_agent_aggregate_status;

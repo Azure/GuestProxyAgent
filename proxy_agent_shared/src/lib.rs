@@ -3,6 +3,7 @@
 
 pub mod certificate;
 pub mod client;
+pub mod common;
 pub mod error;
 #[cfg(windows)]
 pub mod etw;

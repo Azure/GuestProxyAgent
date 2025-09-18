@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::{
+use crate::{
     logger::{logger_manager, LoggerLevel},
     telemetry::event_logger,
 };

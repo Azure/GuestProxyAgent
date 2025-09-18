@@ -26,9 +26,6 @@
 pub mod key;
 
 use self::key::Key;
-use crate::common::error::{Error, KeyErrorType};
-use crate::common::result::Result;
-use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -39,6 +36,9 @@ use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
 use crate::{acl, redirector};
 use hyper::Uri;
+use proxy_agent_shared::common::error::{Error, KeyErrorType};
+use proxy_agent_shared::common::result::Result;
+use proxy_agent_shared::common::{constants, helpers, logger};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -607,7 +607,7 @@ impl KeyKeeper {
             key_file.set_extension("encrypted");
             #[cfg(windows)]
             {
-                crate::common::store_key_data(
+                proxy_agent_shared::common::store_key_data(
                     &key_file,
                     serde_json::to_string(&key).map_err(|e| {
                         Error::Key(KeyErrorType::StoreLocalKey(format!(
@@ -657,7 +657,7 @@ impl KeyKeeper {
         if !key_file.exists() {
             // guid.key file does not exist locally
             return Err(Error::Key(
-                crate::common::error::KeyErrorType::FetchLocalKey(format!(
+                proxy_agent_shared::common::error::KeyErrorType::FetchLocalKey(format!(
                     "Key file '{}' does not exist locally.",
                     key_file.display()
                 )),
@@ -674,7 +674,7 @@ impl KeyKeeper {
             }
             #[cfg(windows)]
             {
-                crate::common::fetch_key_data(&key_file)?
+                proxy_agent_shared::common::fetch_key_data(&key_file)?
             }
         } else {
             fs::read_to_string(&key_file).map_err(|e| {
@@ -683,9 +683,11 @@ impl KeyKeeper {
         };
 
         serde_json::from_str::<Key>(&key_data).map_err(|e| {
-            Error::Key(crate::common::error::KeyErrorType::FetchLocalKey(format!(
-                "Parse key data with error: {e}"
-            )))
+            Error::Key(
+                proxy_agent_shared::common::error::KeyErrorType::FetchLocalKey(format!(
+                    "Parse key data with error: {e}"
+                )),
+            )
         })
     }
 
@@ -726,7 +728,7 @@ impl KeyKeeper {
         } else {
             // guid.key file found but guid or key value is not matched
             Err(Error::Key(
-                crate::common::error::KeyErrorType::CheckLocalKey(
+                proxy_agent_shared::common::error::KeyErrorType::CheckLocalKey(
                     "Local key guid or key value is not matched.".to_string(),
                 ),
             ))

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 use super::result::Result;
 use super::{error::Error, logger};
+use crate::misc_helpers;
+use crate::telemetry::span::SimpleSpan;
 use once_cell::sync::Lazy;
-use proxy_agent_shared::misc_helpers;
-use proxy_agent_shared::telemetry::span::SimpleSpan;
 
 #[cfg(not(windows))]
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};

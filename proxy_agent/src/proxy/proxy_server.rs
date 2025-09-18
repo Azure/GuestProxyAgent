@@ -10,7 +10,7 @@
 //!
 //! Example:
 //! ```rust
-//! use crate::common::config;
+//! use proxy_agent_shared::common::config;
 //! use crate::proxy::proxy_server;
 //! use crate::shared_state::SharedState;
 //!
@@ -22,12 +22,6 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
-use crate::common::{
-    constants,
-    error::{Error, HyperErrorType},
-    helpers, hyper_client, logger,
-    result::Result,
-};
 use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -45,6 +39,12 @@ use hyper::service::service_fn;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use proxy_agent_shared::common::{
+    constants,
+    error::{Error, HyperErrorType},
+    helpers, hyper_client, logger,
+    result::Result,
+};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -279,7 +279,10 @@ impl ProxyServer {
                     let large_limited_tower_service =
                         tower::ServiceBuilder::new().layer(large_limit_layer);
                     let tower_service_layer =
-                        if crate::common::hyper_client::should_skip_sig(req.method(), req.uri()) {
+                        if proxy_agent_shared::common::hyper_client::should_skip_sig(
+                            req.method(),
+                            req.uri(),
+                        ) {
                             // skip signature check for large request
                             large_limited_tower_service.clone()
                         } else {
@@ -1012,11 +1015,11 @@ impl ProxyServer {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::hyper_client;
-    use crate::common::logger;
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
+    use proxy_agent_shared::common::hyper_client;
+    use proxy_agent_shared::common::logger;
     use std::collections::HashMap;
     use std::time::Duration;
 

@@ -147,7 +147,7 @@ impl sock_addr_audit_entry {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::constants;
+    use proxy_agent_shared::common::constants;
 
     #[test]
     fn destination_entry_test() {

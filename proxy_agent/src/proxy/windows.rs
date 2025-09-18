@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{
+use libloading::{Library, Symbol};
+use once_cell::sync::Lazy;
+use proxy_agent_shared::common::{
     error::{Error, WindowsApiErrorType},
     logger,
     result::Result,
 };
-use libloading::{Library, Symbol};
-use once_cell::sync::Lazy;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};

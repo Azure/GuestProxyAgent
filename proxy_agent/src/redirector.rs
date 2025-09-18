@@ -45,12 +45,6 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::constants;
-use crate::common::error::BpfErrorType;
-use crate::common::error::Error;
-use crate::common::helpers;
-use crate::common::result::Result;
-use crate::common::{config, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -59,6 +53,12 @@ use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
+use proxy_agent_shared::common::constants;
+use proxy_agent_shared::common::error::BpfErrorType;
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::helpers;
+use proxy_agent_shared::common::result::Result;
+use proxy_agent_shared::common::{config, logger};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;

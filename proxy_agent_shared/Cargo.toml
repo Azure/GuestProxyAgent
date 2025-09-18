@@ -22,12 +22,21 @@ base64 = "0.22.1"
 reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 quick-xml = { version = "0.38.0", features = ["serialize", "serde-types"]}
 uuid = { version = "1.8", features = ["v4"] }
+clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 
+http = "1.1.0"
+http-body-util = "0.1"
+hex = "0.4.3"                 # hex encode 
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
+itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
 winreg = "0.11.0"             # windows reg read/write
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 chrono = "0.4.41"             # parse date time string
+libloading = "0.8.0"          # for dynamic load libraries
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.52.0"
