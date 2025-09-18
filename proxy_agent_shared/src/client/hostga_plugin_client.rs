@@ -1,5 +1,5 @@
 use crate::certificate::certificate_helper::{
-    decrypt_from_base64, generate_self_signed_certificate, CertificateDetails,
+    decrypt_from_base64, generate_self_signed_certificate,
 };
 use crate::client::data_model::error::ErrorDetails;
 use crate::client::data_model::hostga_plugin_model::{
@@ -68,7 +68,7 @@ impl HostGAPluginClient {
             Self::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER,
             HeaderValue::from_str("AES256_CBC")?,
         );
-        println!("Requesting certificates with headers: {:?}", headers);
+        println!("Requesting certificates with headers: {headers:?}");
         let raw_certs_resp = self
             .get::<RawCertificatesPayload>(
                 &format!(
@@ -111,7 +111,7 @@ impl HostGAPluginClient {
         for<'a> T: Deserialize<'a>,
     {
         let mut request = self.client.get(url);
-        println!("Requesting URL: {}", url);
+        println!("Requesting URL: {url}");
         if let Some(headers) = headers_map {
             request = request.headers(headers);
         }
@@ -123,7 +123,7 @@ impl HostGAPluginClient {
             }
             ErrorDetails {
                 code: error_code,
-                message: format!("HostGAPlugin Request Error: {}, url: {}", e, url),
+                message: format!("HostGAPlugin Request Error: {e}, url: {url}"),
             }
         })?;
 
@@ -155,11 +155,11 @@ impl HostGAPluginClient {
         } else if resp.status().is_success() {
             let body = resp.text().await.map_err(|e| ErrorDetails {
                 code: -1,
-                message: format!("Failed to get response body: {}", e),
+                message: format!("Failed to get response body: {e}"),
             })?;
             let body_json = serde_json::from_str::<T>(&body).map_err(|e| ErrorDetails {
                 code: -1,
-                message: format!("Failed to deserialized json payload, error: {}", e),
+                message: format!("Failed to deserialized json payload, error: {e}"),
             })?;
             return Ok(HostGAPluginResponse {
                 body: Option::Some(body_json),

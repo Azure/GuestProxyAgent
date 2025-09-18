@@ -1,42 +1,49 @@
 use crate::client::data_model::error::ErrorDetails;
 
-pub trait CertificateDetails {
-    type CertificateContext;
-    fn get_certificate_context(&self) -> &Self::CertificateContext;
-    fn set_certificate_context(&mut self, cert_context: Self::CertificateContext);
-    fn get_public_cert_der(&self) -> &[u8];
-}
+#[cfg(windows)]
+use crate::certificate::certificate_helper_windows::CertificateDetailsWindows;
 
 #[cfg(windows)]
-use windows::Win32::Security::Cryptography::CERT_CONTEXT;
-#[cfg(windows)]
-type CertCtxType = *mut CERT_CONTEXT;
+type CertDetailsType = CertificateDetailsWindows;
 
 #[cfg(not(windows))]
-type CertCtxType = ();
+type CertDetailsType = ();
+
+pub struct CertificateDetailsWrapper {
+    pub cert_details: CertDetailsType,
+}
+
+impl CertificateDetailsWrapper {
+    pub fn get_public_cert_der(&self) -> &[u8] {
+        #[cfg(windows)]
+        {
+            &self.cert_details.public_key_der
+        }
+        #[cfg(not(windows))]
+        {
+            todo!()
+        }
+    }
+}
 
 pub fn generate_self_signed_certificate(
     subject_name: &str,
-) -> Result<impl CertificateDetails<CertificateContext = CertCtxType>, ErrorDetails> {
+) -> Result<CertificateDetailsWrapper, ErrorDetails> {
     #[cfg(windows)]
     {
         use crate::certificate::certificate_helper_windows::generate_self_signed_certificate_windows;
 
         generate_self_signed_certificate_windows(subject_name)
     }
-
     #[cfg(not(windows))]
     {
-        Err(ErrorDetails {
-            message: "Not Implemented.".to_string(),
-            code: -1,
-        })
+        todo!()
     }
 }
 
 pub fn decrypt_from_base64(
     base64_input: &str,
-    cert_details: &impl CertificateDetails<CertificateContext = CertCtxType>,
+    cert_details: &CertificateDetailsWrapper,
 ) -> Result<String, ErrorDetails> {
     #[cfg(windows)]
     {
@@ -47,9 +54,6 @@ pub fn decrypt_from_base64(
 
     #[cfg(not(windows))]
     {
-        Err(ErrorDetails {
-            message: "Not Implemented.".to_string(),
-            code: -1,
-        })
+        todo!()
     }
 }

@@ -20,7 +20,7 @@ impl std::error::Error for ErrorDetails {}
 impl From<DecodeError> for ErrorDetails {
     fn from(value: DecodeError) -> Self {
         ErrorDetails {
-            message: format!("Decode Error: {:?}", value),
+            message: format!("Decode Error: {value:?}"),
             code: -1,
         }
     }
@@ -29,7 +29,7 @@ impl From<DecodeError> for ErrorDetails {
 impl From<FromUtf8Error> for ErrorDetails {
     fn from(value: FromUtf8Error) -> Self {
         ErrorDetails {
-            message: format!("Uft8 Convert Error: {:?}", value),
+            message: format!("Uft8 Convert Error: {value:?}"),
             code: -1,
         }
     }
@@ -38,7 +38,7 @@ impl From<FromUtf8Error> for ErrorDetails {
 impl From<InvalidHeaderValue> for ErrorDetails {
     fn from(value: InvalidHeaderValue) -> Self {
         ErrorDetails {
-            message: format!("Invalid Http Header Value: {:?}", value),
+            message: format!("Invalid Http Header Value: {value:?}"),
             code: -1,
         }
     }
@@ -47,16 +47,17 @@ impl From<InvalidHeaderValue> for ErrorDetails {
 impl From<serde_json::Error> for ErrorDetails {
     fn from(value: serde_json::Error) -> Self {
         ErrorDetails {
-            message: format!("Json Error: {:?}", value),
+            message: format!("Json Error: {value:?}"),
             code: -1,
         }
     }
 }
 
+#[cfg(windows)]
 impl From<windows::core::Error> for ErrorDetails {
     fn from(value: windows::core::Error) -> Self {
         ErrorDetails {
-            message: format!("Windows API Error: {:?}", value),
+            message: format!("Windows API Error: {value:?}"),
             code: -1,
         }
     }

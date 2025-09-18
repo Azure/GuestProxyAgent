@@ -27,7 +27,8 @@ use windows::{
 };
 
 use crate::{
-    certificate::certificate_helper::CertificateDetails, client::data_model::error::ErrorDetails,
+    certificate::certificate_helper::CertificateDetailsWrapper,
+    client::data_model::error::ErrorDetails,
 };
 
 pub struct CertificateDetailsWindows {
@@ -45,25 +46,9 @@ impl Drop for CertificateDetailsWindows {
     }
 }
 
-impl CertificateDetails for CertificateDetailsWindows {
-    type CertificateContext = *mut CERT_CONTEXT;
-
-    fn get_certificate_context(&self) -> &Self::CertificateContext {
-        &self.p_cert_ctx
-    }
-
-    fn set_certificate_context(&mut self, cert_context: Self::CertificateContext) {
-        self.p_cert_ctx = cert_context;
-    }
-
-    fn get_public_cert_der(&self) -> &[u8] {
-        &self.public_key_der
-    }
-}
-
 pub fn generate_self_signed_certificate_windows(
     subject_name: &str,
-) -> Result<impl CertificateDetails<CertificateContext = *mut CERT_CONTEXT>, ErrorDetails> {
+) -> Result<CertificateDetailsWrapper, ErrorDetails> {
     // Open KSP
     let mut h_prov = NCRYPT_PROV_HANDLE(0);
     unsafe {
@@ -110,7 +95,7 @@ pub fn generate_self_signed_certificate_windows(
     }
 
     // Set up subject name for cert
-    let subject = format!("CN={}", subject_name);
+    let subject = format!("CN={subject_name}");
     let subject_w: Vec<u16> = subject.encode_utf16().chain(Some(0)).collect();
     let mut size = 0u32;
     unsafe {
@@ -177,9 +162,12 @@ pub fn generate_self_signed_certificate_windows(
         )
     };
 
-    let res = CertificateDetailsWindows {
+    let cert_detials_windows = CertificateDetailsWindows {
         public_key_der: cert_der.to_vec(),
         p_cert_ctx: cert_ctx,
+    };
+    let res = CertificateDetailsWrapper {
+        cert_details: cert_detials_windows,
     };
 
     // Cleanup
@@ -192,11 +180,11 @@ pub fn generate_self_signed_certificate_windows(
 
 pub fn decrypt_from_base64_windows(
     base64_input: &str,
-    cert_details: &impl CertificateDetails<CertificateContext = *mut CERT_CONTEXT>,
+    cert_details_wrapper: &CertificateDetailsWrapper,
 ) -> Result<String, ErrorDetails> {
     let encrypted = base64_input.replace("\r", "").replace("\n", "");
     let encrypted_payload = &base64::engine::general_purpose::STANDARD.decode(encrypted)?;
-    let p_cert_ctx = *cert_details.get_certificate_context();
+    let p_cert_ctx = cert_details_wrapper.cert_details.p_cert_ctx;
 
     // Acquire the private key handle using the CNG-compatible function.
     let mut h_key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE(0);

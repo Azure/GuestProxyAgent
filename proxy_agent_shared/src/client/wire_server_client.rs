@@ -59,11 +59,11 @@ impl WireServerClient {
                 if resp.status().is_success() {
                     let body = resp.text().await.map_err(|e| ErrorDetails {
                         code: -1,
-                        message: format!("{}", e),
+                        message: format!("{e}"),
                     })?;
                     let result = from_str::<T>(&body).map_err(|e| ErrorDetails {
                         code: -2,
-                        message: format!("XML Deserialization Failed: {}", e),
+                        message: format!("XML Deserialization Failed: {e}"),
                     })?;
                     Ok(result)
                 } else {
@@ -80,7 +80,7 @@ impl WireServerClient {
             }
             Err(e) => Err(ErrorDetails {
                 code: -3,
-                message: format!("Request Error: {}", e),
+                message: format!("Request Error: {e}"),
             }),
         }
     }
