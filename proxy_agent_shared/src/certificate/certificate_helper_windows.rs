@@ -394,3 +394,58 @@ fn build_cert_extensions(
     });
     Ok(extensions)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::{
+        core::PSTR,
+        Win32::Security::Cryptography::{
+            szOID_NIST_AES256_CBC, CryptEncryptMessage, CRYPT_ENCRYPT_MESSAGE_PARA,
+        },
+    };
+
+    #[test]
+    fn test_certificate_decryption() {
+        let cert = generate_self_signed_certificate_windows(&Uuid::new_v4().to_string()).unwrap();
+
+        let org_str = "Hello, World!";
+        let encrypted = encrypt(&cert.cert_details, org_str);
+
+        let decrypted = decrypt_from_base64_windows(&encrypted, &cert).unwrap();
+
+        assert!(decrypted.eq(org_str))
+    }
+
+    pub fn encrypt(cert: &CertificateDetailsWindows, org_str: &str) -> String {
+        let mut info = CRYPT_ENCRYPT_MESSAGE_PARA::default();
+        info.cbSize = std::mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32;
+        info.dwMsgEncodingType = X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0;
+        info.ContentEncryptionAlgorithm.pszObjId = PSTR(szOID_NIST_AES256_CBC.as_ptr() as *mut _);
+        info.dwFlags = 0;
+        let cert_ctx_ptrs = [cert.p_cert_ctx as *const _];
+        let mut encrypted_size: u32 = 0;
+        unsafe {
+            CryptEncryptMessage(
+                &info,
+                &cert_ctx_ptrs,
+                Some(org_str.as_bytes()),
+                None,
+                &mut encrypted_size as *mut u32,
+            )
+            .unwrap();
+        }
+        let mut encrypted_data = vec![0u8; encrypted_size as usize];
+        unsafe {
+            CryptEncryptMessage(
+                &info,
+                &cert_ctx_ptrs,
+                Some(org_str.as_bytes()),
+                Some(encrypted_data.as_mut_ptr()),
+                &mut encrypted_size as *mut u32,
+            )
+            .unwrap();
+        }
+        return base64::engine::general_purpose::STANDARD.encode(&encrypted_data);
+    }
+}
