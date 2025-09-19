@@ -8,9 +8,10 @@ use crate::client::data_model::hostga_plugin_model::{
 };
 use crate::common::error::Error;
 use crate::common::formatted_error::FormattedError;
+use crate::common::hyper_client;
 use crate::common::hyper_client::read_response_body_as_string;
 use crate::common::result::Result;
-use crate::common::{hyper_client, logger};
+use crate::logger::LoggerLevel;
 use base64::Engine;
 use http::{Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ use uuid::Uuid;
 
 pub struct HostGAPluginClient {
     base_url: String,
+    logger: fn(LoggerLevel, String) -> (),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,9 +41,10 @@ impl HostGAPluginClient {
     const TRANSPORT_CERTIFICATE_HEADER: &'static str = "x-ms-guest-agent-public-x509-cert";
     const TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER: &'static str = "x-ms-cipher-name";
 
-    pub fn new(base_url: &str) -> HostGAPluginClient {
+    pub fn new(base_url: &str, logger: fn(LoggerLevel, String) -> ()) -> HostGAPluginClient {
         HostGAPluginClient {
             base_url: base_url.to_string(),
+            logger,
         }
     }
 
@@ -49,6 +52,12 @@ impl HostGAPluginClient {
         &self,
         etag: Option<String>,
     ) -> Result<HostGAPluginResponse<VMSettings>> {
+        let logger = self.logger;
+
+        logger(
+            LoggerLevel::Info,
+            format!("Requesting VMSettings with etag: {etag:?}"),
+        );
         let mut headers = HashMap::new();
         if let Some(etag) = etag {
             headers.insert(Self::ETAG_HEADER.to_string(), etag);
@@ -64,6 +73,12 @@ impl HostGAPluginClient {
         &self,
         cert_revision: u32,
     ) -> Result<HostGAPluginResponse<Certificates>> {
+        let logger = self.logger;
+        logger(
+            LoggerLevel::Info,
+            format!("Requesting certificates with revision: {cert_revision}"),
+        );
+
         let cert = generate_self_signed_certificate(&Uuid::new_v4().to_string())?;
         let cert_der = cert.get_public_cert_der();
         let cert_base64 = base64::engine::general_purpose::STANDARD.encode(cert_der);
@@ -75,8 +90,6 @@ impl HostGAPluginClient {
             Self::HOSTGAP_CIPHER.to_string(),
         );
 
-        // to-do: use logger
-        println!("Requesting certificates with headers: {headers:?}");
         let raw_certs_resp = self
             .get::<RawCertificatesPayload>(
                 &format!(
@@ -120,6 +133,7 @@ impl HostGAPluginClient {
     where
         for<'a> T: Deserialize<'a>,
     {
+        let logger = self.logger;
         let url: Uri = url
             .parse::<hyper::Uri>()
             .map_err(|e| Error::ParseUrl(url.to_string(), e.to_string()))?;
@@ -128,7 +142,8 @@ impl HostGAPluginClient {
 
         let (host, port) = hyper_client::host_port_from_uri(&url)?;
         let response =
-            hyper_client::send_request(&host, port, request, logger::write_warning).await?;
+            hyper_client::send_request(&host, port, request, move |m| logger(LoggerLevel::Warn, m))
+                .await?;
 
         let etag = response
             .headers()
