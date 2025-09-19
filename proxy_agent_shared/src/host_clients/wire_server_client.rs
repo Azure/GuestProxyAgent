@@ -4,8 +4,8 @@ use http::Uri;
 use serde::Deserialize;
 
 use crate::{
-    client::data_model::wire_server_model::{GoalState, Versions},
     common::{error::Error, hyper_client, result::Result},
+    host_clients::data_model::wire_server_model::{GoalState, Versions},
     logger::LoggerLevel,
 };
 

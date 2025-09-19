@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use crate::certificate::certificate_helper::{
     decrypt_from_base64, generate_self_signed_certificate,
 };
-use crate::client::data_model::hostga_plugin_model::{
-    Certificates, RawCertificatesPayload, VMSettings,
-};
 use crate::common::error::Error;
 use crate::common::formatted_error::FormattedError;
 use crate::common::hyper_client;
 use crate::common::hyper_client::read_response_body_as_string;
 use crate::common::result::Result;
+use crate::host_clients::data_model::hostga_plugin_model::{
+    Certificates, RawCertificatesPayload, VMSettings,
+};
 use crate::logger::LoggerLevel;
 use base64::Engine;
 use http::{Method, StatusCode, Uri};
