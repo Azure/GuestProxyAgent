@@ -19,7 +19,6 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
 base64 = "0.22.1"
-reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 quick-xml = { version = "0.38.0", features = ["serialize", "serde-types"]}
 uuid = { version = "1.8", features = ["v4"] }
 clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 

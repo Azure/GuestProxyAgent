@@ -28,7 +28,7 @@ use windows::{
 
 use crate::{
     certificate::certificate_helper::CertificateDetailsWrapper,
-    client::data_model::error::ErrorDetails,
+    common::formatted_error::FormattedError,
 };
 
 pub struct CertificateDetailsWindows {
@@ -48,7 +48,7 @@ impl Drop for CertificateDetailsWindows {
 
 pub fn generate_self_signed_certificate_windows(
     subject_name: &str,
-) -> Result<CertificateDetailsWrapper, ErrorDetails> {
+) -> Result<CertificateDetailsWrapper, FormattedError> {
     // Open KSP
     let mut h_prov = NCRYPT_PROV_HANDLE(0);
     unsafe {
@@ -181,7 +181,7 @@ pub fn generate_self_signed_certificate_windows(
 pub fn decrypt_from_base64_windows(
     base64_input: &str,
     cert_details_wrapper: &CertificateDetailsWrapper,
-) -> Result<String, ErrorDetails> {
+) -> Result<String, FormattedError> {
     let encrypted = base64_input.replace("\r", "").replace("\n", "");
     let encrypted_payload = &base64::engine::general_purpose::STANDARD.decode(encrypted)?;
     let p_cert_ctx = cert_details_wrapper.cert_details.p_cert_ctx;
@@ -218,7 +218,7 @@ pub fn decrypt_from_base64_windows(
     };
 
     if msg_handle.is_null() {
-        return Err(ErrorDetails {
+        return Err(FormattedError {
             code: -1,
             message: "Failed to open message handle to decrypt.".to_string(),
         });
@@ -273,7 +273,7 @@ pub fn decrypt_from_base64_windows(
 
 fn build_cert_extensions(
     h_key: HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
-) -> Result<Vec<CERT_EXTENSION>, ErrorDetails> {
+) -> Result<Vec<CERT_EXTENSION>, FormattedError> {
     let mut extensions: Vec<CERT_EXTENSION> = Vec::new();
 
     // Key Usage

@@ -1,16 +1,16 @@
-use quick_xml::de::from_str;
-use reqwest::Client;
+use std::collections::HashMap;
+
+use http::Uri;
 use serde::Deserialize;
 
-use crate::client::data_model::{
-    error::ErrorDetails,
-    wire_server_model::{GoalState, Versions},
+use crate::{
+    client::data_model::wire_server_model::{GoalState, Versions},
+    common::{error::Error, hyper_client, logger, result::Result},
 };
 
 pub struct WireServerClient {
     base_url: String,
     version: String,
-    client: Client,
 }
 
 impl WireServerClient {
@@ -22,21 +22,20 @@ impl WireServerClient {
         WireServerClient {
             base_url: base_url.to_string(),
             version: "2015-04-05".to_string(),
-            client: Client::new(),
         }
     }
 
     // http://168.63.129.16?comp=Versions
-    pub async fn get_versions(&self) -> Result<Versions, ErrorDetails> {
+    pub async fn get_versions(&self) -> Result<Versions> {
         self.get::<Versions>(Self::VERSIONS_URL).await
     }
 
     // http://168.63.129.16/machine?comp=goalstate
-    pub async fn get_goal_state(&self) -> Result<GoalState, ErrorDetails> {
+    pub async fn get_goal_state(&self) -> Result<GoalState> {
         self.get::<GoalState>(Self::GOAL_STATE_URL).await
     }
 
-    pub async fn get<T>(&self, sub_url: &str) -> Result<T, ErrorDetails>
+    pub async fn get<T>(&self, sub_url: &str) -> Result<T>
     where
         T: for<'a> Deserialize<'a>,
     {
@@ -44,44 +43,20 @@ impl WireServerClient {
             .await
     }
 
-    pub async fn get_url<T>(&self, url: &str) -> Result<T, ErrorDetails>
+    pub async fn get_url<T>(&self, url: &str) -> Result<T>
     where
         T: for<'a> Deserialize<'a>,
     {
-        match self
-            .client
-            .get(url)
-            .header(Self::X_MS_VERSION_HEADER, &self.version)
-            .send()
+        let url: Uri = url
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url.to_string(), e.to_string()))?;
+
+        let mut headers = HashMap::new();
+        headers.insert(Self::X_MS_VERSION_HEADER.to_string(), self.version.clone());
+
+        let res = hyper_client::get(&url, &headers, None, None, logger::write_warning)
             .await
-        {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    let body = resp.text().await.map_err(|e| ErrorDetails {
-                        code: -1,
-                        message: format!("{e}"),
-                    })?;
-                    let result = from_str::<T>(&body).map_err(|e| ErrorDetails {
-                        code: -2,
-                        message: format!("XML Deserialization Failed: {e}"),
-                    })?;
-                    Ok(result)
-                } else {
-                    let status = resp.status();
-                    Err(ErrorDetails {
-                        code: status.as_u16() as i32,
-                        message: format!(
-                            "Http Error Status: {}, Body: {}",
-                            status,
-                            resp.text().await.unwrap_or_default()
-                        ),
-                    })
-                }
-            }
-            Err(e) => Err(ErrorDetails {
-                code: -3,
-                message: format!("Request Error: {e}"),
-            }),
-        }
+            .unwrap();
+        Ok(res)
     }
 }

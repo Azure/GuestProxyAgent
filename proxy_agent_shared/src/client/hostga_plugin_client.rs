@@ -1,20 +1,23 @@
+use std::collections::HashMap;
+
 use crate::certificate::certificate_helper::{
     decrypt_from_base64, generate_self_signed_certificate,
 };
-use crate::client::data_model::error::ErrorDetails;
 use crate::client::data_model::hostga_plugin_model::{
     Certificates, RawCertificatesPayload, VMSettings,
 };
+use crate::common::error::Error;
+use crate::common::formatted_error::FormattedError;
+use crate::common::hyper_client::read_response_body_as_string;
+use crate::common::result::Result;
+use crate::common::{hyper_client, logger};
 use base64::Engine;
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderValue;
-use reqwest::{Client, StatusCode};
+use http::{Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub struct HostGAPluginClient {
     base_url: String,
-    client: Client,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,6 +31,7 @@ pub struct HostGAPluginResponse<T> {
 impl HostGAPluginClient {
     const CERTIFICATES_URL: &'static str = "certificates";
     const VMSETTINGS_URL: &'static str = "vmSettings";
+    const HOSTGAP_CIPHER: &'static str = "AES256_CBC";
 
     const ETAG_HEADER: &'static str = "etag";
     const X_MS_SERVER_VERSION_HEADER: &'static str = "x-ms-server-version";
@@ -38,14 +42,20 @@ impl HostGAPluginClient {
     pub fn new(base_url: &str) -> HostGAPluginClient {
         HostGAPluginClient {
             base_url: base_url.to_string(),
-            client: Client::new(),
         }
     }
 
-    pub async fn get_vmsettings(&self) -> Result<HostGAPluginResponse<VMSettings>, ErrorDetails> {
+    pub async fn get_vmsettings(
+        &self,
+        etag: Option<String>,
+    ) -> Result<HostGAPluginResponse<VMSettings>> {
+        let mut headers = HashMap::new();
+        if let Some(etag) = etag {
+            headers.insert(Self::ETAG_HEADER.to_string(), etag);
+        }
         self.get::<VMSettings>(
             &format!("{}/{}", self.base_url, Self::VMSETTINGS_URL),
-            Option::None,
+            &headers,
         )
         .await
     }
@@ -53,21 +63,19 @@ impl HostGAPluginClient {
     pub async fn get_certificates(
         &self,
         cert_revision: u32,
-    ) -> Result<HostGAPluginResponse<Certificates>, ErrorDetails> {
+    ) -> Result<HostGAPluginResponse<Certificates>> {
         let cert = generate_self_signed_certificate(&Uuid::new_v4().to_string())?;
-        //let cert = get_cert_by_thumbprint("9bf93bb248b4504626c5d1247da2e7c5f8e0a03a")?;
         let cert_der = cert.get_public_cert_der();
         let cert_base64 = base64::engine::general_purpose::STANDARD.encode(cert_der);
 
-        let mut headers = HeaderMap::new();
+        let mut headers = HashMap::new();
+        headers.insert(Self::TRANSPORT_CERTIFICATE_HEADER.to_string(), cert_base64);
         headers.insert(
-            Self::TRANSPORT_CERTIFICATE_HEADER,
-            HeaderValue::from_str(&cert_base64)?,
+            Self::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER.to_string(),
+            Self::HOSTGAP_CIPHER.to_string(),
         );
-        headers.insert(
-            Self::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER,
-            HeaderValue::from_str("AES256_CBC")?,
-        );
+
+        // to-do: use logger
         println!("Requesting certificates with headers: {headers:?}");
         let raw_certs_resp = self
             .get::<RawCertificatesPayload>(
@@ -77,7 +85,7 @@ impl HostGAPluginClient {
                     Self::CERTIFICATES_URL,
                     cert_revision
                 ),
-                Some(headers),
+                &headers,
             )
             .await?;
 
@@ -89,62 +97,58 @@ impl HostGAPluginClient {
             let certs = decrypt_from_base64(cert_base64, &cert)?;
 
             return Ok(HostGAPluginResponse {
-                body: Some(serde_json::from_str::<Certificates>(&certs)?),
+                body: Some(
+                    serde_json::from_str::<Certificates>(&certs)
+                        .map_err(|e| FormattedError::from(e))?,
+                ),
                 etag: raw_certs_resp.etag.clone(),
                 certificates_revision: raw_certs_resp.certificates_revision,
                 version: raw_certs_resp.version.clone(),
             });
         }
-
-        Err(ErrorDetails {
+        Err(FormattedError {
             message: "certificate payload is empty.".to_string(),
             code: -1,
-        })
+        }
+        .into())
     }
 
     pub async fn get<T>(
         &self,
         url: &str,
-        headers_map: Option<HeaderMap>,
-    ) -> Result<HostGAPluginResponse<T>, ErrorDetails>
+        headers: &HashMap<String, String>,
+    ) -> Result<HostGAPluginResponse<T>>
     where
         for<'a> T: Deserialize<'a>,
     {
-        let mut request = self.client.get(url);
-        println!("Requesting URL: {url}");
-        if let Some(headers) = headers_map {
-            request = request.headers(headers);
-        }
+        let url: Uri = url
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url.to_string(), e.to_string()))?;
 
-        let resp = request.send().await.map_err(|e| {
-            let mut error_code = -1;
-            if let Some(status) = e.status() {
-                error_code = status.as_u16() as i32;
-            }
-            ErrorDetails {
-                code: error_code,
-                message: format!("HostGAPlugin Request Error: {e}, url: {url}"),
-            }
-        })?;
+        let request = hyper_client::build_request(Method::GET, &url, headers, None, None, None)?;
 
-        let headers = resp.headers();
+        let (host, port) = hyper_client::host_port_from_uri(&url)?;
+        let response =
+            hyper_client::send_request(&host, port, request, logger::write_warning).await?;
 
-        let etag = headers
+        let etag = response
+            .headers()
             .get(Self::ETAG_HEADER)
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_string());
-
-        let certificates_revision = headers
+        let version = response
+            .headers()
+            .get(Self::X_MS_SERVER_VERSION_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+        let certificates_revision = response
+            .headers()
             .get(Self::X_MS_CERTIFICATES_REVISION_HEADER)
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok());
 
-        let version = headers
-            .get(Self::X_MS_SERVER_VERSION_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.to_string());
-
-        if resp.status() == StatusCode::NOT_MODIFIED {
+        let status = response.status();
+        if status == StatusCode::NOT_MODIFIED {
             let _hostgap_response: HostGAPluginResponse<T> = HostGAPluginResponse {
                 body: None,
                 etag,
@@ -152,31 +156,20 @@ impl HostGAPluginClient {
                 certificates_revision,
             };
             return Ok(_hostgap_response);
-        } else if resp.status().is_success() {
-            let body = resp.text().await.map_err(|e| ErrorDetails {
-                code: -1,
-                message: format!("Failed to get response body: {e}"),
-            })?;
-            let body_json = serde_json::from_str::<T>(&body).map_err(|e| ErrorDetails {
-                code: -1,
-                message: format!("Failed to deserialized json payload, error: {e}"),
-            })?;
+        } else if status.is_success() {
+            let body_obj = hyper_client::read_response_body::<T>(response).await?;
             return Ok(HostGAPluginResponse {
-                body: Option::Some(body_json),
+                body: Some(body_obj),
                 etag,
-                version,
                 certificates_revision,
+                version,
             });
         }
-
-        let status = resp.status();
-        Err(ErrorDetails {
+        let body_string = read_response_body_as_string(response, "utf-8").await?;
+        Err(FormattedError {
             code: status.as_u16() as i32,
-            message: format!(
-                "Http Error Status: {}, Body: {}",
-                status,
-                resp.text().await.unwrap_or_default()
-            ),
-        })
+            message: format!("Http Error Status: {}, Body: {}", status, &body_string),
+        }
+        .into())
     }
 }

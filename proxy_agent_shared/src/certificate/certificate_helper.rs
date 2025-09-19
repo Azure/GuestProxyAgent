@@ -1,7 +1,6 @@
-use crate::client::data_model::error::ErrorDetails;
-
 #[cfg(windows)]
 use crate::certificate::certificate_helper_windows::CertificateDetailsWindows;
+use crate::common::formatted_error::FormattedError;
 
 #[cfg(windows)]
 type CertDetailsType = CertificateDetailsWindows;
@@ -28,7 +27,7 @@ impl CertificateDetailsWrapper {
 
 pub fn generate_self_signed_certificate(
     _subject_name: &str,
-) -> Result<CertificateDetailsWrapper, ErrorDetails> {
+) -> Result<CertificateDetailsWrapper, FormattedError> {
     #[cfg(windows)]
     {
         use crate::certificate::certificate_helper_windows::generate_self_signed_certificate_windows;
@@ -44,7 +43,7 @@ pub fn generate_self_signed_certificate(
 pub fn decrypt_from_base64(
     _base64_input: &str,
     _cert_details: &CertificateDetailsWrapper,
-) -> Result<String, ErrorDetails> {
+) -> Result<String, FormattedError> {
     #[cfg(windows)]
     {
         use crate::certificate::certificate_helper_windows::decrypt_from_base64_windows;

@@ -3,6 +3,8 @@
 
 use http::{uri::InvalidUri, StatusCode};
 
+use crate::common::formatted_error::FormattedError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("IO error: {0}: {1}")]
@@ -48,6 +50,15 @@ pub enum Error {
 
     #[error("{0}")]
     FindAuditEntryError(String),
+
+    #[error("{0}")]
+    OtherError(FormattedError),
+}
+
+impl From<FormattedError> for Error {
+    fn from(value: FormattedError) -> Self {
+        Error::OtherError(value)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
