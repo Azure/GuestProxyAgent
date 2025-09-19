@@ -117,3 +117,135 @@ pub struct Certificate {
     #[serde(rename = "certificateBlobFormatType")]
     pub certificate_blob_format_type: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn certificates_deserialization_test() {
+        let certificates_json = r#"
+        {
+            "activityId": "c92847b6-1c5d-402e-b919-c0157f4bda74",
+            "correlationId": "80e22e3b-3f9a-424e-b300-6cda2dd7e718",
+            "certificates": [
+            {
+                "name": "TenantEncryptionCert",
+                "storeName": "My",
+                "configurationLevel": "System",
+                "certificateInBase64": "certificateInBase64_test",
+                "includePrivateKey": false,
+                "thumbprint": "thumbprint_test",
+                "certificateBlobFormatType": "PfxInClear"
+            }
+            ]
+        }
+        "#;
+        let certificates: Certificates = serde_json::from_str(certificates_json).unwrap();
+        assert_eq!(
+            certificates.activity_id.unwrap(),
+            "c92847b6-1c5d-402e-b919-c0157f4bda74"
+        );
+        assert_eq!(
+            certificates.correlation_id.unwrap(),
+            "80e22e3b-3f9a-424e-b300-6cda2dd7e718"
+        );
+        assert_eq!(certificates.certificates.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            certificates.certificates.as_ref().unwrap()[0]
+                .certificate_in_base64
+                .as_ref()
+                .unwrap(),
+            "certificateInBase64_test"
+        );
+        assert_eq!(
+            certificates.certificates.as_ref().unwrap()[0]
+                .thumbprint
+                .as_ref()
+                .unwrap(),
+            "thumbprint_test"
+        );
+    }
+
+    #[test]
+    fn vmsettings_deserialization_test() {
+        let vmsettings_json = r#"
+        {
+            "hostGAPluginVersion": "1.0.8.179",
+            "activityId": "38d627ab-5656-4762-bad3-03c77c22faee",
+            "correlationId": "ad342255-60e3-edfc-8b8d-298e5dd6909b",
+            "inSvdSeqNo": 1,
+            "certificatesRevision": 0,
+            "extensionsLastModifiedTickCount": 638931417044754873,
+            "extensionGoalStatesSource": "FastTrack",
+            "statusUploadBlob": {
+            "statusBlobType": "PageBlob",
+            "value": "string"
+            },
+            "gaFamilies": [
+            {
+                "name": "Win7",
+                "version": "2.7.41491.1176",
+                "isVersionFromRSM": false,
+                "isVMEnabledForRSMUpgrades": true,
+                "uris": [
+                "uri"
+                ]
+            },
+            {
+                "name": "Win8",
+                "version": "2.7.41491.1176",
+                "isVersionFromRSM": false,
+                "isVMEnabledForRSMUpgrades": true,
+                "uris": [
+                "uri"
+                ]
+            }
+            ],
+            "extensionGoalStates": [
+            {
+                "name": "test",
+                "version": "1.0.1",
+                "location": "localtion",
+                "failoverLocation": "location",
+                "additionalLocations": [
+                "location"
+                ],
+                "state": "enabled",
+                "autoUpgrade": true,
+                "runAsStartupTask": false,
+                "isJson": true,
+                "useExactVersion": true,
+                "settingsSeqNo": 0,
+                "isMultiConfig": false,
+                "settings": [
+                {
+                    "protectedSettingsCertThumbprint": null,
+                    "protectedSettings": null,
+                    "publicSettings": "{}"
+                }
+                ]
+            }
+            ]
+        }"#;
+
+        let vmsettings: VMSettings = serde_json::from_str(vmsettings_json).unwrap();
+        assert_eq!(vmsettings.host_ga_plugin_version.unwrap(), "1.0.8.179");
+        assert_eq!(
+            vmsettings.activity_id.unwrap(),
+            "38d627ab-5656-4762-bad3-03c77c22faee"
+        );
+        assert_eq!(
+            vmsettings.correlation_id.unwrap(),
+            "ad342255-60e3-edfc-8b8d-298e5dd6909b"
+        );
+        assert_eq!(vmsettings.in_svd_seq_no.unwrap(), 1);
+        assert_eq!(vmsettings.certificates_revision.unwrap(), 0);
+        assert_eq!(
+            vmsettings.extensions_last_modified_tick_count.unwrap(),
+            638931417044754873
+        );
+        assert_eq!(vmsettings.ga_families.as_ref().unwrap().len(), 2);
+        assert_eq!(vmsettings.extension_goal_states.as_ref().unwrap().len(), 1);
+    }
+}
