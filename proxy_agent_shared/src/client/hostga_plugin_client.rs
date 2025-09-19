@@ -98,8 +98,7 @@ impl HostGAPluginClient {
 
             return Ok(HostGAPluginResponse {
                 body: Some(
-                    serde_json::from_str::<Certificates>(&certs)
-                        .map_err(|e| FormattedError::from(e))?,
+                    serde_json::from_str::<Certificates>(&certs).map_err(FormattedError::from)?,
                 ),
                 etag: raw_certs_resp.etag.clone(),
                 certificates_revision: raw_certs_resp.certificates_revision,

@@ -183,7 +183,7 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
 /// # Example
 /// ```rust
 /// use std::path::PathBuf;
-/// use proxy_agent_shared::misc_helpers;
+/// use crate::misc_helpers;
 /// let dir = PathBuf::from("C:\\");
 /// let search_regex_pattern = r"^(.*\.log)$";  // search for files with .log extension
 /// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
