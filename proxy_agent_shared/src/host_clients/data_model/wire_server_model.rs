@@ -411,7 +411,7 @@ mod tests {
                 <ContainerId>c9514be2-ff0a-4dee-a059-45a0452268e7</ContainerId>
                 <RoleInstanceList>
                     <RoleInstance>
-                        <InstanceId>896a1f5d-459b-4e58-a337-d113f9e97d25._siyinVM</InstanceId>
+                        <InstanceId>896a1f5d-459b-4e58-a337-d113f9e97d25.instance</InstanceId>
                         <State>Started</State>
                         <Configuration>
                             <HostingEnvironmentConfig>HostingEnvironmentConfig_uri</HostingEnvironmentConfig>
@@ -441,7 +441,7 @@ mod tests {
         let role_instance = &role_instances[0];
         assert_eq!(
             role_instance.instance_id.as_ref().unwrap(),
-            "896a1f5d-459b-4e58-a337-d113f9e97d25._siyinVM"
+            "896a1f5d-459b-4e58-a337-d113f9e97d25.instance"
         );
         let configuration = role_instance.configuration.as_ref().unwrap();
         assert_eq!(
@@ -461,11 +461,11 @@ mod tests {
             <StoredCertificates>
                 <StoredCertificate name="TenantEncryptionCert" certificateId="sha1:45750FFF384A47DEC65C9C7BB829B27E0562726F" storeName="My" configurationLevel="System"/>
             </StoredCertificates>
-            <Deployment name="896a1f5d-459b-4e58-a337-d113f9e97d25" incarnation="0" guid="{86a4cead-325d-48e1-b9b6-440304c1d06b}">
+            <Deployment name="896a1f5d-459b-4e58-a337-d113f9e97d25" incarnation="0" guid="{0000000-0000000000-000000}">
                 <Service name="service_name" guid="{00000000-0000-0000-0000-000000000000}"/>
-                <ServiceInstance name="896a1f5d-459b-4e58-a337-d113f9e97d25.0" guid="{e79748e3-6cb4-4099-8631-12dbd17099e5}"/>
+                <ServiceInstance name="896a1f5d-459b-4e58-a337-d113f9e97d25.0" guid="{000000-000000000-000000}"/>
             </Deployment>
-            <Incarnation number="1" instance="instance_test" guid="{27cbdef9-2d6b-481c-9fd8-19719414cd86}"/>
+            <Incarnation number="1" instance="instance_test" guid="{000000000-000-00000}"/>
             <Role guid="{ad99c9e8-1821-8b8c-81a9-4653d9ba2980}" name="instance_test" hostingEnvironment="full" hostingEnvironmentVersion="0" software="" softwareType="ApplicationPackage" entryPoint="" parameters="" cpu="0" memory="0" bandwidth="0" isManagementRole="false"/>
             <HostingEnvironmentSettings name="full" Runtime="Deprecated_0.0.0.0.zip">
                 <CAS mode="full"/>
@@ -476,17 +476,11 @@ mod tests {
             </ApplicationSettings>
             <OutputEndpoints/>
             <Instances>
-                <Instance id="_siyinVM" neighborhoodID="b5b35327-9bb6-b333-0ded-727b346d6f22" address="10.0.0.4">
+                <Instance id="instance_test" neighborhoodID="b5b35327-9bb6-b333-0ded-727b346d6f22" address="10.0.0.4">
                     <FaultDomains randomID="0" updateID="0" updateCount="0"/>
                     <InputEndpoints/>
                 </Instance>
             </Instances>
-            <Neighborhoods>
-                <Neighborhood id="b5b35327-9bb6-b333-0ded-727b346d6f22" innerbandwidth="1000" innerlatency="0" outwardbandwidth="1000" outwardlatency="0" parentNeighborhoodID="953f26fb-bff8-4a02-9217-8f37e3c28389"/>
-                <Neighborhood id="953f26fb-bff8-4a02-9217-8f37e3c28389" innerbandwidth="10000" innerlatency="0" outwardbandwidth="10000" outwardlatency="0" parentNeighborhoodID="bddb828f-6ffe-427d-ac85-91f08bf5bade"/>
-                <Neighborhood id="bddb828f-6ffe-427d-ac85-91f08bf5bade" innerbandwidth="10000" innerlatency="0" outwardbandwidth="10000" outwardlatency="0" parentNeighborhoodID="0701baf7-87d6-4f35-ba9e-902569b76a33"/>
-                <Neighborhood id="0701baf7-87d6-4f35-ba9e-902569b76a33" innerbandwidth="10000" innerlatency="0" outwardbandwidth="10000" outwardlatency="0" parentNeighborhoodID=""/>
-            </Neighborhoods>
         </RDConfig>
         "#;
         let rd_config: RDConfig = quick_xml::de::from_str(xml_data).unwrap();

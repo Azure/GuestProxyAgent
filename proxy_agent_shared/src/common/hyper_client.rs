@@ -5,11 +5,12 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::hyper_client;
-//! use host_clients::goal_state::GoalState;
+//! use crate::common::hyper_client;
+//! use crate::host_clients::data_model::wire_server_model::GoalState;
 //! use std::collections::HashMap;
 //! use hyper::Uri;
 //! use std::str::FromStr;
+//! use http::Method;
 //!
 //! let mut headers = HashMap::new();
 //! headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
