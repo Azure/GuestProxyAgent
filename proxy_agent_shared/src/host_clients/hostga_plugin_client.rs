@@ -197,7 +197,7 @@ mod tests {
         let response = r#"
         {
             "body": {
-                "activityId": "c92847b6-1c5d-402e-b919-c0157f4bda74",
+                "activityId": "11111111-1111111-11111111111-111111",
                 "correlationId": "80e22e3b-3f9a-424e-b300-6cda2dd7e718",
                 "certificates": [
                 {
@@ -222,7 +222,7 @@ mod tests {
         let certs = resp.body.unwrap();
         assert_eq!(
             certs.activity_id.unwrap(),
-            "c92847b6-1c5d-402e-b919-c0157f4bda74"
+            "11111111-1111111-11111111111-111111"
         );
         assert_eq!(
             certs.correlation_id.unwrap(),
@@ -246,8 +246,8 @@ mod tests {
         {
             "body": {
                 "hostGAPluginVersion": "1.0.8.179",
-                "activityId": "38d627ab-5656-4762-bad3-03c77c22faee",
-                "correlationId": "ad342255-60e3-edfc-8b8d-298e5dd6909b",
+                "activityId": "1111-11111111-1111-11-1111",
+                "correlationId": "000000-00000000-000000-0000",
                 "inSvdSeqNo": 1,
                 "certificatesRevision": 0,
                 "extensionsLastModifiedTickCount": 638931417044754873,
@@ -280,7 +280,7 @@ mod tests {
                 {
                     "name": "extension.test",
                     "version": "1.0.1",
-                    "location": "localtion",
+                    "location": "location",
                     "failoverLocation": "location",
                     "additionalLocations": [
                     "location"
@@ -316,7 +316,7 @@ mod tests {
         let vmsettings = resp.body.unwrap();
         assert_eq!(
             vmsettings.activity_id.unwrap(),
-            "38d627ab-5656-4762-bad3-03c77c22faee"
+            "1111-11111111-1111-11-1111"
         );
         assert_eq!(
             vmsettings.extensions_last_modified_tick_count.unwrap(),
