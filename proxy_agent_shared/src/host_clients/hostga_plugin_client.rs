@@ -187,3 +187,146 @@ impl HostGAPluginClient {
         .into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_hostgaplugin_certificates_response_test() {
+        let response = r#"
+        {
+            "body": {
+                "activityId": "c92847b6-1c5d-402e-b919-c0157f4bda74",
+                "correlationId": "80e22e3b-3f9a-424e-b300-6cda2dd7e718",
+                "certificates": [
+                {
+                    "name": "TenantEncryptionCert",
+                    "storeName": "My",
+                    "configurationLevel": "System",
+                    "certificateInBase64": "certificateInBase64_test",
+                    "includePrivateKey": false,
+                    "thumbprint": "thumbprint_test",
+                    "certificateBlobFormatType": "PfxInClear"
+                }
+                ]
+            },
+            "etag": null,
+            "certificates_revision": null,
+            "version": "1.0.8.179"
+            }
+        "#;
+        let resp: HostGAPluginResponse<Certificates> =
+            serde_json::from_str(response).expect("Deserialize HostGAPluginResponse failed");
+        assert!(resp.body.is_some());
+        let certs = resp.body.unwrap();
+        assert_eq!(
+            certs.activity_id.unwrap(),
+            "c92847b6-1c5d-402e-b919-c0157f4bda74"
+        );
+        assert_eq!(
+            certs.correlation_id.unwrap(),
+            "80e22e3b-3f9a-424e-b300-6cda2dd7e718"
+        );
+        assert!(certs.certificates.is_some());
+        let cert_list = certs.certificates.unwrap();
+        assert_eq!(cert_list.len(), 1);
+        let cert = &cert_list[0];
+        assert_eq!(cert.name.as_ref().unwrap(), "TenantEncryptionCert");
+        assert_eq!(
+            cert.certificate_in_base64.as_ref().unwrap(),
+            "certificateInBase64_test"
+        );
+        assert_eq!(cert.thumbprint.as_ref().unwrap(), "thumbprint_test");
+    }
+
+    #[test]
+    fn get_hostgaplugin_vmsettings_response_test() {
+        let response = r#"
+        {
+            "body": {
+                "hostGAPluginVersion": "1.0.8.179",
+                "activityId": "38d627ab-5656-4762-bad3-03c77c22faee",
+                "correlationId": "ad342255-60e3-edfc-8b8d-298e5dd6909b",
+                "inSvdSeqNo": 1,
+                "certificatesRevision": 0,
+                "extensionsLastModifiedTickCount": 638931417044754873,
+                "extensionGoalStatesSource": "FastTrack",
+                "statusUploadBlob": {
+                "statusBlobType": "PageBlob",
+                "value": "string"
+                },
+                "gaFamilies": [
+                {
+                    "name": "Win7",
+                    "version": "2.7.41491.1176",
+                    "isVersionFromRSM": false,
+                    "isVMEnabledForRSMUpgrades": true,
+                    "uris": [
+                    "uri"
+                    ]
+                },
+                {
+                    "name": "Win8",
+                    "version": "2.7.41491.1176",
+                    "isVersionFromRSM": false,
+                    "isVMEnabledForRSMUpgrades": true,
+                    "uris": [
+                    "uri"
+                    ]
+                }
+                ],
+                "extensionGoalStates": [
+                {
+                    "name": "extension.test",
+                    "version": "1.0.1",
+                    "location": "localtion",
+                    "failoverLocation": "location",
+                    "additionalLocations": [
+                    "location"
+                    ],
+                    "state": "enabled",
+                    "autoUpgrade": true,
+                    "runAsStartupTask": false,
+                    "isJson": true,
+                    "useExactVersion": true,
+                    "settingsSeqNo": 0,
+                    "isMultiConfig": false,
+                    "settings": [
+                    {
+                        "protectedSettingsCertThumbprint": null,
+                        "protectedSettings": null,
+                        "publicSettings": "{}"
+                    }
+                    ]
+                }
+                ]
+            },
+            "etag": "5048704324908356042",
+            "certificates_revision": 1,
+            "version": "1.0.8.179"
+            }
+        "#;
+        let resp: HostGAPluginResponse<VMSettings> =
+            serde_json::from_str(response).expect("Deserialize HostGAPluginResponse failed");
+        assert!(resp.body.is_some());
+        assert_eq!(resp.etag.unwrap(), "5048704324908356042");
+        assert_eq!(resp.certificates_revision.unwrap(), 1);
+
+        let vmsettings = resp.body.unwrap();
+        assert_eq!(
+            vmsettings.activity_id.unwrap(),
+            "38d627ab-5656-4762-bad3-03c77c22faee"
+        );
+        assert_eq!(
+            vmsettings.extensions_last_modified_tick_count.unwrap(),
+            638931417044754873
+        );
+        assert_eq!(vmsettings.extension_goal_states.as_ref().unwrap().len(), 1);
+        assert_eq!(vmsettings.ga_families.as_ref().unwrap().len(), 2);
+
+        let extension = &vmsettings.extension_goal_states.as_ref().unwrap()[0];
+        assert_eq!(extension.name.as_ref().unwrap(), "extension.test");
+        assert_eq!(extension.version.as_ref().unwrap(), "1.0.1");
+    }
+}
