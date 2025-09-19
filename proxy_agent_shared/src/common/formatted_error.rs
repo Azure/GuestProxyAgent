@@ -28,7 +28,7 @@ impl From<DecodeError> for FormattedError {
 impl From<FromUtf8Error> for FormattedError {
     fn from(value: FromUtf8Error) -> Self {
         FormattedError {
-            message: format!("Uft8 Convert Error: {value:?}"),
+            message: format!("Utf-8 Convert Error: {value:?}"),
             code: -1,
         }
     }
