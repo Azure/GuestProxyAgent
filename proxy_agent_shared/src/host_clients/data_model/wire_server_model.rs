@@ -476,7 +476,7 @@ mod tests {
             </ApplicationSettings>
             <OutputEndpoints/>
             <Instances>
-                <Instance id="instance_test" neighborhoodID="b5b35327-9bb6-b333-0ded-727b346d6f22" address="10.0.0.4">
+                <Instance id="instance_test" neighborhoodID="0000-00000000-000000" address="10.0.0.4">
                     <FaultDomains randomID="0" updateID="0" updateCount="0"/>
                     <InputEndpoints/>
                 </Instance>
