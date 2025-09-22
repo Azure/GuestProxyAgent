@@ -7,10 +7,10 @@
 /proxy_agent_setup/target/
 /out/
 /build/
-/rpmbuild/SOURCES
-/rpmbuild/BUILD/
-/rpmbuild/RPMS/
-/rpmbuild/SRPMS/
+/rpm-build/SOURCES
+/rpm-build/BUILD/
+/rpm-build/RPMS/
+/rpm-build/SRPMS/
 /debbuild/
 
 .idea/
