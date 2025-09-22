@@ -55,8 +55,7 @@ impl WireServerClient {
             .parse::<hyper::Uri>()
             .map_err(|e| Error::ParseUrl(url.to_string(), e.to_string()))?;
 
-        let mut headers = HashMap::new();
-        headers.insert(Self::X_MS_VERSION_HEADER.to_string(), self.version.clone());
+        let headers = self.common_headers();
 
         let res = hyper_client::get(&url, &headers, None, None, move |message| {
             logger(LoggerLevel::Warn, message)
@@ -64,5 +63,34 @@ impl WireServerClient {
         .await
         .unwrap();
         Ok(res)
+    }
+
+    fn common_headers(&self) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        headers.insert(Self::X_MS_VERSION_HEADER.to_string(), self.version.clone());
+        headers
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_server_client_creation_test() {
+        let client = WireServerClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        assert_eq!(client.base_url, "http://localhost:8080");
+        assert_eq!(client.version, "2015-04-05");
+    }
+
+    #[test]
+    fn wire_server_client_common_headers_test() {
+        let client = WireServerClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        let headers = client.common_headers();
+        assert_eq!(headers.get("x-ms-version").unwrap(), "2015-04-05");
     }
 }

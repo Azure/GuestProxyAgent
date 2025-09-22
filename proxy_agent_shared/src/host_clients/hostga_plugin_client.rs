@@ -83,12 +83,7 @@ impl HostGAPluginClient {
         let cert_der = cert.get_public_cert_der();
         let cert_base64 = base64::engine::general_purpose::STANDARD.encode(cert_der);
 
-        let mut headers = HashMap::new();
-        headers.insert(Self::TRANSPORT_CERTIFICATE_HEADER.to_string(), cert_base64);
-        headers.insert(
-            Self::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER.to_string(),
-            Self::HOSTGAP_CIPHER.to_string(),
-        );
+        let headers = self.certificate_request_headers(&cert_base64);
 
         let raw_certs_resp = self
             .get::<RawCertificatesPayload>(
@@ -186,11 +181,53 @@ impl HostGAPluginClient {
         }
         .into())
     }
+
+    fn certificate_request_headers(&self, cert: &str) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        headers.insert(
+            Self::TRANSPORT_CERTIFICATE_HEADER.to_string(),
+            cert.to_string(),
+        );
+        headers.insert(
+            Self::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER.to_string(),
+            Self::HOSTGAP_CIPHER.to_string(),
+        );
+        headers
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hostgaplugin_client_creation_test() {
+        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        assert_eq!(client.base_url, "http://localhost:8080");
+    }
+
+    #[test]
+    fn certificate_request_headers_test() {
+        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        let cert = "test_cert";
+        let headers = client.certificate_request_headers(cert);
+        assert_eq!(
+            headers
+                .get(HostGAPluginClient::TRANSPORT_CERTIFICATE_HEADER)
+                .unwrap(),
+            cert
+        );
+        assert_eq!(
+            headers
+                .get(HostGAPluginClient::TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER)
+                .unwrap(),
+            HostGAPluginClient::HOSTGAP_CIPHER
+        );
+    }
 
     #[test]
     fn get_hostgaplugin_certificates_response_test() {
