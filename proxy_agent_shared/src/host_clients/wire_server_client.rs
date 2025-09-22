@@ -20,10 +20,12 @@ impl WireServerClient {
     const VERSIONS_URL: &'static str = "?comp=Versions";
     const GOAL_STATE_URL: &'static str = "machine?comp=goalstate";
 
+    const DEFAULT_WIRE_VERSION: &'static str = "2012-11-30";
+
     pub fn new(base_url: &str, logger: fn(LoggerLevel, String) -> ()) -> WireServerClient {
         WireServerClient {
             base_url: base_url.to_string(),
-            version: "2015-04-05".to_string(),
+            version: Self::DEFAULT_WIRE_VERSION.to_string(),
             logger,
         }
     }
@@ -36,6 +38,12 @@ impl WireServerClient {
     // http://168.63.129.16/machine?comp=goalstate
     pub async fn get_goal_state(&self) -> Result<GoalState> {
         self.get::<GoalState>(Self::GOAL_STATE_URL).await
+    }
+
+    pub async fn refresh_wire_server_version(&mut self) -> Result<()> {
+        let versions = self.get_versions().await?;
+        self.update_version(versions);
+        Ok(())
     }
 
     pub async fn get<T>(&self, sub_url: &str) -> Result<T>
@@ -70,6 +78,10 @@ impl WireServerClient {
         headers.insert(Self::X_MS_VERSION_HEADER.to_string(), self.version.clone());
         headers
     }
+
+    fn update_version(&mut self, versions: Versions) {
+        self.version = versions.preferred.version;
+    }
 }
 
 #[cfg(test)]
@@ -82,7 +94,7 @@ mod tests {
             println!("{:?}: {}", level, message);
         });
         assert_eq!(client.base_url, "http://localhost:8080");
-        assert_eq!(client.version, "2015-04-05");
+        assert_eq!(client.version, WireServerClient::DEFAULT_WIRE_VERSION);
     }
 
     #[test]
@@ -92,5 +104,22 @@ mod tests {
         });
         let headers = client.common_headers();
         assert_eq!(headers.get("x-ms-version").unwrap(), "2015-04-05");
+    }
+
+    #[test]
+    fn wire_server_client_update_version_test() {
+        let mut client = WireServerClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        let versions = Versions {
+            preferred: crate::host_clients::data_model::wire_server_model::Preferred {
+                version: "2021-01-01".to_string(),
+            },
+            supported: crate::host_clients::data_model::wire_server_model::Supported {
+                versions: vec![],
+            },
+        };
+        client.update_version(versions);
+        assert_eq!(client.version, "2021-01-01");
     }
 }

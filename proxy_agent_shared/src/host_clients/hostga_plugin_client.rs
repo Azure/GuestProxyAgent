@@ -58,10 +58,9 @@ impl HostGAPluginClient {
             LoggerLevel::Info,
             format!("Requesting VMSettings with etag: {etag:?}"),
         );
-        let mut headers = HashMap::new();
-        if let Some(etag) = etag {
-            headers.insert(Self::ETAG_HEADER.to_string(), etag);
-        }
+
+        let headers = self.vmsettings_request_headers(etag);
+
         self.get::<VMSettings>(
             &format!("{}/{}", self.base_url, Self::VMSETTINGS_URL),
             &headers,
@@ -194,6 +193,14 @@ impl HostGAPluginClient {
         );
         headers
     }
+
+    fn vmsettings_request_headers(&self, etag: Option<String>) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        if let Some(etag) = etag {
+            headers.insert(Self::ETAG_HEADER.to_string(), etag);
+        }
+        headers
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +234,24 @@ mod tests {
                 .unwrap(),
             HostGAPluginClient::HOSTGAP_CIPHER
         );
+    }
+
+    #[test]
+    fn vmsettings_request_headers_test() {
+        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
+            println!("{:?}: {}", level, message);
+        });
+        let etag = Some("test_etag".to_string());
+        let headers = client.vmsettings_request_headers(etag.clone());
+        assert_eq!(
+            headers.get(HostGAPluginClient::ETAG_HEADER).unwrap(),
+            etag.as_ref().unwrap()
+        );
+
+        let headers_no_etag = client.vmsettings_request_headers(None);
+        assert!(headers_no_etag
+            .get(HostGAPluginClient::ETAG_HEADER)
+            .is_none());
     }
 
     #[test]
