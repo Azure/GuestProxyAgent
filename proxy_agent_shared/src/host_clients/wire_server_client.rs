@@ -103,7 +103,10 @@ mod tests {
             println!("{:?}: {}", level, message);
         });
         let headers = client.common_headers();
-        assert_eq!(headers.get("x-ms-version").unwrap(), "2015-04-05");
+        assert_eq!(
+            headers.get("x-ms-version").unwrap(),
+            WireServerClient::DEFAULT_WIRE_VERSION
+        );
     }
 
     #[test]
