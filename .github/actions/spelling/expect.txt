@@ -8,11 +8,15 @@ almalinux
 ATL
 ATLMFC
 autobuild
+autochangelog
+autorelease
+autosetup
 autocrlf
 aya
 AZUREPUBLICCLOUD
 azuretools
 backcompat
+bcond
 bierner
 binpath
 binskim
@@ -24,6 +28,7 @@ btrfs
 bufptr
 Bufs
 BUILDIN
+buildrequires
 buildroot
 buildshell
 byos
@@ -131,6 +136,7 @@ idstepsrun
 IEnumerable
 ieq
 iex
+ifarch
 ifaddrs
 ifindex
 IList
