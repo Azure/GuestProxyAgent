@@ -15,6 +15,7 @@ Source0:        %{name}-%{version}.tar.gz
 Source1:        vendor.tar.xz
 Patch0:         0001-Update-Cargo-files-for-Linux-only.patch
 Patch1:         0002-Fix-doc-test.patch
+Patch2:         0003-Add-feature-for-linux-service-test.patch
 ExclusiveArch:  x86_64 aarch64
 
 BuildRequires:  cargo-rpm-macros >= 24
@@ -28,7 +29,7 @@ Azure Guest Proxy Agent.}
 %global _ebpf_path linux-ebpf
 
 %prep
-%autosetup -p1 -a0
+%autosetup -p2 -a0
 # %cargo_prep
 # vendor mode for local build and manual extract Source1 into vendor
 mkdir vendor

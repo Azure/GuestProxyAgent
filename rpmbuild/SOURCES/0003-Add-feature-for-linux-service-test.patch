@@ -1,0 +1,40 @@
+From 872c1bf5d8b503359a0aecdd3b66d1ffed0c6b38 Mon Sep 17 00:00:00 2001
+From: ZhidongPeng <zpeng@microsoft.com>
+Date: Thu, 25 Sep 2025 19:20:53 +0000
+Subject: [PATCH] Add feature test-with-root for linux service unit tests
+
+---
+ proxy_agent_shared/Cargo.toml     | 5 ++++-
+ proxy_agent_shared/src/service.rs | 1 +
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/proxy_agent_shared/Cargo.toml b/proxy_agent_shared/Cargo.toml
+index 9cf6af1..c8b70c6 100644
+--- a/proxy_agent_shared/Cargo.toml
++++ b/proxy_agent_shared/Cargo.toml
+@@ -21,4 +21,7 @@ ctor = "0.3.6"                # used for test setup and clean up
+ backtrace = "0.3"             # used for get the caller module and function name
+ 
+ [target.'cfg(not(windows))'.dependencies]
+-os_info = "3.7.0"   # read Linux OS version and arch
+\ No newline at end of file
++os_info = "3.7.0"   # read Linux OS version and arch
++
++[features]
++test-with-root = []
+\ No newline at end of file
+diff --git a/proxy_agent_shared/src/service.rs b/proxy_agent_shared/src/service.rs
+index 5ca4b89..3eade7c 100644
+--- a/proxy_agent_shared/src/service.rs
++++ b/proxy_agent_shared/src/service.rs
+@@ -147,6 +147,7 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
+ #[cfg(windows)]
+ pub use windows_service::set_default_failure_actions;
+ 
++#[cfg(feature = "test-with-root")]
+ #[cfg(test)]
+ mod tests {
+     #[test]
+-- 
+2.51.0
+
