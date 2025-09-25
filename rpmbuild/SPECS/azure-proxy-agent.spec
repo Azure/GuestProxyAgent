@@ -29,7 +29,7 @@ Azure Guest Proxy Agent.}
 %global _ebpf_path linux-ebpf
 
 %prep
-%autosetup -p2 -a0
+%autosetup -p1 -a0
 # %cargo_prep
 # vendor mode for local build and manual extract Source1 into vendor
 mkdir vendor
