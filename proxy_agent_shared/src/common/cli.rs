@@ -49,3 +49,71 @@ impl Cli {
 }
 
 pub static CLI: Lazy<Cli> = Lazy::new(Cli::parse);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_version_flag() {
+        let cli = Cli::try_parse_from(["command", "--version"]).unwrap();
+        assert!(cli.version);
+        assert!(!cli.status);
+        assert!(cli.wait.is_none());
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_parse_status_with_wait() {
+        let cli = Cli::try_parse_from(["command", "--status", "--wait", "10"]).unwrap();
+        assert!(cli.status);
+        assert_eq!(cli.wait, Some(10));
+        assert!(!cli.version);
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_parse_console_command() {
+        let cli = Cli::try_parse_from(["command", "console"]).unwrap();
+        assert!(cli.is_console_mode());
+        match cli.command {
+            Some(Commands::Console) => {}
+            _ => panic!("Expected Commands::Console"),
+        }
+    }
+
+    #[test]
+    fn test_parse_status_without_wait() {
+        let cli = Cli::try_parse_from(["command", "--status"]).unwrap();
+        assert!(cli.status);
+        assert!(cli.wait.is_none());
+        assert!(!cli.version);
+    }
+
+    #[test]
+    fn test_conflicting_wait_without_status_fails() {
+        let result = Cli::try_parse_from(["command", "--wait", "5"]);
+        assert!(result.is_err(), "wait without --status should fail");
+    }
+
+    #[test]
+    fn test_no_args_defaults() {
+        let cli = Cli::try_parse_from(["command"]).unwrap();
+        assert!(!cli.status);
+        assert!(!cli.version);
+        assert!(cli.wait.is_none());
+        assert!(cli.command.is_none());
+        assert!(!cli.is_console_mode());
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn test_test_only_flags() {
+        let cli =
+            Cli::try_parse_from(["command", "--status", "--test-threads", "4", "--nocapture"])
+                .unwrap();
+        assert!(cli.status);
+        assert_eq!(cli.test_threads, Some(4));
+        assert!(cli.nocapture);
+    }
+}
