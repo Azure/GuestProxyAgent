@@ -46,7 +46,7 @@ impl From<serde_json::Error> for FormattedError {
 impl From<String> for FormattedError {
     fn from(value: String) -> Self {
         FormattedError {
-            message: format!("GeneralError: {}", value),
+            message: format!("GeneralError: {value}"),
             code: -1,
         }
     }
