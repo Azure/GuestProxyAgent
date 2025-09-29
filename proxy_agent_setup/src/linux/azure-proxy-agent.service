@@ -5,7 +5,6 @@ DefaultDependencies=no
 After=local-fs.target
 Before=network-pre.target
 # Baseline init + clean shutdown
-After=sysinit.target
 Before=shutdown.target
 Conflicts=shutdown.target
 
