@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 const REDACTED_TEXT: &str = "[REDACTED]";
-const CRED_PATTERNS: [&'static str; 17] = [
+const CRED_PATTERNS: [&str; 17] = [
             // SQL Connection String Password
             "pwd=[^;]*", 
             "password=[^;]*",
@@ -33,7 +33,7 @@ const CRED_PATTERNS: [&'static str; 17] = [
         ];
 
 static REGEX_PATTERNS: once_cell::sync::Lazy<Vec<regex::Regex>> =
-    once_cell::sync::Lazy::new(|| init_regex_patterns());
+    once_cell::sync::Lazy::new(init_regex_patterns);
 
 fn init_regex_patterns() -> Vec<regex::Regex> {
     let mut patterns = Vec::new();
@@ -49,6 +49,7 @@ pub fn redact_secrets(text: String) -> String {
     if text.is_empty() {
         return text;
     }
+
     let mut redacted_text = text.clone();
     for pattern in REGEX_PATTERNS.iter() {
         redacted_text = pattern
