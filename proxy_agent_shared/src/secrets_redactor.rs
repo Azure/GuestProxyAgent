@@ -46,6 +46,9 @@ fn init_regex_patterns() -> Vec<regex::Regex> {
 }
 
 pub fn redact_secrets(text: String) -> String {
+    if text.is_empty() {
+        return text;
+    }
     let mut redacted_text = text.clone();
     for pattern in REGEX_PATTERNS.iter() {
         redacted_text = pattern
