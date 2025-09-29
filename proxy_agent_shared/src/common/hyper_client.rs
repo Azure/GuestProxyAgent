@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn query_pairs_ignore_empty_key() {
-        let uri = "/test?=novalue&valid=1".parse().unwrap();
+        let uri = "/test?=value&valid=1".parse().unwrap();
         let pairs = super::query_pairs(&uri);
         assert_eq!(pairs, vec![("valid".to_string(), "1".to_string())]);
     }
