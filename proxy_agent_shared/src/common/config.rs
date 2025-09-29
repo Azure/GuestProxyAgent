@@ -451,6 +451,8 @@ mod tests {
             fileLogLevelForEvents: Some("InvalidLevel".to_string()),
             fileLogLevelForSystemEvents: Some("InvalidLevel".to_string()),
             enableHttpProxyTrace: None,
+            #[cfg(not(windows))]
+            cgroupRoot: None,
         };
 
         assert_eq!(config.get_file_log_level(), LoggerLevel::Info);
