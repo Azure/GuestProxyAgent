@@ -56,3 +56,28 @@ pub fn decrypt_from_base64(
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn certificate_details_wrapper_test() {
+        #[cfg(windows)]
+        {
+            let subject_name = "TestSubject";
+            let cert_details_result = generate_self_signed_certificate(subject_name);
+            assert!(cert_details_result.is_ok());
+            let cert_details = cert_details_result.unwrap();
+            let public_cert_der = cert_details.get_public_cert_der();
+            assert!(!public_cert_der.is_empty());
+        }
+        #[cfg(not(windows))]
+        {
+            // On non-Windows platforms, the function is not implemented.
+            // This test will simply ensure that the function is called without panic.
+            let subject_name = "TestSubject";
+            let cert_details_result = generate_self_signed_certificate(subject_name);
+            assert!(cert_details_result.is_err());
+        }
+    }
+}

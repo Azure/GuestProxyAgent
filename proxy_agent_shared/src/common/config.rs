@@ -6,7 +6,7 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::config;
+//! use crate::common::config;
 //!
 //! // Get the logs directory
 //! let logs_dir = config::get_logs_dir();
