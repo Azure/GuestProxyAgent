@@ -20,7 +20,7 @@ impl CertificateDetailsWrapper {
         }
         #[cfg(not(windows))]
         {
-            todo!()
+            Err("Linux version is not implemented.".to_string().into())
         }
     }
 }
@@ -36,7 +36,7 @@ pub fn generate_self_signed_certificate(
     }
     #[cfg(not(windows))]
     {
-        todo!()
+        Err("Linux version is not implemented.".to_string().into())
     }
 }
 
@@ -50,10 +50,9 @@ pub fn decrypt_from_base64(
 
         decrypt_from_base64_windows(_base64_input, _cert_details)
     }
-
     #[cfg(not(windows))]
     {
-        todo!()
+        Err("Linux version is not implemented.".to_string().into())
     }
 }
 

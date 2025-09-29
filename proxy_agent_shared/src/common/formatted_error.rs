@@ -43,6 +43,15 @@ impl From<serde_json::Error> for FormattedError {
     }
 }
 
+impl From<String> for FormattedError {
+    fn from(value: String) -> Self {
+        FormattedError {
+            message: format!("GeneralError: {}", value),
+            code: -1,
+        }
+    }
+}
+
 #[cfg(windows)]
 impl From<windows::core::Error> for FormattedError {
     fn from(value: windows::core::Error) -> Self {
