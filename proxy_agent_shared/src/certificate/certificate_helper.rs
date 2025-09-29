@@ -20,7 +20,7 @@ impl CertificateDetailsWrapper {
         }
         #[cfg(not(windows))]
         {
-            Err("Linux version is not implemented.".to_string().into())
+            todo!()
         }
     }
 }
