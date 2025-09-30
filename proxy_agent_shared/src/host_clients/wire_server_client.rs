@@ -90,18 +90,14 @@ mod tests {
 
     #[test]
     fn wire_server_client_creation_test() {
-        let client = WireServerClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let client = WireServerClient::new("http://localhost:8080", test_logger);
         assert_eq!(client.base_url, "http://localhost:8080");
         assert_eq!(client.version, WireServerClient::DEFAULT_WIRE_VERSION);
     }
 
     #[test]
     fn wire_server_client_common_headers_test() {
-        let client = WireServerClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let client = WireServerClient::new("http://localhost:8080", test_logger);
         let headers = client.common_headers();
         assert_eq!(
             headers.get("x-ms-version").unwrap(),
@@ -111,9 +107,7 @@ mod tests {
 
     #[test]
     fn wire_server_client_update_version_test() {
-        let mut client = WireServerClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let mut client = WireServerClient::new("http://localhost:8080", test_logger);
         let versions = Versions {
             preferred: crate::host_clients::data_model::wire_server_model::Preferred {
                 version: "2021-01-01".to_string(),
@@ -124,5 +118,22 @@ mod tests {
         };
         client.update_version(versions);
         assert_eq!(client.version, "2021-01-01");
+    }
+
+    #[tokio::test]
+    async fn wire_server_client_get_url_invalid_uri() {
+        let client = WireServerClient::new("http://localhost:8080", test_logger);
+
+        let res: Result<Versions> = client.get_url("http://invalid uri").await;
+        assert!(res.is_err());
+
+        match res {
+            Err(Error::ParseUrl(_, _)) => {} // expected
+            _ => panic!("Expected Parse Url Error"),
+        }
+    }
+
+    fn test_logger(level: LoggerLevel, message: String) {
+        println!("{:?}: {}", level, message);
     }
 }
