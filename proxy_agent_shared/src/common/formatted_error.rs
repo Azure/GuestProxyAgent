@@ -1,6 +1,7 @@
 use std::{fmt, string::FromUtf8Error};
 
 use base64::DecodeError;
+use tokio::time::error::Elapsed;
 
 #[derive(Debug, Clone)]
 pub struct FormattedError {
@@ -52,6 +53,15 @@ impl From<String> for FormattedError {
     }
 }
 
+impl From<Elapsed> for FormattedError {
+    fn from(value: Elapsed) -> Self {
+        FormattedError {
+            message: format!("Operation timeout: {value}"),
+            code: -1,
+        }
+    }
+}
+
 #[cfg(windows)]
 impl From<windows::core::Error> for FormattedError {
     fn from(value: windows::core::Error) -> Self {
@@ -64,6 +74,10 @@ impl From<windows::core::Error> for FormattedError {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
     use super::*;
 
     #[test]
@@ -78,8 +92,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn formatted_error_from_test() {
+    #[tokio::test]
+    async fn formatted_error_from_test() {
         let decode_error = DecodeError::InvalidLength(0);
         let formatted_error: FormattedError = decode_error.into();
         assert_eq!(formatted_error.message, "Decode Error: InvalidLength(0)");
@@ -92,6 +106,15 @@ mod tests {
         let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
         let formatted_error: FormattedError = json_error.into();
         assert!(formatted_error.message.starts_with("Json Error:"));
+
+        let elapsed_error = timeout(Duration::from_millis(10), async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        })
+        .await;
+
+        let elapsed_error = elapsed_error.unwrap_err();
+        let formatted_error: FormattedError = elapsed_error.into();
+        assert!(formatted_error.message.starts_with("Operation timeout"));
 
         #[cfg(windows)]
         {

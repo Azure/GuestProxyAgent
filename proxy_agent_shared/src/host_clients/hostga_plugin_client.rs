@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::certificate::certificate_helper::{
     decrypt_from_base64, generate_self_signed_certificate,
@@ -15,11 +16,13 @@ use crate::logger::LoggerLevel;
 use base64::Engine;
 use http::{Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
+use tokio::time::timeout;
 use uuid::Uuid;
 
 pub struct HostGAPluginClient {
     base_url: String,
     logger: fn(LoggerLevel, String) -> (),
+    timeout_in_seconds: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,10 +44,15 @@ impl HostGAPluginClient {
     const TRANSPORT_CERTIFICATE_HEADER: &'static str = "x-ms-guest-agent-public-x509-cert";
     const TRANSPORT_CERTIFICATE_ENCRYPT_CIPHER_HEADER: &'static str = "x-ms-cipher-name";
 
-    pub fn new(base_url: &str, logger: fn(LoggerLevel, String) -> ()) -> HostGAPluginClient {
+    pub fn new(
+        base_url: &str,
+        logger: fn(LoggerLevel, String) -> (),
+        timeout_in_seconds: Option<u32>,
+    ) -> HostGAPluginClient {
         HostGAPluginClient {
             base_url: base_url.to_string(),
             logger,
+            timeout_in_seconds,
         }
     }
 
@@ -135,9 +143,20 @@ impl HostGAPluginClient {
         let request = hyper_client::build_request(Method::GET, &url, headers, None, None, None)?;
 
         let (host, port) = hyper_client::host_port_from_uri(&url)?;
-        let response =
+
+        let response = if let Some(timeout_in_seconds) = self.timeout_in_seconds {
+            timeout(
+                Duration::from_secs(timeout_in_seconds as u64),
+                hyper_client::send_request(&host, port, request, move |m| {
+                    logger(LoggerLevel::Warn, m)
+                }),
+            )
+            .await
+            .map_err(|e| Into::<FormattedError>::into(e))??
+        } else {
             hyper_client::send_request(&host, port, request, move |m| logger(LoggerLevel::Warn, m))
-                .await?;
+                .await?
+        };
 
         let etag = response
             .headers()
@@ -209,17 +228,26 @@ mod tests {
 
     #[test]
     fn hostgaplugin_client_creation_test() {
-        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let client = HostGAPluginClient::new(
+            "http://localhost:8080",
+            |level, message| {
+                println!("{:?}: {}", level, message);
+            },
+            None,
+        );
         assert_eq!(client.base_url, "http://localhost:8080");
+        assert_eq!(client.timeout_in_seconds, None);
     }
 
     #[test]
     fn certificate_request_headers_test() {
-        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let client = HostGAPluginClient::new(
+            "http://localhost:8080",
+            |level, message| {
+                println!("{:?}: {}", level, message);
+            },
+            None,
+        );
         let cert = "test_cert";
         let headers = client.certificate_request_headers(cert);
         assert_eq!(
@@ -238,9 +266,13 @@ mod tests {
 
     #[test]
     fn vmsettings_request_headers_test() {
-        let client = HostGAPluginClient::new("http://localhost:8080", |level, message| {
-            println!("{:?}: {}", level, message);
-        });
+        let client = HostGAPluginClient::new(
+            "http://localhost:8080",
+            |level, message| {
+                println!("{:?}: {}", level, message);
+            },
+            None,
+        );
         let etag = Some("test_etag".to_string());
         let headers = client.vmsettings_request_headers(etag.clone());
         assert_eq!(
@@ -252,6 +284,32 @@ mod tests {
         assert!(headers_no_etag
             .get(HostGAPluginClient::ETAG_HEADER)
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn get_vmsettings_negative_test() {
+        let client = HostGAPluginClient::new(
+            "http://invalid:8080",
+            |level, message| {
+                println!("{:?}: {}", level, message);
+            },
+            Some(2),
+        );
+        let response = client.get_vmsettings(None).await;
+        assert!(response.is_err());
+    }
+
+    #[tokio::test]
+    async fn get_certificates_negative_test() {
+        let client = HostGAPluginClient::new(
+            "http://invalid:8080",
+            |level, message| {
+                println!("{:?}: {}", level, message);
+            },
+            Some(2),
+        );
+        let response = client.get_certificates(0).await;
+        assert!(response.is_err());
     }
 
     #[test]
