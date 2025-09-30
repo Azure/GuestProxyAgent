@@ -152,7 +152,7 @@ impl HostGAPluginClient {
                 }),
             )
             .await
-            .map_err(|e| Into::<FormattedError>::into(e))??
+            .map_err(Into::<FormattedError>::into)??
         } else {
             hyper_client::send_request(&host, port, request, move |m| logger(LoggerLevel::Warn, m))
                 .await?

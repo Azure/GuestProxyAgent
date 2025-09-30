@@ -80,7 +80,7 @@ impl WireServerClient {
                 }),
             )
             .await
-            .map_err(|e| Into::<FormattedError>::into(e))??
+            .map_err(Into::<FormattedError>::into)??
         } else {
             hyper_client::get(&url, &headers, None, None, move |message| {
                 logger(LoggerLevel::Warn, message)
