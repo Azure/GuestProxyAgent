@@ -60,7 +60,7 @@ pub fn decrypt_from_base64(
 mod tests {
     use super::*;
     #[test]
-    fn certificate_details_wrapper_test() {
+    fn generate_self_signed_certificate_test() {
         #[cfg(windows)]
         {
             let subject_name = "TestSubject";
@@ -77,6 +77,27 @@ mod tests {
             let subject_name = "TestSubject";
             let cert_details_result = generate_self_signed_certificate(subject_name);
             assert!(cert_details_result.is_err());
+        }
+    }
+
+    #[test]
+    fn decrypt_from_base64_test() {
+        #[cfg(windows)]
+        {
+            let subject_name = "TestSubject";
+            let cert_details_result = generate_self_signed_certificate(subject_name);
+            assert!(cert_details_result.is_ok());
+            let cert_details = cert_details_result.unwrap();
+            let result = decrypt_from_base64("invalid input", &cert_details);
+            assert!(result.is_err());
+        }
+        #[cfg(not(windows))]
+        {
+            let result = decrypt_from_base64(
+                "invalid input",
+                &CertificateDetailsWrapper { cert_details: () },
+            );
+            assert!(result.is_err());
         }
     }
 }
