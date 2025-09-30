@@ -3,6 +3,7 @@ Cargo.lock
 doc/GPA Arch Diagram.vsdx
 doc/GuestProxyAgent.png
 e2etest/GuestProxyAgentTest/Resources/GuestProxyAgentLoadedModulesBaseline.txt
+proxy_agent_shared/src/secrets_redactor.rs
 rpmbuild/SOURCES/0001-Update-Cargo-files-for-Linux-only.patch
 rpmbuild/SOURCES/0002-Fix-doc-test.patch
 rpmbuild/SOURCES/0003-Add-feature-for-linux-service-test.patch
