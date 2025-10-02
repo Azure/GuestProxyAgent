@@ -5,11 +5,12 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::hyper_client;
-//! use host_clients::goal_state::GoalState;
+//! use crate::common::hyper_client;
+//! use crate::host_clients::data_model::wire_server_model::GoalState;
 //! use std::collections::HashMap;
 //! use hyper::Uri;
 //! use std::str::FromStr;
+//! use http::Method;
 //!
 //! let mut headers = HashMap::new();
 //! headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
@@ -37,6 +38,7 @@
 use super::error::{Error, HyperErrorType};
 use super::result::Result;
 use super::{constants, helpers};
+use crate::misc_helpers;
 use http::request::Builder;
 use http::request::Parts;
 use http::Method;
@@ -49,7 +51,6 @@ use hyper::Request;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
 use itertools::Itertools;
-use proxy_agent_shared::misc_helpers;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::net::TcpStream;
@@ -82,9 +83,7 @@ where
     read_response_body(response).await
 }
 
-pub async fn read_response_body<T>(
-    mut response: hyper::Response<hyper::body::Incoming>,
-) -> Result<T>
+pub async fn read_response_body<T>(response: hyper::Response<hyper::body::Incoming>) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -123,6 +122,37 @@ where
             ("unknown", "unknown")
         };
 
+    let body_string = read_response_body_as_string(response, charset_type).await?;
+
+    match content_type {
+        "xml" => match serde_xml_rs::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(Error::Hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to xml deserialize response body with content_type {content_type} from: {body_string} with error {e}"
+                    )
+                ),
+            )),
+        },
+        // default to json
+        _ => match serde_json::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(Error::Hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to json deserialize response body with {content_type} from: {body_string} with error {e}"
+                    )
+                ),
+            )),
+        },
+    }
+}
+
+pub async fn read_response_body_as_string(
+    mut response: hyper::Response<hyper::body::Incoming>,
+    charset_type: &str,
+) -> Result<String> {
     let mut body_string = String::new();
     while let Some(next) = response.frame().await {
         let frame = match next {
@@ -159,30 +189,7 @@ where
             };
         }
     }
-
-    match content_type {
-        "xml" => match serde_xml_rs::from_str(&body_string) {
-            Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(
-                HyperErrorType::Deserialize(
-                    format!(
-                        "Failed to xml deserialize response body with content_type {content_type} from: {body_string} with error {e}"
-                    )
-                ),
-            )),
-        },
-        // default to json
-        _ => match serde_json::from_str(&body_string) {
-            Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(
-                HyperErrorType::Deserialize(
-                    format!(
-                        "Failed to json deserialize response body with {content_type} from: {body_string} with error {e}"
-                    )
-                ),
-            )),
-        },
-    }
+    Ok(body_string)
 }
 
 pub fn build_request(
@@ -501,6 +508,10 @@ pub fn should_skip_sig(method: &hyper::Method, relative_uri: &Uri) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use http::{HeaderMap, HeaderValue, Method};
+
+    use crate::common::constants;
+
     #[test]
     fn get_path_and_canonicalized_parameters_test() {
         let url_str = "/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&keyOnly&comp=again&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f";
@@ -512,5 +523,69 @@ mod tests {
             "comp=again&comp=config&incarnation=1&keyonly&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
             "query parameters mismatch"
         );
+    }
+
+    #[test]
+    fn query_pairs_basic() {
+        let uri = "/test?name=test&key=value&empty=".parse().unwrap();
+        let pairs = super::query_pairs(&uri);
+        assert_eq!(
+            pairs,
+            vec![
+                ("name".to_string(), "test".to_string()),
+                ("key".to_string(), "value".to_string()),
+                ("empty".to_string(), "".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn query_pairs_ignore_empty_key() {
+        let uri = "/test?=value&valid=1".parse().unwrap();
+        let pairs = super::query_pairs(&uri);
+        assert_eq!(pairs, vec![("valid".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn headers_to_canonicalized_string_sorts_and_skips_auth() {
+        let mut headers = HeaderMap::new();
+        headers.insert("Test-Header", HeaderValue::from_static("test"));
+        headers.insert(
+            constants::AUTHORIZATION_HEADER,
+            HeaderValue::from_static("should-skip"),
+        );
+
+        let result = super::headers_to_canonicalized_string(&headers);
+        // "a-header" should come first, auth header skipped
+        assert!(result.starts_with("test-header:test\n"));
+        assert!(!result.contains("should-skip"));
+    }
+
+    #[test]
+    fn host_port_from_uri_defaults_port() {
+        let uri = "http://example.com/test".parse().unwrap();
+        let (host, port) = super::host_port_from_uri(&uri).unwrap();
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 80);
+    }
+
+    #[test]
+    fn host_port_from_uri_with_port() {
+        let uri = "http://example.com:8080/test".parse().unwrap();
+        let (host, port) = super::host_port_from_uri(&uri).unwrap();
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn should_skip_sig_matches() {
+        let put_uri = "/vmAgentLog".parse().unwrap();
+        assert!(super::should_skip_sig(&Method::PUT, &put_uri));
+
+        let post_uri = "/machine/?comp=telemetrydata".parse().unwrap();
+        assert!(super::should_skip_sig(&Method::POST, &post_uri));
+
+        let other_uri = "/machine/?comp=goalstate".parse().unwrap();
+        assert!(!super::should_skip_sig(&Method::GET, &other_uri));
     }
 }

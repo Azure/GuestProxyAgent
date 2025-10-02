@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::common::{logger, result::Result};
 use nix::unistd::{chown, Gid, Uid};
+use proxy_agent_shared::common::{logger, result::Result};
 use proxy_agent_shared::misc_helpers;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

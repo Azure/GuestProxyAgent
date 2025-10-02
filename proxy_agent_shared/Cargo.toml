@@ -18,12 +18,24 @@ thiserror = "1.0.64"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
+base64 = "0.22.1"
+quick-xml = { version = "0.38.0", features = ["serialize", "serde-types"]}
+uuid = { version = "1.8", features = ["v4"] }
+clap = { version = "4.5.17", features =["derive"] } # Command Line Argument Parser 
+http = "1.1.0"
+http-body-util = "0.1"
+hex = "0.4.3"                 # hex encode 
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
+itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
+serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
 winreg = "0.11.0"             # windows reg read/write
-serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 chrono = "0.4.41"             # parse date time string
+libloading = "0.8.0"          # for dynamic load libraries
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.52.0"
@@ -38,7 +50,18 @@ features = [
   "Win32_System_Diagnostics_Debug",
   "Win32_System_SystemInformation",
   "Win32_Storage_FileSystem",
+  "Win32_Security_Cryptography",
 ]
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+sysinfo = "0.30.13"            # read process information for Linux
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.61.3"
+features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_SystemInformation",
+    "Win32_System_Memory",
+]

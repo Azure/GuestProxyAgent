@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{
+use proxy_agent_shared::common::{
     error::{AclErrorType, Error},
     logger,
     result::Result,

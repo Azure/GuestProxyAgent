@@ -41,13 +41,13 @@
 
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
-use crate::common::{constants, logger, result::Result};
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::shared_state::agent_status_wrapper::AgentStatusModule;
 use crate::shared_state::agent_status_wrapper::AgentStatusSharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
+use proxy_agent_shared::common::{constants, logger, result::Result};
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::Event;
@@ -376,9 +376,9 @@ impl EventReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::logger;
     use crate::key_keeper::key::Key;
     use crate::test_mock::server_mock;
+    use proxy_agent_shared::common::logger;
     use proxy_agent_shared::misc_helpers;
     use std::{env, fs};
 

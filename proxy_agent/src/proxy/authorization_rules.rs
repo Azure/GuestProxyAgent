@@ -18,8 +18,8 @@
 //! ```
 
 use super::{proxy_connection::ConnectionLogger, Claims};
-use crate::common::logger;
 use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, Identity, Privilege, Role};
+use proxy_agent_shared::common::logger;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};

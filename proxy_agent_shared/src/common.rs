@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod constants;
 pub mod error;
+pub mod formatted_error;
 pub mod helpers;
 pub mod hyper_client;
 pub mod logger;

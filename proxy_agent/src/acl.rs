@@ -19,7 +19,7 @@ mod windows_acl;
 #[cfg(not(windows))]
 mod linux_acl;
 
-use crate::common::result::Result;
+use proxy_agent_shared::common::result::Result;
 use std::path::PathBuf;
 
 pub fn acl_directory(dir_to_acl: PathBuf) -> Result<()> {

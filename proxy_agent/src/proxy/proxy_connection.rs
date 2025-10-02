@@ -3,9 +3,6 @@
 
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
-use crate::common::error::{Error, HyperErrorType};
-use crate::common::result::Result;
-use crate::common::{config, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
@@ -14,6 +11,9 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
+use proxy_agent_shared::common::error::{Error, HyperErrorType};
+use proxy_agent_shared::common::result::Result;
+use proxy_agent_shared::common::{config, hyper_client};
 use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
 use proxy_agent_shared::misc_helpers;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -339,7 +339,9 @@ impl ConnectionLogger {
         // connection logger file log does not write to system log implicitly.
         logger_manager::write_system_log(logger_level, message.to_string());
 
-        if let Some(log_for_event) = crate::common::config::get_file_log_level_for_events() {
+        if let Some(log_for_event) =
+            proxy_agent_shared::common::config::get_file_log_level_for_events()
+        {
             if log_for_event >= logger_level {
                 // write to event
                 proxy_agent_shared::telemetry::event_logger::write_event_only(

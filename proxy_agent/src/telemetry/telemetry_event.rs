@@ -47,8 +47,8 @@
 //! ```
 
 use super::event_reader::VmMetaData;
-use crate::common::helpers;
 use once_cell::sync::Lazy;
+use proxy_agent_shared::common::helpers;
 use proxy_agent_shared::telemetry::Event;
 use serde_derive::{Deserialize, Serialize};
 

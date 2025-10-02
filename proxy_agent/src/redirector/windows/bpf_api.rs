@@ -4,12 +4,12 @@
 #![allow(non_snake_case)]
 
 use super::bpf_obj::*;
-use crate::common::{
+use libloading::{Library, Symbol};
+use proxy_agent_shared::common::{
     error::{BpfErrorType, Error},
     logger,
     result::Result,
 };
-use libloading::{Library, Symbol};
 use proxy_agent_shared::{
     logger::LoggerLevel, misc_helpers, telemetry::event_logger, version::Version,
 };

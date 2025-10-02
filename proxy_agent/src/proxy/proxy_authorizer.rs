@@ -21,9 +21,10 @@
 
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
+use crate::proxy::Claims;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use crate::{common::constants, common::result::Result, proxy::Claims};
 use proxy_agent_shared::logger::LoggerLevel;
+use proxy_agent_shared::{common::constants, common::result::Result};
 
 #[derive(PartialEq)]
 pub enum AuthorizeResult {
@@ -268,8 +269,8 @@ mod tests {
         };
         let mut test_logger = ConnectionLogger::new(0, 0);
         let auth: Box<dyn super::Authorizer> = super::get_authorizer(
-            crate::common::constants::WIRE_SERVER_IP.to_string(),
-            crate::common::constants::WIRE_SERVER_PORT,
+            proxy_agent_shared::common::constants::WIRE_SERVER_IP.to_string(),
+            proxy_agent_shared::common::constants::WIRE_SERVER_PORT,
             claims.clone(),
         );
         let test_uri = hyper::Uri::from_str("test").unwrap();
@@ -283,8 +284,8 @@ mod tests {
         );
 
         let auth = super::get_authorizer(
-            crate::common::constants::GA_PLUGIN_IP.to_string(),
-            crate::common::constants::GA_PLUGIN_PORT,
+            proxy_agent_shared::common::constants::GA_PLUGIN_IP.to_string(),
+            proxy_agent_shared::common::constants::GA_PLUGIN_PORT,
             claims.clone(),
         );
         assert_eq!(
@@ -297,8 +298,8 @@ mod tests {
         );
 
         let auth = super::get_authorizer(
-            crate::common::constants::IMDS_IP.to_string(),
-            crate::common::constants::IMDS_PORT,
+            proxy_agent_shared::common::constants::IMDS_IP.to_string(),
+            proxy_agent_shared::common::constants::IMDS_PORT,
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "IMDS");
@@ -308,8 +309,8 @@ mod tests {
         );
 
         let auth = super::get_authorizer(
-            crate::common::constants::PROXY_AGENT_IP.to_string(),
-            crate::common::constants::PROXY_AGENT_PORT,
+            proxy_agent_shared::common::constants::PROXY_AGENT_IP.to_string(),
+            proxy_agent_shared::common::constants::PROXY_AGENT_PORT,
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "ProxyAgent");
@@ -319,8 +320,8 @@ mod tests {
         );
 
         let auth = super::get_authorizer(
-            crate::common::constants::PROXY_AGENT_IP.to_string(),
-            crate::common::constants::PROXY_AGENT_PORT + 1,
+            proxy_agent_shared::common::constants::PROXY_AGENT_IP.to_string(),
+            proxy_agent_shared::common::constants::PROXY_AGENT_PORT + 1,
             claims.clone(),
         );
         assert_eq!(auth.to_string(), "Default");
@@ -342,8 +343,8 @@ mod tests {
         };
         let mut test_logger = ConnectionLogger::new(1, 1);
         let auth = super::get_authorizer(
-            crate::common::constants::WIRE_SERVER_IP.to_string(),
-            crate::common::constants::WIRE_SERVER_PORT,
+            proxy_agent_shared::common::constants::WIRE_SERVER_IP.to_string(),
+            proxy_agent_shared::common::constants::WIRE_SERVER_PORT,
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
@@ -467,8 +468,8 @@ mod tests {
             clientPort: 0, // doesn't matter for this test
         };
         let auth = super::get_authorizer(
-            crate::common::constants::IMDS_IP.to_string(),
-            crate::common::constants::IMDS_PORT,
+            proxy_agent_shared::common::constants::IMDS_IP.to_string(),
+            proxy_agent_shared::common::constants::IMDS_PORT,
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
@@ -577,8 +578,8 @@ mod tests {
         };
         let mut test_logger = ConnectionLogger::new(1, 1);
         let auth = super::get_authorizer(
-            crate::common::constants::GA_PLUGIN_IP.to_string(),
-            crate::common::constants::GA_PLUGIN_PORT,
+            proxy_agent_shared::common::constants::GA_PLUGIN_IP.to_string(),
+            proxy_agent_shared::common::constants::GA_PLUGIN_PORT,
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();

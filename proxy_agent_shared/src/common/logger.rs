@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::{
+use crate::{
     logger::{logger_manager, LoggerLevel},
     telemetry::event_logger,
 };
@@ -43,7 +43,7 @@ fn log(log_level: LoggerLevel, message: String) {
 
 #[cfg(not(windows))]
 pub fn write_serial_console_log(message: String) {
-    use proxy_agent_shared::misc_helpers;
+    use crate::misc_helpers;
     use std::io::Write;
 
     let message = format!(

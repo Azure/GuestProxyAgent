@@ -5,11 +5,11 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
-use crate::common::error::{BpfErrorType, Error, WindowsApiErrorType};
-use crate::common::{constants, logger, result::Result};
 use crate::redirector::AuditEntry;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use core::ffi::c_void;
+use proxy_agent_shared::common::error::{BpfErrorType, Error, WindowsApiErrorType};
+use proxy_agent_shared::common::{constants, logger, result::Result};
 use std::mem;
 use std::ptr;
 use windows_sys::Win32::Networking::WinSock;

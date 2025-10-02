@@ -1,12 +1,15 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::key_keeper::key::AuthorizationItem;
+use crate::key_keeper::key::Key;
+use crate::proxy::authorization_rules::ComputedAuthorizationItem;
 /// The KeyKeeperState struct is used to send actions to the KeyKeeper module related shared state fields
 /// Example:
 /// ```
 /// use crate::shared_state::key_keeper_wrapper::KeyKeeperState;
 /// use crate::key_keeper::key::Key;
-/// use crate::common::result::Result;
+/// use proxy_agent_shared::common::result::Result;
 /// use std::sync::Arc;
 /// use tokio::sync::Notify;
 ///
@@ -36,11 +39,9 @@
 ///   Ok(())
 /// }
 /// ```
-use crate::common::error::Error;
-use crate::common::result::Result;
-use crate::key_keeper::key::AuthorizationItem;
-use crate::proxy::authorization_rules::ComputedAuthorizationItem;
-use crate::{common::logger, key_keeper::key::Key};
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::result::Result;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Notify};
 

@@ -6,7 +6,7 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::config;
+//! use crate::common::config;
 //!
 //! // Get the logs directory
 //! let logs_dir = config::get_logs_dir();
@@ -17,8 +17,8 @@
 //! ```
 
 use crate::common::constants;
+use crate::{logger::LoggerLevel, misc_helpers};
 use once_cell::sync::Lazy;
-use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{path::PathBuf, time::Duration};
@@ -221,7 +221,8 @@ impl Config {
 mod tests {
     use crate::common::config::Config;
     use crate::common::constants;
-    use proxy_agent_shared::misc_helpers;
+    use crate::logger::LoggerLevel;
+    use crate::misc_helpers;
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
@@ -297,13 +298,13 @@ mod tests {
         }
 
         assert_eq!(
-            proxy_agent_shared::logger::LoggerLevel::Info,
+            crate::logger::LoggerLevel::Info,
             config.get_file_log_level_for_events().unwrap(),
             "get_file_log_level_for_events mismatch"
         );
 
         assert_eq!(
-            proxy_agent_shared::logger::LoggerLevel::Info,
+            crate::logger::LoggerLevel::Info,
             config.get_file_log_level_for_system_events().unwrap(),
             "get_file_log_level_for_system_events mismatch"
         );
@@ -352,6 +353,123 @@ mod tests {
             .unwrap()
             .write_all(data.as_bytes())
             .unwrap();
+        Config::from_json_file(file_path)
+    }
+
+    #[test]
+    fn test_optional_fields_some_values() {
+        let mut temp_path = env::temp_dir();
+        temp_path.push("config_optional_some");
+        _ = fs::remove_dir_all(&temp_path);
+        fs::create_dir_all(&temp_path).unwrap();
+        let config_path = temp_path.join("config.json");
+
+        let data = r#"{
+            "logFolder": "C:\\logFolderName",
+            "eventFolder": "C:\\eventFolderName",
+            "latchKeyFolder": "C:\\latchKeyFolderName",
+            "monitorIntervalInSeconds": 120,
+            "pollKeyStatusIntervalInSeconds": 30,
+            "hostGAPluginSupport": 2,
+            "maxEventFileCount": 42,
+            "ebpfFileFullPath": "C:\\ebpf.o",
+            "ebpfProgramName": "ebpfCustom",
+            "fileLogLevel": "Error",
+            "fileLogLevelForEvents": "Warn",
+            "fileLogLevelForSystemEvents": "Debug",
+            "enableHttpProxyTrace": true
+        }"#;
+
+        let config = create_custom_config_file(config_path, data);
+
+        assert_eq!(config.get_max_event_file_count(), 42);
+        assert_eq!(
+            config.get_ebpf_file_full_path(),
+            Some(PathBuf::from("C:\\ebpf.o"))
+        );
+        assert_eq!(config.get_ebpf_program_name(), "ebpfCustom");
+        assert_eq!(config.get_file_log_level(), LoggerLevel::Error);
+        assert_eq!(
+            config.get_file_log_level_for_events().unwrap(),
+            LoggerLevel::Warn
+        );
+        assert_eq!(
+            config.get_file_log_level_for_system_events().unwrap(),
+            LoggerLevel::Debug
+        );
+        assert_eq!(config.enableHttpProxyTrace.unwrap(), true);
+
+        _ = fs::remove_dir_all(&temp_path);
+    }
+
+    #[test]
+    fn test_optional_fields_none_values() {
+        let mut temp_path = env::temp_dir();
+        temp_path.push("config_optional_none");
+        _ = fs::remove_dir_all(&temp_path);
+        fs::create_dir_all(&temp_path).unwrap();
+        let config_path = temp_path.join("config.json");
+
+        let data = r#"{
+            "logFolder": "C:\\logFolderName",
+            "eventFolder": "C:\\eventFolderName",
+            "latchKeyFolder": "C:\\latchKeyFolderName",
+            "monitorIntervalInSeconds": 60,
+            "pollKeyStatusIntervalInSeconds": 15,
+            "hostGAPluginSupport": 1,
+            "ebpfProgramName": "ebpfProgramName"
+        }"#;
+
+        let config = create_custom_config_file(config_path, data);
+
+        // optional fields fallback
+        assert_eq!(
+            config.get_max_event_file_count(),
+            constants::DEFAULT_MAX_EVENT_FILE_COUNT
+        );
+        assert_eq!(config.get_ebpf_file_full_path(), None);
+        assert_eq!(config.get_file_log_level(), LoggerLevel::Info);
+        assert_eq!(config.get_file_log_level_for_events(), None);
+        assert_eq!(config.get_file_log_level_for_system_events(), None);
+
+        _ = fs::remove_dir_all(&temp_path);
+    }
+
+    #[test]
+    fn test_invalid_log_level_fallback() {
+        let config = Config {
+            logFolder: "log".to_string(),
+            eventFolder: "event".to_string(),
+            latchKeyFolder: "latch".to_string(),
+            monitorIntervalInSeconds: 0,
+            pollKeyStatusIntervalInSeconds: 0,
+            hostGAPluginSupport: 0,
+            maxEventFileCount: None,
+            ebpfFileFullPath: None,
+            ebpfProgramName: "ebpf".to_string(),
+            fileLogLevel: Some("InvalidLevel".to_string()),
+            fileLogLevelForEvents: Some("InvalidLevel".to_string()),
+            fileLogLevelForSystemEvents: Some("InvalidLevel".to_string()),
+            enableHttpProxyTrace: None,
+            #[cfg(not(windows))]
+            cgroupRoot: None,
+        };
+
+        assert_eq!(config.get_file_log_level(), LoggerLevel::Info);
+        assert_eq!(
+            config.get_file_log_level_for_events().unwrap(),
+            LoggerLevel::Info
+        );
+        assert_eq!(
+            config.get_file_log_level_for_system_events().unwrap(),
+            LoggerLevel::Info
+        );
+    }
+
+    fn create_custom_config_file(file_path: PathBuf, content: &str) -> Config {
+        fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        let mut file = fs::File::create(&file_path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
         Config::from_json_file(file_path)
     }
 }

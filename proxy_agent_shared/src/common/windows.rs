@@ -139,7 +139,7 @@ pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
 mod tests {
     use std::{env, fs};
 
-    use proxy_agent_shared::misc_helpers;
+    use crate::misc_helpers;
 
     #[test]
     fn get_processor_count_test() {

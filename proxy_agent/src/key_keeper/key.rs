@@ -21,18 +21,15 @@
 //! Key::attest_key(base_url.clone(), &key).await.unwrap();
 //!
 //! ```
-
-use crate::{
-    common::{
-        constants,
-        error::{Error, KeyErrorType},
-        hyper_client, logger,
-        result::Result,
-    },
-    proxy::{proxy_connection::ConnectionLogger, Claims},
-};
+use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
 use http::{Method, StatusCode};
 use hyper::Uri;
+use proxy_agent_shared::common::{
+    constants,
+    error::{Error, KeyErrorType},
+    hyper_client, logger,
+    result::Result,
+};
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -831,11 +828,11 @@ mod tests {
 
     use super::Key;
     use super::KeyStatus;
-    use crate::common::constants;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
     use hyper::Uri;
+    use proxy_agent_shared::common::constants;
     use serde_json::json;
 
     #[test]

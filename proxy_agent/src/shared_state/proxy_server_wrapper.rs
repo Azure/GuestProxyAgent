@@ -16,10 +16,10 @@
 //! assert_eq!(user.user_name, "user1");
 //! ```
 
-use crate::common::error::Error;
-use crate::common::logger;
-use crate::common::result::Result;
 use crate::proxy::User;
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::result::Result;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 

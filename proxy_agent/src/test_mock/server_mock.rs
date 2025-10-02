@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{hyper_client, logger, result::Result};
 use crate::key_keeper;
 use crate::key_keeper::key::{Key, KeyStatus};
 use http_body_util::combinators::BoxBody;
@@ -13,6 +12,7 @@ use hyper::Response;
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use once_cell::sync::Lazy;
+use proxy_agent_shared::common::{hyper_client, logger, result::Result};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;

@@ -7,9 +7,10 @@
 //! The proxy agent status contains the 'failed connection summary' of the proxy server.
 //! The proxy agent status contains the 'connection count' of the proxy server.
 
-use crate::common::logger;
-use crate::common::result::Result;
-use crate::{common::error::Error, proxy::proxy_summary::ProxySummary};
+use crate::proxy::proxy_summary::ProxySummary;
+use proxy_agent_shared::common::error::Error;
+use proxy_agent_shared::common::logger;
+use proxy_agent_shared::common::result::Result;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     ModuleState, ProxyAgentDetailStatus, ProxyConnectionSummary,

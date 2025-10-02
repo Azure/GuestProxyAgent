@@ -14,9 +14,9 @@
 //! assert_eq!(meta_data, vm_meta_data);
 //! ```
 
-use crate::common::result::Result;
-use crate::common::{error::Error, logger};
 use crate::telemetry::event_reader::VmMetaData;
+use proxy_agent_shared::common::result::Result;
+use proxy_agent_shared::common::{error::Error, logger};
 use tokio::sync::{mpsc, oneshot};
 
 enum TelemetryAction {
