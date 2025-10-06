@@ -20,34 +20,29 @@
 //! ```
 
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
+use crate::hyper_client;
 use crate::{
-    common::{
-        error::{Error, WireServerErrorType},
-        logger,
-        result::Result,
-    },
-    shared_state::key_keeper_wrapper::KeyKeeperSharedState,
+    error::{Error, WireServerErrorType},
+    logger::logger_manager,
+    result::Result,
 };
 use http::Method;
 use hyper::Uri;
-use proxy_agent_shared::hyper_client;
 use std::collections::HashMap;
 
 pub struct WireServerClient {
     ip: String,
     port: u16,
-    key_keeper_shared_state: KeyKeeperSharedState,
 }
 
 const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
 const GOALSTATE_URI: &str = "machine?comp=goalstate";
 
 impl WireServerClient {
-    pub fn new(ip: &str, port: u16, key_keeper_shared_state: KeyKeeperSharedState) -> Self {
+    pub fn new(ip: &str, port: u16) -> Self {
         WireServerClient {
             ip: ip.to_string(),
             port,
-            key_keeper_shared_state,
         }
     }
 
@@ -75,18 +70,22 @@ impl WireServerClient {
             None, // post telemetry data does not require signing
             None,
         )?;
-        let response =
-            match hyper_client::send_request(&self.ip, self.port, request, logger::write_warning)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    return Err(Error::WireServer(
-                        WireServerErrorType::Telemetry,
-                        format!("Failed to send request {e}"),
-                    ))
-                }
-            };
+        let response = match hyper_client::send_request(
+            &self.ip,
+            self.port,
+            request,
+            logger_manager::write_warn,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(Error::WireServer(
+                    WireServerErrorType::Telemetry,
+                    format!("Failed to send request {e}"),
+                ))
+            }
+        };
 
         let status = response.status();
         if !status.is_success() {
@@ -99,7 +98,11 @@ impl WireServerClient {
         Ok(())
     }
 
-    pub async fn get_goalstate(&self) -> Result<GoalState> {
+    pub async fn get_goalstate(
+        &self,
+        key_guid: Option<String>,
+        key: Option<String>,
+    ) -> Result<GoalState> {
         let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
         let url = url
             .parse::<hyper::Uri>()
@@ -107,44 +110,25 @@ impl WireServerClient {
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        hyper_client::get(
-            &url,
-            &headers,
-            self.key_keeper_shared_state
-                .get_current_key_guid()
-                .await
-                .unwrap_or(None),
-            self.key_keeper_shared_state
-                .get_current_key_value()
-                .await
-                .unwrap_or(None),
-            logger::write_warning,
-        )
-        .await
-        .map_err(|e| Error::WireServer(WireServerErrorType::GoalState, e.to_string()))
+        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn)
+            .await
+            .map_err(|e| Error::WireServer(WireServerErrorType::GoalState, e.to_string()))
     }
 
-    pub async fn get_shared_config(&self, url: String) -> Result<SharedConfig> {
+    pub async fn get_shared_config(
+        &self,
+        url: String,
+        key_guid: Option<String>,
+        key: Option<String>,
+    ) -> Result<SharedConfig> {
         let mut headers = HashMap::new();
         let url = url
             .parse::<hyper::Uri>()
             .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        hyper_client::get(
-            &url,
-            &headers,
-            self.key_keeper_shared_state
-                .get_current_key_guid()
-                .await
-                .unwrap_or(None),
-            self.key_keeper_shared_state
-                .get_current_key_value()
-                .await
-                .unwrap_or(None),
-            logger::write_warning,
-        )
-        .await
-        .map_err(|e| Error::WireServer(WireServerErrorType::SharedConfig, e.to_string()))
+        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn)
+            .await
+            .map_err(|e| Error::WireServer(WireServerErrorType::SharedConfig, e.to_string()))
     }
 }

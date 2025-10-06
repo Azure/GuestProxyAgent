@@ -19,6 +19,9 @@ pub enum Error {
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),
 
+    #[error("{0} with the error: {1}")]
+    WireServer(WireServerErrorType, String),
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -80,9 +83,21 @@ pub enum HyperErrorType {
     Deserialize(String),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum WireServerErrorType {
+    #[error("Telemetry call to wire server failed")]
+    Telemetry,
+
+    #[error("Goal state call to wire server failed")]
+    GoalState,
+
+    #[error("Shared config call to wire server failed")]
+    SharedConfig,
+}
+
 #[cfg(test)]
 mod test {
-    use super::{CommandErrorType, Error, ParseVersionErrorType};
+    use super::{CommandErrorType, Error, ParseVersionErrorType, WireServerErrorType};
     use std::fs;
 
     #[test]
@@ -94,6 +109,15 @@ mod test {
             "No such file or directory (os error 2)"
         };
         assert_eq!(error.to_string(), expected_err);
+
+        error = Error::WireServer(
+            WireServerErrorType::Telemetry,
+            "Invalid response".to_string(),
+        );
+        assert_eq!(
+            error.to_string(),
+            "Telemetry call to wire server failed with the error: Invalid response"
+        );
 
         error = regex::Regex::new(r"abc(").map_err(Into::into).unwrap_err();
         assert!(error

@@ -898,6 +898,8 @@ dependencies = [
  "thread-id",
  "time",
  "tokio",
+ "tokio-util",
+ "uuid",
  "windows-service",
  "windows-sys",
  "winreg",
