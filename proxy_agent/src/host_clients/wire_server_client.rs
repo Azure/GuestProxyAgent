@@ -23,13 +23,14 @@ use crate::host_clients::goal_state::{GoalState, SharedConfig};
 use crate::{
     common::{
         error::{Error, WireServerErrorType},
-        hyper_client, logger,
+        logger,
         result::Result,
     },
     shared_state::key_keeper_wrapper::KeyKeeperSharedState,
 };
 use http::Method;
 use hyper::Uri;
+use proxy_agent_shared::hyper_client;
 use std::collections::HashMap;
 
 pub struct WireServerClient {

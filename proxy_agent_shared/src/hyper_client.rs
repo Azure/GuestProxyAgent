@@ -5,7 +5,7 @@
 //!
 //! Example
 //! ```rust
-//! use proxy_agent::hyper_client;
+//! use proxy_agent_shared::hyper_client;
 //! use host_clients::goal_state::GoalState;
 //! use std::collections::HashMap;
 //! use hyper::Uri;
@@ -35,8 +35,8 @@
 //! ```
 
 use super::error::{Error, HyperErrorType};
+use super::misc_helpers;
 use super::result::Result;
-use super::{constants, helpers};
 use http::request::Builder;
 use http::request::Parts;
 use http::Method;
@@ -49,10 +49,16 @@ use hyper::Request;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
 use itertools::Itertools;
-use proxy_agent_shared::misc_helpers;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::net::TcpStream;
+
+pub const DATE_HEADER: &str = "x-ms-azure-host-date";
+pub const METADATA_HEADER: &str = "Metadata";
+pub const CLAIMS_HEADER: &str = "x-ms-azure-host-claims";
+pub const AUTHORIZATION_HEADER: &str = "x-ms-azure-host-authorization";
+pub const AUTHORIZATION_SCHEME: &str = "Azure-HMAC-SHA256";
+pub const CLAIMS_IS_ROOT: &str = "isRoot";
 
 const LF: &str = "\n";
 
@@ -201,14 +207,11 @@ pub fn build_request(
             Some(pq) => pq.as_str(),
             None => full_url.path(),
         })
-        .header(
-            constants::DATE_HEADER,
-            misc_helpers::get_date_time_rfc1123_string(),
-        )
+        .header(DATE_HEADER, misc_helpers::get_date_time_rfc1123_string())
         .header(hyper::header::HOST, host)
         .header(
-            constants::CLAIMS_HEADER,
-            format!("{{ \"{}\": \"{}\"}}", constants::CLAIMS_IS_ROOT, true,),
+            CLAIMS_HEADER,
+            format!("{{ \"{}\": \"{}\"}}", CLAIMS_IS_ROOT, true,),
         )
         .header(
             hyper::header::CONTENT_LENGTH,
@@ -227,12 +230,12 @@ pub fn build_request(
         let input_to_sign = request_to_sign_input(&request_builder, body_vec)?;
         let authorization_value = format!(
             "{} {} {}",
-            constants::AUTHORIZATION_SCHEME,
+            AUTHORIZATION_SCHEME,
             key_guid,
-            helpers::compute_signature(&key, input_to_sign.as_slice())?
+            misc_helpers::compute_signature(&key, input_to_sign.as_slice())?
         );
         request_builder = request_builder.header(
-            constants::AUTHORIZATION_HEADER.to_string(),
+            AUTHORIZATION_HEADER.to_string(),
             authorization_value.to_string(),
         );
     }
@@ -285,12 +288,7 @@ where
     let addr = format!("{host}:{port}");
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
-        Err(e) => {
-            return Err(Error::Io(
-                format!("Failed to open TCP connection to {addr}"),
-                e,
-            ))
-        }
+        Err(e) => return Err(Error::Io(e)),
     };
 
     let io = TokioIo::new(stream);
@@ -403,7 +401,7 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
 
     for key in map.keys().sorted() {
         // skip the expect header
-        if key.eq_ignore_ascii_case(constants::AUTHORIZATION_HEADER) {
+        if key.eq_ignore_ascii_case(AUTHORIZATION_HEADER) {
             continue;
         }
         let h = format!("{}:{}{}", key, map[key].1.trim(), separator);

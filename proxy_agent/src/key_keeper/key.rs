@@ -26,13 +26,14 @@ use crate::{
     common::{
         constants,
         error::{Error, KeyErrorType},
-        hyper_client, logger,
+        logger,
         result::Result,
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
 use http::{Method, StatusCode};
 use hyper::Uri;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -409,7 +410,7 @@ impl KeyStatus {
 
         // validate authorizationScheme
         let authorization_scheme = self.authorizationScheme.to_string();
-        if authorization_scheme != constants::AUTHORIZATION_SCHEME {
+        if authorization_scheme != hyper_client::AUTHORIZATION_SCHEME {
             validate_message.push_str("authorizationScheme must be 'Azure-HMAC-SHA256'; ");
         }
 
@@ -679,7 +680,7 @@ impl Key {
     // create a default empty Key
     pub fn empty() -> Self {
         Key {
-            authorizationScheme: constants::AUTHORIZATION_SCHEME.to_string(),
+            authorizationScheme: hyper_client::AUTHORIZATION_SCHEME.to_string(),
             incarnationId: None,
             guid: "00000000-0000-0000-0000-000000000000".to_string(),
             issued: String::new(),
@@ -728,7 +729,10 @@ pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
         ))
     })?;
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     let status: KeyStatus =
         hyper_client::get(&url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
@@ -749,7 +753,10 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
 
     let (host, port) = hyper_client::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
     let request = hyper_client::build_request(
@@ -776,7 +783,9 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
             response.status(),
         )));
     }
-    hyper_client::read_response_body(response).await
+    hyper_client::read_response_body(response)
+        .await
+        .map_err(Error::ProxyAgentSharedError)
 }
 
 pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
@@ -791,7 +800,10 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
         .map_err(|e| Error::Key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
 
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     let request = hyper_client::build_request(
         Method::POST,
         &url,
@@ -831,11 +843,11 @@ mod tests {
 
     use super::Key;
     use super::KeyStatus;
-    use crate::common::constants;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
     use hyper::Uri;
+    use proxy_agent_shared::hyper_client;
     use serde_json::json;
 
     #[test]
@@ -851,7 +863,7 @@ mod tests {
 
         let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME,
+            hyper_client::AUTHORIZATION_SCHEME,
             status_v1.authorizationScheme,
             "authorizationScheme mismatch"
         );
@@ -1105,7 +1117,7 @@ mod tests {
 
         let status: KeyStatus = serde_json::from_str(status_response).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME,
+            hyper_client::AUTHORIZATION_SCHEME,
             status.authorizationScheme,
             "authorizationScheme mismatch"
         );
@@ -1352,7 +1364,7 @@ mod tests {
 
         let key: Key = serde_json::from_str(key_response).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME.to_string(),
+            hyper_client::AUTHORIZATION_SCHEME.to_string(),
             key.authorizationScheme,
             "authorizationScheme mismatch"
         );

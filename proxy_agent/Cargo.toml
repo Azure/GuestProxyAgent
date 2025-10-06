@@ -10,15 +10,12 @@ license = "MIT"
 
 [dependencies]
 proxy_agent_shared = { path ="../proxy_agent_shared"}
-itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
 once_cell = "1.17.0"          # use Lazy
 serde = "1.0.152"
 serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 bitflags = "2.6.0"            # support bitflag enum
-hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
-hex = "0.4.3"                 # hex encode 
 regex = "1.11"                # match process name in cmdline
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros", "sync"] }
 tokio-util = "0.7.11"

@@ -22,12 +22,7 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
-use crate::common::{
-    constants,
-    error::{Error, HyperErrorType},
-    helpers, hyper_client, logger,
-    result::Result,
-};
+use crate::common::{constants, error::Error, helpers, logger, result::Result};
 use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -45,6 +40,8 @@ use hyper::service::service_fn;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use proxy_agent_shared::error::HyperErrorType;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -279,7 +276,7 @@ impl ProxyServer {
                     let large_limited_tower_service =
                         tower::ServiceBuilder::new().layer(large_limit_layer);
                     let tower_service_layer =
-                        if crate::common::hyper_client::should_skip_sig(req.method(), req.uri()) {
+                        if hyper_client::should_skip_sig(req.method(), req.uri()) {
                             // skip signature check for large request
                             large_limited_tower_service.clone()
                         } else {
@@ -525,11 +522,11 @@ impl ProxyServer {
         // Add required headers
         let host_claims = format!(
             "{{ \"{}\": \"{}\"}}",
-            constants::CLAIMS_IS_ROOT,
+            hyper_client::CLAIMS_IS_ROOT,
             claims.runAsElevated
         );
         proxy_request.headers_mut().insert(
-            HeaderName::from_static(constants::CLAIMS_HEADER),
+            HeaderName::from_static(hyper_client::CLAIMS_HEADER),
             match HeaderValue::from_str(&host_claims) {
                 Ok(value) => value,
                 Err(e) => {
@@ -542,7 +539,7 @@ impl ProxyServer {
             },
         );
         proxy_request.headers_mut().insert(
-            HeaderName::from_static(constants::DATE_HEADER),
+            HeaderName::from_static(hyper_client::DATE_HEADER),
             match HeaderValue::from_str(&misc_helpers::get_date_time_rfc1123_string()) {
                 Ok(value) => value,
                 Err(e) => {
@@ -626,7 +623,11 @@ impl ProxyServer {
         request: Request<Limited<hyper::body::Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         // check MetaData header exists or not
-        if request.headers().get(constants::METADATA_HEADER).is_none() {
+        if request
+            .headers()
+            .get(hyper_client::METADATA_HEADER)
+            .is_none()
+        {
             logger.write(
                 LoggerLevel::Warn,
                 "No MetaData header found in the request.".to_string(),
@@ -755,7 +756,7 @@ impl ProxyServer {
         http_connection_context.log(LoggerLevel::Trace, "Adding proxy agent header.".to_string());
         // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
         response.headers_mut().insert(
-            HeaderName::from_static(constants::AUTHORIZATION_HEADER),
+            HeaderName::from_static(hyper_client::AUTHORIZATION_HEADER),
             HeaderValue::from_static("value"),
         );
 
@@ -949,12 +950,16 @@ impl ProxyServer {
                 .unwrap_or(None),
         ) {
             let input_to_sign = hyper_client::as_sig_input(head, whole_body);
-            match helpers::compute_signature(&key, input_to_sign.as_slice()) {
+            match misc_helpers::compute_signature(&key, input_to_sign.as_slice()) {
                 Ok(sig) => {
-                    let authorization_value =
-                        format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
+                    let authorization_value = format!(
+                        "{} {} {}",
+                        hyper_client::AUTHORIZATION_SCHEME,
+                        key_guid,
+                        sig
+                    );
                     proxy_request.headers_mut().insert(
-                        HeaderName::from_static(constants::AUTHORIZATION_HEADER),
+                        HeaderName::from_static(hyper_client::AUTHORIZATION_HEADER),
                         match HeaderValue::from_str(&authorization_value) {
                             Ok(value) => value,
                             Err(e) => {
@@ -1012,11 +1017,11 @@ impl ProxyServer {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::hyper_client;
     use crate::common::logger;
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
+    use proxy_agent_shared::hyper_client;
     use std::collections::HashMap;
     use std::time::Duration;
 

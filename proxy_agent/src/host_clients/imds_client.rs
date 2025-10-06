@@ -21,9 +21,10 @@
 //! ```
 
 use super::instance_info::InstanceInfo;
-use crate::common::{error::Error, hyper_client, logger, result::Result};
+use crate::common::{error::Error, logger, result::Result};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use hyper::Uri;
+use proxy_agent_shared::hyper_client;
 use std::collections::HashMap;
 
 pub struct ImdsClient {
@@ -66,5 +67,6 @@ impl ImdsClient {
             logger::write_warning,
         )
         .await
+        .map_err(Error::ProxyAgentSharedError)
     }
 }

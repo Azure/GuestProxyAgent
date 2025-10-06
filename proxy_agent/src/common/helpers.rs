@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use super::result::Result;
-use super::{error::Error, logger};
+use super::logger;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::span::SimpleSpan;
@@ -63,18 +62,6 @@ pub fn get_long_os_version() -> String {
     CURRENT_OS_INFO.1.to_string()
 }
 
-pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
-    match hex::decode(hex_encoded_key) {
-        Ok(key) => {
-            let mut mac = hmac_sha256::HMAC::new(key);
-            mac.update(input_to_sign);
-            let result = mac.finalize();
-            Ok(hex::encode(result))
-        }
-        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
-    }
-}
-
 // replace xml escape characters
 pub fn xml_escape(s: String) -> String {
     s.replace('&', "&amp;")
@@ -115,23 +102,5 @@ mod tests {
         );
         let cpu_arch = super::get_cpu_arch();
         assert_ne!("unknown", cpu_arch, "cpu arch cannot be 'unknown'");
-    }
-    #[test]
-    fn compute_signature_test() {
-        let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
-        let message = "Hello world";
-        let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
-        println!("compute_signature: {result}");
-        let invalid_hex_encoded_key =
-            "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
-        let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());
-        assert!(result.is_err(), "invalid key should fail.");
-
-        let e = result.unwrap_err();
-        let error = e.to_string();
-        assert!(
-            error.contains(invalid_hex_encoded_key),
-            "Error does not contains the invalid key"
-        )
     }
 }

@@ -178,13 +178,10 @@ dependencies = [
  "bitflags",
  "clap",
  "ctor",
- "hex",
- "hmac-sha256",
  "http",
  "http-body-util",
  "hyper",
  "hyper-util",
- "itertools",
  "libc",
  "libloading",
  "nix",
@@ -553,9 +550,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hmac-sha256"
-version = "1.1.7"
+version = "1.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3688e69b38018fec1557254f64c8dc2cc8ec502890182f395dbb0aa997aa5735"
+checksum = "ad6880c8d4a9ebf39c6e8b77007ce223f646a4d21ce29d99f70cb16420545425"
 
 [[package]]
 name = "http"
@@ -882,6 +879,13 @@ dependencies = [
  "chrono",
  "concurrent-queue",
  "ctor",
+ "hex",
+ "hmac-sha256",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "itertools",
  "log",
  "once_cell",
  "os_info",
