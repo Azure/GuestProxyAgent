@@ -315,7 +315,7 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
 /// # Example
 /// ```rust
 /// use proxy_agent_shared::misc_helpers;
-/// let hex_encoded_key = "aabbccddeeff00112233445566778899";
+/// let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
 /// let input_to_sign = b"Sample input data";
 /// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
 /// ```
