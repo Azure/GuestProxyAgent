@@ -552,17 +552,24 @@ mod tests {
         logger_manager::write_info("server_mock started.".to_string());
 
         let wire_server_client = WireServerClient::new(ip, port);
-        let imds_client = ImdsClient::new(ip, port);
         let goal_state = wire_server_client.get_goalstate(None, None).await.unwrap();
         let shared_config = wire_server_client
             .get_shared_config(goal_state.get_shared_config_uri(), None, None)
             .await
             .unwrap();
         assert!(!shared_config.get_role_name().is_empty());
+        wire_server_client
+            .send_telemetry_data("xml_data".to_string())
+            .await
+            .unwrap();
+
+        let imds_client = ImdsClient::new(ip, port);
         let instance_info = imds_client
             .get_imds_instance_info(None, None)
             .await
             .unwrap();
         assert!(!instance_info.get_resource_group_name().is_empty());
+
+        cancellation_token.cancel();
     }
 }
