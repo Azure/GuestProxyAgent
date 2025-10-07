@@ -58,4 +58,12 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
-openssl = "0.10"    # used for HAMC sha256
+
+# For MUSL targets (Linux MUSL)
+[target.'cfg(all(target_env = "musl", not(target_os = "windows")))'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
+
+# For GNU Linux (optional, if you want system OpenSSL)
+[target.'cfg(all(target_env = "gnu", not(target_os = "windows")))'.dependencies]
+openssl = "0.10"
