@@ -315,6 +315,7 @@ unregisters
 unspec
 uzers
 vcruntime
+vendored
 vflji
 vhd
 vmagentlog
