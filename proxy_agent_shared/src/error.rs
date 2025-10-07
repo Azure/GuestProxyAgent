@@ -16,6 +16,9 @@ pub enum Error {
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
 
+    #[error("OpenSSL error in {0}: {1}")]
+    OpenSsl(String, openssl::error::ErrorStack),
+
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),
 
