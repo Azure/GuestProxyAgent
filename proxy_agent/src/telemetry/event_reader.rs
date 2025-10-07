@@ -42,12 +42,12 @@
 use super::telemetry_event::TelemetryData;
 use super::telemetry_event::TelemetryEvent;
 use crate::common::{constants, logger, result::Result};
-use crate::host_clients::imds_client::ImdsClient;
-use crate::host_clients::wire_server_client::WireServerClient;
 use crate::shared_state::agent_status_wrapper::AgentStatusModule;
 use crate::shared_state::agent_status_wrapper::AgentStatusSharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
+use proxy_agent_shared::host_clients::imds_client::ImdsClient;
+use proxy_agent_shared::host_clients::wire_server_client::WireServerClient;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::Event;
@@ -127,12 +127,10 @@ impl EventReader {
         let wire_server_client = WireServerClient::new(
             server_ip.unwrap_or(constants::WIRE_SERVER_IP),
             server_port.unwrap_or(constants::WIRE_SERVER_PORT),
-            self.key_keeper_shared_state.clone(),
         );
         let imds_client = ImdsClient::new(
             server_ip.unwrap_or(constants::IMDS_IP),
             server_port.unwrap_or(constants::IMDS_PORT),
-            self.key_keeper_shared_state.clone(),
         );
 
         let interval = interval.unwrap_or(Duration::from_secs(300));
@@ -226,12 +224,30 @@ impl EventReader {
         wire_server_client: &WireServerClient,
         imds_client: &ImdsClient,
     ) -> Result<()> {
-        let goal_state = wire_server_client.get_goalstate().await?;
+        let guid = self
+            .key_keeper_shared_state
+            .get_current_key_guid()
+            .await
+            .unwrap_or(None);
+        let key = self
+            .key_keeper_shared_state
+            .get_current_key_value()
+            .await
+            .unwrap_or(None);
+        let goal_state = wire_server_client
+            .get_goalstate(guid.clone(), key.clone())
+            .await?;
         let shared_config = wire_server_client
-            .get_shared_config(goal_state.get_shared_config_uri())
+            .get_shared_config(
+                goal_state.get_shared_config_uri(),
+                guid.clone(),
+                key.clone(),
+            )
             .await?;
 
-        let instance_info = imds_client.get_imds_instance_info().await?;
+        let instance_info = imds_client
+            .get_imds_instance_info(guid.clone(), key.clone())
+            .await?;
         let vm_meta_data = VmMetaData {
             container_id: goal_state.get_container_id(),
             role_name: shared_config.get_role_name(),
@@ -378,8 +394,8 @@ mod tests {
     use super::*;
     use crate::common::logger;
     use crate::key_keeper::key::Key;
-    use crate::test_mock::server_mock;
     use proxy_agent_shared::misc_helpers;
+    use proxy_agent_shared::server_mock;
     use std::{env, fs};
 
     #[tokio::test]
@@ -404,8 +420,8 @@ mod tests {
             cancellation_token: cancellation_token.clone(),
             agent_status_shared_state: AgentStatusSharedState::start_new(),
         };
-        let wire_server_client = WireServerClient::new(ip, port, key_keeper_shared_state.clone());
-        let imds_client = ImdsClient::new(ip, port, key_keeper_shared_state.clone());
+        let wire_server_client = WireServerClient::new(ip, port);
+        let imds_client = ImdsClient::new(ip, port);
 
         key_keeper_shared_state
             .update_key(Key::empty())

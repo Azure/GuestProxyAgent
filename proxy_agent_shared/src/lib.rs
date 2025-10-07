@@ -4,6 +4,8 @@
 pub mod error;
 #[cfg(windows)]
 pub mod etw;
+pub mod host_clients;
+pub mod hyper_client;
 pub mod logger;
 pub mod misc_helpers;
 pub mod proxy_agent_aggregate_status;
@@ -17,3 +19,6 @@ pub mod windows;
 
 #[cfg(not(windows))]
 pub mod linux;
+
+/// Mock server for unit tests and local development
+pub mod server_mock;

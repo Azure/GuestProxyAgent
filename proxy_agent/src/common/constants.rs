@@ -19,15 +19,9 @@ pub const PROXY_AGENT_IP_NETWORK_BYTE_ORDER: u32 = 0x100007F; //"127.0.0.1";
 
 pub const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
-pub const AUTHORIZATION_SCHEME: &str = "Azure-HMAC-SHA256";
 pub const KEY_DELIVERY_METHOD_HTTP: &str = "http";
 pub const KEY_DELIVERY_METHOD_VTPM: &str = "vtpm";
-pub const CLAIMS_IS_ROOT: &str = "isRoot";
 
-pub const CLAIMS_HEADER: &str = "x-ms-azure-host-claims";
-pub const AUTHORIZATION_HEADER: &str = "x-ms-azure-host-authorization";
-pub const DATE_HEADER: &str = "x-ms-azure-host-date";
-pub const METADATA_HEADER: &str = "Metadata";
 pub const CONNECTION_HEADER: &str = "connection";
 pub const TIME_TICK_HEADER: &str = "x-ms-azure-time_tick";
 pub const NOTIFY_HEADER: &str = "x-ms-azure-notify";

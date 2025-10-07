@@ -3,7 +3,6 @@
 
 pub mod acl;
 pub mod common;
-pub mod host_clients;
 pub mod key_keeper;
 pub mod provision;
 pub mod proxy;
@@ -12,9 +11,6 @@ pub mod redirector;
 pub mod service;
 pub mod shared_state;
 pub mod telemetry;
-
-#[cfg(test)]
-pub mod test_mock;
 
 use common::cli::{Commands, CLI};
 use common::constants;

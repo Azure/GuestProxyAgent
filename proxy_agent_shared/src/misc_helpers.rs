@@ -306,6 +306,31 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
     Ok(ret)
 }
 
+/// Compute HMAC-SHA256 signature for the input using the provided hex-encoded key
+/// # Arguments
+/// * `hex_encoded_key` - The hex-encoded key used for HMAC-SHA256
+/// * `input_to_sign` - The input data to be signed
+/// # Returns
+/// A Result containing the hex-encoded signature or an error if the key is invalid
+/// # Example
+/// ```rust
+/// use proxy_agent_shared::misc_helpers;
+/// let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+/// let input_to_sign = b"Sample input data";
+/// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
+/// ```
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+    match hex::decode(hex_encoded_key) {
+        Ok(key) => {
+            let mut mac = hmac_sha256::HMAC::new(key);
+            mac.update(input_to_sign);
+            let result = mac.finalize();
+            Ok(hex::encode(result))
+        }
+        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_derive::{Deserialize, Serialize};
@@ -532,5 +557,24 @@ mod tests {
         let expected = "/var/log/azure-proxy-agent/".to_string();
         let resolved = super::resolve_env_variables(input).unwrap();
         assert_eq!(expected, resolved, "resolved string mismatch");
+    }
+
+    #[test]
+    fn compute_signature_test() {
+        let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let message = "Hello world";
+        let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
+        println!("compute_signature: {result}");
+        let invalid_hex_encoded_key =
+            "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());
+        assert!(result.is_err(), "invalid key should fail.");
+
+        let e = result.unwrap_err();
+        let error = e.to_string();
+        assert!(
+            error.contains(invalid_hex_encoded_key),
+            "Error does not contains the invalid key"
+        )
     }
 }
