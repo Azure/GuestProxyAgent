@@ -27,7 +27,6 @@ http = "1.1.0"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1", "client"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-openssl = "0.10"              # used for HAMC
 
 [dependencies.uuid]
 version = "1.3.0"
@@ -59,3 +58,4 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+openssl = "0.10"    # used for HAMC sha256

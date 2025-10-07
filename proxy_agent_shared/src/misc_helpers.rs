@@ -15,10 +15,6 @@ use std::{
 use thread_id;
 use time::{format_description, OffsetDateTime};
 
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
-use openssl::sign::Signer;
-
 #[cfg(windows)]
 use super::windows;
 
@@ -335,23 +331,9 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
     }
 }
 
-pub fn compute_signature_openssl(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
-    match hex::decode(hex_encoded_key) {
-        Ok(key) => {
-            let pkey = PKey::hmac(&key).map_err(|e| Error::OpenSsl("PKey HMAC".to_string(), e))?;
-            let mut signer = Signer::new(MessageDigest::sha256(), &pkey)
-                .map_err(|e| Error::OpenSsl("Signer".to_string(), e))?;
-            signer
-                .update(input_to_sign)
-                .map_err(|e| Error::OpenSsl("Signer update".to_string(), e))?;
-            let signature = signer
-                .sign_to_vec()
-                .map_err(|e| Error::OpenSsl("Signer sign_to_vec".to_string(), e))?;
-            Ok(hex::encode(signature))
-        }
-        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
-    }
-}
+#[cfg(not(windows))]
+pub use linux::compute_signature_internal;
+
 
 #[cfg(test)]
 mod tests {
@@ -587,12 +569,12 @@ mod tests {
         let message = "Hello world";
         let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
         println!("compute_signature: {result}");
-        let result_ssl =
-            super::compute_signature_openssl(hex_encoded_key, message.as_bytes()).unwrap();
-        println!("compute_signature_ssl: {result_ssl}");
+        let internal_result =
+            super::compute_signature_internal(hex_encoded_key, message.as_bytes()).unwrap();
+        println!("compute_signature_internal: {internal_result}");
         assert_eq!(
-            result, result_ssl,
-            "openssl and hmac_sha256 results mismatch"
+            result, internal_result,
+            "compute_signature_internal and hmac_sha256 results mismatch"
         );
         let invalid_hex_encoded_key =
             "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
