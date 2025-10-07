@@ -16,8 +16,12 @@ pub enum Error {
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
 
-    #[error("OpenSSL error in {0}: {1}")]
-    OpenSsl(String, openssl::error::ErrorStack),
+    #[cfg(not(windows))]
+    #[error("ComputeSignature error in {0}: {1}")]
+    ComputeSignature(String, openssl::error::ErrorStack),
+    #[cfg(windows)]
+    #[error("ComputeSignature error in {0}: error code: {1}")]
+    ComputeSignature(String, windows_sys::Win32::Foundation::NTSTATUS),
 
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),

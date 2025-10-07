@@ -20,7 +20,6 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 tokio-util = "0.7.11"
 log = { version = "0.4.26", features = ["std"] }
 ctor = "0.3.6"                # used for test setup and clean up
-hmac-sha256 = "1.1.6"         # use HMAC using the SHA-256 hash function
 hex = "0.4.3"                 # hex encode 
 itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
 http = "1.1.0"
@@ -50,6 +49,7 @@ features = [
   "Win32_Security",
   "Win32_System_EventLog",
   "Win32_System_WindowsProgramming",
+  "Win32_Security_Cryptography",
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",
   "Win32_System_SystemInformation",

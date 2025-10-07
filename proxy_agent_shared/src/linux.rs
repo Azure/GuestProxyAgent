@@ -115,18 +115,19 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     ))
 }
 
-pub fn compute_signature_internal(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
     match hex::decode(hex_encoded_key) {
         Ok(key) => {
-            let pkey = PKey::hmac(&key).map_err(|e| Error::OpenSsl("PKey HMAC".to_string(), e))?;
+            let pkey = PKey::hmac(&key)
+                .map_err(|e| Error::ComputeSignature("PKey HMAC".to_string(), e))?;
             let mut signer = Signer::new(MessageDigest::sha256(), &pkey)
-                .map_err(|e| Error::OpenSsl("Signer".to_string(), e))?;
+                .map_err(|e| Error::ComputeSignature("Signer".to_string(), e))?;
             signer
                 .update(input_to_sign)
-                .map_err(|e| Error::OpenSsl("Signer update".to_string(), e))?;
+                .map_err(|e| Error::ComputeSignature("Signer update".to_string(), e))?;
             let signature = signer
                 .sign_to_vec()
-                .map_err(|e| Error::OpenSsl("Signer sign_to_vec".to_string(), e))?;
+                .map_err(|e| Error::ComputeSignature("Signer sign_to_vec".to_string(), e))?;
             Ok(hex::encode(signature))
         }
         Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
