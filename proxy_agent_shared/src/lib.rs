@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod certificate;
 pub mod error;
 #[cfg(windows)]
 pub mod etw;
+pub mod formatted_error_message;
 pub mod host_clients;
 pub mod hyper_client;
 pub mod logger;

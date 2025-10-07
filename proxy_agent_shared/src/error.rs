@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 use http::StatusCode;
 
+use crate::formatted_error_message::FormattedErrorMessage;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // windows_service::Error is a custom error type from the windows-service crate
@@ -40,6 +42,9 @@ pub enum Error {
 
     #[error("{0} command: {1}")]
     Command(CommandErrorType, String),
+
+    #[error("{0}")]
+    OtherError(FormattedErrorMessage),
 }
 
 #[derive(Debug, thiserror::Error)]
