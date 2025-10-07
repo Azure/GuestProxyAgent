@@ -6,14 +6,13 @@ use crate::certificate::certificate_helper::{
 };
 use crate::error::Error;
 use crate::formatted_error_message::FormattedErrorMessage;
-use crate::hyper_client;
-//use crate::hyper_client::read_response_body_as_string;
 use crate::host_clients::hostga_plugin_model::{Certificates, RawCertificatesPayload, VMSettings};
+use crate::hyper_client;
 use crate::logger::LoggerLevel;
 use crate::result::Result;
 use base64::Engine;
 use http::{Method, StatusCode, Uri};
-use serde::{Deserialize, Serialize};
+use serde_derive::{Deserialize, Serialize};
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -132,7 +131,7 @@ impl HostGAPluginClient {
         headers: &HashMap<String, String>,
     ) -> Result<HostGAPluginResponse<T>>
     where
-        for<'a> T: Deserialize<'a>,
+        for<'a> T: serde::Deserialize<'a>,
     {
         let logger = self.logger;
         let url: Uri = url
