@@ -124,6 +124,7 @@ guiddef
 handleapi
 hklm
 hlist
+HMAC
 hostga
 httpwg
 Iaa
