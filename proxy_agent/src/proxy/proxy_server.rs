@@ -667,7 +667,8 @@ impl ProxyServer {
         // true only if the finished_time_tick is greater than or equal to the query_time_tick
         //          or the secure channel is latched already and finished_time_tick is greater than 0
         let report_provision_finished = provision_state.finished_time_tick >= query_time_tick
-            || (provision_state.is_secure_channel_latched() && provision_state.finished_time_tick > 0);
+            || (provision_state.is_secure_channel_latched()
+                && provision_state.finished_time_tick > 0);
 
         let find_notify_header = request.headers().get(constants::NOTIFY_HEADER).is_some();
         if find_notify_header && !report_provision_finished {
