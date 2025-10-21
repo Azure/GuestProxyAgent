@@ -640,7 +640,10 @@ impl ProxyServer {
             None => {
                 logger.write(
                     LoggerLevel::Warn,
-                    "No 'x-ms-azure-time_tick' header found in the request, use '0'.".to_string(),
+                    format!(
+                        "No '{}' header found in the request, use '0'.",
+                        constants::TIME_TICK_HEADER
+                    ),
                 );
                 "0"
             }
