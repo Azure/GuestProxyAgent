@@ -23,7 +23,7 @@ pub const KEY_DELIVERY_METHOD_HTTP: &str = "http";
 pub const KEY_DELIVERY_METHOD_VTPM: &str = "vtpm";
 
 pub const CONNECTION_HEADER: &str = "connection";
-pub const TIME_TICK_HEADER: &str = "x-ms-azure-time_tick";
+pub const TIME_TICK_HEADER: &str = "x-ms-azure-time-tick";
 pub const NOTIFY_HEADER: &str = "x-ms-azure-notify";
 
 // Default Config Settings

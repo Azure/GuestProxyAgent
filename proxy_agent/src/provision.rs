@@ -654,6 +654,7 @@ pub mod provision_query {
 
 #[cfg(test)]
 mod tests {
+    use crate::key_keeper;
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
@@ -696,12 +697,37 @@ mod tests {
         let provision_status = provision_query.get_provision_status_wait().await;
         assert!(
             !provision_status.finished,
-            "provision_status.0 must be false"
+            "provision_status.finished must be false"
         );
         assert_eq!(
             0,
             provision_status.errorMessage.len(),
-            "provision_status.1 must be empty"
+            "provision_status.errorMessage must be empty"
+        );
+
+        // test secure channel KEY_LATCH_READY only provision state
+        _ = super::update_provision_state(
+            ProvisionFlags::KEY_LATCH_READY,
+            Some(temp_test_path.to_path_buf()),
+            cancellation_token.clone(),
+            key_keeper_shared_state.clone(),
+            telemetry_shared_state.clone(),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        _ = key_keeper_shared_state
+            .update_current_secure_channel_state(key_keeper::MUST_SIG_WIRESERVER.to_string())
+            .await;
+        let provision_status = provision_query.get_provision_status_wait().await;
+        assert!(
+            !provision_status.finished,
+            "provision_status.finished must be false"
+        );
+        assert_eq!(
+            0,
+            provision_status.errorMessage.len(),
+            "provision_status.errorMessage must be empty"
         );
 
         let dir1 = temp_test_path.to_path_buf();
