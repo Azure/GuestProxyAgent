@@ -296,6 +296,7 @@ jobs:
                   rpm \
                   musl-tools \
                   libssl-dev \
+                  pkg-config \
 
           sudo snap install dotnet-sdk --classic
           sudo chown -R root:root /var/lib
@@ -468,6 +469,7 @@ jobs:
                   musl-tools \
                   gcc-aarch64-linux-gnu \
                   libssl-dev \
+                  pkg-config \
 
           sudo sudo apt-get install -y dotnet-sdk-8.0
         
