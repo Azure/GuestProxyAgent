@@ -10,6 +10,14 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+use windows_sys::Win32::Security::Cryptography::{
+    //bcrypt.dll functions
+    BCryptCreateHash,
+    BCryptDestroyHash,
+    BCryptFinishHash,
+    BCryptHashData,
+    BCRYPT_HMAC_SHA256_ALG_HANDLE,
+};
 use windows_sys::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, // version.dll
     GetFileVersionInfoW,
@@ -328,6 +336,69 @@ pub fn get_file_product_version(file_path: &Path) -> Result<Version> {
     let version =
         Version::from_major_minor_build_revision(major, minor, Some(build), Some(revision));
     Ok(version)
+}
+
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+    match hex::decode(hex_encoded_key) {
+        Ok(key) => {
+            // Create HMAC hash object
+            let mut h_hash = std::ptr::null_mut();
+            let status = unsafe {
+                BCryptCreateHash(
+                    BCRYPT_HMAC_SHA256_ALG_HANDLE,
+                    &mut h_hash,
+                    std::ptr::null_mut(),
+                    0,
+                    key.as_ptr() as *mut u8,
+                    key.len() as u32,
+                    0,
+                )
+            };
+            if status != 0 {
+                return Err(Error::ComputeSignature(
+                    "BCryptCreateHash".to_string(),
+                    status,
+                ));
+            }
+
+            // Message to sign
+            let status = unsafe {
+                BCryptHashData(
+                    h_hash,
+                    input_to_sign.as_ptr() as *mut u8,
+                    input_to_sign.len() as u32,
+                    0,
+                )
+            };
+            if status != 0 {
+                return Err(Error::ComputeSignature(
+                    "BCryptHashData".to_string(),
+                    status,
+                ));
+            }
+            // Finalize HMAC
+            let mut signature = vec![0u8; 32]; // SHA256 output size
+            let status = unsafe {
+                BCryptFinishHash(h_hash, signature.as_mut_ptr(), signature.len() as u32, 0)
+            };
+            if status != 0 {
+                return Err(Error::ComputeSignature(
+                    "BCryptFinishHash".to_string(),
+                    status,
+                ));
+            }
+            // Clean up
+            let status = unsafe { BCryptDestroyHash(h_hash) };
+            if status != 0 {
+                return Err(Error::ComputeSignature(
+                    "BCryptDestroyHash".to_string(),
+                    status,
+                ));
+            }
+            Ok(hex::encode(signature))
+        }
+        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
+    }
 }
 
 #[cfg(test)]
