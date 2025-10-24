@@ -319,17 +319,10 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
 /// let input_to_sign = b"Sample input data";
 /// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
 /// ```
-pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
-    match hex::decode(hex_encoded_key) {
-        Ok(key) => {
-            let mut mac = hmac_sha256::HMAC::new(key);
-            mac.update(input_to_sign);
-            let result = mac.finalize();
-            Ok(hex::encode(result))
-        }
-        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
-    }
-}
+#[cfg(not(windows))]
+pub use linux::compute_signature;
+#[cfg(windows)]
+pub use windows::compute_signature;
 
 #[cfg(test)]
 mod tests {
@@ -565,6 +558,10 @@ mod tests {
         let message = "Hello world";
         let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
         println!("compute_signature: {result}");
+        assert_eq!(
+            "a15b46f621193876a6d3121b836dc2af4180e2786642e55235ef916fc5b082a3", result,
+            "compute_signature results mismatch"
+        );
         let invalid_hex_encoded_key =
             "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
         let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());

@@ -5,6 +5,9 @@ use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::result::Result;
 use once_cell::sync::Lazy;
+use openssl::hash::MessageDigest;
+use openssl::pkey::PKey;
+use openssl::sign::Signer;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -110,6 +113,25 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
         CommandErrorType::Findmnt,
         format!("Cannot find cgroup2 file mount: {}.", output.message()),
     ))
+}
+
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+    match hex::decode(hex_encoded_key) {
+        Ok(key) => {
+            let pkey = PKey::hmac(&key)
+                .map_err(|e| Error::ComputeSignature("PKey HMAC".to_string(), e))?;
+            let mut signer = Signer::new(MessageDigest::sha256(), &pkey)
+                .map_err(|e| Error::ComputeSignature("Signer".to_string(), e))?;
+            signer
+                .update(input_to_sign)
+                .map_err(|e| Error::ComputeSignature("Signer update".to_string(), e))?;
+            let signature = signer
+                .sign_to_vec()
+                .map_err(|e| Error::ComputeSignature("Signer sign_to_vec".to_string(), e))?;
+            Ok(hex::encode(signature))
+        }
+        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
+    }
 }
 
 #[cfg(test)]
