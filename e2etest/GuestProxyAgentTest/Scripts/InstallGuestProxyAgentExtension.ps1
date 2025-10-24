@@ -15,8 +15,11 @@ $proxy = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows Azure\HandlerState"
 foreach ($obj in $proxy) { 
     if($obj.Name -like "*Microsoft.CPlat.ProxyAgent.ProxyAgentWindows*") 
     { 
-        $nonRootRegKeyPath = $obj.Name 
+        $nonRootRegKeyPath = $obj.Name
         Write-Output "$((Get-Date).ToUniversalTime()) - Got proxy agent extension registry key path: " $nonRootRegKeyPath
+        $extensionRegKeyName = Split-Path -Path $nonRootRegKeyPath -Leaf
+        # $extensionRegKeyName example: Microsoft.CPlat.ProxyAgent.ProxyAgentWindows_1.0.36
+        Write-Output "$((Get-Date).ToUniversalTime()) - Proxy agent extension registry key name is: " $extensionRegKeyName
     } 
 }  
 $registrykeyPath = $nonRootRegKeyPath -replace '^HKEY_LOCAL_MACHINE', 'HKLM:'
@@ -31,7 +34,7 @@ Write-Output "$((Get-Date).ToUniversalTime()) - Status file path: $statusFilePat
 $extensionFolder = Split-Path -Path $statusFolderPath -Parent
 Write-Output "$((Get-Date).ToUniversalTime()) - Extension Folder: $extensionFolder"
 $PIRExePath = [IO.Path]::Combine($extensionFolder, "ProxyAgentExt.exe")
-$PIRExtensionFolderZIPLocation = [IO.Path]::Combine($extensionFolder, "Microsoft.CPlat.ProxyAgent.ProxyAgentWindows_" + $PIRversion + ".zip")
+$PIRExtensionFolderZIPLocation = [IO.Path]::Combine($extensionFolder, $extensionRegKeyName + ".zip")
 
 Write-Output "$((Get-Date).ToUniversalTime()) - Delete status file of PIR version" 
 $boolStatus = Test-Path -Path $statusFilePath
