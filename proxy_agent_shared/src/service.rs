@@ -125,13 +125,13 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
         match windows_service::query_service_config(_service_name) {
             Ok(_service_config) => {
                 message = format!(
-                    "check_service_installed: Ebpf Driver: {_service_name} successfully queried.",
+                    "check_service_installed: service: {_service_name} successfully queried.",
                 );
                 (true, message)
             }
             Err(e) => {
                 message = format!(
-                    "check_service_installed: Ebpf Driver: {_service_name} unsuccessfully queried with error: {e}"
+                    "check_service_installed: service: {_service_name} unsuccessfully queried with error: {e}"
                 );
                 (false, message)
             }
