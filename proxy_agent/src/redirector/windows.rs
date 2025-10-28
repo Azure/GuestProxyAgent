@@ -14,7 +14,11 @@ use std::mem;
 use std::ptr;
 use windows_sys::Win32::Networking::WinSock;
 
-pub struct BpfObject(pub *mut bpf_obj::bpf_object);
+/// Wrapper for eBPF object and link
+/// This struct holds pointers to the eBPF object and its associated link.
+/// Start from ebpf-for-windows v1.0.0-rc, eBPF programs need to keep the link alive
+/// to ensure the eBPF program remains attached.
+pub struct BpfObject(pub *mut bpf_obj::bpf_object, pub *mut bpf_obj::ebpf_link_t);
 // Safety: bpf_object, which is a reference to an eBPF object, has no dependencies on thread-local storage and can
 // safely be sent to another thread. This is not explicitly documented in the Windows eBPF library, but the library does
 // document it aims to be source-compatible with libbpf[0]. Note that synchronization is required to share this object

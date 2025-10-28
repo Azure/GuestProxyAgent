@@ -22,7 +22,10 @@ impl BpfObject {
     }
 
     pub fn new() -> Self {
-        Self(std::ptr::null::<bpf_object>().cast_mut())
+        Self(
+            std::ptr::null::<bpf_object>().cast_mut(),
+            std::ptr::null::<ebpf_link_t>().cast_mut(),
+        )
     }
 
     /**
@@ -99,7 +102,7 @@ impl BpfObject {
 
         On failure appropriate RESULT is returned.
      */
-    pub fn attach_bpf_prog(&self) -> Result<()> {
+    pub fn attach_bpf_prog(&mut self) -> Result<()> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
@@ -126,13 +129,13 @@ impl BpfObject {
         let compartment_id = 1;
         let mut link: ebpf_link_t = ebpf_link_t::empty();
         let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
-        let link: *mut *mut ebpf_link_t = &mut link as *mut *mut ebpf_link_t;
+        //let link: *mut *mut ebpf_link_t = &mut link as *mut *mut ebpf_link_t;
         match ebpf_prog_attach(
             connect4_program,
             std::ptr::null(),
             &compartment_id as *const i32 as *const c_void,
             size_of_val(&compartment_id),
-            link,
+            &mut link as *mut *mut ebpf_link_t,
         ) {
             Ok(r) => {
                 if r != 0 {
@@ -144,36 +147,7 @@ impl BpfObject {
                 logger::write_information(
                     "Success attached authorize_connect4 program.".to_string(),
                 );
-
-                match bpf_link_disconnect(unsafe { *link }) {
-                    Ok(_r) => {
-                        logger::write_information("Success disconnected link.".to_string());
-
-                        match bpf_link_destroy(unsafe { *link }) {
-                            Ok(r) => {
-                                if r != 0 {
-                                    return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
-                                        program_name.to_string(),
-                                        format!("bpf_link_destroy return with error code '{r}'"),
-                                    )));
-                                }
-                                logger::write_information("Success destroyed link.".to_string());
-                            }
-                            Err(e) => {
-                                return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
-                                    program_name.to_string(),
-                                    format!("bpf_link_destroy return with error '{e}'"),
-                                )));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
-                            program_name.to_string(),
-                            format!("bpf_link_disconnect return with error '{e}'"),
-                        )));
-                    }
-                }
+                self.1 = link;
             }
             Err(e) => {
                 return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
@@ -259,8 +233,18 @@ impl BpfObject {
         if let Err(e) = bpf_object__close(self.0) {
             logger::write_error(format!("bpf_object__close with error: {e}"));
         }
-
         self.0 = std::ptr::null::<bpf_object>().cast_mut();
+
+        if self.1.is_null() {
+            return;
+        }
+        if let Err(e) = bpf_link_disconnect(self.1) {
+            logger::write_error(format!("bpf_link_disconnect with error: {e}"));
+        }
+        if let Err(e) = bpf_link_destroy(self.1) {
+            logger::write_error(format!("bpf_link_destroy with error: {e}"));
+        }
+        self.1 = std::ptr::null::<ebpf_link_t>().cast_mut();
     }
 
     /**
