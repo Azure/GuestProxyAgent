@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-
 pub const WIRE_SERVER_IP: &str = "168.63.129.16";
 pub const WIRE_SERVER_PORT: u16 = 80u16;
 pub const GA_PLUGIN_IP: &str = "168.63.129.16";
@@ -34,7 +33,3 @@ pub const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 
 pub const MAX_LOG_FILE_COUNT: usize = 5;
 pub const MAX_LOG_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
-
-// An empty PathBuf constant
-pub static EMPTY_PATH: once_cell::sync::Lazy<std::path::PathBuf> =
-    once_cell::sync::Lazy::new(|| std::path::PathBuf::from(""));
