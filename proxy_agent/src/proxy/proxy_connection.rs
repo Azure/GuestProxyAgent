@@ -353,8 +353,8 @@ impl ConnectionLogger {
             }
         }
 
-        if logger_level > logger_manager::get_max_logger_level()
-            || config::get_logs_dir() == std::path::PathBuf::from("")
+        if (logger_level > logger_manager::get_max_logger_level())
+            || (config::get_logs_dir() == (*crate::common::constants::EMPTY_PATH))
         {
             // If the logger level is higher than the max logger level or logs directory is not set, skip logging
             return;
