@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use http::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -8,6 +9,25 @@ pub enum Error {
     #[cfg(windows)]
     #[error("{0}: {1}")]
     WindowsService(windows_service::Error, std::io::Error),
+
+    #[error("{0}")]
+    Hyper(HyperErrorType),
+
+    #[error("Hex encoded key '{0}' is invalid: {1}")]
+    Hex(String, hex::FromHexError),
+
+    #[cfg(not(windows))]
+    #[error("ComputeSignature error in {0}: {1}")]
+    ComputeSignature(String, openssl::error::ErrorStack),
+    #[cfg(windows)]
+    #[error("ComputeSignature error in {0}: error code: {1}")]
+    ComputeSignature(String, windows_sys::Win32::Foundation::NTSTATUS),
+
+    #[error("Failed to parse URL {0} with error: {1}")]
+    ParseUrl(String, String),
+
+    #[error("{0} with the error: {1}")]
+    WireServer(WireServerErrorType, String),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -49,9 +69,42 @@ pub enum CommandErrorType {
     CommandName(String),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum HyperErrorType {
+    #[error("{0}: {1}")]
+    Custom(String, hyper::Error),
+
+    #[error("Host connection error: {0}")]
+    HostConnection(String),
+
+    #[error("Failed to build request with error: {0}")]
+    RequestBuilder(String),
+
+    #[error("Failed to receive the request body with error: {0}")]
+    RequestBody(String),
+
+    #[error("Failed to get response from {0}, status code: {1}")]
+    ServerError(String, StatusCode),
+
+    #[error("Deserialization failed: {0}")]
+    Deserialize(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WireServerErrorType {
+    #[error("Telemetry call to wire server failed")]
+    Telemetry,
+
+    #[error("Goal state call to wire server failed")]
+    GoalState,
+
+    #[error("Shared config call to wire server failed")]
+    SharedConfig,
+}
+
 #[cfg(test)]
 mod test {
-    use super::{CommandErrorType, Error, ParseVersionErrorType};
+    use super::{CommandErrorType, Error, ParseVersionErrorType, WireServerErrorType};
     use std::fs;
 
     #[test]
@@ -63,6 +116,15 @@ mod test {
             "No such file or directory (os error 2)"
         };
         assert_eq!(error.to_string(), expected_err);
+
+        error = Error::WireServer(
+            WireServerErrorType::Telemetry,
+            "Invalid response".to_string(),
+        );
+        assert_eq!(
+            error.to_string(),
+            "Telemetry call to wire server failed with the error: Invalid response"
+        );
 
         error = regex::Regex::new(r"abc(").map_err(Into::into).unwrap_err();
         assert!(error
@@ -79,6 +141,15 @@ mod test {
         assert_eq!(
             error.to_string(),
             "Findmnt command: Failed with exit code: 5"
+        );
+
+        let error = Error::Hyper(super::HyperErrorType::ServerError(
+            "testurl.com".to_string(),
+            http::StatusCode::from_u16(500).unwrap(),
+        ));
+        assert_eq!(
+            error.to_string(),
+            "Failed to get response from testurl.com, status code: 500 Internal Server Error"
         );
     }
 }

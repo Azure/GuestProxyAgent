@@ -535,8 +535,8 @@ pub async fn get_provision_state_internal(
 /// provision query module designed for GPA command line, serves for --status [--wait seconds] option
 /// It is used to query the provision status from GPA service via http request
 pub mod provision_query {
-    use crate::common::{constants, error::Error, helpers, hyper_client, logger, result::Result};
-    use proxy_agent_shared::misc_helpers;
+    use crate::common::{constants, error::Error, helpers, logger, result::Result};
+    use proxy_agent_shared::{hyper_client, misc_helpers};
     use serde_derive::{Deserialize, Serialize};
     use std::{collections::HashMap, net::Ipv4Addr, time::Duration};
 
@@ -634,7 +634,10 @@ pub mod provision_query {
                 .map_err(|e| Error::ParseUrl(provision_url, e.to_string()))?;
 
             let mut headers = HashMap::new();
-            headers.insert(constants::METADATA_HEADER.to_string(), "true".to_string());
+            headers.insert(
+                hyper_client::METADATA_HEADER.to_string(),
+                "true".to_string(),
+            );
             headers.insert(
                 constants::TIME_TICK_HEADER.to_string(),
                 self.query_time_tick.to_string(),
@@ -642,13 +645,16 @@ pub mod provision_query {
             if notify {
                 headers.insert(constants::NOTIFY_HEADER.to_string(), "true".to_string());
             }
-            hyper_client::get(&provision_url, &headers, None, None, logger::write_warning).await
+            hyper_client::get(&provision_url, &headers, None, None, logger::write_warning)
+                .await
+                .map_err(Error::ProxyAgentSharedError)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::key_keeper;
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
@@ -691,12 +697,37 @@ mod tests {
         let provision_status = provision_query.get_provision_status_wait().await;
         assert!(
             !provision_status.finished,
-            "provision_status.0 must be false"
+            "provision_status.finished must be false"
         );
         assert_eq!(
             0,
             provision_status.errorMessage.len(),
-            "provision_status.1 must be empty"
+            "provision_status.errorMessage must be empty"
+        );
+
+        // test secure channel KEY_LATCH_READY only provision state
+        _ = super::update_provision_state(
+            ProvisionFlags::KEY_LATCH_READY,
+            Some(temp_test_path.to_path_buf()),
+            cancellation_token.clone(),
+            key_keeper_shared_state.clone(),
+            telemetry_shared_state.clone(),
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        _ = key_keeper_shared_state
+            .update_current_secure_channel_state(key_keeper::MUST_SIG_WIRESERVER.to_string())
+            .await;
+        let provision_status = provision_query.get_provision_status_wait().await;
+        assert!(
+            !provision_status.finished,
+            "provision_status.finished must be false"
+        );
+        assert_eq!(
+            0,
+            provision_status.errorMessage.len(),
+            "provision_status.errorMessage must be empty"
         );
 
         let dir1 = temp_test_path.to_path_buf();

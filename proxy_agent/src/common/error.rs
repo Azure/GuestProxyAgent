@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use http::{uri::InvalidUri, StatusCode};
+use proxy_agent_shared::error::HyperErrorType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -11,14 +12,11 @@ pub enum Error {
     #[error("{0}")]
     Hyper(HyperErrorType),
 
-    #[error("Hex encoded key '{0}' is invalid: {1}")]
-    Hex(String, hex::FromHexError),
+    #[error(transparent)]
+    ProxyAgentSharedError(#[from] proxy_agent_shared::error::Error),
 
     #[error("Key error: {0}")]
     Key(KeyErrorType),
-
-    #[error("{0} with the error: {1}")]
-    WireServer(WireServerErrorType, String),
 
     #[error("Failed to parse URL {0} with error: {1}")]
     ParseUrl(String, String),
@@ -48,39 +46,6 @@ pub enum Error {
 
     #[error("{0}")]
     FindAuditEntryError(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum HyperErrorType {
-    #[error("{0}: {1}")]
-    Custom(String, hyper::Error),
-
-    #[error("Host connection error: {0}")]
-    HostConnection(String),
-
-    #[error("Failed to build request with error: {0}")]
-    RequestBuilder(String),
-
-    #[error("Failed to receive the request body with error: {0}")]
-    RequestBody(String),
-
-    #[error("Failed to get response from {0}, status code: {1}")]
-    ServerError(String, StatusCode),
-
-    #[error("Deserialization failed: {0}")]
-    Deserialize(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum WireServerErrorType {
-    #[error("Telemetry call to wire server failed")]
-    Telemetry,
-
-    #[error("Goal state call to wire server failed")]
-    GoalState,
-
-    #[error("Shared config call to wire server failed")]
-    SharedConfig,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -209,12 +174,12 @@ pub enum WindowsApiErrorType {
 
 #[cfg(test)]
 mod test {
-    use super::{Error, KeyErrorType, WireServerErrorType};
+    use super::{Error, KeyErrorType};
     use http::StatusCode;
 
     #[test]
     fn error_formatting_test() {
-        let mut error = Error::Hyper(super::HyperErrorType::ServerError(
+        let error = Error::Hyper(super::HyperErrorType::ServerError(
             "testurl.com".to_string(),
             StatusCode::from_u16(500).unwrap(),
         ));
@@ -223,22 +188,13 @@ mod test {
             "Failed to get response from testurl.com, status code: 500 Internal Server Error"
         );
 
-        error = Error::WireServer(
-            WireServerErrorType::Telemetry,
-            "Invalid response".to_string(),
-        );
-        assert_eq!(
-            error.to_string(),
-            "Telemetry call to wire server failed with the error: Invalid response"
-        );
-
-        error = Error::Key(KeyErrorType::SendKeyRequest(
+        let error = Error::Key(KeyErrorType::SendKeyRequest(
             "acquire".to_string(),
             error.to_string(),
         ));
         assert_eq!(
             error.to_string(),
-            "Key error: Failed to send acquire key with error: Telemetry call to wire server failed with the error: Invalid response"
+            "Key error: Failed to send acquire key with error: Failed to get response from testurl.com, status code: 500 Internal Server Error"
         );
     }
 }

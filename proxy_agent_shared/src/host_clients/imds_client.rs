@@ -21,29 +21,32 @@
 //! ```
 
 use super::instance_info::InstanceInfo;
-use crate::common::{error::Error, hyper_client, logger, result::Result};
-use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+use crate::hyper_client;
+use crate::logger::logger_manager;
+use crate::{error::Error, result::Result};
 use hyper::Uri;
 use std::collections::HashMap;
 
 pub struct ImdsClient {
     ip: String,
     port: u16,
-    key_keeper_shared_state: KeyKeeperSharedState,
 }
 
 const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
 
 impl ImdsClient {
-    pub fn new(ip: &str, port: u16, key_keeper_shared_state: KeyKeeperSharedState) -> Self {
+    pub fn new(ip: &str, port: u16) -> Self {
         ImdsClient {
             ip: ip.to_string(),
             port,
-            key_keeper_shared_state,
         }
     }
 
-    pub async fn get_imds_instance_info(&self) -> Result<InstanceInfo> {
+    pub async fn get_imds_instance_info(
+        &self,
+        key_guid: Option<String>,
+        key: Option<String>,
+    ) -> Result<InstanceInfo> {
         let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
 
         let url: Uri = url
@@ -52,19 +55,6 @@ impl ImdsClient {
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 
-        hyper_client::get(
-            &url,
-            &headers,
-            self.key_keeper_shared_state
-                .get_current_key_guid()
-                .await
-                .unwrap_or(None),
-            self.key_keeper_shared_state
-                .get_current_key_value()
-                .await
-                .unwrap_or(None),
-            logger::write_warning,
-        )
-        .await
+        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn).await
     }
 }
