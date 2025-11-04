@@ -172,6 +172,11 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+// Returns a new empty PathBuf
+pub fn empty_path() -> PathBuf {
+    PathBuf::new()
+}
+
 /// Search files in a directory with a regex pattern
 /// # Arguments
 /// * `dir` - The directory to search
@@ -184,7 +189,7 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
 /// ```rust
 /// use std::path::PathBuf;
 /// use proxy_agent_shared::misc_helpers;
-/// let dir = PathBuf::from("C:\\");
+/// let dir = PathBuf::from(".");
 /// let search_regex_pattern = r"^(.*\.log)$";  // search for files with .log extension
 /// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
 ///
@@ -305,6 +310,24 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
 
     Ok(ret)
 }
+
+/// Compute HMAC-SHA256 signature for the input using the provided hex-encoded key
+/// # Arguments
+/// * `hex_encoded_key` - The hex-encoded key used for HMAC-SHA256
+/// * `input_to_sign` - The input data to be signed
+/// # Returns
+/// A Result containing the hex-encoded signature or an error if the key is invalid
+/// # Example
+/// ```rust
+/// use proxy_agent_shared::misc_helpers;
+/// let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+/// let input_to_sign = b"Sample input data";
+/// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
+/// ```
+#[cfg(not(windows))]
+pub use linux::compute_signature;
+#[cfg(windows)]
+pub use windows::compute_signature;
 
 #[cfg(test)]
 mod tests {
@@ -490,6 +513,12 @@ mod tests {
     }
 
     #[test]
+    fn empty_path_test() {
+        let empty_path = super::empty_path();
+        assert_eq!(PathBuf::from(""), empty_path, "Empty path is not empty");
+    }
+
+    #[test]
     fn json_clone_test() {
         let test = TestStruct {
             thread_id: super::get_thread_identity(),
@@ -532,5 +561,28 @@ mod tests {
         let expected = "/var/log/azure-proxy-agent/".to_string();
         let resolved = super::resolve_env_variables(input).unwrap();
         assert_eq!(expected, resolved, "resolved string mismatch");
+    }
+
+    #[test]
+    fn compute_signature_test() {
+        let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let message = "Hello world";
+        let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
+        println!("compute_signature: {result}");
+        assert_eq!(
+            "a15b46f621193876a6d3121b836dc2af4180e2786642e55235ef916fc5b082a3", result,
+            "compute_signature results mismatch"
+        );
+        let invalid_hex_encoded_key =
+            "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());
+        assert!(result.is_err(), "invalid key should fail.");
+
+        let e = result.unwrap_err();
+        let error = e.to_string();
+        assert!(
+            error.contains(invalid_hex_encoded_key),
+            "Error does not contains the invalid key"
+        )
     }
 }

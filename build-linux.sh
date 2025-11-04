@@ -224,10 +224,10 @@ pushd build
     mv azure-proxy-agent azure-proxy-agent_${pkgversion}
     tar -czf azure-proxy-agent_${pkgversion}.tar.gz azure-proxy-agent_${pkgversion}
 popd
-pushd rpmbuild
+pushd rpm-build
     mkdir SOURCES BUILD RPMS SRPMS
     cp ../build/azure-proxy-agent_${pkgversion}.tar.gz SOURCES/
-    rpmbuild --target $rpm_target --define "_topdir ${rootdir}/rpmbuild" --define "pkgversion ${pkgversion}" -ba SPECS/azure-proxy-agent.spec
+    rpmbuild --target $rpm_target --define "_topdir ${rootdir}/rpm-build" --define "pkgversion ${pkgversion}" -ba SPECS/azure-proxy-agent.spec
     error_code=$?
     if [ $error_code -ne 0 ]
     then 
@@ -237,7 +237,7 @@ pushd rpmbuild
 popd
 rm -rf build 
 echo "======= copy rpm package file to Package folder"
-cp -f $rootdir/rpmbuild/RPMS/${rpm_target}/azure-proxy-agent-${pkgversion}-0.${rpm_target}.rpm $out_package_dir/
+cp -f $rootdir/rpm-build/RPMS/${rpm_target}/azure-proxy-agent-${pkgversion}-0.${rpm_target}.rpm $out_package_dir/
 
 echo "======= generate deb package"
 echo "Generating deb package -------------- "

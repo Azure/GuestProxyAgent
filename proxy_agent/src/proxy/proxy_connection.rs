@@ -3,9 +3,9 @@
 
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
-use crate::common::error::{Error, HyperErrorType};
+use crate::common::config;
+use crate::common::error::Error;
 use crate::common::result::Result;
-use crate::common::{config, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
@@ -14,7 +14,10 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
+use proxy_agent_shared::error::HyperErrorType;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
+use proxy_agent_shared::misc_helpers;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
@@ -243,9 +246,38 @@ pub struct HttpConnectionContext {
     pub url: hyper::Uri,
     pub tcp_connection_context: TcpConnectionContext,
     pub logger: ConnectionLogger,
+    pub stages: Vec<String>,
 }
 
 impl HttpConnectionContext {
+    pub fn new(
+        id: u128,
+        method: hyper::Method,
+        url: hyper::Uri,
+        tcp_connection_context: TcpConnectionContext,
+    ) -> Self {
+        let logger = ConnectionLogger::new(tcp_connection_context.id, id);
+        Self {
+            id,
+            now: Instant::now(),
+            method,
+            url,
+            tcp_connection_context,
+            logger,
+            stages: Vec::new(),
+        }
+    }
+
+    fn add_stage(&mut self, value: String) {
+        self.stages.push(format!(
+            "[{}] - {} - {} - {}",
+            self.id,
+            self.now.elapsed().as_millis(),
+            misc_helpers::get_date_time_string_with_milliseconds(),
+            value
+        ));
+    }
+
     pub fn should_skip_sig(&self) -> bool {
         hyper_client::should_skip_sig(&self.method, &self.url)
     }
@@ -255,6 +287,10 @@ impl HttpConnectionContext {
     }
 
     pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
+        if config::get_enable_http_proxy_trace() {
+            self.add_stage(message.clone());
+        }
+
         self.logger.write(logger_level, message)
     }
 
@@ -267,6 +303,14 @@ impl HttpConnectionContext {
         request: hyper::Request<RequestBody>,
     ) -> Result<hyper::Response<hyper::body::Incoming>> {
         self.tcp_connection_context.send_request(request).await
+    }
+}
+
+impl Drop for HttpConnectionContext {
+    fn drop(&mut self) {
+        if !self.stages.is_empty() {
+            logger_manager::write_system_log(LoggerLevel::Warn, self.stages.join("\n"));
+        }
     }
 }
 
@@ -300,20 +344,17 @@ impl ConnectionLogger {
         if let Some(log_for_event) = crate::common::config::get_file_log_level_for_events() {
             if log_for_event >= logger_level {
                 // write to event
-                let (module_name, caller_name) = proxy_agent_shared::logger::get_caller_info(
-                    "proxy_agent::proxy::proxy_connection",
-                );
                 proxy_agent_shared::telemetry::event_logger::write_event_only(
                     logger_level,
                     message.to_string(),
-                    &caller_name,
-                    &module_name,
+                    "ConnectionLogger",
+                    "ProxyAgent",
                 );
             }
         }
 
         if logger_level > logger_manager::get_max_logger_level()
-            || config::get_logs_dir() == std::path::PathBuf::from("")
+            || config::get_logs_dir() == misc_helpers::empty_path()
         {
             // If the logger level is higher than the max logger level or logs directory is not set, skip logging
             return;

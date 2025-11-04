@@ -763,8 +763,8 @@ mod tests {
     use super::key::Key;
     use crate::key_keeper;
     use crate::key_keeper::KeyKeeper;
-    use crate::test_mock::server_mock;
     use proxy_agent_shared::misc_helpers;
+    use proxy_agent_shared::server_mock;
     use std::env;
     use std::fs;
     use std::time::Duration;

@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
-use crate::common::{hyper_client, logger, result::Result};
-use crate::key_keeper;
-use crate::key_keeper::key::{Key, KeyStatus};
+use crate::hyper_client;
+use crate::logger::logger_manager;
+use crate::result::Result;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
@@ -19,19 +19,18 @@ use uuid::Uuid;
 
 static EMPTY_GUID: Lazy<String> = Lazy::new(|| "00000000-0000-0000-0000-000000000000".to_string());
 static GUID: Lazy<String> = Lazy::new(|| Uuid::new_v4().to_string());
-static mut CURRENT_STATE: Lazy<String> =
-    Lazy::new(|| String::from(key_keeper::MUST_SIG_WIRESERVER));
+static mut CURRENT_STATE: Lazy<String> = Lazy::new(|| String::from("wireserver"));
 
 pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken) {
-    logger::write_information("Mock Server starting...".to_string());
-    let addr = format!("{}:{}", ip, port);
+    logger_manager::write_info("Mock Server starting...".to_string());
+    let addr = format!("{ip}:{port}");
     let listener = TcpListener::bind(&addr).await.unwrap();
-    println!("Listening on http://{}", addr);
+    println!("Listening on http://{addr}");
 
     loop {
         tokio::select! {
             _ = cancellation_token.cancelled() => {
-                logger::write_warning("cancellation token signal received, stop the listener.".to_string());
+                logger_manager::write_warn("cancellation token signal received, stop the listener.".to_string());
                 return;
             }
             result = listener.accept() => {
@@ -43,12 +42,12 @@ pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken)
                             let ip = ip.to_string();
                             let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
                             if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                                println!("Error serving connection: {:?}", err);
+                                println!("Error serving connection: {err:?}");
                             }
                         });
                     },
                     Err(e) => {
-                        logger::write_error(format!("Failed to accept connection: {}", e));
+                        logger_manager::write_err(format!("Failed to accept connection: {e}"));
                     }
                 }
             }
@@ -61,13 +60,13 @@ async fn handle_request(
     port: u16,
     request: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
-    logger::write_information("WireServer processing request.".to_string());
+    logger_manager::write_info("WireServer processing request.".to_string());
 
     let path: String = request.uri().path_and_query().unwrap().to_string();
     let path = path.trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
     println!("handle_request: {}, {:?}", request.method(), path);
-    println!("segments: {:?}", segments);
+    println!("segments: {segments:?}");
 
     let mut content_type = String::from("application/json; charset=utf-8");
     let mut body_string = String::new();
@@ -82,19 +81,11 @@ async fn handle_request(
                     "requiredClaimsHeaderPairs": [
                         "isRoot"
                     ],
-                    "secureChannelState": "Wireserver",
+                    "secureChannelState": "$$secureChannelState$$",
                     "version": "1.0"
                 }"#;
-                let mut status: KeyStatus = serde_json::from_str(status_response).unwrap();
-                unsafe {
-                    if *CURRENT_STATE == key_keeper::DISABLE_STATE {
-                        status.secureChannelState = Some(key_keeper::DISABLE_STATE.to_string());
-                    } else {
-                        status.secureChannelState =
-                            Some(key_keeper::MUST_SIG_WIRESERVER.to_string());
-                    }
-                }
-                body_string = serde_json::to_string(&status).unwrap();
+                let state = unsafe { (*CURRENT_STATE).to_string() };
+                body_string = status_response.replace("$$secureChannelState$$", &state);
             }
         } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -331,19 +322,18 @@ async fn handle_request(
                 // get key details
                 let key_response = r#"{
                         "authorizationScheme": "Azure-HMAC-SHA256",        
-                        "guid": "",        
+                        "guid": "$$guid$$",        
                         "issued": "2021-05-05T 12:00:00Z",        
                         "key": "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59"        
                     }"#;
-                let mut key: Key = serde_json::from_str(key_response).unwrap();
-                unsafe {
-                    if *CURRENT_STATE == key_keeper::DISABLE_STATE {
-                        key.guid = EMPTY_GUID.to_string();
+                let guid = unsafe {
+                    if *CURRENT_STATE == "disabled" {
+                        EMPTY_GUID.to_string()
                     } else {
-                        key.guid = GUID.to_string();
+                        GUID.to_string()
                     }
-                }
-                body_string = serde_json::to_string(&key).unwrap();
+                };
+                body_string = key_response.replace("$$guid$$", &guid);
             }
         } else if !segments.is_empty()
             && segments[0] == "machine"
@@ -361,7 +351,7 @@ async fn handle_request(
         .body(hyper_client::full_body(body_string.as_bytes().to_vec()))
         .unwrap();
 
-    logger::write_information("WireServer processed request.".to_string());
+    logger_manager::write_info("WireServer processed request.".to_string());
 
     Ok(response)
 }
@@ -369,11 +359,11 @@ async fn handle_request(
 pub fn set_secure_channel_state(enabled: bool) {
     if enabled {
         unsafe {
-            *CURRENT_STATE = key_keeper::MUST_SIG_WIRESERVER.to_string();
+            *CURRENT_STATE = "wireserver".to_string();
         }
     } else {
         unsafe {
-            *CURRENT_STATE = key_keeper::DISABLE_STATE.to_string();
+            *CURRENT_STATE = "disabled".to_string();
         }
     }
 }

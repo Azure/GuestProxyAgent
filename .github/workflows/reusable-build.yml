@@ -99,7 +99,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent
         run: |
-          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|windows_main.rs|bpf_api.rs|bpf_obj.rs|bpf_prog.rs)" -- --test-threads=1
+          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path proxy_agent\Cargo.toml --output-path out\codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|windows_main.rs|bpf_api.rs|bpf_obj.rs|bpf_prog.rs|redirector.rs)" -- --test-threads=1
           type out\codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent
@@ -295,6 +295,8 @@ jobs:
                   linux-tools-generic \
                   rpm \
                   musl-tools \
+                  libssl-dev \
+                  pkg-config \
 
           sudo snap install dotnet-sdk --classic
           sudo chown -R root:root /var/lib
@@ -349,7 +351,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent
         run: |
-          cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent/Cargo.toml --output-path ./out/proxy_agent_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|linux.rs)" -- --test-threads=1
+          cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent/Cargo.toml --output-path ./out/proxy_agent_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|linux.rs|redirector.rs)" -- --test-threads=1
           cat ./out/proxy_agent_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent
@@ -466,6 +468,8 @@ jobs:
                   rpm \
                   musl-tools \
                   gcc-aarch64-linux-gnu \
+                  libssl-dev \
+                  pkg-config \
 
           sudo sudo apt-get install -y dotnet-sdk-8.0
         
