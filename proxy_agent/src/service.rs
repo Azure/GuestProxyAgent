@@ -37,7 +37,7 @@ pub async fn start_service(shared_state: SharedState) {
     }
 
     let log_folder = config::get_logs_dir();
-    if log_folder == PathBuf::from("") {
+    if log_folder == proxy_agent_shared::misc_helpers::empty_path() {
         println!("The log folder is not set, skip write to GPA managed file log.");
     } else {
         setup_loggers(log_folder, config::get_file_log_level());
