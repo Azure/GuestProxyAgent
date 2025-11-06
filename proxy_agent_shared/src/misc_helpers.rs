@@ -172,6 +172,11 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+// Returns a new empty PathBuf
+pub fn empty_path() -> PathBuf {
+    PathBuf::new()
+}
+
 /// Search files in a directory with a regex pattern
 /// # Arguments
 /// * `dir` - The directory to search
@@ -505,6 +510,12 @@ mod tests {
         );
 
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn empty_path_test() {
+        let empty_path = super::empty_path();
+        assert_eq!(PathBuf::from(""), empty_path, "Empty path is not empty");
     }
 
     #[test]
