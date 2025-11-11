@@ -57,9 +57,7 @@ where
     read_response_body(response).await
 }
 
-pub async fn read_response_body<T>(
-    mut response: hyper::Response<hyper::body::Incoming>,
-) -> Result<T>
+pub async fn read_response_body<T>(response: hyper::Response<hyper::body::Incoming>) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -97,7 +95,37 @@ where
         } else {
             ("unknown", "unknown")
         };
+    let body_string = read_response_body_as_string(response, charset_type).await?;
 
+    match content_type {
+        "xml" => match serde_xml_rs::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(Error::Hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to xml deserialize response body with content_type {content_type} from: {body_string} with error {e}"
+                    )
+                ),
+            )),
+        },
+        // default to json
+        _ => match serde_json::from_str(&body_string) {
+            Ok(t) => Ok(t),
+            Err(e) => Err(Error::Hyper(
+                HyperErrorType::Deserialize(
+                    format!(
+                        "Failed to json deserialize response body with {content_type} from: {body_string} with error {e}"
+                    )
+                ),
+            )),
+        },
+    }
+}
+
+pub async fn read_response_body_as_string(
+    mut response: hyper::Response<hyper::body::Incoming>,
+    charset_type: &str,
+) -> Result<String> {
     let mut body_string = String::new();
     while let Some(next) = response.frame().await {
         let frame = match next {
@@ -135,29 +163,7 @@ where
         }
     }
 
-    match content_type {
-        "xml" => match serde_xml_rs::from_str(&body_string) {
-            Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(
-                HyperErrorType::Deserialize(
-                    format!(
-                        "Failed to xml deserialize response body with content_type {content_type} from: {body_string} with error {e}"
-                    )
-                ),
-            )),
-        },
-        // default to json
-        _ => match serde_json::from_str(&body_string) {
-            Ok(t) => Ok(t),
-            Err(e) => Err(Error::Hyper(
-                HyperErrorType::Deserialize(
-                    format!(
-                        "Failed to json deserialize response body with {content_type} from: {body_string} with error {e}"
-                    )
-                ),
-            )),
-        },
-    }
+    Ok(body_string)
 }
 
 pub fn build_request(
