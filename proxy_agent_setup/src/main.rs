@@ -210,6 +210,9 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
         }
     }
 
+    // Do not move this block before service::install_service,
+    // as we need to ensure GPA service is installed/updated
+    // before install or update windows eBPF services.
     #[cfg(windows)]
     {
         // check if eBPF setup script exists, if exist then try launch the eBPF setup scripts
@@ -237,6 +240,32 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
                     logger::write(format!(
                         "ebpf_setup: failed to invoke script file '{setup_script_file_str}', error: '{e:?}'."
                     ));
+                }
+            }
+        }
+
+        // check if eBPF service eBPFSvc is installed
+        let (is_ebpf_svc_installed, message) = service::check_service_installed("eBPFSvc");
+        logger::write(format!("ebpf_setup: {message}"));
+        if is_ebpf_svc_installed {
+            // eBPFSvc is installed, update GPA service to have dependency on eBPFSvc,
+            // it ensures eBPFSvc is started when GPA service starting.
+            match service::install_service(
+                SERVICE_NAME,
+                SERVICE_DISPLAY_NAME,
+                vec!["EbpfCore", "NetEbpfExt", "eBPFSvc"],
+                setup::proxy_agent_exe_path(&proxy_agent_target_folder),
+            ) {
+                Ok(_) => {
+                    logger::write(format!(
+                        "Update service {SERVICE_NAME} with more service_dependency successfully"
+                    ));
+                }
+                Err(e) => {
+                    logger::write_error(format!(
+                        "Update service {SERVICE_NAME} failed, error: {e:?}",
+                    ));
+                    process::exit(1);
                 }
             }
         }
