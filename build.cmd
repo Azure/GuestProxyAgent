@@ -27,8 +27,8 @@ echo out_dir=%out_dir%
 
 REM Set the path to the eBPF-for-Windows binaries and include files,
 REM We build ARM64 binaries on x64 machine, so we need to set the path to the x64 binaries
-SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.x64.0.21.0\build\native\bin
-SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.%eBPF_Platform%.0.21.0\build\native\include
+SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.x64.1.0.0-rc1\build\native\bin
+SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.%eBPF_Platform%.1.0.0-rc1\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 
 if "%CleanBuild%"=="clean" (
@@ -72,9 +72,6 @@ if not exist "%out_package_dir%" (md "%out_package_dir%")
 SET out_package_proxyagent_dir="%out_package_dir%"\ProxyAgent
 if not exist "%out_package_proxyagent_dir%" (md "%out_package_proxyagent_dir%")
 
-echo ======= copy VB Scripts to Package folder
-xcopy /Y %root_path%\Setup\Windows\*.* %out_package_dir%\
-
 echo ======= build ebpf program
 SET ebpf_path=%root_path%\ebpf
 echo call clang -I"%ebpf_path%" -I "%eBPF_for_Windows_inc_path%" -target bpf -Werror -O2 -c %ebpf_path%\redirect.bpf.c -o %out_dir%\redirect.bpf.o
@@ -88,8 +85,8 @@ xcopy /Y %out_dir%\redirect.bpf.o %out_package_proxyagent_dir%\
 echo ======= convert redirect.bpf.o to redirect.bpf.sys
 call %eBPF_for_Windows_bin_path%\export_program_info.exe --clear
 call %eBPF_for_Windows_bin_path%\export_program_info.exe
-echo call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
-call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform% -Packages "%root_path%packages"
+echo call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform%
+call powershell.exe -ExecutionPolicy Bypass %eBPF_for_Windows_bin_path%\Convert-BpfToNative.ps1 -OutDir "%out_dir%" -FileName redirect.bpf.o -IncludeDir "%eBPF_for_Windows_inc_path%" -Platform %eBPF_Platform%
 if  %ERRORLEVEL% NEQ 0 (
     echo call Convert-BpfToNative.ps1 failed with exit-code: %errorlevel%
     if "%ContinueAtConvertBpfToNative%"=="" (

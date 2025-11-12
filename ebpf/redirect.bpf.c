@@ -120,7 +120,7 @@ authorize_v4(bpf_sock_addr_t *ctx)
         if (update_audit_map_entry(ctx) == 1)
         {
             bpf_printk("Found skip process entry, skip the redirection.");
-            return BPF_SOCK_ADDR_VERDICT_PROCEED;
+            return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
         }
 
         // if (ctx->msg_src_ip4 == 0)
@@ -139,7 +139,7 @@ authorize_v4(bpf_sock_addr_t *ctx)
         ctx->user_port = policy->destination_port;
     }
 
-    return BPF_SOCK_ADDR_VERDICT_PROCEED;
+    return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
 }
 
 // SEC("cgroup/connect4")

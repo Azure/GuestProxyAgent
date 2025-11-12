@@ -4,21 +4,6 @@
 //! This module contains the logic to interact with the IMDS service.
 //! The IMDS service is used to get the instance information of the VM.
 //! The GPA service uses the IMDS service to get the instance information of the VM.
-//!
-//! Example
-//! ```rust
-//! use proxy_agent::common::constants;
-//! use proxy_agent::host_clients::imds_client;
-//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-//! let key_keeper_shared_state = KeyKeeperSharedState::new();
-//! let imds_client = imds_client::ImdsClient::new(
-//!    constants::IMDS_IP,
-//!    constants::IMDS_PORT,
-//!   key_keeper_shared_state,
-//! );
-//! let instance_info = imds_client.get_imds_instance_info().await.unwrap();
-//!
-//! ```
 
 use super::instance_info::InstanceInfo;
 use crate::hyper_client;
