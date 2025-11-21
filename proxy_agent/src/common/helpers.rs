@@ -62,6 +62,17 @@ pub fn get_long_os_version() -> String {
     CURRENT_OS_INFO.1.to_string()
 }
 
+/// Determine the number of worker threads for the tokio runtime
+/// Limit the number of worker threads to a maximum of 10 and minimum of 2  
+static TOKIO_RUNTIME_WORKER_THREADS: Lazy<usize> = Lazy::new(|| {
+    let cpu_count = get_cpu_count();
+    cpu_count.clamp(2, 10)
+});
+
+pub fn get_worker_threads() -> usize {
+    *TOKIO_RUNTIME_WORKER_THREADS
+}
+
 // replace xml escape characters
 pub fn xml_escape(s: String) -> String {
     s.replace('&', "&amp;")
