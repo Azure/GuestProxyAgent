@@ -2,54 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 //! This module contains the logic to generate the telemetry data to be send to wire server.
-//! Example
-//! ```rust
-//! use proxy_agent::telemetry::TelemetryData;
-//!
-//! // Create the telemetry data
-//! let mut telemetry_data = TelemetryData::new();
-//!
-//! // Add the event to the telemetry data
-//! let event_log = Event {
-//!    EventPid: "123".to_string(),
-//!    EventTid: "456".to_string(),
-//!    Version: "1.0".to_string(),
-//!    TaskName: "TaskName".to_string(),
-//!    TimeStamp: "2024-09-04T02:00:00.222z".to_string(),
-//!    EventLevel: "Info".to_string(),
-//!    Message: "Message".to_string(),
-//!    OperationId: "OperationId".to_string(),
-//! };
-//! let vm_meta_data = VmMetaData {
-//!    container_id: "container_id".to_string(),
-//!    tenant_name: "tenant_name".to_string(),
-//!    role_name: "role_name".to_string(),
-//!    role_instance_name: "role_instance_name".to_string(),
-//!    subscription_id: "subscription_id".to_string(),
-//!    resource_group_name: "resource_group_name".to_string(),
-//!    vm_id: "vm_id".to_string(),
-//!    image_origin: 1,
-//! };
-//! let event = TelemetryEvent::from_event_log(&event_log, vm_meta_data);
-//! telemetry_data.add_event(event);
-//!
-//! // Get the size of the telemetry data
-//! let size = telemetry_data.get_size();
-//!
-//! // Get the xml of the telemetry data
-//! let xml = telemetry_data.to_xml();
-//!
-//! // Remove the last event from the telemetry data
-//! let event = telemetry_data.remove_last_event();
-//!
-//! // Get the event count of the telemetry data
-//! let count = telemetry_data.event_count();
-//! ```
 
 use super::event_reader::VmMetaData;
-use crate::common::helpers;
+use crate::telemetry::Event;
+use crate::{current_info, misc_helpers};
 use once_cell::sync::Lazy;
-use proxy_agent_shared::telemetry::Event;
 use serde_derive::{Deserialize, Serialize};
 
 /// TelemetryData struct to hold the telemetry events send to wire server.
@@ -143,10 +100,10 @@ impl TelemetryEvent {
 
             execution_mode: "ProxyAgent".to_string(),
             event_name: "MicrosoftAzureGuestProxyAgent".to_string(),
-            os_version: helpers::get_long_os_version(),
+            os_version: current_info::get_long_os_version(),
             keyword_name: CURRENT_KEYWORD_NAME.to_string(),
-            ram: helpers::get_ram_in_mb(),
-            processors: helpers::get_cpu_count() as u64,
+            ram: current_info::get_ram_in_mb(),
+            processors: current_info::get_cpu_count() as u64,
 
             container_id: vm_meta_data.container_id,
             tenant_name: vm_meta_data.tenant_name,
@@ -165,43 +122,43 @@ impl TelemetryEvent {
 
         xml.push_str(&format!(
             "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.opcode_name.to_string())
+            misc_helpers::xml_escape(self.opcode_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"KeywordName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.keyword_name.to_string())
+            misc_helpers::xml_escape(self.keyword_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.task_name.to_string())
+            misc_helpers::xml_escape(self.task_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TenantName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.tenant_name.to_string())
+            misc_helpers::xml_escape(self.tenant_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.role_name.to_string())
+            misc_helpers::xml_escape(self.role_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleInstanceName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.role_instance_name.to_string())
+            misc_helpers::xml_escape(self.role_instance_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ContainerId\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.container_id.to_string())
+            misc_helpers::xml_escape(self.container_id.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ResourceGroupName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.resource_group_name.to_string())
+            misc_helpers::xml_escape(self.resource_group_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"SubscriptionId\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.subscription_id.to_string())
+            misc_helpers::xml_escape(self.subscription_id.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"VMId\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.vm_id.to_string())
+            misc_helpers::xml_escape(self.vm_id.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
@@ -218,15 +175,15 @@ impl TelemetryEvent {
 
         xml.push_str(&format!(
             "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.execution_mode.to_string())
+            misc_helpers::xml_escape(self.execution_mode.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"OSVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.os_version.to_string())
+            misc_helpers::xml_escape(self.os_version.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.ga_version.to_string())
+            misc_helpers::xml_escape(self.ga_version.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RAM\" Value=\"{}\" T=\"mt:uint64\" />",
@@ -239,23 +196,23 @@ impl TelemetryEvent {
 
         xml.push_str(&format!(
             "<Param Name=\"EventName\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.event_name.to_string())
+            misc_helpers::xml_escape(self.event_name.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"CapabilityUsed\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.capability_used.to_string())
+            misc_helpers::xml_escape(self.capability_used.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context1\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.context1.to_string())
+            misc_helpers::xml_escape(self.context1.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context2\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.context2.to_string())
+            misc_helpers::xml_escape(self.context2.to_string())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context3\" Value=\"{}\" T=\"mt:wstr\" />",
-            helpers::xml_escape(self.context3.to_string())
+            misc_helpers::xml_escape(self.context3.to_string())
         ));
 
         xml.push_str("]]></Event>");
@@ -264,7 +221,7 @@ impl TelemetryEvent {
 }
 
 static CURRENT_KEYWORD_NAME: Lazy<String> =
-    Lazy::new(|| KeywordName::new(helpers::get_cpu_arch()).to_json());
+    Lazy::new(|| KeywordName::new(current_info::get_cpu_arch()).to_json());
 
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]

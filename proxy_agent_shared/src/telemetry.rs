@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 pub mod event_logger;
+pub mod event_reader;
 pub mod span;
+pub mod telemetry_event;
 
 use crate::misc_helpers;
 use serde_derive::{Deserialize, Serialize};

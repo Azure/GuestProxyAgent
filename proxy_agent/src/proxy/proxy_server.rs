@@ -30,7 +30,6 @@ use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt};
@@ -41,6 +40,7 @@ use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use proxy_agent_shared::error::HyperErrorType;
+use proxy_agent_shared::global_states::GlobalStates;
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
@@ -63,7 +63,7 @@ pub struct ProxyServer {
     port: u16,
     cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
+    global_states: GlobalStates,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     redirector_shared_state: RedirectorSharedState,
@@ -76,7 +76,7 @@ impl ProxyServer {
             port,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            telemetry_shared_state: shared_state.get_telemetry_shared_state(),
+            global_states: shared_state.get_global_states(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
@@ -184,8 +184,8 @@ impl ProxyServer {
         }
         provision::listener_started(
             self.cancellation_token.clone(),
+            self.global_states.clone(),
             self.key_keeper_shared_state.clone(),
-            self.telemetry_shared_state.clone(),
             self.provision_shared_state.clone(),
             self.agent_status_shared_state.clone(),
         )

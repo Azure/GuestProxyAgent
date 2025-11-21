@@ -329,6 +329,15 @@ pub use linux::compute_signature;
 #[cfg(windows)]
 pub use windows::compute_signature;
 
+// replace xml escape characters
+pub fn xml_escape(s: String) -> String {
+    s.replace('&', "&amp;")
+        .replace('\'', "&apos;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_derive::{Deserialize, Serialize};

@@ -3,58 +3,29 @@
 
 //! This module contains the logic to read the telemetry event files and send them to the wire server.
 //! The telemetry event files are written by the event_logger module.
-//! Example
-//! ```rust
-//! use proxy_agent::telemetry::event_reader;
-//! use proxy_agent::shared_state::agent_status::wrapper::AgentStatusSharedState;
-//! use proxy_agent::shared_state::key_keeper::wrapper::KeyKeeperSharedState;
-//! use proxy_agent::shared_state::telemetry::wrapper::TelemetrySharedState;
-//! use std::path::PathBuf;
-//! use std::time::Duration;
-//! use tokio_util::sync::CancellationToken;
-//!
-//! // start the telemetry event reader with the shared state
-//! let agent_status_shared_state = AgentStatusSharedState::start_new();
-//! let key_keeper_shared_state = KeyKeeperSharedState::start_new();
-//! let telemetry_shared_state = TelemetrySharedState::start_new();
-//! let cancellation_token = CancellationToken::new();
-//!
-//! let dir_path = PathBuf::from("/tmp");
-//! let interval = Some(Duration::from_secs(300));
-//! let delay_start = false;
-//! let server_ip = None;
-//! let server_port = None;
-//! let event_reader = event_reader::EventReader::new(
-//!    dir_path,
-//!    delay_start,
-//!    cancellation_token,
-//!    key_keeper_shared_state,
-//!    telemetry_shared_state,
-//!    agent_status_shared_state,
-//! );
-//!
-//! tokio::spawn(event_reader.start(interval, server_ip, server_port));
-//!
-//! // stop the telemetry event reader
-//! cancellation_token.cancel();
-//! ```
 
-use super::telemetry_event::TelemetryData;
-use super::telemetry_event::TelemetryEvent;
-use crate::common::{constants, logger, result::Result};
-use crate::shared_state::agent_status_wrapper::AgentStatusModule;
-use crate::shared_state::agent_status_wrapper::AgentStatusSharedState;
-use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
-use proxy_agent_shared::host_clients::imds_client::ImdsClient;
-use proxy_agent_shared::host_clients::wire_server_client::WireServerClient;
-use proxy_agent_shared::misc_helpers;
-use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
-use proxy_agent_shared::telemetry::Event;
+use crate::global_states;
+use crate::global_states::GlobalStates;
+use crate::host_clients::imds_client::ImdsClient;
+use crate::host_clients::wire_server_client::WireServerClient;
+use crate::logger::logger_manager;
+use crate::misc_helpers;
+use crate::result::Result;
+use crate::telemetry::telemetry_event::TelemetryData;
+use crate::telemetry::telemetry_event::TelemetryEvent;
+use crate::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+#[cfg(test)]
+const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
+
+const WIRE_SERVER_IP: &str = "168.63.129.16";
+const WIRE_SERVER_PORT: u16 = 80u16;
+const IMDS_IP: &str = "169.254.169.254";
+const IMDS_PORT: u16 = 80u16;
 
 /// VmMetaData contains the metadata of the VM.
 /// The metadata is used to identify the VM and the image origin.
@@ -76,13 +47,13 @@ impl VmMetaData {
     #[cfg(test)]
     pub fn empty() -> Self {
         VmMetaData {
-            container_id: constants::EMPTY_GUID.to_string(),
-            tenant_name: constants::EMPTY_GUID.to_string(),
-            role_name: constants::EMPTY_GUID.to_string(),
-            role_instance_name: constants::EMPTY_GUID.to_string(),
-            subscription_id: constants::EMPTY_GUID.to_string(),
-            resource_group_name: constants::EMPTY_GUID.to_string(),
-            vm_id: constants::EMPTY_GUID.to_string(),
+            container_id: EMPTY_GUID.to_string(),
+            tenant_name: EMPTY_GUID.to_string(),
+            role_name: EMPTY_GUID.to_string(),
+            role_instance_name: EMPTY_GUID.to_string(),
+            subscription_id: EMPTY_GUID.to_string(),
+            resource_group_name: EMPTY_GUID.to_string(),
+            vm_id: EMPTY_GUID.to_string(),
             image_origin: 3, // unknown
         }
     }
@@ -92,9 +63,7 @@ pub struct EventReader {
     dir_path: PathBuf,
     delay_start: bool,
     cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    agent_status_shared_state: AgentStatusSharedState,
+    global_states: GlobalStates,
 }
 
 impl EventReader {
@@ -102,17 +71,13 @@ impl EventReader {
         dir_path: PathBuf,
         delay_start: bool,
         cancellation_token: CancellationToken,
-        key_keeper_shared_state: KeyKeeperSharedState,
-        telemetry_shared_state: TelemetrySharedState,
-        agent_status_shared_state: AgentStatusSharedState,
+        global_states: GlobalStates,
     ) -> EventReader {
         EventReader {
             dir_path,
             delay_start,
             cancellation_token,
-            key_keeper_shared_state,
-            telemetry_shared_state,
-            agent_status_shared_state,
+            global_states,
         }
     }
 
@@ -122,23 +87,22 @@ impl EventReader {
         server_ip: Option<&str>,
         server_port: Option<u16>,
     ) {
-        logger::write_information("telemetry event reader task started.".to_string());
+        logger_manager::write_info("telemetry event reader task started.".to_string());
 
         let wire_server_client = WireServerClient::new(
-            server_ip.unwrap_or(constants::WIRE_SERVER_IP),
-            server_port.unwrap_or(constants::WIRE_SERVER_PORT),
+            server_ip.unwrap_or(WIRE_SERVER_IP),
+            server_port.unwrap_or(WIRE_SERVER_PORT),
         );
         let imds_client = ImdsClient::new(
-            server_ip.unwrap_or(constants::IMDS_IP),
-            server_port.unwrap_or(constants::IMDS_PORT),
+            server_ip.unwrap_or(IMDS_IP),
+            server_port.unwrap_or(IMDS_PORT),
         );
 
         let interval = interval.unwrap_or(Duration::from_secs(300));
         tokio::select! {
             _ = self.loop_reader(interval,  wire_server_client, imds_client ) => {}
             _ = self.cancellation_token.cancelled() => {
-                logger::write_warning("cancellation token signal received, stop the telemetry event reader task.".to_string());
-                self.stop().await;
+                logger_manager::write_warn("cancellation token signal received, stop the telemetry event reader task.".to_string());
             }
         }
     }
@@ -166,18 +130,21 @@ impl EventReader {
                 .await
             {
                 Ok(()) => {
-                    logger::write("success updated the vm metadata.".to_string());
+                    logger_manager::write_info("success updated the vm metadata.".to_string());
                 }
                 Err(e) => {
-                    logger::write_warning(format!("Failed to read vm metadata with error {e}."));
+                    logger_manager::write_warn(format!(
+                        "Failed to read vm metadata with error {e}."
+                    ));
                 }
             }
 
-            if let Ok(Some(vm_meta_data)) = self.telemetry_shared_state.get_vm_meta_data().await {
+            if let Ok(Some(vm_meta_data)) = self.global_states.get_vm_meta_data().await {
                 let _processed = self
                     .process_events(&wire_server_client, &vm_meta_data)
                     .await;
             }
+
             tokio::time::sleep(interval).await;
         }
     }
@@ -198,10 +165,10 @@ impl EventReader {
                 let message = format!(
                     "Telemetry event reader sent {event_count} events from {file_count} files"
                 );
-                logger::write(message);
+                logger_manager::write_info(message);
             }
             Err(e) => {
-                logger::write_warning(format!(
+                logger_manager::write_warn(format!(
                     "Event Files not found in directory {}: {}",
                     self.dir_path.display(),
                     e
@@ -212,26 +179,19 @@ impl EventReader {
         event_count
     }
 
-    async fn stop(&self) {
-        let _ = self
-            .agent_status_shared_state
-            .set_module_state(ModuleState::STOPPED, AgentStatusModule::TelemetryReader)
-            .await;
-    }
-
     async fn update_vm_meta_data(
         &self,
         wire_server_client: &WireServerClient,
         imds_client: &ImdsClient,
     ) -> Result<()> {
         let guid = self
-            .key_keeper_shared_state
-            .get_current_key_guid()
+            .global_states
+            .get_state(global_states::SECURE_KEY_GUID.to_string())
             .await
             .unwrap_or(None);
         let key = self
-            .key_keeper_shared_state
-            .get_current_key_value()
+            .global_states
+            .get_state(global_states::SECURE_KEY_VALUE.to_string())
             .await
             .unwrap_or(None);
         let goal_state = wire_server_client
@@ -259,11 +219,10 @@ impl EventReader {
             image_origin: instance_info.get_image_origin(),
         };
 
-        self.telemetry_shared_state
-            .set_vm_meta_data(Some(vm_meta_data.clone()))
+        self.global_states
+            .set_vm_meta_data(Some(vm_meta_data))
             .await?;
 
-        logger::write(format!("Updated VM Metadata: {vm_meta_data:?}"));
         Ok(())
     }
 
@@ -281,7 +240,7 @@ impl EventReader {
                     Self::send_events(events, wire_server_client, vm_meta_data).await;
                 }
                 Err(e) => {
-                    logger::write_warning(format!(
+                    logger_manager::write_warn(format!(
                         "Failed to read events from file {}: {}",
                         file.display(),
                         e
@@ -315,12 +274,12 @@ impl EventReader {
                             if telemetry_data.event_count() == 0 {
                                 match serde_json::to_string(&event) {
                                     Ok(json) => {
-                                        logger::write_warning(format!(
+                                        logger_manager::write_warn(format!(
                                             "Event data too large. Not sending to wire-server. Event: {json}.",
                                         ));
                                     }
                                     Err(_) => {
-                                        logger::write_warning(
+                                        logger_manager::write_warn(
                                         "Event data too large. Not sending to wire-server. Event cannot be displayed.".to_string()
                                         );
                                     }
@@ -358,7 +317,7 @@ impl EventReader {
                     break;
                 }
                 Err(e) => {
-                    logger::write_warning(format!(
+                    logger_manager::write_warn(format!(
                         "Failed to send telemetry data to host with error: {e}"
                     ));
                     // wait 15 seconds and retry
@@ -371,17 +330,21 @@ impl EventReader {
     fn clean_files(file: PathBuf) {
         match remove_file(&file) {
             Ok(_) => {
-                logger::write(format!("Removed File: {}", file.display()));
+                logger_manager::write_info(format!("Removed File: {}", file.display()));
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to remove file {}: {}", file.display(), e));
+                logger_manager::write_warn(format!(
+                    "Failed to remove file {}: {}",
+                    file.display(),
+                    e
+                ));
             }
         }
     }
 
     #[cfg(test)]
     async fn get_vm_meta_data(&self) -> VmMetaData {
-        if let Ok(Some(vm_meta_data)) = self.telemetry_shared_state.get_vm_meta_data().await {
+        if let Ok(Some(vm_meta_data)) = self.global_states.get_vm_meta_data().await {
             vm_meta_data
         } else {
             VmMetaData::empty()
@@ -392,10 +355,8 @@ impl EventReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::logger;
-    use crate::key_keeper::key::Key;
-    use proxy_agent_shared::misc_helpers;
-    use proxy_agent_shared::server_mock;
+    use crate::misc_helpers;
+    use crate::server_mock;
     use std::{env, fs};
 
     #[tokio::test]
@@ -411,39 +372,32 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 7071u16;
         let cancellation_token = CancellationToken::new();
-        let key_keeper_shared_state = KeyKeeperSharedState::start_new();
+        let global_states = GlobalStates::start_new();
         let event_reader = EventReader {
             dir_path: events_dir.clone(),
             delay_start: false,
-            key_keeper_shared_state: key_keeper_shared_state.clone(),
-            telemetry_shared_state: TelemetrySharedState::start_new(),
             cancellation_token: cancellation_token.clone(),
-            agent_status_shared_state: AgentStatusSharedState::start_new(),
+            global_states: global_states.clone(),
         };
         let wire_server_client = WireServerClient::new(ip, port);
         let imds_client = ImdsClient::new(ip, port);
-
-        key_keeper_shared_state
-            .update_key(Key::empty())
-            .await
-            .unwrap();
         tokio::spawn(server_mock::start(
             ip.to_string(),
             port,
             cancellation_token.clone(),
         ));
         tokio::time::sleep(Duration::from_millis(100)).await;
-        logger::write("server_mock started.".to_string());
+        logger_manager::write_info("server_mock started.".to_string());
 
         match event_reader
             .update_vm_meta_data(&wire_server_client, &imds_client)
             .await
         {
             Ok(()) => {
-                logger::write("success updated the vm metadata.".to_string());
+                logger_manager::write_info("success updated the vm metadata.".to_string());
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to read vm metadata with error {}.", e));
+                logger_manager::write_warn(format!("Failed to read vm metadata with error {}.", e));
             }
         }
 
@@ -458,7 +412,7 @@ mod tests {
                 "test_deserialize_events_from_file".to_string(),
             ));
         }
-        logger::write("10 events created.".to_string());
+        logger_manager::write_info("10 events created.".to_string());
         misc_helpers::try_create_folder(&events_dir).unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
@@ -469,7 +423,7 @@ mod tests {
         let events_processed = event_reader
             .process_events(&wire_server_client, &vm_meta_data)
             .await;
-        logger::write(format!("Send {} events from event files", events_processed));
+        logger_manager::write_info(format!("Send {} events from event files", events_processed));
         //Should be 10 events written and read into events Vector
         assert_eq!(events_processed, 10, "Events processed should be 10");
         let files = misc_helpers::get_files(&events_dir).unwrap();
