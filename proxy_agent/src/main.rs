@@ -28,6 +28,7 @@ use service::windows_main;
 use std::ffi::OsString;
 #[cfg(windows)]
 use windows_service::{define_windows_service, service_dispatcher};
+
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
 // define_windows_service does not accept async function in fffi_service_main,
@@ -37,8 +38,22 @@ define_windows_service!(ffi_service_main, proxy_agent_windows_service_main);
 static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
     tokio::sync::OnceCell::const_new();
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
+/// The main entry point of the GPA process.
+/// It initializes the tokio runtime and calls the async main function.
+/// It also determines the number of worker threads for the tokio runtime
+fn main() {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(helpers::get_worker_threads())
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            async_main().await;
+        });
+}
+
+//#[tokio::main(flavor = "multi_thread")]
+async fn async_main() {
     // set the tokio runtime handle
     #[cfg(windows)]
     ASYNC_RUNTIME_HANDLE
