@@ -18,6 +18,6 @@ pub fn write_startup_event(
 ) -> String {
     let message = START.write_event(task, method_name, module_name, logger_key);
     #[cfg(not(windows))]
-    logger::write_serial_console_log(message.clone());
+    crate::common::logger::write_serial_console_log(message.clone());
     message
 }
