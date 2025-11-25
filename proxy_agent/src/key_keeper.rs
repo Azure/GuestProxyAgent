@@ -38,7 +38,7 @@ use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::SharedState;
 use crate::{acl, redirector};
 use hyper::Uri;
-use proxy_agent_shared::global_states::GlobalStates;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -74,7 +74,7 @@ pub struct KeyKeeper {
     /// key_keeper_shared_state: the sender for the key details, secure channel state, access control rule
     key_keeper_shared_state: KeyKeeperSharedState,
     /// global_states: the sender for the Global states
-    global_states: GlobalStates,
+    global_states: CommonState,
     /// redirector_shared_state: the sender for the redirector/eBPF module
     redirector_shared_state: RedirectorSharedState,
     /// provision_shared_state: the sender for the provision state
@@ -584,13 +584,13 @@ impl KeyKeeper {
         // update the current key guid and value to global states
         self.global_states
             .set_state(
-                proxy_agent_shared::global_states::SECURE_KEY_GUID.to_string(),
+                proxy_agent_shared::common_state::SECURE_KEY_GUID.to_string(),
                 key.guid.to_string(),
             )
             .await?;
         self.global_states
             .set_state(
-                proxy_agent_shared::global_states::SECURE_KEY_VALUE.to_string(),
+                proxy_agent_shared::common_state::SECURE_KEY_VALUE.to_string(),
                 key.key.to_string(),
             )
             .await?;
@@ -864,7 +864,7 @@ mod tests {
             interval: Duration::from_millis(10),
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
-            global_states: key_keeper::GlobalStates::start_new(),
+            global_states: key_keeper::CommonState::start_new(),
             redirector_shared_state: key_keeper::RedirectorSharedState::start_new(),
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),

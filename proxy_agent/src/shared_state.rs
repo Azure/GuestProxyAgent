@@ -7,7 +7,7 @@ pub mod provision_wrapper;
 pub mod proxy_server_wrapper;
 pub mod redirector_wrapper;
 
-use proxy_agent_shared::global_states::GlobalStates;
+use proxy_agent_shared::common_state::CommonState;
 use tokio_util::sync::CancellationToken;
 
 const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
@@ -35,7 +35,7 @@ pub struct SharedState {
     /// The cancellation token is used to cancel the agent when the agent is stopped
     cancellation_token: CancellationToken,
     /// The sender for the global states
-    global_states: proxy_agent_shared::global_states::GlobalStates,
+    global_states: proxy_agent_shared::common_state::CommonState,
     /// The sender for the key keeper module
     key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
     /// The sender for the provision module
@@ -53,7 +53,7 @@ impl SharedState {
         SharedState {
             cancellation_token: CancellationToken::new(),
             key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState::start_new(),
-            global_states: GlobalStates::start_new(),
+            global_states: CommonState::start_new(),
             provision_shared_state: provision_wrapper::ProvisionSharedState::start_new(),
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
@@ -65,7 +65,7 @@ impl SharedState {
         self.key_keeper_shared_state.clone()
     }
 
-    pub fn get_global_states(&self) -> GlobalStates {
+    pub fn get_global_states(&self) -> CommonState {
         self.global_states.clone()
     }
 

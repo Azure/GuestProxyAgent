@@ -4,8 +4,8 @@
 //! This module contains the logic to read the telemetry event files and send them to the wire server.
 //! The telemetry event files are written by the event_logger module.
 
-use crate::global_states;
-use crate::global_states::GlobalStates;
+use crate::common_state;
+use crate::common_state::CommonState;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::logger::logger_manager;
@@ -63,7 +63,7 @@ pub struct EventReader {
     dir_path: PathBuf,
     delay_start: bool,
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
 }
 
 impl EventReader {
@@ -71,7 +71,7 @@ impl EventReader {
         dir_path: PathBuf,
         delay_start: bool,
         cancellation_token: CancellationToken,
-        global_states: GlobalStates,
+        global_states: CommonState,
     ) -> EventReader {
         EventReader {
             dir_path,
@@ -186,12 +186,12 @@ impl EventReader {
     ) -> Result<()> {
         let guid = self
             .global_states
-            .get_state(global_states::SECURE_KEY_GUID.to_string())
+            .get_state(common_state::SECURE_KEY_GUID.to_string())
             .await
             .unwrap_or(None);
         let key = self
             .global_states
-            .get_state(global_states::SECURE_KEY_VALUE.to_string())
+            .get_state(common_state::SECURE_KEY_VALUE.to_string())
             .await
             .unwrap_or(None);
         let goal_state = wire_server_client
@@ -372,7 +372,7 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 7071u16;
         let cancellation_token = CancellationToken::new();
-        let global_states = GlobalStates::start_new();
+        let global_states = CommonState::start_new();
         let event_reader = EventReader {
             dir_path: events_dir.clone(),
             delay_start: false,

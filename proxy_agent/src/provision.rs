@@ -85,7 +85,7 @@ use crate::proxy_agent_status;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
-use proxy_agent_shared::global_states::GlobalStates;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::event_reader::EventReader;
@@ -155,7 +155,7 @@ impl ProvisionStateInternal {
 /// It could  be called by redirector module
 pub async fn redirector_ready(
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -176,7 +176,7 @@ pub async fn redirector_ready(
 /// It could  be called by key latch module
 pub async fn key_latched(
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -197,7 +197,7 @@ pub async fn key_latched(
 /// It could  be called by listener module
 pub async fn listener_started(
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -219,7 +219,7 @@ async fn update_provision_state(
     state: ProvisionFlags,
     provision_dir: Option<PathBuf>,
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -318,7 +318,7 @@ pub async fn provision_timeup(
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
 pub async fn start_event_threads(
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,

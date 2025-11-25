@@ -39,8 +39,8 @@ use hyper::service::service_fn;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::error::HyperErrorType;
-use proxy_agent_shared::global_states::GlobalStates;
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
@@ -63,7 +63,7 @@ pub struct ProxyServer {
     port: u16,
     cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
-    global_states: GlobalStates,
+    global_states: CommonState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     redirector_shared_state: RedirectorSharedState,

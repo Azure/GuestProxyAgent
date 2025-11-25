@@ -58,7 +58,7 @@ use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::SharedState;
-use proxy_agent_shared::global_states::GlobalStates;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -110,7 +110,7 @@ pub struct Redirector {
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     cancellation_token: CancellationToken,
-    global_states: GlobalStates,
+    global_states: CommonState,
     provision_shared_state: ProvisionSharedState,
 }
 

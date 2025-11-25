@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod common_state;
 pub mod current_info;
 pub mod error;
 #[cfg(windows)]
 pub mod etw;
-pub mod global_states;
 pub mod host_clients;
 pub mod hyper_client;
 pub mod logger;
