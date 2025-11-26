@@ -357,6 +357,8 @@ pub async fn start_event_threads(
             true,
             cancellation_token.clone(),
             global_states.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
         );
         async move {
             event_reader

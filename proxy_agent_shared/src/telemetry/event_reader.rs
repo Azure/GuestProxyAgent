@@ -64,6 +64,8 @@ pub struct EventReader {
     delay_start: bool,
     cancellation_token: CancellationToken,
     global_states: CommonState,
+    execution_mode: String,
+    event_name: String,
 }
 
 impl EventReader {
@@ -72,12 +74,16 @@ impl EventReader {
         delay_start: bool,
         cancellation_token: CancellationToken,
         global_states: CommonState,
+        execution_mode: String,
+        event_name: String,
     ) -> EventReader {
         EventReader {
             dir_path,
             delay_start,
             cancellation_token,
             global_states,
+            execution_mode,
+            event_name,
         }
     }
 
@@ -237,7 +243,8 @@ impl EventReader {
             match misc_helpers::json_read_from_file::<Vec<Event>>(&file) {
                 Ok(events) => {
                     num_events_logged += events.len();
-                    Self::send_events(events, wire_server_client, vm_meta_data).await;
+                    self.send_events(events, wire_server_client, vm_meta_data)
+                        .await;
                 }
                 Err(e) => {
                     logger_manager::write_warn(format!(
@@ -254,6 +261,7 @@ impl EventReader {
 
     const MAX_MESSAGE_SIZE: usize = 1024 * 64;
     async fn send_events(
+        &self,
         mut events: Vec<Event>,
         wire_server_client: &WireServerClient,
         vm_meta_data: &VmMetaData,
@@ -267,6 +275,8 @@ impl EventReader {
                         telemetry_data.add_event(TelemetryEvent::from_event_log(
                             &event,
                             vm_meta_data.clone(),
+                            self.execution_mode.clone(),
+                            self.event_name.clone(),
                         ));
 
                         if telemetry_data.get_size() >= Self::MAX_MESSAGE_SIZE {
@@ -378,6 +388,8 @@ mod tests {
             delay_start: false,
             cancellation_token: cancellation_token.clone(),
             global_states: global_states.clone(),
+            execution_mode: "Test".to_string(),
+            event_name: "test_event_reader_thread".to_string(),
         };
         let wire_server_client = WireServerClient::new(ip, port);
         let imds_client = ImdsClient::new(ip, port);

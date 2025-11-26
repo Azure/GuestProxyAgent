@@ -86,7 +86,12 @@ pub struct TelemetryEvent {
 }
 
 impl TelemetryEvent {
-    pub fn from_event_log(event_log: &Event, vm_meta_data: VmMetaData) -> Self {
+    pub fn from_event_log(
+        event_log: &Event,
+        vm_meta_data: VmMetaData,
+        execution_mode: String,
+        event_name: String,
+    ) -> Self {
         TelemetryEvent {
             event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
             event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
@@ -98,8 +103,8 @@ impl TelemetryEvent {
             context2: event_log.TimeStamp.to_string(),
             context3: event_log.OperationId.to_string(),
 
-            execution_mode: "ProxyAgent".to_string(),
-            event_name: "MicrosoftAzureGuestProxyAgent".to_string(),
+            execution_mode,
+            event_name,
             os_version: current_info::get_long_os_version(),
             keyword_name: CURRENT_KEYWORD_NAME.to_string(),
             ram: current_info::get_ram_in_mb(),
