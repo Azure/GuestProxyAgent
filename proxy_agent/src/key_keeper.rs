@@ -73,8 +73,8 @@ pub struct KeyKeeper {
     cancellation_token: CancellationToken,
     /// key_keeper_shared_state: the sender for the key details, secure channel state, access control rule
     key_keeper_shared_state: KeyKeeperSharedState,
-    /// global_states: the sender for the Global states
-    global_states: CommonState,
+    /// common_state: the sender for the common states
+    common_state: CommonState,
     /// redirector_shared_state: the sender for the redirector/eBPF module
     redirector_shared_state: RedirectorSharedState,
     /// provision_shared_state: the sender for the provision state
@@ -98,7 +98,7 @@ impl KeyKeeper {
             interval,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            global_states: shared_state.get_global_states(),
+            common_state: shared_state.get_common_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
@@ -242,7 +242,7 @@ impl KeyKeeper {
                             // report key latched ready to try update the provision finished time_tick
                             provision::key_latched(
                                 self.cancellation_token.clone(),
-                                self.global_states.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
@@ -278,7 +278,7 @@ impl KeyKeeper {
             {
                 provision::start_event_threads(
                     self.cancellation_token.clone(),
-                    self.global_states.clone(),
+                    self.common_state.clone(),
                     self.key_keeper_shared_state.clone(),
                     self.provision_shared_state.clone(),
                     self.agent_status_shared_state.clone(),
@@ -428,7 +428,7 @@ impl KeyKeeper {
 
                             provision::key_latched(
                                 self.cancellation_token.clone(),
-                                self.global_states.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
@@ -508,7 +508,7 @@ impl KeyKeeper {
                                 self.update_status_message(message, false).await;
                                 provision::key_latched(
                                     self.cancellation_token.clone(),
-                                    self.global_states.clone(),
+                                    self.common_state.clone(),
                                     self.key_keeper_shared_state.clone(),
                                     self.provision_shared_state.clone(),
                                     self.agent_status_shared_state.clone(),
@@ -562,7 +562,7 @@ impl KeyKeeper {
                             }
                             provision::key_latched(
                                 self.cancellation_token.clone(),
-                                self.global_states.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
@@ -581,14 +581,14 @@ impl KeyKeeper {
     async fn update_key_to_shared_state(&self, key: Key) -> Result<()> {
         self.key_keeper_shared_state.update_key(key.clone()).await?;
 
-        // update the current key guid and value to global states
-        self.global_states
+        // update the current key guid and value to common states
+        self.common_state
             .set_state(
                 proxy_agent_shared::common_state::SECURE_KEY_GUID.to_string(),
                 key.guid.to_string(),
             )
             .await?;
-        self.global_states
+        self.common_state
             .set_state(
                 proxy_agent_shared::common_state::SECURE_KEY_VALUE.to_string(),
                 key.key.to_string(),
@@ -864,7 +864,7 @@ mod tests {
             interval: Duration::from_millis(10),
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
-            global_states: key_keeper::CommonState::start_new(),
+            common_state: key_keeper::CommonState::start_new(),
             redirector_shared_state: key_keeper::RedirectorSharedState::start_new(),
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),

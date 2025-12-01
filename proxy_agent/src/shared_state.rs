@@ -22,7 +22,7 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 /// use proxy_agent::shared_state::SharedState;
 /// let shared_state = SharedState::start_all();
 /// let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-/// let global_states = shared_state.get_global_states();
+/// let common_state = shared_state.get_common_state();
 /// let provision_shared_state = shared_state.get_provision_shared_state();
 /// let agent_status_shared_state = shared_state.get_agent_status_shared_state();
 /// let redirector_shared_state = shared_state.get_redirector_shared_state();
@@ -34,8 +34,8 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 pub struct SharedState {
     /// The cancellation token is used to cancel the agent when the agent is stopped
     cancellation_token: CancellationToken,
-    /// The sender for the global states
-    global_states: proxy_agent_shared::common_state::CommonState,
+    /// The sender for the common states
+    common_state: proxy_agent_shared::common_state::CommonState,
     /// The sender for the key keeper module
     key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
     /// The sender for the provision module
@@ -53,7 +53,7 @@ impl SharedState {
         SharedState {
             cancellation_token: CancellationToken::new(),
             key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState::start_new(),
-            global_states: CommonState::start_new(),
+            common_state: CommonState::start_new(),
             provision_shared_state: provision_wrapper::ProvisionSharedState::start_new(),
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
@@ -65,8 +65,8 @@ impl SharedState {
         self.key_keeper_shared_state.clone()
     }
 
-    pub fn get_global_states(&self) -> CommonState {
-        self.global_states.clone()
+    pub fn get_common_state(&self) -> CommonState {
+        self.common_state.clone()
     }
 
     pub fn get_provision_shared_state(&self) -> provision_wrapper::ProvisionSharedState {

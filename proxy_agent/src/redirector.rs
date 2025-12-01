@@ -110,7 +110,7 @@ pub struct Redirector {
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     cancellation_token: CancellationToken,
-    global_states: CommonState,
+    common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
 }
 
@@ -120,7 +120,7 @@ impl Redirector {
             local_port,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            global_states: shared_state.get_global_states(),
+            common_state: shared_state.get_common_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
@@ -274,7 +274,7 @@ impl Redirector {
         // report redirector ready for provision
         provision::redirector_ready(
             self.cancellation_token.clone(),
-            self.global_states.clone(),
+            self.common_state.clone(),
             self.key_keeper_shared_state.clone(),
             self.provision_shared_state.clone(),
             self.agent_status_shared_state.clone(),

@@ -63,7 +63,7 @@ pub struct EventReader {
     dir_path: PathBuf,
     delay_start: bool,
     cancellation_token: CancellationToken,
-    global_states: CommonState,
+    common_state: CommonState,
     execution_mode: String,
     event_name: String,
 }
@@ -73,7 +73,7 @@ impl EventReader {
         dir_path: PathBuf,
         delay_start: bool,
         cancellation_token: CancellationToken,
-        global_states: CommonState,
+        common_state: CommonState,
         execution_mode: String,
         event_name: String,
     ) -> EventReader {
@@ -81,7 +81,7 @@ impl EventReader {
             dir_path,
             delay_start,
             cancellation_token,
-            global_states,
+            common_state,
             execution_mode,
             event_name,
         }
@@ -145,7 +145,7 @@ impl EventReader {
                 }
             }
 
-            if let Ok(Some(vm_meta_data)) = self.global_states.get_vm_meta_data().await {
+            if let Ok(Some(vm_meta_data)) = self.common_state.get_vm_meta_data().await {
                 let _processed = self
                     .process_events(&wire_server_client, &vm_meta_data)
                     .await;
@@ -191,12 +191,12 @@ impl EventReader {
         imds_client: &ImdsClient,
     ) -> Result<()> {
         let guid = self
-            .global_states
+            .common_state
             .get_state(common_state::SECURE_KEY_GUID.to_string())
             .await
             .unwrap_or(None);
         let key = self
-            .global_states
+            .common_state
             .get_state(common_state::SECURE_KEY_VALUE.to_string())
             .await
             .unwrap_or(None);
@@ -225,7 +225,7 @@ impl EventReader {
             image_origin: instance_info.get_image_origin(),
         };
 
-        self.global_states
+        self.common_state
             .set_vm_meta_data(Some(vm_meta_data))
             .await?;
 
@@ -354,7 +354,7 @@ impl EventReader {
 
     #[cfg(test)]
     async fn get_vm_meta_data(&self) -> VmMetaData {
-        if let Ok(Some(vm_meta_data)) = self.global_states.get_vm_meta_data().await {
+        if let Ok(Some(vm_meta_data)) = self.common_state.get_vm_meta_data().await {
             vm_meta_data
         } else {
             VmMetaData::empty()
@@ -382,12 +382,12 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 7071u16;
         let cancellation_token = CancellationToken::new();
-        let global_states = CommonState::start_new();
+        let common_state = CommonState::start_new();
         let event_reader = EventReader {
             dir_path: events_dir.clone(),
             delay_start: false,
             cancellation_token: cancellation_token.clone(),
-            global_states: global_states.clone(),
+            common_state: common_state.clone(),
             execution_mode: "Test".to_string(),
             event_name: "test_event_reader_thread".to_string(),
         };
