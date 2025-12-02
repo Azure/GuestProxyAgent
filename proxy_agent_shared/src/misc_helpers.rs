@@ -150,12 +150,18 @@ pub fn get_file_name(path: &Path) -> String {
     }
 }
 
+/// It is the version from Cargo.toml of proxy_agent_shared crate
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn get_current_version() -> String {
     VERSION.to_string()
 }
 
+/// Get the current executable version, 
+/// trying to read version from file properties on Windows, 
+/// otherwise fallback to Cargo.toml version.
+/// # Returns
+/// A string representing the current executable version
 pub fn get_current_exe_version() -> String {
     #[cfg(windows)]
     {
@@ -176,7 +182,7 @@ pub fn get_current_exe_version() -> String {
 }
 
 #[cfg(windows)]
-fn try_get_current_exe_version() -> Result<String> {
+pub fn try_get_current_exe_version() -> Result<String> {
     let exe_path = std::env::current_exe()?;
     let version = windows::get_file_product_version(&exe_path)?;
     Ok(version.to_string())
