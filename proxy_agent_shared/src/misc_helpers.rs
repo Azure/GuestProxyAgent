@@ -163,8 +163,7 @@ pub fn get_current_exe_version() -> String {
             Ok(version) => version,
             Err(e) => {
                 eprintln!(
-                    "Failed to get current exe version from file properties, fallback to Cargo.toml version: {}",
-                    e
+                    "Failed to get current exe version from file properties, fallback to Cargo.toml version: {e}",
                 );
                 get_current_version()
             }
