@@ -10,6 +10,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::Cryptography::{
     //bcrypt.dll functions
     BCryptCreateHash,
@@ -428,6 +429,91 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
         }
         Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
     }
+}
+
+/// Set CPU quota for a process
+/// # Arguments
+/// * `process_id` - Process ID
+/// * `percent` - CPU quota percentage (0-100)
+pub fn set_cpu_quota(process_id: u32, percent: u16) -> Result<()> {
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+        SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+        JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA};
+
+    // create job object
+    let job_object = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if job_object == 0 {
+        return Err(Error::WindowsApi(
+            "CreateJobObjectW".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // Configure the CPU cap first
+    let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+        ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+        Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
+            CpuRate: (percent as u32) * 100,
+        },
+    };
+    let ok = unsafe {
+        SetInformationJobObject(
+            job_object,
+            JobObjectCpuRateControlInformation,
+            &mut cpu as *mut _ as *mut _,
+            std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(Error::WindowsApi(
+            "SetInformationJobObject".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // Open the target process with sufficient rights
+    let process_handle = unsafe { OpenProcess(PROCESS_SET_QUOTA, 0, process_id) };
+    if process_handle == 0 {
+        return Err(Error::WindowsApi(
+            "OpenProcess".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // Assign the process to the job object
+    let ok = unsafe { AssignProcessToJobObject(job_object, process_handle) };
+    let err = std::io::Error::last_os_error();
+    _ = close_process_handler(process_handle);
+    if ok == 0 {
+        return Err(Error::WindowsApi(
+            "AssignProcessToJobObject".to_string(),
+            err,
+        ));
+    }
+
+    Ok(())
+}
+
+/// Close process handler
+/// # Arguments
+/// * `handler` - Process handler
+/// # Returns
+/// * `Result<()>` - Ok if successful, Err if failed
+pub fn close_process_handler(handler: HANDLE) -> Result<()> {
+    if handler != 0 {
+        // https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
+        if 0 != unsafe { CloseHandle(handler) } {
+            return Err(Error::WindowsApi(
+                "CloseHandle".to_string(),
+                std::io::Error::last_os_error(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

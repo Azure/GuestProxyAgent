@@ -134,6 +134,35 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
     }
 }
 
+
+/// Set the CPU quota for a service.
+/// The CPU quota is set in percentage of the one CPU time available.
+/// For example, if the total CPU time available is 100%, setting the CPU quota to 50% will limit the service to use up to 50% of the total CPU time available.
+pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
+    match misc_helpers::execute_command(
+        "systemctl",
+        vec![
+            "set-property",
+            service_name,
+            &format!("CPUQuota={}%", cpu_quota),
+        ],
+        -1,
+    ) {
+        Ok(result) => {
+            logger_manager::write_warn(format!(
+                "Successfully set {service_name} CPUQuota to {cpu_quota}% with result: {}",
+                result.message()
+            ));
+        }
+        Err(e) => {
+            let message = format!("Failed to set {service_name} CPUQuota with error: {e}");
+            logger_manager::write_err(message);
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::misc_helpers;

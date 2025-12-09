@@ -313,6 +313,21 @@ pub async fn provision_timeup(
     }
 }
 
+/// Set CPUQuota for azure-proxy-agent service
+fn set_cpu_quota() {
+    #[cfg(not(windows))]
+    {
+        // Set CPUQuota for azure-proxy-agent.service to 15% to limit the CPU usage for Linux azure-proxy-agent service
+        // Linux GPA VM Extension is not required for Linux GPA service, it should not have the resource limits set in HandlerManifest.json file
+        const SERVICE_NAME: &str = "azure-proxy-agent.service";
+        const CPU_QUOTA: u16 = 15;
+        _ = proxy_agent_shared::linux::set_cpu_quota(SERVICE_NAME, CPU_QUOTA);
+    }
+
+    #[cfg(windows)]
+    {}
+}
+
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
@@ -331,6 +346,10 @@ pub async fn start_event_threads(
             return;
         }
     }
+
+    // set CPU quota before launching lower priority tasks,
+    // those tasks starts to run after provision finished or provision timedout
+    set_cpu_quota();
 
     let cloned_agent_status_shared_state = agent_status_shared_state.clone();
     tokio::spawn({
