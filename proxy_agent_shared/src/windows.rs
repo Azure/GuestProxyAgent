@@ -10,7 +10,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
 use windows_sys::Win32::Security::Cryptography::{
     //bcrypt.dll functions
     BCryptCreateHash,
@@ -25,11 +25,20 @@ use windows_sys::Win32::Storage::FileSystem::{
     VerQueryValueW,
     VS_FIXEDFILEINFO,
 };
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
+    SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
+    JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+};
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
     GlobalMemoryStatusEx, // kernel32.dll
     MEMORYSTATUSEX,
     SYSTEM_INFO,
+};
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_SET_QUOTA,
 };
 use winreg::enums::*;
 use winreg::RegKey;
@@ -436,14 +445,6 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
 /// * `process_id` - Process ID
 /// * `percent` - CPU quota percentage (0-100)
 pub fn set_cpu_quota(process_id: u32, percent: u16) -> Result<()> {
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectCpuRateControlInformation,
-        SetInformationJobObject, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-        JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE,
-        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
-    };
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA};
-
     // create job object
     let job_object = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if job_object == 0 {
@@ -476,13 +477,7 @@ pub fn set_cpu_quota(process_id: u32, percent: u16) -> Result<()> {
     }
 
     // Open the target process with sufficient rights
-    let process_handle = unsafe { OpenProcess(PROCESS_SET_QUOTA, 0, process_id) };
-    if process_handle == 0 {
-        return Err(Error::WindowsApi(
-            "OpenProcess".to_string(),
-            std::io::Error::last_os_error(),
-        ));
-    }
+    let process_handle = get_process_handler(process_id, PROCESS_SET_QUOTA)?;
 
     // Assign the process to the job object
     let ok = unsafe { AssignProcessToJobObject(job_object, process_handle) };
@@ -496,6 +491,36 @@ pub fn set_cpu_quota(process_id: u32, percent: u16) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get process handler by pid
+/// # Arguments
+/// * `pid` - Process ID
+/// # Returns
+/// * `Result<HANDLE>` - Process handler
+/// # Errors
+/// * `Error::Invalid` - If the pid is 0
+/// * `Error::WindowsApi` - If the OpenProcess call fails
+/// # Safety
+/// This function is safe to call as it does not dereference any raw pointers.
+/// However, the caller is responsible for closing the process handler using `close_process_handler`
+/// when it is no longer needed to avoid resource leaks.
+pub fn get_process_handler(pid: u32, options: PROCESS_ACCESS_RIGHTS) -> Result<HANDLE> {
+    if pid == 0 {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Process ID cannot be 0",
+        )));
+    }
+    // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
+    let handler = unsafe { OpenProcess(options, FALSE, pid) };
+    if handler == 0 {
+        return Err(Error::WindowsApi(
+            "OpenProcess".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+    Ok(handler)
 }
 
 /// Close process handler
@@ -581,5 +606,13 @@ mod tests {
 
         // Clean up
         super::remove_reg_key(key_name).unwrap();
+    }
+
+    #[test]
+    fn get_process_test() {
+        let pid = std::process::id();
+        let handler = super::get_process_handler(pid, super::PROCESS_SET_QUOTA).unwrap();
+        assert_ne!(0, handler, "process handler cannot be 0");
+        super::close_process_handler(handler).unwrap();
     }
 }

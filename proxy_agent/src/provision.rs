@@ -325,7 +325,32 @@ fn set_cpu_quota() {
     }
 
     #[cfg(windows)]
-    {}
+    {
+        let cpu_count = proxy_agent_shared::current_info::get_cpu_count();
+        // Set CPUQuota for GPA service process to limit the CPU usage for Windows GPA service
+        // As we need adjust the total CPU quota based on the number of CPU cores,
+        // Windows GPA VM Extension should not have the resource limits set in HandlerManifest.json file
+        let percent = if cpu_count <= 4 {
+            50
+        } else if cpu_count <= 8 {
+            30
+        } else if cpu_count <= 16 {
+            20
+        } else {
+            15
+        };
+
+        match proxy_agent_shared::windows::set_cpu_quota(std::process::id(), percent) {
+            Ok(_) => {
+                logger::write_warning(format!(
+                    "Successfully set current process CPU quota to {percent}%"
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!("Failed to set CPU quota with error: {e}"));
+            }
+        }
+    }
 }
 
 /// Start event logger & reader tasks and status reporting task
