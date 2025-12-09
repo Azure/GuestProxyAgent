@@ -58,6 +58,7 @@ features = [
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+sysinfo = "0.30.13" # read CPU & RAM information for Linux
 
 # For MUSL targets (Linux MUSL)
 [target.'cfg(all(target_env = "musl", not(target_os = "windows")))'.dependencies]

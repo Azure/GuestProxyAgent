@@ -6,8 +6,8 @@ pub mod key_keeper_wrapper;
 pub mod provision_wrapper;
 pub mod proxy_server_wrapper;
 pub mod redirector_wrapper;
-pub mod telemetry_wrapper;
 
+use proxy_agent_shared::common_state::CommonState;
 use tokio_util::sync::CancellationToken;
 
 const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
@@ -22,7 +22,7 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 /// use proxy_agent::shared_state::SharedState;
 /// let shared_state = SharedState::start_all();
 /// let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-/// let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+/// let common_state = shared_state.get_common_state();
 /// let provision_shared_state = shared_state.get_provision_shared_state();
 /// let agent_status_shared_state = shared_state.get_agent_status_shared_state();
 /// let redirector_shared_state = shared_state.get_redirector_shared_state();
@@ -34,10 +34,10 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 pub struct SharedState {
     /// The cancellation token is used to cancel the agent when the agent is stopped
     cancellation_token: CancellationToken,
+    /// The sender for the common states
+    common_state: proxy_agent_shared::common_state::CommonState,
     /// The sender for the key keeper module
     key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
-    /// The sender for the telemetry event modules
-    telemetry_shared_state: telemetry_wrapper::TelemetrySharedState,
     /// The sender for the provision module
     provision_shared_state: provision_wrapper::ProvisionSharedState,
     /// The sender for the agent status module
@@ -53,7 +53,7 @@ impl SharedState {
         SharedState {
             cancellation_token: CancellationToken::new(),
             key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState::start_new(),
-            telemetry_shared_state: telemetry_wrapper::TelemetrySharedState::start_new(),
+            common_state: CommonState::start_new(),
             provision_shared_state: provision_wrapper::ProvisionSharedState::start_new(),
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
@@ -65,8 +65,8 @@ impl SharedState {
         self.key_keeper_shared_state.clone()
     }
 
-    pub fn get_telemetry_shared_state(&self) -> telemetry_wrapper::TelemetrySharedState {
-        self.telemetry_shared_state.clone()
+    pub fn get_common_state(&self) -> CommonState {
+        self.common_state.clone()
     }
 
     pub fn get_provision_shared_state(&self) -> provision_wrapper::ProvisionSharedState {

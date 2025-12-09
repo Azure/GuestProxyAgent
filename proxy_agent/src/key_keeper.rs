@@ -35,10 +35,10 @@ use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSh
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
 use crate::{acl, redirector};
 use hyper::Uri;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -73,8 +73,8 @@ pub struct KeyKeeper {
     cancellation_token: CancellationToken,
     /// key_keeper_shared_state: the sender for the key details, secure channel state, access control rule
     key_keeper_shared_state: KeyKeeperSharedState,
-    /// telemetry_shared_state: the sender for the telemetry events
-    telemetry_shared_state: TelemetrySharedState,
+    /// common_state: the sender for the common states
+    common_state: CommonState,
     /// redirector_shared_state: the sender for the redirector/eBPF module
     redirector_shared_state: RedirectorSharedState,
     /// provision_shared_state: the sender for the provision state
@@ -98,7 +98,7 @@ impl KeyKeeper {
             interval,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            telemetry_shared_state: shared_state.get_telemetry_shared_state(),
+            common_state: shared_state.get_common_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
@@ -242,8 +242,8 @@ impl KeyKeeper {
                             // report key latched ready to try update the provision finished time_tick
                             provision::key_latched(
                                 self.cancellation_token.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
-                                self.telemetry_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
                             ).await;
@@ -278,8 +278,8 @@ impl KeyKeeper {
             {
                 provision::start_event_threads(
                     self.cancellation_token.clone(),
+                    self.common_state.clone(),
                     self.key_keeper_shared_state.clone(),
-                    self.telemetry_shared_state.clone(),
                     self.provision_shared_state.clone(),
                     self.agent_status_shared_state.clone(),
                 )
@@ -413,9 +413,7 @@ impl KeyKeeper {
                     // key latched before and search the key locally first
                     match Self::fetch_key(&self.key_dir, guid) {
                         Ok(key) => {
-                            if let Err(e) =
-                                self.key_keeper_shared_state.update_key(key.clone()).await
-                            {
+                            if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
                                 logger::write_warning(format!("Failed to update key: {e}"));
                             }
 
@@ -430,8 +428,8 @@ impl KeyKeeper {
 
                             provision::key_latched(
                                 self.cancellation_token.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
-                                self.telemetry_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
                             )
@@ -497,9 +495,7 @@ impl KeyKeeper {
                         match key::attest_key(&self.base_url, &key).await {
                             Ok(()) => {
                                 // update in memory
-                                if let Err(e) =
-                                    self.key_keeper_shared_state.update_key(key.clone()).await
-                                {
+                                if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
                                     logger::write_warning(format!("Failed to update key: {e}"));
                                 }
 
@@ -512,8 +508,8 @@ impl KeyKeeper {
                                 self.update_status_message(message, false).await;
                                 provision::key_latched(
                                     self.cancellation_token.clone(),
+                                    self.common_state.clone(),
                                     self.key_keeper_shared_state.clone(),
-                                    self.telemetry_shared_state.clone(),
                                     self.provision_shared_state.clone(),
                                     self.agent_status_shared_state.clone(),
                                 )
@@ -566,8 +562,8 @@ impl KeyKeeper {
                             }
                             provision::key_latched(
                                 self.cancellation_token.clone(),
+                                self.common_state.clone(),
                                 self.key_keeper_shared_state.clone(),
-                                self.telemetry_shared_state.clone(),
                                 self.provision_shared_state.clone(),
                                 self.agent_status_shared_state.clone(),
                             )
@@ -580,6 +576,25 @@ impl KeyKeeper {
                 }
             }
         }
+    }
+
+    async fn update_key_to_shared_state(&self, key: Key) -> Result<()> {
+        self.key_keeper_shared_state.update_key(key.clone()).await?;
+
+        // update the current key guid and value to common states
+        self.common_state
+            .set_state(
+                proxy_agent_shared::common_state::SECURE_KEY_GUID.to_string(),
+                key.guid.to_string(),
+            )
+            .await?;
+        self.common_state
+            .set_state(
+                proxy_agent_shared::common_state::SECURE_KEY_VALUE.to_string(),
+                key.key.to_string(),
+            )
+            .await?;
+        Ok(())
     }
 
     async fn update_status_message(&self, message: String, log_to_file: bool) {
@@ -849,7 +864,7 @@ mod tests {
             interval: Duration::from_millis(10),
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
-            telemetry_shared_state: key_keeper::TelemetrySharedState::start_new(),
+            common_state: key_keeper::CommonState::start_new(),
             redirector_shared_state: key_keeper::RedirectorSharedState::start_new(),
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),

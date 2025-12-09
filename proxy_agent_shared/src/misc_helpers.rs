@@ -150,10 +150,42 @@ pub fn get_file_name(path: &Path) -> String {
     }
 }
 
+/// It is the version from Cargo.toml of proxy_agent_shared crate
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn get_current_version() -> String {
     VERSION.to_string()
+}
+
+/// Get the current executable version,
+/// trying to read version from file properties on Windows,
+/// otherwise fallback to Cargo.toml version.
+/// # Returns
+/// A string representing the current executable version
+pub fn get_current_exe_version() -> String {
+    #[cfg(windows)]
+    {
+        match try_get_current_exe_version() {
+            Ok(version) => version,
+            Err(e) => {
+                eprintln!(
+                    "Failed to get current exe version from file properties, fallback to Cargo.toml version: {e}",
+                );
+                get_current_version()
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        get_current_version()
+    }
+}
+
+#[cfg(windows)]
+pub fn try_get_current_exe_version() -> Result<String> {
+    let exe_path = std::env::current_exe()?;
+    let version = windows::get_file_product_version(&exe_path)?;
+    Ok(version.to_string())
 }
 
 pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -328,6 +360,15 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
 pub use linux::compute_signature;
 #[cfg(windows)]
 pub use windows::compute_signature;
+
+// replace xml escape characters
+pub fn xml_escape(s: String) -> String {
+    s.replace('&', "&amp;")
+        .replace('\'', "&apos;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 
 #[cfg(test)]
 mod tests {
@@ -584,5 +625,33 @@ mod tests {
             error.contains(invalid_hex_encoded_key),
             "Error does not contains the invalid key"
         )
+    }
+
+    #[test]
+    fn get_current_exe_version_test() {
+        let version = super::get_current_exe_version();
+        println!("get_current_exe_version: {version}");
+        assert!(
+            !version.is_empty(),
+            "get_current_exe_version should return a non-empty string"
+        );
+
+        let cargo_version = super::get_current_version();
+        #[cfg(windows)]
+        {
+            // "%UserProfile%\\.cargo\\bin\\rustup.exe" does not have file version info
+            // so get_current_exe_version uses the version from current Cargo.toml file
+            assert_eq!(
+                cargo_version, version,
+                "get_current_exe_version should return the same version as Cargo.toml as '%UserProfile%\\.cargo\\bin\\rustup.exe' does not have file version info"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(
+                cargo_version, version,
+                "get_current_exe_version should return the same version as Cargo.toml in Linux"
+            );
+        }
     }
 }

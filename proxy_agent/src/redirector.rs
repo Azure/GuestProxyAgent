@@ -57,8 +57,8 @@ use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSh
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
 use crate::shared_state::SharedState;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -110,7 +110,7 @@ pub struct Redirector {
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     cancellation_token: CancellationToken,
-    telemetry_shared_state: TelemetrySharedState,
+    common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
 }
 
@@ -120,7 +120,7 @@ impl Redirector {
             local_port,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            telemetry_shared_state: shared_state.get_telemetry_shared_state(),
+            common_state: shared_state.get_common_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
@@ -274,8 +274,8 @@ impl Redirector {
         // report redirector ready for provision
         provision::redirector_ready(
             self.cancellation_token.clone(),
+            self.common_state.clone(),
             self.key_keeper_shared_state.clone(),
-            self.telemetry_shared_state.clone(),
             self.provision_shared_state.clone(),
             self.agent_status_shared_state.clone(),
         )

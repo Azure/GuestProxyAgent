@@ -10,7 +10,6 @@ pub mod proxy_agent_status;
 pub mod redirector;
 pub mod service;
 pub mod shared_state;
-pub mod telemetry;
 
 use common::cli::{Commands, CLI};
 use common::constants;

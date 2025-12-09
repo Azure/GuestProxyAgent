@@ -20,7 +20,7 @@
 //! let shared_state = SharedState::start_all();
 //! let cancellation_token = shared_state.get_cancellation_token();
 //! let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-//! let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+//! let common_state = shared_state.get_common_state();
 //! let provision_shared_state = shared_state.get_provision_shared_state();
 //! let agent_status_shared_state = shared_state.get_agent_status_shared_state();
 //!
@@ -35,21 +35,21 @@
 //! provision::redirector_ready(
 //!     cancellation_token.clone(),
 //!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
+//!     common_state.clone(),
 //!     provision_shared_state.clone(),
 //!     agent_status_shared_state.clone(),
 //! ).await;
 //! provision::key_latched(
 //!     cancellation_token.clone(),
 //!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
+//!     common_state.clone(),
 //!     provision_shared_state.clone(),
 //!     agent_status_shared_state.clone(),
 //! ).await;
 //! provision::listener_started(
 //!     cancellation_token.clone(),
 //!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
+//!     common_state.clone(),
 //!     provision_shared_state.clone(),
 //!     agent_status_shared_state.clone(),
 //! ).await;
@@ -79,16 +79,16 @@
 //! assert_eq!(0, provision_state.1.len());
 //! ```
 
-use crate::common::{config, helpers, logger};
+use crate::common::{config, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
 use crate::proxy_agent_status;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
-use crate::telemetry::event_reader::EventReader;
+use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::telemetry::event_reader::EventReader;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -155,8 +155,8 @@ impl ProvisionStateInternal {
 /// It could  be called by redirector module
 pub async fn redirector_ready(
     cancellation_token: CancellationToken,
+    common_state: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) {
@@ -164,8 +164,8 @@ pub async fn redirector_ready(
         ProvisionFlags::REDIRECTOR_READY,
         None,
         cancellation_token,
+        common_state,
         key_keeper_shared_state,
-        telemetry_shared_state,
         provision_shared_state,
         agent_status_shared_state,
     )
@@ -176,8 +176,8 @@ pub async fn redirector_ready(
 /// It could  be called by key latch module
 pub async fn key_latched(
     cancellation_token: CancellationToken,
+    common_state: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) {
@@ -185,8 +185,8 @@ pub async fn key_latched(
         ProvisionFlags::KEY_LATCH_READY,
         None,
         cancellation_token,
+        common_state,
         key_keeper_shared_state,
-        telemetry_shared_state,
         provision_shared_state,
         agent_status_shared_state,
     )
@@ -197,8 +197,8 @@ pub async fn key_latched(
 /// It could  be called by listener module
 pub async fn listener_started(
     cancellation_token: CancellationToken,
+    common_state: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) {
@@ -206,8 +206,8 @@ pub async fn listener_started(
         ProvisionFlags::LISTENER_READY,
         None,
         cancellation_token,
+        common_state,
         key_keeper_shared_state,
-        telemetry_shared_state,
         provision_shared_state,
         agent_status_shared_state,
     )
@@ -219,8 +219,8 @@ async fn update_provision_state(
     state: ProvisionFlags,
     provision_dir: Option<PathBuf>,
     cancellation_token: CancellationToken,
+    common_state: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) {
@@ -244,8 +244,8 @@ async fn update_provision_state(
             // start event threads right after provision successfully
             start_event_threads(
                 cancellation_token,
+                common_state,
                 key_keeper_shared_state,
-                telemetry_shared_state,
                 provision_shared_state,
                 agent_status_shared_state,
             )
@@ -318,8 +318,8 @@ pub async fn provision_timeup(
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
 pub async fn start_event_threads(
     cancellation_token: CancellationToken,
+    common_state: CommonState,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) {
@@ -356,9 +356,9 @@ pub async fn start_event_threads(
             config::get_events_dir(),
             true,
             cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            common_state.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
         );
         async move {
             event_reader
@@ -429,7 +429,7 @@ async fn write_provision_state(
 
     if !failed_state_message.is_empty() {
         // escape xml characters to allow the message to able be composed into xml payload
-        failed_state_message = helpers::xml_escape(failed_state_message);
+        failed_state_message = misc_helpers::xml_escape(failed_state_message);
 
         // write provision failed error message to event
         event_logger::write_event(
@@ -677,7 +677,7 @@ mod tests {
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+        let common_state = shared_state.get_common_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
         let port: u16 = 8092;
         let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
@@ -710,8 +710,8 @@ mod tests {
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.to_path_buf()),
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
@@ -739,8 +739,8 @@ mod tests {
                 ProvisionFlags::REDIRECTOR_READY,
                 Some(dir1),
                 cancellation_token.clone(),
+                common_state.clone(),
                 key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
                 provision_shared_state.clone(),
                 agent_status_shared_state.clone(),
             ),
@@ -748,8 +748,8 @@ mod tests {
                 ProvisionFlags::KEY_LATCH_READY,
                 Some(dir2),
                 cancellation_token.clone(),
+                common_state.clone(),
                 key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
                 provision_shared_state.clone(),
                 agent_status_shared_state.clone(),
             ),
@@ -757,8 +757,8 @@ mod tests {
                 ProvisionFlags::LISTENER_READY,
                 Some(dir3),
                 cancellation_token.clone(),
+                common_state.clone(),
                 key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
                 provision_shared_state.clone(),
                 agent_status_shared_state.clone(),
             ),
@@ -814,8 +814,8 @@ mod tests {
         // update provision finish time_tick
         super::key_latched(
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
@@ -874,8 +874,8 @@ mod tests {
         // test key_latched ready again
         super::key_latched(
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
@@ -911,7 +911,7 @@ mod tests {
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+        let common_state = shared_state.get_common_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
 
         // test all 3 provision states as ready
@@ -919,8 +919,8 @@ mod tests {
             ProvisionFlags::LISTENER_READY,
             Some(temp_test_path.clone()),
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
@@ -929,8 +929,8 @@ mod tests {
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.clone()),
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
@@ -939,8 +939,8 @@ mod tests {
             ProvisionFlags::REDIRECTOR_READY,
             Some(temp_test_path.clone()),
             cancellation_token.clone(),
+            common_state.clone(),
             key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
         )
