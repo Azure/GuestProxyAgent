@@ -168,7 +168,7 @@ impl Process {
             use windows_sys::Win32::System::Threading::{
                 PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
             };
-            
+
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
             let handler = proxy_agent_shared::windows::get_process_handler(pid, options)
                 .unwrap_or_else(|e| {

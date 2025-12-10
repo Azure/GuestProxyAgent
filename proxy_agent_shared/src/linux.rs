@@ -134,7 +134,6 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
     }
 }
 
-
 /// Set the CPU quota for a service.
 /// The CPU quota is set in percentage of the one CPU time available.
 /// For example, if the total CPU time available is 100%, setting the CPU quota to 50% will limit the service to use up to 50% of the total CPU time available.
