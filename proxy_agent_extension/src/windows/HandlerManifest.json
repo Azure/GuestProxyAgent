@@ -18,8 +18,7 @@
             "memoryQuotaMB":  75
         }, 
         {
-            "name": "GuestProxyAgent", 
-            "memoryQuotaMB":  17
+            "name": "GuestProxyAgent"
         }]
     }
 }]

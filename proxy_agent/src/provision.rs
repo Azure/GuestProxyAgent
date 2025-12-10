@@ -314,7 +314,7 @@ pub async fn provision_timeup(
 }
 
 /// Set CPUQuota for azure-proxy-agent service
-fn set_cpu_quota() {
+fn set_resource_limits() {
     #[cfg(not(windows))]
     {
         // Set CPUQuota for azure-proxy-agent.service to 15% to limit the CPU usage for Linux azure-proxy-agent service
@@ -326,10 +326,10 @@ fn set_cpu_quota() {
 
     #[cfg(windows)]
     {
-        let cpu_count = proxy_agent_shared::current_info::get_cpu_count();
         // Set CPUQuota for GPA service process to limit the CPU usage for Windows GPA service
         // As we need adjust the total CPU quota based on the number of CPU cores,
         // Windows GPA VM Extension should not have the resource limits set in HandlerManifest.json file
+        let cpu_count = proxy_agent_shared::current_info::get_cpu_count();
         let percent = if cpu_count <= 4 {
             50
         } else if cpu_count <= 8 {
@@ -339,15 +339,20 @@ fn set_cpu_quota() {
         } else {
             15
         };
+        let ram_limit = 17;
 
-        match proxy_agent_shared::windows::set_cpu_quota(std::process::id(), percent) {
+        match proxy_agent_shared::windows::set_resource_limits(
+            std::process::id(),
+            percent,
+            ram_limit,
+        ) {
             Ok(_) => {
                 logger::write_warning(format!(
-                    "Successfully set current process CPU quota to {percent}%"
+                    "Successfully set current process CPU quota to {percent}% and RAM limit to {ram_limit}MB"
                 ));
             }
             Err(e) => {
-                logger::write_error(format!("Failed to set CPU quota with error: {e}"));
+                logger::write_error(format!("Failed to set CPU and RAM quota with error: {e}"));
             }
         }
     }
@@ -372,9 +377,9 @@ pub async fn start_event_threads(
         }
     }
 
-    // set CPU quota before launching lower priority tasks,
+    // set resource limits before launching lower priority tasks,
     // those tasks starts to run after provision finished or provision timedout
-    set_cpu_quota();
+    set_resource_limits();
 
     let cloned_agent_status_shared_state = agent_status_shared_state.clone();
     tokio::spawn({

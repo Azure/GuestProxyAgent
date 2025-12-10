@@ -188,7 +188,7 @@ impl Process {
                 }
             }
             // close the handle
-            if let Err(e) = proxy_agent_shared::windows::close_process_handler(handler) {
+            if let Err(e) = proxy_agent_shared::windows::close_handler(handler) {
                 println!("Failed to close process handler: {e}");
             }
         }
