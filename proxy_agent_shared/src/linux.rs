@@ -143,7 +143,7 @@ pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
         vec![
             "set-property",
             service_name,
-            &format!("CPUQuota={}%", cpu_quota),
+            &format!("CPUQuota={cpu_quota}%"),
         ],
         -1,
     ) {
