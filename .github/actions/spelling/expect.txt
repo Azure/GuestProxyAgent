@@ -145,6 +145,7 @@ INVM
 Ioctl
 iusr
 jetbrains
+JOBOBJECT
 jobsjob
 joutvhu
 JScript
@@ -320,10 +321,12 @@ vflji
 vhd
 vmagentlog
 VMGA
+vmhwm
 VMId
 vmlinux
 vmr
 vmrcs
+vmrss
 vms
 vns
 VTeam
@@ -351,6 +354,7 @@ wireserverand
 wireserverandimds
 WMI
 workarounds
+WORKINGSET
 WORKDIR
 WScript
 wsf
