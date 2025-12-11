@@ -138,7 +138,7 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
 /// The CPU quota is set in percentage of the one CPU time available.
 /// For example, if the total CPU time available is 100%, setting the CPU quota to 50% will limit the service to use up to 50% of the total CPU time available.
 pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
-    match misc_helpers::execute_command(
+    misc_helpers::execute_command(
         "systemctl",
         vec![
             "set-property",
@@ -146,20 +146,32 @@ pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
             &format!("CPUQuota={cpu_quota}%"),
         ],
         -1,
-    ) {
-        Ok(result) => {
-            logger_manager::write_warn(format!(
-                "Successfully set {service_name} CPUQuota to {cpu_quota}% with result: {}",
-                result.message()
-            ));
-        }
-        Err(e) => {
-            let message = format!("Failed to set {service_name} CPUQuota with error: {e}");
-            logger_manager::write_err(message);
-            return Err(e);
+    )?;
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct MemStatus {
+    pub vmrss_kb: Option<u64>,
+    pub vmhwm_kb: Option<u64>,
+}
+
+pub fn read_proc_memory_status(pid: u32) -> Result<MemStatus> {
+    let s = fs::read_to_string(format!("/proc/{pid}/status"))?;
+    let mut vmrss_kb = None;
+    let mut vmhwm_kb = None;
+    for line in s.lines() {
+        if line.starts_with("VmRSS:") {
+            // Format: "VmRSS:\t  12345 kB"
+            let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
+            vmrss_kb = val;
+        } else if line.starts_with("VmHWM:") {
+            let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
+            vmhwm_kb = val;
         }
     }
-    Ok(())
+    Ok(MemStatus { vmrss_kb, vmhwm_kb })
 }
 
 #[cfg(test)]
