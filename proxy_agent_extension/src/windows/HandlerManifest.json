@@ -18,9 +18,7 @@
             "memoryQuotaMB":  75
         }, 
         {
-            "name": "GuestProxyAgent", 
-            "cpuQuotaPercentage": 15, 
-            "memoryQuotaMB":  17
+            "name": "GuestProxyAgent"
         }]
     }
 }]

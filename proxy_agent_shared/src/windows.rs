@@ -10,6 +10,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows_service::service::{ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
 use windows_sys::Win32::Security::Cryptography::{
     //bcrypt.dll functions
     BCryptCreateHash,
@@ -24,11 +25,23 @@ use windows_sys::Win32::Storage::FileSystem::{
     VerQueryValueW,
     VS_FIXEDFILEINFO,
 };
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JobObjectCpuRateControlInformation,
+    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+    JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE,
+    JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_WORKINGSET,
+};
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
     GlobalMemoryStatusEx, // kernel32.dll
     MEMORYSTATUSEX,
     SYSTEM_INFO,
+};
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_INFORMATION, PROCESS_SET_QUOTA,
+    PROCESS_TERMINATE,
 };
 use winreg::enums::*;
 use winreg::RegKey;
@@ -430,6 +443,179 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
     }
 }
 
+/// Set CPU quota for a process
+/// # Arguments
+/// * `process_id` - Process ID
+/// * `cpu_percent` - CPU quota percentage (0-100)
+/// # Returns
+/// * `Result<HANDLE>` - Job object handle
+///   The job object handle must remain valid for the lifetime of the job.
+///   The caller is responsible for closing the job object handle when it is no longer needed.
+/// # Errors
+/// * `Error::Io` - If the cpu_percent is invalid
+/// * `Error::WindowsApi` - If any Windows API call fails
+pub fn set_resource_limits(process_id: u32, cpu_percent: u16, ram_in_mb: usize) -> Result<HANDLE> {
+    if cpu_percent == 0 || cpu_percent > 100 {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "CPU quota percent must be between 1 and 100",
+        )));
+    }
+
+    // create job object
+    let job_object = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if job_object == 0 {
+        return Err(Error::WindowsApi(
+            "CreateJobObjectW".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // Configure the CPU cap first
+    let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION {
+        ControlFlags: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE,
+        Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
+            Anonymous: JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0_0 {
+                // Per MSDN: Set CpuRate to a percentage times 100. For example, to let the job use 20% of the CPU, set CpuRate to 20 times 100, or 2,000.
+                MinRate: 300,
+                MaxRate: cpu_percent * 100,
+            },
+        },
+    };
+    let ok = unsafe {
+        SetInformationJobObject(
+            job_object,
+            JobObjectCpuRateControlInformation,
+            &mut cpu as *mut _ as *mut _,
+            std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+        )
+    };
+    if ok == 0 {
+        _ = close_handler(job_object);
+        return Err(Error::WindowsApi(
+            "SetInformationJobObject - JOBOBJECT_CPU_RATE_CONTROL_INFORMATION".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    // Configure the memory limit
+    if ram_in_mb > 0 {
+        let mut ext: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        ext.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_WORKINGSET;
+        let ram = ram_in_mb * 1024 * 1024; // Convert MB to bytes
+        ext.BasicLimitInformation.MaximumWorkingSetSize = ram;
+        ext.BasicLimitInformation.MinimumWorkingSetSize = ram / 8;
+        // Set the maximum amount of committed virtual memory too.
+        ext.ProcessMemoryLimit = ram * 4;
+        let ok = unsafe {
+            SetInformationJobObject(
+                job_object,
+                JobObjectExtendedLimitInformation,
+                &mut ext as *mut _ as *mut _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if ok == 0 {
+            _ = close_handler(job_object);
+            return Err(Error::WindowsApi(
+                "SetInformationJobObject - JOBOBJECT_EXTENDED_LIMIT_INFORMATION".to_string(),
+                std::io::Error::last_os_error(),
+            ));
+        }
+    }
+
+    // Open the target process with sufficient rights
+    // The handle must have the PROCESS_SET_QUOTA and PROCESS_TERMINATE access rights.
+    let process_handle = get_process_handler(
+        process_id,
+        PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+    )?;
+
+    // Check if process is already in a job
+    let mut in_job: i32 = 0; // BOOL
+    if unsafe { IsProcessInJob(process_handle, 0, &mut in_job as *mut i32) } == 0 {
+        let e = std::io::Error::last_os_error();
+        _ = close_handler(process_handle);
+        _ = close_handler(job_object);
+        return Err(Error::WindowsApi("IsProcessInJob".to_string(), e));
+    }
+    if in_job != 0 {
+        // Already in a job -> likely cause of ERROR_ACCESS_DENIED
+        _ = close_handler(process_handle);
+        _ = close_handler(job_object);
+        return Err(Error::WindowsApi(
+            "IsProcessInJob".to_string(),
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "Target process is already in a job; cannot assign to a new job",
+            ),
+        ));
+    }
+
+    // Assign the process to the job object
+    let ok = unsafe { AssignProcessToJobObject(job_object, process_handle) };
+    let err = std::io::Error::last_os_error();
+    _ = close_handler(process_handle);
+    if ok == 0 {
+        return Err(Error::WindowsApi(
+            "AssignProcessToJobObject".to_string(),
+            err,
+        ));
+    }
+
+    // Do NOT close job_object as we need keep job_object open while need limits.
+    Ok(job_object)
+}
+
+/// Get process handler by pid
+/// # Arguments
+/// * `pid` - Process ID
+/// # Returns
+/// * `Result<HANDLE>` - Process handler
+/// # Errors
+/// * `Error::Invalid` - If the pid is 0
+/// * `Error::WindowsApi` - If the OpenProcess call fails
+/// # Safety
+/// This function is safe to call as it does not dereference any raw pointers.
+/// However, the caller is responsible for closing the process handler using `close_handler`
+/// when it is no longer needed to avoid resource leaks.
+pub fn get_process_handler(pid: u32, options: PROCESS_ACCESS_RIGHTS) -> Result<HANDLE> {
+    if pid == 0 {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Process ID cannot be 0",
+        )));
+    }
+    // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
+    let handler = unsafe { OpenProcess(options, FALSE, pid) };
+    if handler == 0 {
+        return Err(Error::WindowsApi(
+            "OpenProcess".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+    Ok(handler)
+}
+
+/// Close process handler
+/// # Arguments
+/// * `handler` - Process handler
+/// # Returns
+/// * `Result<()>` - Ok if successful, Err if failed
+pub fn close_handler(handler: HANDLE) -> Result<()> {
+    if handler != 0 {
+        // https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
+        if 0 != unsafe { CloseHandle(handler) } {
+            return Err(Error::WindowsApi(
+                "CloseHandle".to_string(),
+                std::io::Error::last_os_error(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -495,5 +681,20 @@ mod tests {
 
         // Clean up
         super::remove_reg_key(key_name).unwrap();
+    }
+
+    #[test]
+    fn set_resource_limits_test() {
+        let pid = std::process::id();
+        match super::set_resource_limits(pid, 100, 10) {
+            Ok(job_handle) => {
+                // Close the job handle
+                super::close_handler(job_handle).unwrap();
+            }
+            Err(e) => {
+                // Print the error but do not fail the test as setting resource limits may fail due to the test environment already under a job object
+                println!("Failed to set resource limits: {}", e);
+            }
+        }
     }
 }

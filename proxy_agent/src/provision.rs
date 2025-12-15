@@ -313,6 +313,72 @@ pub async fn provision_timeup(
     }
 }
 
+/// Set resource limits for Guest Proxy Agent service
+/// It will be called when provision finished or timedout,
+/// it is designed to delay set resource limits to give more cpu time to provision tasks
+/// For Linux GPA service, it sets CPUQuota for azure-proxy-agent.service to limit the CPU usage
+/// For Windows GPA service, it sets CPU and RAM limits for current process to limit the CPU and RAM usage
+fn set_resource_limits() {
+    #[cfg(not(windows))]
+    {
+        // Set CPUQuota for azure-proxy-agent.service to 15% to limit the CPU usage for Linux azure-proxy-agent service
+        // Linux GPA VM Extension is not required for Linux GPA service, it should not have the resource limits set in HandlerManifest.json file
+        const SERVICE_NAME: &str = "azure-proxy-agent.service";
+        const CPU_QUOTA: u16 = 15;
+        match proxy_agent_shared::linux::set_cpu_quota(SERVICE_NAME, CPU_QUOTA) {
+            Ok(_) => {
+                logger::write_warning(format!(
+                    "Successfully set {SERVICE_NAME} CPU quota to {CPU_QUOTA}%"
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!(
+                    "Failed to set {SERVICE_NAME} CPU quota with error: {e}"
+                ));
+            }
+        }
+
+        // Do not set MemoryMax or MemoryHigh for azure-proxy-agent.service to limit the RAM usage
+        // As Linux GPA service is designed to be lightweight and use minimal memory footprint (~20MB),
+        // but its provisioning process may need more memory temporarily (e.g., up to 100MB) and then shrinks to ~20MB.
+        // If we set MemoryMax to 20MB, it may cause the provisioning process OOM kill unexpectedly.
+        // If we set MemoryHigh to 20MB, it may cause the provisioning process being throttled/hung unexpectedly.
+    }
+
+    #[cfg(windows)]
+    {
+        // Set CPUQuota for GPA service process to limit the CPU usage for Windows GPA service
+        // As we need adjust the total CPU quota based on the number of CPU cores,
+        // Windows GPA VM Extension should not have the resource limits set in HandlerManifest.json file
+        let cpu_count = proxy_agent_shared::current_info::get_cpu_count();
+        let percent = if cpu_count <= 4 {
+            50
+        } else if cpu_count <= 8 {
+            30
+        } else if cpu_count <= 16 {
+            20
+        } else {
+            15
+        };
+
+        const RAM_LIMIT_IN_MB: usize = 20;
+        match proxy_agent_shared::windows::set_resource_limits(
+            std::process::id(),
+            percent,
+            RAM_LIMIT_IN_MB,
+        ) {
+            Ok(_) => {
+                logger::write_warning(format!(
+                    "Successfully set current process CPU quota to {percent}% and RAM limit to {RAM_LIMIT_IN_MB}MB"
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!("Failed to set CPU and RAM quota with error: {e}"));
+            }
+        }
+    }
+}
+
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
@@ -331,6 +397,10 @@ pub async fn start_event_threads(
             return;
         }
     }
+
+    // set resource limits before launching lower priority tasks,
+    // those tasks starts to run after provision finished or provision timedout
+    set_resource_limits();
 
     let cloned_agent_status_shared_state = agent_status_shared_state.clone();
     tokio::spawn({
