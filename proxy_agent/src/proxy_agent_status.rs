@@ -31,6 +31,7 @@
 use crate::common::logger;
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
+use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
@@ -50,6 +51,7 @@ pub struct ProxyAgentStatusTask {
     cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
+    connection_summary_shared_state: ConnectionSummarySharedState,
 }
 
 impl ProxyAgentStatusTask {
@@ -59,6 +61,7 @@ impl ProxyAgentStatusTask {
         cancellation_token: CancellationToken,
         key_keeper_shared_state: KeyKeeperSharedState,
         agent_status_shared_state: AgentStatusSharedState,
+        connection_summary_shared_state: ConnectionSummarySharedState,
     ) -> ProxyAgentStatusTask {
         ProxyAgentStatusTask {
             interval,
@@ -66,6 +69,7 @@ impl ProxyAgentStatusTask {
             cancellation_token,
             key_keeper_shared_state,
             agent_status_shared_state,
+            connection_summary_shared_state,
         }
     }
 
@@ -156,7 +160,11 @@ impl ProxyAgentStatusTask {
                     "Clearing the connection summary map and failed authenticate summary map."
                         .to_string(),
                 );
-                if let Err(e) = self.agent_status_shared_state.clear_all_summary().await {
+                if let Err(e) = self
+                    .connection_summary_shared_state
+                    .clear_all_summary()
+                    .await
+                {
                     logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {e}"));
                 }
                 start_time = Instant::now();
@@ -266,7 +274,7 @@ impl ProxyAgentStatusTask {
             timestamp: misc_helpers::get_date_time_string_with_milliseconds(),
             proxyAgentStatus: self.proxy_agent_status_new().await,
             proxyConnectionSummary: match self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .get_all_connection_summary()
                 .await
             {
@@ -277,7 +285,7 @@ impl ProxyAgentStatusTask {
                 }
             },
             failedAuthenticateSummary: match self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .get_all_failed_connection_summary()
                 .await
             {
@@ -353,7 +361,9 @@ mod tests {
     use crate::{
         proxy_agent_status::ProxyAgentStatusTask,
         shared_state::{
-            agent_status_wrapper::AgentStatusSharedState, key_keeper_wrapper::KeyKeeperSharedState,
+            agent_status_wrapper::AgentStatusSharedState,
+            connection_summary_wrapper::ConnectionSummarySharedState,
+            key_keeper_wrapper::KeyKeeperSharedState,
         },
     };
     use proxy_agent_shared::{
@@ -375,6 +385,7 @@ mod tests {
             CancellationToken::new(),
             KeyKeeperSharedState::start_new(),
             AgentStatusSharedState::start_new(),
+            ConnectionSummarySharedState::start_new(),
         );
         let aggregate_status = task.guest_proxy_agent_aggregate_status_new().await;
         task.write_aggregate_status_to_file(aggregate_status).await;

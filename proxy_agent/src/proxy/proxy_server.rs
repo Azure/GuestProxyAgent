@@ -27,11 +27,12 @@ use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
+use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::SharedState;
+use crate::shared_state::{EventThreadsSharedState, SharedState};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::{Bytes, Incoming};
@@ -71,6 +72,7 @@ pub struct ProxyServer {
     redirector_shared_state: RedirectorSharedState,
     proxy_server_shared_state: ProxyServerSharedState,
     access_control_shared_state: AccessControlSharedState,
+    connection_summary_shared_state: ConnectionSummarySharedState,
 }
 
 impl ProxyServer {
@@ -85,6 +87,7 @@ impl ProxyServer {
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             proxy_server_shared_state: shared_state.get_proxy_server_shared_state(),
             access_control_shared_state: shared_state.get_access_control_shared_state(),
+            connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
         }
     }
 
@@ -186,13 +189,14 @@ impl ProxyServer {
         {
             logger::write_warning(format!("Failed to set module state: {e}"));
         }
-        provision::listener_started(
-            self.cancellation_token.clone(),
-            self.common_state.clone(),
-            self.key_keeper_shared_state.clone(),
-            self.provision_shared_state.clone(),
-            self.agent_status_shared_state.clone(),
-        )
+        provision::listener_started(EventThreadsSharedState {
+            cancellation_token: self.cancellation_token.clone(),
+            common_state: self.common_state.clone(),
+            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+            provision_shared_state: self.provision_shared_state.clone(),
+            agent_status_shared_state: self.agent_status_shared_state.clone(),
+            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+        })
         .await;
 
         // We start a loop to continuously accept incoming connections
@@ -843,7 +847,7 @@ impl ProxyServer {
 
         if log_authorize_failed {
             if let Err(e) = self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .add_one_failed_connection_summary(summary)
                 .await
             {
@@ -853,7 +857,7 @@ impl ProxyServer {
                 );
             }
         } else if let Err(e) = self
-            .agent_status_shared_state
+            .connection_summary_shared_state
             .add_one_connection_summary(summary)
             .await
         {

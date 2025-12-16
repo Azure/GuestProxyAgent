@@ -33,10 +33,11 @@ use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
+use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::SharedState;
+use crate::shared_state::{EventThreadsSharedState, SharedState};
 use crate::{acl, redirector};
 use hyper::Uri;
 use proxy_agent_shared::common_state::CommonState;
@@ -84,6 +85,8 @@ pub struct KeyKeeper {
     agent_status_shared_state: AgentStatusSharedState,
     /// access_control_shared_state: the sender for the access control rules
     access_control_shared_state: AccessControlSharedState,
+    /// connection_summary_shared_state: the sender for the connection summary module
+    connection_summary_shared_state: ConnectionSummarySharedState,
 }
 
 impl KeyKeeper {
@@ -106,6 +109,7 @@ impl KeyKeeper {
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             access_control_shared_state: shared_state.get_access_control_shared_state(),
+            connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
         }
     }
 
@@ -244,13 +248,14 @@ impl KeyKeeper {
                             }
                         } else {
                             // report key latched ready to try update the provision finished time_tick
-                            provision::key_latched(
-                                self.cancellation_token.clone(),
-                                self.common_state.clone(),
-                                self.key_keeper_shared_state.clone(),
-                                self.provision_shared_state.clone(),
-                                self.agent_status_shared_state.clone(),
-                            ).await;
+                            provision::key_latched( EventThreadsSharedState{
+                                                        cancellation_token: self.cancellation_token.clone(),
+                                                        common_state: self.common_state.clone(),
+                                                        key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                                                        provision_shared_state: self.provision_shared_state.clone(),
+                                                        agent_status_shared_state: self.agent_status_shared_state.clone(),
+                                                        connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+                            },).await;
                             let slept_time_in_millisec = time.elapsed().as_millis();
                             let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
                             if continue_sleep > 0 {
@@ -280,13 +285,14 @@ impl KeyKeeper {
                 && helpers::get_elapsed_time_in_millisec()
                     > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
             {
-                provision::start_event_threads(
-                    self.cancellation_token.clone(),
-                    self.common_state.clone(),
-                    self.key_keeper_shared_state.clone(),
-                    self.provision_shared_state.clone(),
-                    self.agent_status_shared_state.clone(),
-                )
+                provision::start_event_threads(EventThreadsSharedState {
+                    cancellation_token: self.cancellation_token.clone(),
+                    common_state: self.common_state.clone(),
+                    key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                    provision_shared_state: self.provision_shared_state.clone(),
+                    agent_status_shared_state: self.agent_status_shared_state.clone(),
+                    connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+                })
                 .await;
                 started_event_threads = true;
             }
@@ -432,13 +438,16 @@ impl KeyKeeper {
                             self.update_status_message(message, false).await;
                             key_found = true;
 
-                            provision::key_latched(
-                                self.cancellation_token.clone(),
-                                self.common_state.clone(),
-                                self.key_keeper_shared_state.clone(),
-                                self.provision_shared_state.clone(),
-                                self.agent_status_shared_state.clone(),
-                            )
+                            provision::key_latched(EventThreadsSharedState {
+                                cancellation_token: self.cancellation_token.clone(),
+                                common_state: self.common_state.clone(),
+                                key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                                provision_shared_state: self.provision_shared_state.clone(),
+                                agent_status_shared_state: self.agent_status_shared_state.clone(),
+                                connection_summary_shared_state: self
+                                    .connection_summary_shared_state
+                                    .clone(),
+                            })
                             .await;
                         }
                         Err(e) => {
@@ -512,13 +521,18 @@ impl KeyKeeper {
                                     logger::AGENT_LOGGER_KEY,
                                 );
                                 self.update_status_message(message, false).await;
-                                provision::key_latched(
-                                    self.cancellation_token.clone(),
-                                    self.common_state.clone(),
-                                    self.key_keeper_shared_state.clone(),
-                                    self.provision_shared_state.clone(),
-                                    self.agent_status_shared_state.clone(),
-                                )
+                                provision::key_latched(EventThreadsSharedState {
+                                    cancellation_token: self.cancellation_token.clone(),
+                                    common_state: self.common_state.clone(),
+                                    key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                                    provision_shared_state: self.provision_shared_state.clone(),
+                                    agent_status_shared_state: self
+                                        .agent_status_shared_state
+                                        .clone(),
+                                    connection_summary_shared_state: self
+                                        .connection_summary_shared_state
+                                        .clone(),
+                                })
                                 .await;
                             }
                             Err(e) => {
@@ -566,13 +580,16 @@ impl KeyKeeper {
                             if let Err(e) = self.key_keeper_shared_state.clear_key().await {
                                 logger::write_warning(format!("Failed to clear key: {e}"));
                             }
-                            provision::key_latched(
-                                self.cancellation_token.clone(),
-                                self.common_state.clone(),
-                                self.key_keeper_shared_state.clone(),
-                                self.provision_shared_state.clone(),
-                                self.agent_status_shared_state.clone(),
-                            )
+                            provision::key_latched(EventThreadsSharedState {
+                                cancellation_token: self.cancellation_token.clone(),
+                                common_state: self.common_state.clone(),
+                                key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                                provision_shared_state: self.provision_shared_state.clone(),
+                                agent_status_shared_state: self.agent_status_shared_state.clone(),
+                                connection_summary_shared_state: self
+                                    .connection_summary_shared_state
+                                    .clone(),
+                            })
                             .await;
                         }
                     }
@@ -875,6 +892,7 @@ mod tests {
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),
             access_control_shared_state: key_keeper::AccessControlSharedState::start_new(),
+            connection_summary_shared_state: key_keeper::ConnectionSummarySharedState::start_new(),
         };
 
         tokio::spawn({
