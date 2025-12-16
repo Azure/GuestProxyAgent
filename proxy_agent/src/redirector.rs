@@ -53,6 +53,7 @@ use crate::common::result::Result;
 use crate::common::{config, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::AuthorizationMode;
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
@@ -112,6 +113,7 @@ pub struct Redirector {
     cancellation_token: CancellationToken,
     common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
+    access_control_shared_state: AccessControlSharedState,
 }
 
 impl Redirector {
@@ -124,6 +126,7 @@ impl Redirector {
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
         }
     }
 
@@ -186,12 +189,15 @@ impl Redirector {
         logger::write_information(format!(
             "Success updated bpf skip_process map with pid={pid}."
         ));
-        let wireserver_mode =
-            if let Ok(Some(rules)) = self.key_keeper_shared_state.get_wireserver_rules().await {
-                rules.mode
-            } else {
-                AuthorizationMode::Audit
-            };
+        let wireserver_mode = if let Ok(Some(rules)) = self
+            .access_control_shared_state
+            .get_wireserver_rules()
+            .await
+        {
+            rules.mode
+        } else {
+            AuthorizationMode::Audit
+        };
         if wireserver_mode != AuthorizationMode::Disabled {
             bpf_object.update_policy_elem_bpf_map(
                 "WireServer endpoints",
@@ -203,12 +209,12 @@ impl Redirector {
                 "Success updated bpf map for WireServer support.".to_string(),
             );
         }
-        let imds_mode = if let Ok(Some(rules)) = self.key_keeper_shared_state.get_imds_rules().await
-        {
-            rules.mode
-        } else {
-            AuthorizationMode::Audit
-        };
+        let imds_mode =
+            if let Ok(Some(rules)) = self.access_control_shared_state.get_imds_rules().await {
+                rules.mode
+            } else {
+                AuthorizationMode::Audit
+            };
         if imds_mode != AuthorizationMode::Disabled {
             bpf_object.update_policy_elem_bpf_map(
                 "IMDS endpoints",

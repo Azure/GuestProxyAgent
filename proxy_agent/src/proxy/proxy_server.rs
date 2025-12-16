@@ -25,6 +25,7 @@ use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnec
 use crate::common::{constants, error::Error, helpers, logger, result::Result};
 use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
@@ -69,6 +70,7 @@ pub struct ProxyServer {
     agent_status_shared_state: AgentStatusSharedState,
     redirector_shared_state: RedirectorSharedState,
     proxy_server_shared_state: ProxyServerSharedState,
+    access_control_shared_state: AccessControlSharedState,
 }
 
 impl ProxyServer {
@@ -82,6 +84,7 @@ impl ProxyServer {
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             proxy_server_shared_state: shared_state.get_proxy_server_shared_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
         }
     }
 
@@ -468,7 +471,7 @@ impl ProxyServer {
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
             ip.to_string(),
             port,
-            self.key_keeper_shared_state.clone(),
+            self.access_control_shared_state.clone(),
         )
         .await
         {

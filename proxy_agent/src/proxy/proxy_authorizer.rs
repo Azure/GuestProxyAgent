@@ -8,12 +8,12 @@
 //! ```rust
 //! use proxy_agent::proxy_authorizer;
 //! use proxy_agent::proxy::Claims;
-//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+//! use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 //! use proxy_agent::common::constants;
 //! use std::str::FromStr;
 //!
-//! let key_keeper_shared_state = KeyKeeperSharedState::start_new();
-//! let vm_metadata = proxy_authorizer::get_access_control_rules(constants::WIRE_SERVER_IP.to_string(), constants::WIRE_SERVER_PORT, key_keeper_shared_state.clone()).await.unwrap();
+//! let access_control_shared_state  = AccessControlSharedState::start_new();
+//! let vm_metadata = proxy_authorizer::get_access_control_rules(constants::WIRE_SERVER_IP.to_string(), constants::WIRE_SERVER_PORT, access_control_shared_state .clone()).await.unwrap();
 //! let authorizer = proxy_authorizer::get_authorizer(constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT, claims);
 //! let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
 //! authorizer.authorize(logger, url, vm_metadata);
@@ -21,7 +21,7 @@
 
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
-use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::{common::constants, common::result::Result, proxy::Claims};
 use proxy_agent_shared::logger::LoggerLevel;
 
@@ -211,17 +211,17 @@ pub fn get_authorizer(ip: String, port: u16, claims: Claims) -> Box<dyn Authoriz
 pub async fn get_access_control_rules(
     ip: String,
     port: u16,
-    key_keeper_shared_state: KeyKeeperSharedState,
+    access_control_shared_state: AccessControlSharedState,
 ) -> Result<Option<ComputedAuthorizationItem>> {
     match (ip.as_str(), port) {
         (constants::WIRE_SERVER_IP, constants::WIRE_SERVER_PORT) => {
-            key_keeper_shared_state.get_wireserver_rules().await
+            access_control_shared_state.get_wireserver_rules().await
         }
         (constants::GA_PLUGIN_IP, constants::GA_PLUGIN_PORT) => {
-            key_keeper_shared_state.get_hostga_rules().await
+            access_control_shared_state.get_hostga_rules().await
         }
         (constants::IMDS_IP, constants::IMDS_PORT) => {
-            key_keeper_shared_state.get_imds_rules().await
+            access_control_shared_state.get_imds_rules().await
         }
         _ => Ok(None),
     }
@@ -248,7 +248,7 @@ mod tests {
     use crate::{
         key_keeper::key::AuthorizationItem,
         proxy::{proxy_authorizer::AuthorizeResult, proxy_connection::ConnectionLogger},
-        shared_state::key_keeper_wrapper::KeyKeeperSharedState,
+        shared_state::access_control_wrapper::AccessControlSharedState,
     };
     use std::{ffi::OsString, path::PathBuf, str::FromStr};
 
@@ -347,7 +347,7 @@ mod tests {
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-        let key_keeper_shared_state = KeyKeeperSharedState::start_new();
+        let access_control_shared_state = AccessControlSharedState::start_new();
 
         // validate disabled rules
         let disabled_rules = AuthorizationItem {
@@ -356,11 +356,11 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_wireserver_rules(Some(disabled_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state
+        let access_control_rules = access_control_shared_state
             .get_wireserver_rules()
             .await
             .unwrap();
@@ -383,11 +383,11 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_wireserver_rules(Some(audit_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state
+        let access_control_rules = access_control_shared_state
             .get_wireserver_rules()
             .await
             .unwrap();
@@ -396,11 +396,11 @@ mod tests {
                 == AuthorizeResult::Ok,
             "WireServer authentication must be Ok with audit allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_wireserver_rules(Some(audit_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state
+        let access_control_rules = access_control_shared_state
             .get_wireserver_rules()
             .await
             .unwrap();
@@ -423,11 +423,11 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_wireserver_rules(Some(enforce_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state
+        let access_control_rules = access_control_shared_state
             .get_wireserver_rules()
             .await
             .unwrap();
@@ -436,11 +436,11 @@ mod tests {
                 == AuthorizeResult::Ok,
             "WireServer authentication must be Ok with enforce allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_wireserver_rules(Some(enforce_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state
+        let access_control_rules = access_control_shared_state
             .get_wireserver_rules()
             .await
             .unwrap();
@@ -472,7 +472,7 @@ mod tests {
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-        let key_keeper_shared_state = KeyKeeperSharedState::start_new();
+        let access_control_shared_state = AccessControlSharedState::start_new();
 
         // validate disabled rules
         let disabled_rules = AuthorizationItem {
@@ -481,11 +481,11 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_imds_rules(Some(disabled_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state.get_imds_rules().await.unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules,)
                 == AuthorizeResult::Ok,
@@ -505,21 +505,21 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_imds_rules(Some(audit_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state.get_imds_rules().await.unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules,)
                 == AuthorizeResult::Ok,
             "IMDS authentication must be Ok with audit allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_imds_rules(Some(audit_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state.get_imds_rules().await.unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules,)
                 == AuthorizeResult::OkWithAudit,
@@ -539,21 +539,21 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_imds_rules(Some(enforce_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state.get_imds_rules().await.unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules,)
                 == AuthorizeResult::Ok,
             "IMDS authentication must be Ok with enforce allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_imds_rules(Some(enforce_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_imds_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state.get_imds_rules().await.unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules,)
                 == AuthorizeResult::Forbidden,
@@ -582,7 +582,7 @@ mod tests {
             claims.clone(),
         );
         let url = hyper::Uri::from_str("http://localhost/test?").unwrap();
-        let key_keeper_shared_state = KeyKeeperSharedState::start_new();
+        let access_control_shared_state = AccessControlSharedState::start_new();
 
         // validate disabled rules
         let disabled_rules = AuthorizationItem {
@@ -591,11 +591,14 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_hostga_rules(Some(disabled_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_hostga_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state
+            .get_hostga_rules()
+            .await
+            .unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::Ok,
@@ -615,21 +618,27 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_hostga_rules(Some(audit_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_hostga_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state
+            .get_hostga_rules()
+            .await
+            .unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::Ok,
             "HostGA authentication must be Ok with audit allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_hostga_rules(Some(audit_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_hostga_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state
+            .get_hostga_rules()
+            .await
+            .unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::OkWithAudit,
@@ -649,21 +658,27 @@ mod tests {
             id: "id".to_string(),
             rules: None,
         };
-        key_keeper_shared_state
+        access_control_shared_state
             .set_hostga_rules(Some(enforce_allow_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_hostga_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state
+            .get_hostga_rules()
+            .await
+            .unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::Ok,
             "HostGA authentication must be Ok with enforce allow rules"
         );
-        key_keeper_shared_state
+        access_control_shared_state
             .set_hostga_rules(Some(enforce_deny_rules))
             .await
             .unwrap();
-        let access_control_rules = key_keeper_shared_state.get_hostga_rules().await.unwrap();
+        let access_control_rules = access_control_shared_state
+            .get_hostga_rules()
+            .await
+            .unwrap();
         assert!(
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::Forbidden,

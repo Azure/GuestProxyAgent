@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod access_control_wrapper;
 pub mod agent_status_wrapper;
 pub mod key_keeper_wrapper;
 pub mod provision_wrapper;
@@ -46,6 +47,8 @@ pub struct SharedState {
     redirector_shared_state: redirector_wrapper::RedirectorSharedState,
     /// The sender for the proxy server module
     proxy_server_shared_state: proxy_server_wrapper::ProxyServerSharedState,
+    /// The sender for the access control module
+    access_control_shared_state: access_control_wrapper::AccessControlSharedState,
 }
 
 impl SharedState {
@@ -58,6 +61,8 @@ impl SharedState {
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
             proxy_server_shared_state: proxy_server_wrapper::ProxyServerSharedState::start_new(),
+            access_control_shared_state:
+                access_control_wrapper::AccessControlSharedState::start_new(),
         }
     }
 
@@ -83,6 +88,12 @@ impl SharedState {
 
     pub fn get_proxy_server_shared_state(&self) -> proxy_server_wrapper::ProxyServerSharedState {
         self.proxy_server_shared_state.clone()
+    }
+
+    pub fn get_access_control_shared_state(
+        &self,
+    ) -> access_control_wrapper::AccessControlSharedState {
+        self.access_control_shared_state.clone()
     }
 
     pub fn get_cancellation_token(&self) -> CancellationToken {

@@ -31,6 +31,7 @@ use crate::common::result::Result;
 use crate::common::{constants, helpers, logger};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
@@ -81,6 +82,8 @@ pub struct KeyKeeper {
     provision_shared_state: ProvisionSharedState,
     /// agent_status_shared_state: the sender for the agent status
     agent_status_shared_state: AgentStatusSharedState,
+    /// access_control_shared_state: the sender for the access control rules
+    access_control_shared_state: AccessControlSharedState,
 }
 
 impl KeyKeeper {
@@ -102,6 +105,7 @@ impl KeyKeeper {
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
         }
     }
 
@@ -314,7 +318,7 @@ impl KeyKeeper {
                             "Wireserver rule id changed from '{old_wire_server_rule_id}' to '{wireserver_rule_id}'."
                         ));
                         if let Err(e) = self
-                            .key_keeper_shared_state
+                            .access_control_shared_state
                             .set_wireserver_rules(status.get_wireserver_rules())
                             .await
                         {
@@ -339,7 +343,7 @@ impl KeyKeeper {
                             "IMDS rule id changed from '{old_imds_rule_id}' to '{imds_rule_id}'."
                         ));
                         if let Err(e) = self
-                            .key_keeper_shared_state
+                            .access_control_shared_state
                             .set_imds_rules(status.get_imds_rules())
                             .await
                         {
@@ -364,7 +368,7 @@ impl KeyKeeper {
                             "HostGA rule id changed from '{old_hostga_rule_id}' to '{hostga_rule_id}'."
                         ));
                         if let Err(e) = self
-                            .key_keeper_shared_state
+                            .access_control_shared_state
                             .set_hostga_rules(status.get_hostga_rules())
                             .await
                         {
@@ -380,9 +384,11 @@ impl KeyKeeper {
 
             if access_control_rules_changed {
                 if let (Ok(wireserver_rules), Ok(imds_rules), Ok(hostga_rules)) = (
-                    self.key_keeper_shared_state.get_wireserver_rules().await,
-                    self.key_keeper_shared_state.get_imds_rules().await,
-                    self.key_keeper_shared_state.get_hostga_rules().await,
+                    self.access_control_shared_state
+                        .get_wireserver_rules()
+                        .await,
+                    self.access_control_shared_state.get_imds_rules().await,
+                    self.access_control_shared_state.get_hostga_rules().await,
                 ) {
                     let rules = AuthorizationRulesForLogging::new(
                         status.authorizationRules.clone(),
@@ -868,6 +874,7 @@ mod tests {
             redirector_shared_state: key_keeper::RedirectorSharedState::start_new(),
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),
+            access_control_shared_state: key_keeper::AccessControlSharedState::start_new(),
         };
 
         tokio::spawn({
