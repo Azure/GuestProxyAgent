@@ -33,7 +33,7 @@ use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::SharedState;
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt};
-use hyper::body::{Bytes, Frame, Incoming};
+use hyper::body::{Bytes, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
 use hyper::StatusCode;
@@ -49,6 +49,7 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
 use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
@@ -607,14 +608,10 @@ impl ProxyServer {
         request: Request<Limited<hyper::body::Incoming>>,
     ) -> Result<Request<Full<Bytes>>> {
         let (head, body) = request.into_parts();
-        let whole_body = match body.collect().await {
-            Ok(data) => data.to_bytes(),
-            Err(e) => {
-                return Err(Error::Hyper(HyperErrorType::RequestBody(e.to_string())));
-            }
-        };
-
-        Ok(Request::from_parts(head, Full::new(whole_body)))
+        Ok(Request::from_parts(
+            head,
+            Full::new(Self::read_body_bytes(body).await?),
+        ))
     }
 
     async fn handle_provision_state_check_request(
@@ -739,23 +736,9 @@ impl ProxyServer {
             LoggerLevel::Trace,
             "Converting response to the client format.".to_string(),
         );
-        let mut logger = http_connection_context.logger.clone();
         let (head, body) = proxy_response.into_parts();
-        let frame_stream = body.map_frame(move |frame| {
-            let frame = match frame.into_data() {
-                Ok(data) => data.iter().map(|byte| byte.to_be()).collect::<Bytes>(),
-                Err(e) => {
-                    logger.write(
-                        LoggerLevel::Error,
-                        format!("Failed to get frame data: {e:?}"),
-                    );
-                    Bytes::new()
-                }
-            };
-
-            Frame::data(frame)
-        });
-        let mut response = Response::from_parts(head, frame_stream.boxed());
+        let response_body = Self::read_body_bytes(body).await?;
+        let mut response = Response::from_parts(head, hyper_client::full_body(response_body));
 
         http_connection_context.log(LoggerLevel::Trace, "Adding proxy agent header.".to_string());
         // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
@@ -912,17 +895,7 @@ impl ProxyServer {
             LoggerLevel::Trace,
             "Starting to collect the client request body.".to_string(),
         );
-        let whole_body = match body.collect().await {
-            Ok(data) => data.to_bytes(),
-            Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Error,
-                    format!("Failed to receive the request body: {e}"),
-                );
-                return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
-            }
-        };
-
+        let whole_body = Self::read_body_bytes(body).await?;
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
@@ -1016,6 +989,32 @@ impl ProxyServer {
         // forward the response to the client
         self.forward_response(proxy_response, http_connection_context)
             .await
+    }
+
+    /// It reads the body in chunks and concatenates them into a single Bytes object
+    /// It also yields control to the tokio scheduler to avoid blocking the thread if the body is large
+    async fn read_body_bytes<B>(mut body: B) -> Result<Bytes>
+    where
+        B: hyper::body::Body<Data = Bytes> + Unpin,
+        B::Error: std::fmt::Display + Send + Sync + 'static,
+    {
+        let body_size = body.size_hint().upper().unwrap_or(4 * 1024 * 1024);
+        let mut buf = BytesMut::with_capacity(body_size as usize);
+        while let Some(chunk) = body.frame().await {
+            match chunk {
+                Ok(chunk) => {
+                    if let Ok(data) = chunk.into_data() {
+                        buf.extend_from_slice(&data)
+                    }
+                }
+                Err(e) => {
+                    return Err(Error::Hyper(HyperErrorType::ReceiveBody(e.to_string())));
+                }
+            }
+            // yield control to the tokio scheduler to avoid blocking the thread if the body is large
+            tokio::task::yield_now().await;
+        }
+        Ok(buf.freeze())
     }
 }
 

@@ -86,8 +86,8 @@ pub enum HyperErrorType {
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
 
-    #[error("Failed to receive the request body with error: {0}")]
-    RequestBody(String),
+    #[error("Failed to receive the body with error: {0}")]
+    ReceiveBody(String),
 
     #[error("Failed to get response from {0}, status code: {1}")]
     ServerError(String, StatusCode),
