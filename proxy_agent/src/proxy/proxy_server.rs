@@ -744,8 +744,8 @@ impl ProxyServer {
             "Converting response to the client format.".to_string(),
         );
         let (head, body) = proxy_response.into_parts();
-        let response_body = Self::read_body_bytes(body).await?;
-        let mut response = Response::from_parts(head, hyper_client::full_body(response_body));
+        // Stream the response body directly without buffering
+        let mut response = Response::from_parts(head, body.boxed());
 
         http_connection_context.log(LoggerLevel::Trace, "Adding proxy agent header.".to_string());
         // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
