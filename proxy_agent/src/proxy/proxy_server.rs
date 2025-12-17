@@ -582,16 +582,10 @@ impl ProxyServer {
                 http_connection_context.method, http_connection_context.url
             ),
         );
-        let request = match Self::convert_request(proxy_request).await {
-            Ok(r) => r,
-            Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Error,
-                    format!("Failed to convert request: {e}"),
-                );
-                return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
-            }
-        };
+
+        let (head, body) = proxy_request.into_parts();
+        // Stream the request body directly without buffering
+        let request = Request::from_parts(head, body.boxed());
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
@@ -609,16 +603,6 @@ impl ProxyServer {
         );
         self.forward_response(proxy_response, http_connection_context)
             .await
-    }
-
-    async fn convert_request(
-        request: Request<Limited<hyper::body::Incoming>>,
-    ) -> Result<Request<Full<Bytes>>> {
-        let (head, body) = request.into_parts();
-        Ok(Request::from_parts(
-            head,
-            Full::new(Self::read_body_bytes(body).await?),
-        ))
     }
 
     async fn handle_provision_state_check_request(
@@ -914,8 +898,11 @@ impl ProxyServer {
         );
 
         // create a new request to the Host endpoint
-        let mut proxy_request: Request<Full<Bytes>> =
-            Request::from_parts(head.clone(), Full::new(whole_body.clone()));
+        let body = Full::new(whole_body.clone())
+            .map_err(|never| -> Box<dyn std::error::Error + Send + Sync> { match never {} })
+            .boxed();
+        let mut proxy_request: Request<super::proxy_connection::RequestBody> =
+            Request::from_parts(head.clone(), body);
 
         // sign the request
         // Add header x-ms-azure-host-authorization
