@@ -5,79 +5,6 @@
 //! It is used to track the provision state for each module and write the provision state to provisioned.tag and status.tag files.
 //! It also provides the http handler to query the provision status for GPA service.
 //! It is used to query the provision status from GPA service http listener.
-//! Example for GPA service:
-//! ```rust
-//! use proxy_agent::provision;
-//! use proxy_agent::shared_state::agent_status_wrapper::AgentStatusModule;
-//! use proxy_agent::shared_state::agent_status_wrapper::AgentStatusSharedState;
-//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-//! use proxy_agent::shared_state::provision_wrapper::ProvisionSharedState;
-//! use proxy_agent::shared_state::SharedState;
-//! use proxy_agent::shared_state::telemetry_wrapper::TelemetrySharedState;
-//!
-//! use std::time::Duration;
-//!
-//! let shared_state = SharedState::start_all();
-//! let cancellation_token = shared_state.get_cancellation_token();
-//! let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-//! let common_state = shared_state.get_common_state();
-//! let provision_shared_state = shared_state.get_provision_shared_state();
-//! let agent_status_shared_state = shared_state.get_agent_status_shared_state();
-//!
-//! let provision_state = provision::get_provision_state(
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! assert_eq!(false, provision_state.finished);
-//! assert_eq!(0, provision_state.errorMessage.len());
-//!
-//! // update provision state when each provision finished
-//! provision::redirector_ready(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     common_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! provision::key_latched(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     common_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! provision::listener_started(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     common_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//!
-//! let provision_state = provision::get_provision_state(
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! assert_eq!(true, provision_state.finished);
-//! assert_eq!(0, provision_state.errorMessage.len());
-//! ```
-//!
-//! Example for GPA command line option --status [--wait seconds]:
-//! ```rust
-//! use proxy_agent::provision::ProvisionQuery;
-//! use std::time::Duration;
-//!
-//! let proxy_server_port = 8092;
-//! let provision_query = ProvisionQuery::new(proxy_server_port, None);
-//! let provision_not_finished_state = provision_query.get_provision_status_wait().await;
-//! assert_eq!(false, provision_state.0);
-//! assert_eq!(0, provision_state.1.len());
-//!
-//! let provision_query = ProvisionQuery::new(proxy_server_port, Some(Duration::from_millis(5)));
-//! let provision_finished_state = provision_query.get_provision_status_wait().await;
-//! assert_eq!(true, provision_state.0);
-//! assert_eq!(0, provision_state.1.len());
-//! ```
 
 use crate::common::{config, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
@@ -85,14 +12,13 @@ use crate::proxy_agent_status;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
-use proxy_agent_shared::common_state::CommonState;
+use crate::shared_state::EventThreadsSharedState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::event_reader::EventReader;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio_util::sync::CancellationToken;
 
 const PROVISION_TAG_FILE_NAME: &str = "provisioned.tag";
 const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
@@ -153,63 +79,33 @@ impl ProvisionStateInternal {
 
 /// Update provision state when redirector provision finished
 /// It could  be called by redirector module
-pub async fn redirector_ready(
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn redirector_ready(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::REDIRECTOR_READY,
         None,
-        cancellation_token,
-        common_state,
-        key_keeper_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
 
 /// Update provision state when key latch provision finished
 /// It could  be called by key latch module
-pub async fn key_latched(
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn key_latched(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::KEY_LATCH_READY,
         None,
-        cancellation_token,
-        common_state,
-        key_keeper_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
 
 /// Update provision state when listener provision finished
 /// It could  be called by listener module
-pub async fn listener_started(
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn listener_started(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::LISTENER_READY,
         None,
-        cancellation_token,
-        common_state,
-        key_keeper_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
@@ -218,15 +114,19 @@ pub async fn listener_started(
 async fn update_provision_state(
     state: ProvisionFlags,
     provision_dir: Option<PathBuf>,
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
+    event_threads_shared_state: EventThreadsSharedState,
 ) {
-    if let Ok(provision_state) = provision_shared_state.update_one_state(state).await {
+    if let Ok(provision_state) = event_threads_shared_state
+        .provision_shared_state
+        .update_one_state(state)
+        .await
+    {
         if provision_state.contains(ProvisionFlags::ALL_READY) {
-            if let Err(e) = provision_shared_state.set_provision_finished(true).await {
+            if let Err(e) = event_threads_shared_state
+                .provision_shared_state
+                .set_provision_finished(true)
+                .await
+            {
                 // log the error and continue
                 logger::write_error(format!(
                     "update_provision_state::Failed to set provision finished with error: {e}"
@@ -236,20 +136,13 @@ async fn update_provision_state(
             // write provision success state here
             write_provision_state(
                 provision_dir,
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.provision_shared_state.clone(),
+                event_threads_shared_state.agent_status_shared_state.clone(),
             )
             .await;
 
             // start event threads right after provision successfully
-            start_event_threads(
-                cancellation_token,
-                common_state,
-                key_keeper_shared_state,
-                provision_shared_state,
-                agent_status_shared_state,
-            )
-            .await;
+            start_event_threads(event_threads_shared_state).await;
         }
     }
 }
@@ -382,14 +275,9 @@ fn set_resource_limits() {
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
-pub async fn start_event_threads(
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
-    if let Ok(logger_threads_initialized) = provision_shared_state
+pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedState) {
+    if let Ok(logger_threads_initialized) = event_threads_shared_state
+        .provision_shared_state
         .get_event_log_threads_initialized()
         .await
     {
@@ -402,7 +290,8 @@ pub async fn start_event_threads(
     // those tasks starts to run after provision finished or provision timedout
     set_resource_limits();
 
-    let cloned_agent_status_shared_state = agent_status_shared_state.clone();
+    let cloned_agent_status_shared_state =
+        event_threads_shared_state.agent_status_shared_state.clone();
     tokio::spawn({
         async {
             event_logger::start(
@@ -425,8 +314,8 @@ pub async fn start_event_threads(
         let event_reader = EventReader::new(
             config::get_events_dir(),
             true,
-            cancellation_token.clone(),
-            common_state.clone(),
+            event_threads_shared_state.cancellation_token.clone(),
+            event_threads_shared_state.common_state.clone(),
             "ProxyAgent".to_string(),
             "MicrosoftAzureGuestProxyAgent".to_string(),
         );
@@ -436,7 +325,8 @@ pub async fn start_event_threads(
                 .await;
         }
     });
-    if let Err(e) = provision_shared_state
+    if let Err(e) = event_threads_shared_state
+        .provision_shared_state
         .set_event_log_threads_initialized()
         .await
     {
@@ -449,9 +339,12 @@ pub async fn start_event_threads(
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.cancellation_token.clone(),
+            event_threads_shared_state.key_keeper_shared_state.clone(),
+            event_threads_shared_state.agent_status_shared_state.clone(),
+            event_threads_shared_state
+                .connection_summary_shared_state
+                .clone(),
         );
         async move {
             agent_status_task.start().await;
@@ -728,6 +621,7 @@ mod tests {
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
+    use crate::shared_state::EventThreadsSharedState;
     use crate::shared_state::SharedState;
     use std::env;
     use std::fs;
@@ -747,8 +641,10 @@ mod tests {
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let common_state = shared_state.get_common_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+        let event_threads_shared_state = EventThreadsSharedState::new(&shared_state);
+
+        // initialize key keeper secure channel state to UNKNOWN
         let port: u16 = 8092;
         let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
 
@@ -779,11 +675,7 @@ mod tests {
         _ = super::update_provision_state(
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.to_path_buf()),
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         _ = key_keeper_shared_state
@@ -808,29 +700,17 @@ mod tests {
             super::update_provision_state(
                 ProvisionFlags::REDIRECTOR_READY,
                 Some(dir1),
-                cancellation_token.clone(),
-                common_state.clone(),
-                key_keeper_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
             super::update_provision_state(
                 ProvisionFlags::KEY_LATCH_READY,
                 Some(dir2),
-                cancellation_token.clone(),
-                common_state.clone(),
-                key_keeper_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
             super::update_provision_state(
                 ProvisionFlags::LISTENER_READY,
                 Some(dir3),
-                cancellation_token.clone(),
-                common_state.clone(),
-                key_keeper_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
         ];
         for handle in handles {
@@ -882,14 +762,7 @@ mod tests {
         assert!(event_threads_initialized);
 
         // update provision finish time_tick
-        super::key_latched(
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
-        )
-        .await;
+        super::key_latched(event_threads_shared_state.clone()).await;
         let provision_state_internal = super::get_provision_state_internal(
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
@@ -942,14 +815,7 @@ mod tests {
         );
 
         // test key_latched ready again
-        super::key_latched(
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
-        )
-        .await;
+        super::key_latched(event_threads_shared_state.clone()).await;
         let provision_state = provision_shared_state.get_state().await.unwrap();
         assert!(
             provision_state.contains(ProvisionFlags::ALL_READY),
@@ -980,39 +846,26 @@ mod tests {
         let shared_state = SharedState::start_all();
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
-        let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let common_state = shared_state.get_common_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+        let event_threads_shared_state = EventThreadsSharedState::new(&shared_state);
 
         // test all 3 provision states as ready
         super::update_provision_state(
             ProvisionFlags::LISTENER_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         super::update_provision_state(
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         super::update_provision_state(
             ProvisionFlags::REDIRECTOR_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            common_state.clone(),
-            key_keeper_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
 
