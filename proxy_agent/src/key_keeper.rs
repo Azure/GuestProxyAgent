@@ -600,6 +600,25 @@ impl KeyKeeper {
         }
     }
 
+    async fn update_key_to_shared_state(&self, key: Key) -> Result<()> {
+        self.key_keeper_shared_state.update_key(key.clone()).await?;
+
+        // update the current key guid and value to common states
+        self.common_state
+            .set_state(
+                proxy_agent_shared::common_state::SECURE_KEY_GUID.to_string(),
+                key.guid.to_string(),
+            )
+            .await?;
+        self.common_state
+            .set_state(
+                proxy_agent_shared::common_state::SECURE_KEY_VALUE.to_string(),
+                key.key.to_string(),
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn update_redirector_policy(&self, status: KeyStatus) -> bool {
         // update the redirector policy map
         if !redirector::update_wire_server_redirect_policy(
