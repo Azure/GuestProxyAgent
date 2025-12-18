@@ -29,6 +29,7 @@ use self::key::Key;
 use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
 use crate::common::{constants, helpers, logger};
+use crate::key_keeper::key::KeyStatus;
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
@@ -200,6 +201,7 @@ impl KeyKeeper {
         }
 
         let mut start = Instant::now();
+        let mut redirect_policy_updated = false;
         loop {
             if !first_iteration {
                 // skip the sleep for the first loop
@@ -548,22 +550,8 @@ impl KeyKeeper {
             match secure_channel_state_updated {
                 Ok(updated) => {
                     if updated {
-                        // update the redirector policy map
-                        redirector::update_wire_server_redirect_policy(
-                            status.get_wire_server_mode() != DISABLE_STATE,
-                            self.redirector_shared_state.clone(),
-                        )
-                        .await;
-                        redirector::update_imds_redirect_policy(
-                            status.get_imds_mode() != DISABLE_STATE,
-                            self.redirector_shared_state.clone(),
-                        )
-                        .await;
-                        redirector::update_hostga_redirect_policy(
-                            status.get_hostga_mode() != DISABLE_STATE,
-                            self.redirector_shared_state.clone(),
-                        )
-                        .await;
+                        // secure channel state changed, update the redirect policy
+                        redirect_policy_updated = self.update_redirector_policy(status).await;
 
                         // customer has not enforce the secure channel state
                         if state == DISABLE_STATE {
@@ -592,32 +580,54 @@ impl KeyKeeper {
                             })
                             .await;
                         }
+
+                        continue;
                     }
                 }
                 Err(e) => {
                     logger::write_warning(format!("Failed to update secure channel state: {e}"));
                 }
             }
+
+            // check and update the redirect policy if not updated successfully before, try again here
+            // this could happen when the eBPF/redirector module was not started yet before
+            if !redirect_policy_updated {
+                logger::write_warning(
+                    "redirect policy was not update successfully before, retrying now".to_string(),
+                );
+                redirect_policy_updated = self.update_redirector_policy(status).await;
+            }
         }
     }
 
-    async fn update_key_to_shared_state(&self, key: Key) -> Result<()> {
-        self.key_keeper_shared_state.update_key(key.clone()).await?;
+    async fn update_redirector_policy(&self, status: KeyStatus) -> bool {
+        // update the redirector policy map
+        if !redirector::update_wire_server_redirect_policy(
+            status.get_wire_server_mode() != DISABLE_STATE,
+            self.redirector_shared_state.clone(),
+        )
+        .await
+        {
+            return false;
+        }
+        if !redirector::update_imds_redirect_policy(
+            status.get_imds_mode() != DISABLE_STATE,
+            self.redirector_shared_state.clone(),
+        )
+        .await
+        {
+            return false;
+        }
+        if !redirector::update_hostga_redirect_policy(
+            status.get_hostga_mode() != DISABLE_STATE,
+            self.redirector_shared_state.clone(),
+        )
+        .await
+        {
+            return false;
+        }
 
-        // update the current key guid and value to common states
-        self.common_state
-            .set_state(
-                proxy_agent_shared::common_state::SECURE_KEY_GUID.to_string(),
-                key.guid.to_string(),
-            )
-            .await?;
-        self.common_state
-            .set_state(
-                proxy_agent_shared::common_state::SECURE_KEY_VALUE.to_string(),
-                key.key.to_string(),
-            )
-            .await?;
-        Ok(())
+        true
     }
 
     async fn update_status_message(&self, message: String, log_to_file: bool) {
