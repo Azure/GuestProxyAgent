@@ -44,7 +44,7 @@ jobs:
       - name: rust-toolchain
         uses: actions-rs/toolchain@v1.0.6
         with:
-          toolchain: 1.69.0
+          toolchain: stable
 
       - name: Install llvm Code Coverage
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -198,7 +198,7 @@ jobs:
       - name: rust-toolchain
         uses: actions-rs/toolchain@v1.0.6
         with:
-          toolchain: 1.69.0
+          toolchain: stable
 
       - name: Run Build.cmd Debug arm64
         run: .\build.cmd debug arm64
