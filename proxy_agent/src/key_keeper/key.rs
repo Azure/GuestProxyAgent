@@ -1263,95 +1263,105 @@ mod tests {
             "roleAssignment identities mismatch"
         );
 
-        // Validate HostGA rules
+        // Validate HostGA rules to match WireServer rules
         let hostga_rules = status.get_hostga_rules().unwrap();
         assert_eq!(
-            "allow", hostga_rules.defaultAccess,
-            "defaultAccess mismatch"
+            wireserver_rules.defaultAccess, hostga_rules.defaultAccess,
+            "hostga_rules defaultAccess mismatch"
         );
         assert_eq!(
-            "sigid",
+            status.get_wireserver_rule_id(),
             status.get_hostga_rule_id(),
             "HostGA rule id mismatch"
         );
-        assert_eq!("enforce", status.get_hostga_mode(), "HostGA mode mismatch");
-
-        // Validate HostGA rule details
-        // Retrieve and validate second privilege for HostGA
-        let privilege = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .privileges
-            .as_ref()
-            .unwrap()[1];
-
-        assert_eq!("test2", privilege.name, "privilege name mismatch");
-        assert_eq!("/test2", privilege.path, "privilege path mismatch");
-
         assert_eq!(
-            "value3",
-            privilege.queryParameters.as_ref().unwrap()["key1"],
-            "privilege queryParameters mismatch"
-        );
-        assert_eq!(
-            "value4",
-            privilege.queryParameters.as_ref().unwrap()["key2"],
-            "privilege queryParameters mismatch"
+            status.get_wire_server_mode(),
+            status.get_hostga_mode(),
+            "HostGA mode mismatch"
         );
 
-        // Retrieve and validate second role for HostGA
-        let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
-        assert_eq!("test6", role.name, "role name mismatch");
-        assert_eq!("test4", role.privileges[0], "role privilege mismatch");
-        assert_eq!("test5", role.privileges[1], "role privilege mismatch");
+        /***
+        *
+        * Validate HostGA rule details in future when HostGA has independent rules
 
-        // Retrieve and validate first identity for HostGA
-        let identity = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .identities
-            .as_ref()
-            .unwrap()[0];
-        assert_eq!("test", identity.name, "identity name mismatch");
-        assert_eq!(
-            "test",
-            identity.userName.as_ref().unwrap(),
-            "identity userName mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.groupName.as_ref().unwrap(),
-            "identity groupName mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.exePath.as_ref().unwrap(),
-            "identity exePath mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.processName.as_ref().unwrap(),
-            "identity processName mismatch"
-        );
+           // Validate HostGA rule details
+           // Retrieve and validate second privilege for HostGA
+           let privilege = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .privileges
+               .as_ref()
+               .unwrap()[1];
 
-        // Retrieve and validate first role assignment for HostGA
-        let role_assignment = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .roleAssignments
-            .as_ref()
-            .unwrap()[0];
-        assert_eq!(
-            "test4", role_assignment.role,
-            "roleAssignment role mismatch"
-        );
-        assert_eq!(
-            "test", role_assignment.identities[0],
-            "roleAssignment identities mismatch"
-        );
+           assert_eq!("test2", privilege.name, "privilege name mismatch");
+           assert_eq!("/test2", privilege.path, "privilege path mismatch");
+
+           assert_eq!(
+               "value3",
+               privilege.queryParameters.as_ref().unwrap()["key1"],
+               "privilege queryParameters mismatch"
+           );
+           assert_eq!(
+               "value4",
+               privilege.queryParameters.as_ref().unwrap()["key2"],
+               "privilege queryParameters mismatch"
+           );
+
+           // Retrieve and validate second role for HostGA
+           let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
+           assert_eq!("test6", role.name, "role name mismatch");
+           assert_eq!("test4", role.privileges[0], "role privilege mismatch");
+           assert_eq!("test5", role.privileges[1], "role privilege mismatch");
+
+           // Retrieve and validate first identity for HostGA
+           let identity = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .identities
+               .as_ref()
+               .unwrap()[0];
+           assert_eq!("test", identity.name, "identity name mismatch");
+           assert_eq!(
+               "test",
+               identity.userName.as_ref().unwrap(),
+               "identity userName mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.groupName.as_ref().unwrap(),
+               "identity groupName mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.exePath.as_ref().unwrap(),
+               "identity exePath mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.processName.as_ref().unwrap(),
+               "identity processName mismatch"
+           );
+
+           // Retrieve and validate first role assignment for HostGA
+           let role_assignment = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .roleAssignments
+               .as_ref()
+               .unwrap()[0];
+           assert_eq!(
+               "test4", role_assignment.role,
+               "roleAssignment role mismatch"
+           );
+           assert_eq!(
+               "test", role_assignment.identities[0],
+               "roleAssignment identities mismatch"
+           );
+        *
+        */
     }
 
     #[test]
