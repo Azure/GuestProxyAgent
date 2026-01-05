@@ -160,7 +160,7 @@ async fn update_provision_state(
 }
 
 /// update the redirector/eBPF policy based on access control status
-/// it should be called when provlision finished
+/// it should be called when provision finished
 async fn update_redirector_policy(
     redirector_shared_state: RedirectorSharedState,
     access_control_shared_state: AccessControlSharedState,
