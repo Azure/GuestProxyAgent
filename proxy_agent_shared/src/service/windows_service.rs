@@ -58,8 +58,7 @@ pub async fn start_service_with_retry(
     }
 
     // reach here means all retries exhausted
-    Err(Error::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
+    Err(Error::Io(std::io::Error::other(
         "start_service_with_retry exceeded maximum retry attempts".to_string(),
     )))
 }
