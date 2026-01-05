@@ -580,12 +580,14 @@ impl KeyStatus {
     }
 
     pub fn get_hostga_rules(&self) -> Option<AuthorizationItem> {
-        // short-term: HostGA has no rules
+        // match &self.authorizationRules {
+        //     Some(rules) => rules.hostga.clone(),
+        //     None => None,
+        // }
+
+        // short-term: HostGA uses wireserver rules
         // long-term: TBD
-        match &self.authorizationRules {
-            Some(rules) => rules.hostga.clone(),
-            None => None,
-        }
+        self.get_wireserver_rules()
     }
 
     pub fn get_wire_server_mode(&self) -> String {
