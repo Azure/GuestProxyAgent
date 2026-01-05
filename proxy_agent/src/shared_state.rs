@@ -124,6 +124,8 @@ impl SharedState {
 pub struct EventThreadsSharedState {
     pub cancellation_token: CancellationToken,
     pub common_state: CommonState,
+    pub access_control_shared_state: access_control_wrapper::AccessControlSharedState,
+    pub redirector_shared_state: redirector_wrapper::RedirectorSharedState,
     pub key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
     pub provision_shared_state: provision_wrapper::ProvisionSharedState,
     pub agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState,
@@ -135,6 +137,8 @@ impl EventThreadsSharedState {
         EventThreadsSharedState {
             cancellation_token: shared_state.get_cancellation_token(),
             common_state: shared_state.get_common_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
+            redirector_shared_state: shared_state.get_redirector_shared_state(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),

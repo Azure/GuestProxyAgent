@@ -253,6 +253,8 @@ impl KeyKeeper {
                             provision::key_latched( EventThreadsSharedState{
                                                         cancellation_token: self.cancellation_token.clone(),
                                                         common_state: self.common_state.clone(),
+                                                        access_control_shared_state: self.access_control_shared_state.clone(),
+                                                        redirector_shared_state: self.redirector_shared_state.clone(),
                                                         key_keeper_shared_state: self.key_keeper_shared_state.clone(),
                                                         provision_shared_state: self.provision_shared_state.clone(),
                                                         agent_status_shared_state: self.agent_status_shared_state.clone(),
@@ -290,6 +292,8 @@ impl KeyKeeper {
                 provision::start_event_threads(EventThreadsSharedState {
                     cancellation_token: self.cancellation_token.clone(),
                     common_state: self.common_state.clone(),
+                    access_control_shared_state: self.access_control_shared_state.clone(),
+                    redirector_shared_state: self.redirector_shared_state.clone(),
                     key_keeper_shared_state: self.key_keeper_shared_state.clone(),
                     provision_shared_state: self.provision_shared_state.clone(),
                     agent_status_shared_state: self.agent_status_shared_state.clone(),
@@ -443,6 +447,10 @@ impl KeyKeeper {
                             provision::key_latched(EventThreadsSharedState {
                                 cancellation_token: self.cancellation_token.clone(),
                                 common_state: self.common_state.clone(),
+                                access_control_shared_state: self
+                                    .access_control_shared_state
+                                    .clone(),
+                                redirector_shared_state: self.redirector_shared_state.clone(),
                                 key_keeper_shared_state: self.key_keeper_shared_state.clone(),
                                 provision_shared_state: self.provision_shared_state.clone(),
                                 agent_status_shared_state: self.agent_status_shared_state.clone(),
@@ -526,6 +534,10 @@ impl KeyKeeper {
                                 provision::key_latched(EventThreadsSharedState {
                                     cancellation_token: self.cancellation_token.clone(),
                                     common_state: self.common_state.clone(),
+                                    access_control_shared_state: self
+                                        .access_control_shared_state
+                                        .clone(),
+                                    redirector_shared_state: self.redirector_shared_state.clone(),
                                     key_keeper_shared_state: self.key_keeper_shared_state.clone(),
                                     provision_shared_state: self.provision_shared_state.clone(),
                                     agent_status_shared_state: self
@@ -571,6 +583,10 @@ impl KeyKeeper {
                             provision::key_latched(EventThreadsSharedState {
                                 cancellation_token: self.cancellation_token.clone(),
                                 common_state: self.common_state.clone(),
+                                access_control_shared_state: self
+                                    .access_control_shared_state
+                                    .clone(),
+                                redirector_shared_state: self.redirector_shared_state.clone(),
                                 key_keeper_shared_state: self.key_keeper_shared_state.clone(),
                                 provision_shared_state: self.provision_shared_state.clone(),
                                 agent_status_shared_state: self.agent_status_shared_state.clone(),
