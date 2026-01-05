@@ -13,7 +13,10 @@ pub const EXTENSION_PROCESS_NAME: &str = "ProxyAgentExt";
 #[cfg(windows)]
 pub const EXTENSION_PROCESS_NAME: &str = "ProxyAgentExt.exe";
 pub const EXTENSION_SERVICE_DISPLAY_NAME: &str = "Microsoft Azure GuestProxyAgent VMExtension";
+#[cfg(windows)]
 pub const PROXY_AGENT_SERVICE_NAME: &str = "GuestProxyAgent";
+#[cfg(not(windows))]
+pub const PROXY_AGENT_SERVICE_NAME: &str = "azure-proxy-agent";
 pub const UPDATE_TAG_FILE: &str = "update.tag";
 pub const ENABLE_OPERATION: &str = "Enable";
 pub const LANG_EN_US: &str = "en-US";
