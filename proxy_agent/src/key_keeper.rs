@@ -619,6 +619,8 @@ impl KeyKeeper {
         Ok(())
     }
 
+    /// update the redirector/eBPF policy based on the secure channel status
+    /// it should be called when the secure channel state is changed
     async fn update_redirector_policy(&self, status: KeyStatus) -> bool {
         // update the redirector policy map
         if !redirector::update_wire_server_redirect_policy(

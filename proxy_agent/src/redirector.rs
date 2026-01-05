@@ -193,6 +193,7 @@ impl Redirector {
         logger::write_information(format!(
             "Success updated bpf skip_process map with pid={pid}."
         ));
+
         let wireserver_mode = if let Ok(Some(rules)) = self
             .access_control_shared_state
             .get_wireserver_rules()
@@ -200,45 +201,43 @@ impl Redirector {
         {
             rules.mode
         } else {
-            AuthorizationMode::Audit
+            // default to disabled if the rules are not ready
+            AuthorizationMode::Disabled
         };
-        if wireserver_mode != AuthorizationMode::Disabled {
-            bpf_object.update_policy_elem_bpf_map(
-                "WireServer endpoints",
-                self.local_port,
-                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
-                constants::WIRE_SERVER_PORT,
-            )?;
-            logger::write_information(
-                "Success updated bpf map for WireServer support.".to_string(),
-            );
-        }
+        bpf_object.update_redirect_policy(
+            constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
+            constants::WIRE_SERVER_PORT,
+            self.local_port,
+            wireserver_mode != AuthorizationMode::Disabled,
+        );
         let imds_mode =
             if let Ok(Some(rules)) = self.access_control_shared_state.get_imds_rules().await {
                 rules.mode
             } else {
-                AuthorizationMode::Audit
+                // default to disabled if the rules are not ready
+                AuthorizationMode::Disabled
             };
-        if imds_mode != AuthorizationMode::Disabled {
-            bpf_object.update_policy_elem_bpf_map(
-                "IMDS endpoints",
-                self.local_port,
-                constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
-                constants::IMDS_PORT,
-            )?;
-            logger::write_information("Success updated bpf map for IMDS support.".to_string());
-        }
-        if config::get_host_gaplugin_support() > 0 {
-            bpf_object.update_policy_elem_bpf_map(
-                "Host GAPlugin endpoints",
-                self.local_port,
-                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
-                constants::GA_PLUGIN_PORT,
-            )?;
-            logger::write_information(
-                "Success updated bpf map for Host GAPlugin support.".to_string(),
-            );
-        }
+        bpf_object.update_redirect_policy(
+            constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
+            constants::IMDS_PORT,
+            self.local_port,
+            imds_mode != AuthorizationMode::Disabled,
+        );
+
+        let ga_plugin_mode =
+            if let Ok(Some(rules)) = self.access_control_shared_state.get_hostga_rules().await {
+                rules.mode
+            } else {
+                // default to disabled if the rules are not ready
+                AuthorizationMode::Disabled
+            };
+
+        bpf_object.update_redirect_policy(
+            constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
+            constants::GA_PLUGIN_PORT,
+            self.local_port,
+            ga_plugin_mode != AuthorizationMode::Disabled,
+        );
 
         // programs
         self.attach_bpf_prog(&mut bpf_object)?;

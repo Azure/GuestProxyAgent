@@ -301,7 +301,7 @@ impl BpfObject {
                                 );
                             }
                             Err(err) => {
-                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}. The policy_map may not contain this entry, skip and continue.", ip_to_string(dest_ipv4), dest_port, err));
                             }
                         };
                     } else {
@@ -334,7 +334,7 @@ impl BpfObject {
                                 return true;
                             }
                             Err(err) => {
-                                logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write_error(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
                             }
                         }
                     }
