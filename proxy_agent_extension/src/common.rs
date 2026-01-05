@@ -8,14 +8,12 @@ use crate::structs;
 use crate::structs::FormattedMessage;
 use crate::structs::HandlerEnvironment;
 use crate::structs::TopLevelStatus;
+use proxy_agent_shared::service;
 use proxy_agent_shared::{misc_helpers, telemetry};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
-
-#[cfg(windows)]
-use proxy_agent_shared::service;
 
 pub fn get_handler_environment(exe_path: &Path) -> HandlerEnvironment {
     let mut handler_env_path: PathBuf = exe_path.to_path_buf();
@@ -169,15 +167,7 @@ pub fn get_current_seq_no(exe_path: &Path) -> String {
 }
 
 pub fn get_proxy_agent_service_path() -> PathBuf {
-    #[cfg(windows)]
-    {
-        service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME)
-    }
-    #[cfg(not(windows))]
-    {
-        // linux service hard-coded to this location
-        PathBuf::from(proxy_agent_shared::linux::EXE_FOLDER_PATH).join("azure-proxy-agent")
-    }
+    service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME)
 }
 
 pub fn get_proxy_agent_exe_path() -> PathBuf {
