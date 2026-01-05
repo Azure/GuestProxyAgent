@@ -204,8 +204,6 @@ impl KeyKeeper {
         let mut redirect_policy_updated = false;
         loop {
             if !first_iteration {
-                // skip the sleep for the first loop
-
                 let current_state = match self
                     .key_keeper_shared_state
                     .get_current_secure_channel_state()
@@ -220,199 +218,40 @@ impl KeyKeeper {
                     }
                 };
 
-                let sleep = if current_state == UNKNOWN_STATE
-                    && helpers::get_elapsed_time_in_millisec()
-                        < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
-                {
-                    // frequent poll the secure channel status every second for the first 5 minutes
-                    // until the secure channel state is known
-                    FREQUENT_PULL_INTERVAL
-                } else {
-                    self.interval
-                };
+                let sleep = self.calculate_sleep_duration(&current_state);
+                let (continue_loop, reset_timer) = self
+                    .handle_notification(&notify, sleep, &current_state)
+                    .await;
 
-                let time = Instant::now();
-                tokio::select! {
-                    // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
-                    // this is to handle quicker response to the secure channel state change during VM provisioning.
-                    _ = notify.notified() => {
-                        if  current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
-                            logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{current_state}', reset states and start poll status now."));
-                            provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
-                            if let Err(e) =  self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await{
-                                logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {e}"));
-                            }
+                if reset_timer {
+                    start = Instant::now();
+                    provision_timeup = false;
+                }
 
-                            if start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
-                                // already timeup, reset the start timer
-                                start = Instant::now();
-                                provision_timeup = false;
-                            }
-                        } else {
-                            // report key latched ready to try update the provision finished time_tick
-                            provision::key_latched( EventThreadsSharedState{
-                                                        cancellation_token: self.cancellation_token.clone(),
-                                                        common_state: self.common_state.clone(),
-                                                        access_control_shared_state: self.access_control_shared_state.clone(),
-                                                        redirector_shared_state: self.redirector_shared_state.clone(),
-                                                        key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-                                                        provision_shared_state: self.provision_shared_state.clone(),
-                                                        agent_status_shared_state: self.agent_status_shared_state.clone(),
-                                                        connection_summary_shared_state: self.connection_summary_shared_state.clone(),
-                            },).await;
-                            let slept_time_in_millisec = time.elapsed().as_millis();
-                            let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
-                            if continue_sleep > 0 {
-                                let continue_sleep = Duration::from_millis(continue_sleep as u64);
-                                let message = format!("poll_secure_channel_status task notified but secure channel state is '{current_state}', continue with sleep wait for {continue_sleep:?}.");
-                                logger::write_warning(message);
-                                tokio::time::sleep(continue_sleep).await;
-                            }
-                        }
-                    },
-                    _ = tokio::time::sleep(sleep) => {}
+                if !continue_loop {
+                    continue;
                 }
             }
             first_iteration = false;
 
-            if !provision_timeup && start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
-                provision::provision_timeup(
-                    None,
-                    self.provision_shared_state.clone(),
-                    self.agent_status_shared_state.clone(),
-                )
+            provision_timeup = self
+                .handle_provision_timeup(&mut start, provision_timeup)
                 .await;
-                provision_timeup = true;
-            }
-
-            if !started_event_threads
-                && helpers::get_elapsed_time_in_millisec()
-                    > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
-            {
-                provision::start_event_threads(EventThreadsSharedState {
-                    cancellation_token: self.cancellation_token.clone(),
-                    common_state: self.common_state.clone(),
-                    access_control_shared_state: self.access_control_shared_state.clone(),
-                    redirector_shared_state: self.redirector_shared_state.clone(),
-                    key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-                    provision_shared_state: self.provision_shared_state.clone(),
-                    agent_status_shared_state: self.agent_status_shared_state.clone(),
-                    connection_summary_shared_state: self.connection_summary_shared_state.clone(),
-                })
-                .await;
-                started_event_threads = true;
-            }
+            started_event_threads = self.handle_event_threads_start(started_event_threads).await;
 
             let status = match key::get_status(&self.base_url).await {
                 Ok(s) => s,
                 Err(e) => {
                     self.update_status_message(format!("Failed to get key status - {e}"), true)
                         .await;
+                    // failed to get status, skip to next iteration
                     continue;
                 }
             };
             self.update_status_message(format!("Got key status successfully: {status}."), true)
                 .await;
 
-            let mut access_control_rules_changed = false;
-            let wireserver_rule_id = status.get_wireserver_rule_id();
-            let imds_rule_id: String = status.get_imds_rule_id();
-            let hostga_rule_id: String = status.get_hostga_rule_id();
-
-            match self
-                .key_keeper_shared_state
-                .update_wireserver_rule_id(wireserver_rule_id.to_string())
-                .await
-            {
-                Ok((updated, old_wire_server_rule_id)) => {
-                    if updated {
-                        logger::write_warning(format!(
-                            "Wireserver rule id changed from '{old_wire_server_rule_id}' to '{wireserver_rule_id}'."
-                        ));
-                        if let Err(e) = self
-                            .access_control_shared_state
-                            .set_wireserver_rules(status.get_wireserver_rules())
-                            .await
-                        {
-                            logger::write_error(format!("Failed to set wireserver rules: {e}"));
-                        }
-                        access_control_rules_changed = true;
-                    }
-                }
-                Err(e) => {
-                    logger::write_warning(format!("Failed to update wireserver rule id: {e}"));
-                }
-            }
-
-            match self
-                .key_keeper_shared_state
-                .update_imds_rule_id(imds_rule_id.to_string())
-                .await
-            {
-                Ok((updated, old_imds_rule_id)) => {
-                    if updated {
-                        logger::write_warning(format!(
-                            "IMDS rule id changed from '{old_imds_rule_id}' to '{imds_rule_id}'."
-                        ));
-                        if let Err(e) = self
-                            .access_control_shared_state
-                            .set_imds_rules(status.get_imds_rules())
-                            .await
-                        {
-                            logger::write_error(format!("Failed to set imds rules: {e}"));
-                        }
-                        access_control_rules_changed = true;
-                    }
-                }
-                Err(e) => {
-                    logger::write_warning(format!("Failed to update imds rule id: {e}"));
-                }
-            }
-
-            match self
-                .key_keeper_shared_state
-                .update_hostga_rule_id(hostga_rule_id.to_string())
-                .await
-            {
-                Ok((updated, old_hostga_rule_id)) => {
-                    if updated {
-                        logger::write_warning(format!(
-                            "HostGA rule id changed from '{old_hostga_rule_id}' to '{hostga_rule_id}'."
-                        ));
-                        if let Err(e) = self
-                            .access_control_shared_state
-                            .set_hostga_rules(status.get_hostga_rules())
-                            .await
-                        {
-                            logger::write_error(format!("Failed to set HostGA rules: {e}"));
-                        }
-                        access_control_rules_changed = true;
-                    }
-                }
-                Err(e) => {
-                    logger::write_warning(format!("Failed to update HostGA rule id: {e}"));
-                }
-            }
-
-            if access_control_rules_changed {
-                if let (Ok(wireserver_rules), Ok(imds_rules), Ok(hostga_rules)) = (
-                    self.access_control_shared_state
-                        .get_wireserver_rules()
-                        .await,
-                    self.access_control_shared_state.get_imds_rules().await,
-                    self.access_control_shared_state.get_hostga_rules().await,
-                ) {
-                    let rules = AuthorizationRulesForLogging::new(
-                        status.authorizationRules.clone(),
-                        ComputedAuthorizationRules {
-                            wireserver: wireserver_rules,
-                            imds: imds_rules,
-                            hostga: hostga_rules,
-                        },
-                    );
-                    rules.write_all(&self.status_dir, constants::MAX_LOG_FILE_COUNT);
-                }
-            }
+            self.update_access_control_rules(&status).await;
 
             let state = status.get_secure_channel_state();
             let secure_channel_state_updated = self
@@ -420,189 +259,22 @@ impl KeyKeeper {
                 .update_current_secure_channel_state(state.to_string())
                 .await;
 
-            // check if need fetch the key
-            if state != DISABLE_STATE
-                && (status.keyGuid.is_none()  // key has not latched yet
-                || status.keyGuid != self.key_keeper_shared_state.get_current_key_guid().await.unwrap_or(None))
-            // key changed
-            {
-                let mut key_found = false;
-                if let Some(guid) = &status.keyGuid {
-                    // key latched before and search the key locally first
-                    match Self::fetch_key(&self.key_dir, guid) {
-                        Ok(key) => {
-                            if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
-                                logger::write_warning(format!("Failed to update key: {e}"));
-                            }
-
-                            let message = helpers::write_startup_event(
-                                "Found key details from local and ready to use.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
-                            self.update_status_message(message, false).await;
-                            key_found = true;
-
-                            provision::key_latched(EventThreadsSharedState {
-                                cancellation_token: self.cancellation_token.clone(),
-                                common_state: self.common_state.clone(),
-                                access_control_shared_state: self
-                                    .access_control_shared_state
-                                    .clone(),
-                                redirector_shared_state: self.redirector_shared_state.clone(),
-                                key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-                                provision_shared_state: self.provision_shared_state.clone(),
-                                agent_status_shared_state: self.agent_status_shared_state.clone(),
-                                connection_summary_shared_state: self
-                                    .connection_summary_shared_state
-                                    .clone(),
-                            })
-                            .await;
-                        }
-                        Err(e) => {
-                            event_logger::write_event(
-                                LoggerLevel::Info,
-                                format!("Failed to fetch local key details with error: {e:?}. Will try acquire the key details from Server."),
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
-                        }
-                    };
-                }
-
-                // if key has not latched before,
-                // or not found
-                // or could not read locally,
-                // try fetch from server
-                if !key_found {
-                    let key = match key::acquire_key(&self.base_url).await {
-                        Ok(k) => k,
-                        Err(e) => {
-                            self.update_status_message(
-                                format!("Failed to acquire key details: {e:?}"),
-                                true,
-                            )
-                            .await;
-                            continue;
-                        }
-                    };
-
-                    // persist the new key to local disk
-                    let guid = key.guid.to_string();
-                    match Self::store_key(&self.key_dir, &key) {
-                        Ok(()) => {
-                            logger::write_information(format!(
-                        "Successfully acquired the key '{guid}' details from server and saved locally."));
-                        }
-                        Err(e) => {
-                            self.update_status_message(
-                                format!("Failed to save key details to file: {e:?}"),
-                                true,
-                            )
-                            .await;
-                            continue;
-                        }
-                    }
-
-                    // double check the key details saved correctly to local disk
-                    if let Err(e) = Self::check_key(&self.key_dir, &key) {
-                        self.update_status_message(
-                            format!(
-                                "Failed to check the key '{guid}' details saved locally: {e:?}."
-                            ),
-                            true,
-                        )
-                        .await;
-                        continue;
-                    } else {
-                        match key::attest_key(&self.base_url, &key).await {
-                            Ok(()) => {
-                                // update in memory
-                                if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
-                                    logger::write_warning(format!("Failed to update key: {e}"));
-                                }
-
-                                let message = helpers::write_startup_event(
-                                    "Successfully attest the key and ready to use.",
-                                    "poll_secure_channel_status",
-                                    "key_keeper",
-                                    logger::AGENT_LOGGER_KEY,
-                                );
-                                self.update_status_message(message, false).await;
-                                provision::key_latched(EventThreadsSharedState {
-                                    cancellation_token: self.cancellation_token.clone(),
-                                    common_state: self.common_state.clone(),
-                                    access_control_shared_state: self
-                                        .access_control_shared_state
-                                        .clone(),
-                                    redirector_shared_state: self.redirector_shared_state.clone(),
-                                    key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-                                    provision_shared_state: self.provision_shared_state.clone(),
-                                    agent_status_shared_state: self
-                                        .agent_status_shared_state
-                                        .clone(),
-                                    connection_summary_shared_state: self
-                                        .connection_summary_shared_state
-                                        .clone(),
-                                })
-                                .await;
-                            }
-                            Err(e) => {
-                                logger::write_warning(format!("Failed to attest the key: {e:?}"));
-                                continue;
-                            }
-                        }
-                    }
-                }
+            if !self.handle_key_acquisition(&status, &state).await {
+                // Handle key acquisition failed, skip to next iteration
+                continue;
             }
 
-            // update redirect policy if current secure channel state updated
-            match secure_channel_state_updated {
-                Ok(updated) => {
-                    if updated {
-                        // secure channel state changed, update the redirect policy
-                        redirect_policy_updated = self.update_redirector_policy(status).await;
-
-                        // customer has not enforce the secure channel state
-                        if state == DISABLE_STATE {
-                            let message = helpers::write_startup_event(
-                                "Customer has not enforce the secure channel state.",
-                                "poll_secure_channel_status",
-                                "key_keeper",
-                                logger::AGENT_LOGGER_KEY,
-                            );
-                            // Update the status message and let the provision to continue
-                            self.update_status_message(message, false).await;
-
-                            // clear key in memory for disabled state
-                            if let Err(e) = self.key_keeper_shared_state.clear_key().await {
-                                logger::write_warning(format!("Failed to clear key: {e}"));
-                            }
-                            provision::key_latched(EventThreadsSharedState {
-                                cancellation_token: self.cancellation_token.clone(),
-                                common_state: self.common_state.clone(),
-                                access_control_shared_state: self
-                                    .access_control_shared_state
-                                    .clone(),
-                                redirector_shared_state: self.redirector_shared_state.clone(),
-                                key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-                                provision_shared_state: self.provision_shared_state.clone(),
-                                agent_status_shared_state: self.agent_status_shared_state.clone(),
-                                connection_summary_shared_state: self
-                                    .connection_summary_shared_state
-                                    .clone(),
-                            })
-                            .await;
-                        }
-
-                        continue;
-                    }
-                }
-                Err(e) => {
-                    logger::write_warning(format!("Failed to update secure channel state: {e}"));
-                }
+            if self
+                .handle_secure_channel_state_change(
+                    secure_channel_state_updated,
+                    &state,
+                    &status,
+                    &mut redirect_policy_updated,
+                )
+                .await
+            {
+                // successfully handled secure channel state change, skip to next iteration
+                continue;
             }
 
             // check and update the redirect policy if not updated successfully before, try again here
@@ -611,8 +283,367 @@ impl KeyKeeper {
                 logger::write_warning(
                     "redirect policy was not update successfully before, retrying now".to_string(),
                 );
-                redirect_policy_updated = self.update_redirector_policy(status).await;
+                redirect_policy_updated = self.update_redirector_policy(&status).await;
             }
+        }
+    }
+
+    /// Calculate sleep duration based on current secure channel state
+    fn calculate_sleep_duration(&self, current_state: &str) -> Duration {
+        if current_state == UNKNOWN_STATE
+            && helpers::get_elapsed_time_in_millisec() < FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS
+        {
+            // frequent poll the secure channel status every second for the first 5 minutes
+            // until the secure channel state is known
+            FREQUENT_PULL_INTERVAL
+        } else {
+            self.interval
+        }
+    }
+
+    /// Handle notification and sleep logic
+    /// Returns (continue_loop, reset_timer)
+    async fn handle_notification(
+        &self,
+        notify: &tokio::sync::Notify,
+        sleep: Duration,
+        current_state: &str,
+    ) -> (bool, bool) {
+        let time = Instant::now();
+        tokio::select! {
+            // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
+            // this is to handle quicker response to the secure channel state change during VM provisioning.
+            _ = notify.notified() => {
+                if current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
+                    logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{current_state}', reset states and start poll status now."));
+                    provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
+                    if let Err(e) = self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await {
+                        logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {e}"));
+                    }
+                    (true, true)
+                } else {
+                    // report key latched ready to try update the provision finished time_tick
+                    provision::key_latched(self.create_event_threads_shared_state()).await;
+                    let slept_time_in_millisec = time.elapsed().as_millis();
+                    let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
+                    if continue_sleep > 0 {
+                        let continue_sleep = Duration::from_millis(continue_sleep as u64);
+                        let message = format!("poll_secure_channel_status task notified but secure channel state is '{current_state}', continue with sleep wait for {continue_sleep:?}.");
+                        logger::write_warning(message);
+                        tokio::time::sleep(continue_sleep).await;
+                    }
+                    (true, false)
+                }
+            },
+            _ = tokio::time::sleep(sleep) => {
+                (true, false)
+            }
+        }
+    }
+
+    /// Handle provision timeout logic
+    async fn handle_provision_timeup(&self, start: &mut Instant, provision_timeup: bool) -> bool {
+        if !provision_timeup && start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
+            provision::provision_timeup(
+                None,
+                self.provision_shared_state.clone(),
+                self.agent_status_shared_state.clone(),
+            )
+            .await;
+            return true;
+        }
+        provision_timeup
+    }
+
+    /// Handle starting event threads
+    async fn handle_event_threads_start(&self, started_event_threads: bool) -> bool {
+        if !started_event_threads
+            && helpers::get_elapsed_time_in_millisec() > DELAY_START_EVENT_THREADS_IN_MILLISECONDS
+        {
+            provision::start_event_threads(self.create_event_threads_shared_state()).await;
+            return true;
+        }
+        started_event_threads
+    }
+
+    /// Update access control rules from the key status
+    /// Returns true if any rules changed
+    async fn update_access_control_rules(&self, status: &KeyStatus) -> bool {
+        let mut access_control_rules_changed = false;
+        let wireserver_rule_id = status.get_wireserver_rule_id();
+        let imds_rule_id = status.get_imds_rule_id();
+        let hostga_rule_id = status.get_hostga_rule_id();
+
+        // Update wireserver rules
+        match self
+            .key_keeper_shared_state
+            .update_wireserver_rule_id(wireserver_rule_id.to_string())
+            .await
+        {
+            Ok((updated, old_wire_server_rule_id)) => {
+                if updated {
+                    logger::write_warning(format!(
+                        "Wireserver rule id changed from '{old_wire_server_rule_id}' to '{wireserver_rule_id}'."
+                    ));
+                    if let Err(e) = self
+                        .access_control_shared_state
+                        .set_wireserver_rules(status.get_wireserver_rules())
+                        .await
+                    {
+                        logger::write_error(format!("Failed to set wireserver rules: {e}"));
+                    }
+                    access_control_rules_changed = true;
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to update wireserver rule id: {e}"));
+            }
+        }
+
+        // Update IMDS rules
+        match self
+            .key_keeper_shared_state
+            .update_imds_rule_id(imds_rule_id.to_string())
+            .await
+        {
+            Ok((updated, old_imds_rule_id)) => {
+                if updated {
+                    logger::write_warning(format!(
+                        "IMDS rule id changed from '{old_imds_rule_id}' to '{imds_rule_id}'."
+                    ));
+                    if let Err(e) = self
+                        .access_control_shared_state
+                        .set_imds_rules(status.get_imds_rules())
+                        .await
+                    {
+                        logger::write_error(format!("Failed to set imds rules: {e}"));
+                    }
+                    access_control_rules_changed = true;
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to update imds rule id: {e}"));
+            }
+        }
+
+        // Update HostGA rules
+        match self
+            .key_keeper_shared_state
+            .update_hostga_rule_id(hostga_rule_id.to_string())
+            .await
+        {
+            Ok((updated, old_hostga_rule_id)) => {
+                if updated {
+                    logger::write_warning(format!(
+                        "HostGA rule id changed from '{old_hostga_rule_id}' to '{hostga_rule_id}'."
+                    ));
+                    if let Err(e) = self
+                        .access_control_shared_state
+                        .set_hostga_rules(status.get_hostga_rules())
+                        .await
+                    {
+                        logger::write_error(format!("Failed to set HostGA rules: {e}"));
+                    }
+                    access_control_rules_changed = true;
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to update HostGA rule id: {e}"));
+            }
+        }
+
+        // Write authorization rules to file if changed
+        if access_control_rules_changed {
+            if let (Ok(wireserver_rules), Ok(imds_rules), Ok(hostga_rules)) = (
+                self.access_control_shared_state
+                    .get_wireserver_rules()
+                    .await,
+                self.access_control_shared_state.get_imds_rules().await,
+                self.access_control_shared_state.get_hostga_rules().await,
+            ) {
+                let rules = AuthorizationRulesForLogging::new(
+                    status.authorizationRules.clone(),
+                    ComputedAuthorizationRules {
+                        wireserver: wireserver_rules,
+                        imds: imds_rules,
+                        hostga: hostga_rules,
+                    },
+                );
+                rules.write_all(&self.status_dir, constants::MAX_LOG_FILE_COUNT);
+            }
+        }
+
+        access_control_rules_changed
+    }
+
+    /// Handle key acquisition from local or server
+    /// Returns true if successful, false if should continue to next iteration
+    async fn handle_key_acquisition(&self, status: &KeyStatus, state: &str) -> bool {
+        // check if need fetch the key
+        if state != DISABLE_STATE
+            && (status.keyGuid.is_none()  // key has not latched yet
+            || status.keyGuid != self.key_keeper_shared_state.get_current_key_guid().await.unwrap_or(None))
+        // key changed
+        {
+            if self.try_fetch_local_key(&status.keyGuid).await {
+                return true;
+            }
+
+            // if key has not latched before, or not found, or could not read locally,
+            // try fetch from server
+            return self.acquire_key_from_server().await;
+        }
+        true
+    }
+
+    /// Try to fetch key from local storage
+    /// Returns true if key was found and loaded successfully
+    async fn try_fetch_local_key(&self, key_guid: &Option<String>) -> bool {
+        if let Some(guid) = key_guid {
+            // key latched before and search the key locally first
+            match Self::fetch_key(&self.key_dir, guid) {
+                Ok(key) => {
+                    if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
+                        logger::write_warning(format!("Failed to update key: {e}"));
+                    }
+
+                    let message = helpers::write_startup_event(
+                        "Found key details from local and ready to use.",
+                        "poll_secure_channel_status",
+                        "key_keeper",
+                        logger::AGENT_LOGGER_KEY,
+                    );
+                    self.update_status_message(message, false).await;
+
+                    provision::key_latched(self.create_event_threads_shared_state()).await;
+                    return true;
+                }
+                Err(e) => {
+                    event_logger::write_event(
+                        LoggerLevel::Info,
+                        format!("Failed to fetch local key details with error: {e:?}. Will try acquire the key details from Server."),
+                        "poll_secure_channel_status",
+                        "key_keeper",
+                        logger::AGENT_LOGGER_KEY,
+                    );
+                }
+            };
+        }
+        false
+    }
+
+    /// Acquire key from server, persist it, and attest it
+    /// Returns true if successful, false if should continue to next iteration
+    async fn acquire_key_from_server(&self) -> bool {
+        let key = match key::acquire_key(&self.base_url).await {
+            Ok(k) => k,
+            Err(e) => {
+                self.update_status_message(format!("Failed to acquire key details: {e:?}"), true)
+                    .await;
+                return false;
+            }
+        };
+
+        // persist the new key to local disk
+        let guid = key.guid.to_string();
+        if let Err(e) = Self::store_key(&self.key_dir, &key) {
+            self.update_status_message(format!("Failed to save key details to file: {e:?}"), true)
+                .await;
+            return false;
+        }
+        logger::write_information(format!(
+            "Successfully acquired the key '{guid}' details from server and saved locally."
+        ));
+
+        // double check the key details saved correctly to local disk
+        if let Err(e) = Self::check_key(&self.key_dir, &key) {
+            self.update_status_message(
+                format!("Failed to check the key '{guid}' details saved locally: {e:?}."),
+                true,
+            )
+            .await;
+            return false;
+        }
+
+        // attest the key
+        match key::attest_key(&self.base_url, &key).await {
+            Ok(()) => {
+                // update in memory
+                if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
+                    logger::write_warning(format!("Failed to update key: {e}"));
+                }
+
+                let message = helpers::write_startup_event(
+                    "Successfully attest the key and ready to use.",
+                    "poll_secure_channel_status",
+                    "key_keeper",
+                    logger::AGENT_LOGGER_KEY,
+                );
+                self.update_status_message(message, false).await;
+                provision::key_latched(self.create_event_threads_shared_state()).await;
+                true
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to attest the key: {e:?}"));
+                false
+            }
+        }
+    }
+
+    /// Handle secure channel state change
+    /// Returns true if should continue to next iteration
+    async fn handle_secure_channel_state_change(
+        &self,
+        secure_channel_state_updated: std::result::Result<bool, crate::common::error::Error>,
+        state: &str,
+        status: &KeyStatus,
+        redirect_policy_updated: &mut bool,
+    ) -> bool {
+        match secure_channel_state_updated {
+            Ok(updated) => {
+                if updated {
+                    // secure channel state changed, update the redirect policy
+                    *redirect_policy_updated = self.update_redirector_policy(status).await;
+
+                    // customer has not enforce the secure channel state
+                    if state == DISABLE_STATE {
+                        let message = helpers::write_startup_event(
+                            "Customer has not enforce the secure channel state.",
+                            "poll_secure_channel_status",
+                            "key_keeper",
+                            logger::AGENT_LOGGER_KEY,
+                        );
+                        // Update the status message and let the provision to continue
+                        self.update_status_message(message, false).await;
+
+                        // clear key in memory for disabled state
+                        if let Err(e) = self.key_keeper_shared_state.clear_key().await {
+                            logger::write_warning(format!("Failed to clear key: {e}"));
+                        }
+                        provision::key_latched(self.create_event_threads_shared_state()).await;
+                    }
+
+                    return true;
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("Failed to update secure channel state: {e}"));
+            }
+        }
+        false
+    }
+
+    /// Create EventThreadsSharedState from current state
+    fn create_event_threads_shared_state(&self) -> EventThreadsSharedState {
+        EventThreadsSharedState {
+            cancellation_token: self.cancellation_token.clone(),
+            common_state: self.common_state.clone(),
+            access_control_shared_state: self.access_control_shared_state.clone(),
+            redirector_shared_state: self.redirector_shared_state.clone(),
+            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+            provision_shared_state: self.provision_shared_state.clone(),
+            agent_status_shared_state: self.agent_status_shared_state.clone(),
+            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
         }
     }
 
@@ -637,7 +668,7 @@ impl KeyKeeper {
 
     /// update the redirector/eBPF policy based on the secure channel status
     /// it should be called when the secure channel state is changed
-    async fn update_redirector_policy(&self, status: KeyStatus) -> bool {
+    async fn update_redirector_policy(&self, status: &KeyStatus) -> bool {
         // update the redirector policy map
         if !redirector::update_wire_server_redirect_policy(
             status.get_wire_server_mode() != DISABLE_STATE,
