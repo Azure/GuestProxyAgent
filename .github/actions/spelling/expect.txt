@@ -58,6 +58,7 @@ daddr
 datacenter
 davidanson
 DDCE
+DDTHH
 debbuild
 DEBHELPER
 debian
@@ -176,6 +177,7 @@ MFC
 microsoftcblmariner
 microsoftlosangeles
 microsoftwindowsdesktop
+mmm
 mnt
 msasn
 msp
@@ -271,6 +273,7 @@ spellright
 splitn
 SRPMS
 SSRF
+SSZ
 stackoverflow
 stdbool
 stdint

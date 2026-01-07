@@ -79,7 +79,9 @@ pub fn parse_date_time_string(datetime_str: &str) -> Result<OffsetDateTime> {
     // Try parsing with milliseconds first
     let date_format_with_millis =
         format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]")
-            .map_err(|e| Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}")))?;
+            .map_err(|e| {
+                Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}"))
+            })?;
 
     if let Ok(primitive_datetime) =
         PrimitiveDateTime::parse(datetime_str_trimmed, &date_format_with_millis)
@@ -89,7 +91,9 @@ pub fn parse_date_time_string(datetime_str: &str) -> Result<OffsetDateTime> {
 
     // Fall back to parsing without milliseconds
     let date_format = format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]")
-        .map_err(|e| Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}")))?;
+        .map_err(|e| {
+            Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}"))
+        })?;
 
     let primitive_datetime =
         PrimitiveDateTime::parse(datetime_str_trimmed, &date_format).map_err(|e| {
