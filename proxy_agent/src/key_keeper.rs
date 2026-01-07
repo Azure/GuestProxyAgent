@@ -209,7 +209,7 @@ impl KeyKeeper {
             ));
         }
 
-        let mut start = Instant::now();
+        let mut provision_start_time = Instant::now();
         let mut redirect_policy_updated = false;
         loop {
             if !first_iteration {
@@ -233,7 +233,7 @@ impl KeyKeeper {
                     .await;
 
                 if reset_timer {
-                    start = Instant::now();
+                    provision_start_time = Instant::now();
                     provision_timeout = false;
                 }
 
@@ -243,7 +243,7 @@ impl KeyKeeper {
             }
             first_iteration = false;
 
-            self.handle_provision_timeout(&mut start, &mut provision_timeout)
+            self.handle_provision_timeout(&mut provision_start_time, &mut provision_timeout)
                 .await;
             started_event_threads = self.handle_event_threads_start(started_event_threads).await;
 
@@ -343,16 +343,19 @@ impl KeyKeeper {
         &self,
         current_state: &str,
         sleep_interval: Duration,
-        start_time: Instant,
+        current_loop_iteration_start_time: Instant,
     ) -> (bool, bool) {
         // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
         // this is to handle quicker response to the secure channel state change during VM provisioning.
-
         if self.should_reset_state(current_state) {
             self.reset_state_on_notification(current_state).await
         } else {
-            self.continue_with_key_latched(current_state, sleep_interval, start_time)
-                .await
+            self.continue_with_key_latched(
+                current_state,
+                sleep_interval,
+                current_loop_iteration_start_time,
+            )
+            .await
         }
     }
 
@@ -428,8 +431,14 @@ impl KeyKeeper {
     }
 
     /// Handle provision timeout logic
-    async fn handle_provision_timeout(&self, start: &mut Instant, provision_timeout: &mut bool) {
-        if !*provision_timeout && start.elapsed().as_millis() > PROVISION_TIMEOUT_IN_MILLISECONDS {
+    async fn handle_provision_timeout(
+        &self,
+        provision_start_time: &mut Instant,
+        provision_timeout: &mut bool,
+    ) {
+        if !*provision_timeout
+            && provision_start_time.elapsed().as_millis() > PROVISION_TIMEOUT_IN_MILLISECONDS
+        {
             provision::provision_timeout(
                 None,
                 self.provision_shared_state.clone(),
