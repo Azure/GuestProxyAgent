@@ -53,6 +53,9 @@ pub enum Error {
 
     #[error("Failed to receive '{0}' action response with error {1}")]
     RecvError(String, tokio::sync::oneshot::error::RecvError),
+
+    #[error("Parse datetime string error: {0}")]
+    ParseDateTimeStringError(String),
 }
 
 #[derive(Debug, thiserror::Error)]
