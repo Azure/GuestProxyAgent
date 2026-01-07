@@ -921,6 +921,12 @@ mod tests {
             proxyConnectionSummary: vec![proxy_connection_summary_obj],
             failedAuthenticateSummary: vec![proxy_failedAuthenticateSummary_obj],
         };
+        let result = toplevel_status.get_status_timestamp();
+        assert!(
+            result.is_ok(),
+            "Status timestamp parse expected Ok result, got Err: {:?}",
+            result.err()
+        );
 
         let mut status = StatusObj {
             name: constants::PLUGIN_NAME.to_string(),

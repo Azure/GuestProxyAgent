@@ -3,6 +3,7 @@
 use crate::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
+use time::OffsetDateTime;
 
 #[cfg(windows)]
 const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Logs\\";
@@ -87,4 +88,10 @@ pub struct GuestProxyAgentAggregateStatus {
     pub proxyAgentStatus: ProxyAgentStatus,
     pub proxyConnectionSummary: Vec<ProxyConnectionSummary>,
     pub failedAuthenticateSummary: Vec<ProxyConnectionSummary>,
+}
+
+impl GuestProxyAgentAggregateStatus {
+    pub fn get_status_timestamp(&self) -> crate::result::Result<OffsetDateTime> {
+        misc_helpers::parse_date_time_string(&self.timestamp)
+    }
 }
