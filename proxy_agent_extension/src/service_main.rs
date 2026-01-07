@@ -428,7 +428,8 @@ fn extension_substatus(
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
 ) {
-    let proxy_agent_status_timestamp_result = proxy_agent_aggregate_status_top_level.get_status_timestamp();
+    let proxy_agent_status_timestamp_result =
+        proxy_agent_aggregate_status_top_level.get_status_timestamp();
     let proxy_agent_aggregate_status_obj = proxy_agent_aggregate_status_top_level.proxyAgentStatus;
     let proxy_agent_aggregate_status_file_version =
         proxy_agent_aggregate_status_obj.version.to_string();
@@ -483,10 +484,11 @@ fn extension_substatus(
                     ]
                 };
                 return;
-            } 
+            }
         }
         Err(e) => {
-            let error_message = format!("Error in parsing timestamp from proxy agent aggregate status file: {e}");
+            let error_message =
+                format!("Error in parsing timestamp from proxy agent aggregate status file: {e}");
             write_state_event(
                 constants::STATE_KEY_PARSE_TIMESTAMP_ERROR,
                 constants::ERROR_STATUS,
@@ -1290,9 +1292,15 @@ mod tests {
         // Verify that status is not successful due to stale timestamp
         assert_ne!(status.status, constants::SUCCESS_STATUS.to_string());
         assert_eq!(status.substatus.len(), 3);
-        assert_eq!(status.substatus[0].status, constants::TRANSITIONING_STATUS.to_string());
+        assert_eq!(
+            status.substatus[0].status,
+            constants::TRANSITIONING_STATUS.to_string()
+        );
         assert_eq!(status.substatus[0].code, constants::STATUS_CODE_NOT_OK);
-        assert!(status.substatus[0].formattedMessage.message.contains("stale"));
+        assert!(status.substatus[0]
+            .formattedMessage
+            .message
+            .contains("stale"));
     }
 
     #[test]
@@ -1377,7 +1385,10 @@ mod tests {
         // Verify that status is successful with fresh timestamp
         assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
         assert_eq!(status.substatus.len(), 3);
-        assert_eq!(status.substatus[0].status, constants::SUCCESS_STATUS.to_string());
+        assert_eq!(
+            status.substatus[0].status,
+            constants::SUCCESS_STATUS.to_string()
+        );
         assert_eq!(status.substatus[0].code, constants::STATUS_CODE_OK);
     }
 }
