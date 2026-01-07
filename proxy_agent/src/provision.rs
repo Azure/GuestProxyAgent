@@ -237,9 +237,9 @@ async fn reset_provision_state(
 /// use std::sync::{Arc, Mutex};
 ///
 /// let shared_state = Arc::new(Mutex::new(SharedState::new()));
-/// provision::provision_timeup(None, shared_state.clone());
+/// provision::provision_timeout(None, shared_state.clone());
 /// ```
-pub async fn provision_timeup(
+pub async fn provision_timeout(
     provision_dir: Option<PathBuf>,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -944,7 +944,7 @@ mod tests {
                 super::AgentStatusModule::KeyKeeper,
             )
             .await;
-        super::provision_timeup(
+        super::provision_timeout(
             Some(temp_test_path.clone()),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),

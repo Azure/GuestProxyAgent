@@ -59,7 +59,7 @@ pub const MUST_SIG_WIRESERVER_IMDS: &str = "wireserverandimds";
 pub const UNKNOWN_STATE: &str = "Unknown";
 static FREQUENT_PULL_INTERVAL: Duration = Duration::from_secs(1); // 1 second
 const FREQUENT_PULL_TIMEOUT_IN_MILLISECONDS: u128 = 300000; // 5 minutes
-const PROVISION_TIMEUP_IN_MILLISECONDS: u128 = 120000; // 2 minute
+const PROVISION_TIMEOUT_IN_MILLISECONDS: u128 = 120000; // 2 minute
 const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 #[derive(Clone)]
@@ -88,6 +88,15 @@ pub struct KeyKeeper {
     access_control_shared_state: AccessControlSharedState,
     /// connection_summary_shared_state: the sender for the connection summary module
     connection_summary_shared_state: ConnectionSummarySharedState,
+}
+
+/// Reason for waking up from sleep
+/// Used in the pull_secure_channel_status loop
+/// Notified: woke up due to notification
+/// TimerElapsed: woke up due to sleep-timer elapsed
+enum WakeReason {
+    Notified,
+    TimerElapsed,
 }
 
 impl KeyKeeper {
@@ -180,7 +189,7 @@ impl KeyKeeper {
     async fn loop_poll(&self) {
         let mut first_iteration: bool = true;
         let mut started_event_threads: bool = false;
-        let mut provision_timeup: bool = false;
+        let mut provision_timeout: bool = false;
         let notify = match self.key_keeper_shared_state.get_notify().await {
             Ok(notify) => notify,
             Err(e) => {
@@ -218,14 +227,14 @@ impl KeyKeeper {
                     }
                 };
 
-                let sleep = self.calculate_sleep_duration(&current_state);
+                let sleep_interval = self.calculate_sleep_duration(&current_state);
                 let (continue_loop, reset_timer) = self
-                    .handle_notification(&notify, sleep, &current_state)
+                    .handle_notification(&notify, sleep_interval, &current_state)
                     .await;
 
                 if reset_timer {
                     start = Instant::now();
-                    provision_timeup = false;
+                    provision_timeout = false;
                 }
 
                 if !continue_loop {
@@ -234,8 +243,7 @@ impl KeyKeeper {
             }
             first_iteration = false;
 
-            provision_timeup = self
-                .handle_provision_timeup(&mut start, provision_timeup)
+            self.handle_provision_timeout(&mut start, &mut provision_timeout)
                 .await;
             started_event_threads = self.handle_event_threads_start(started_event_threads).await;
 
@@ -301,58 +309,135 @@ impl KeyKeeper {
         }
     }
 
+    async fn wait_for_wake(notify: &tokio::sync::Notify, sleep_interval: Duration) -> WakeReason {
+        tokio::select! {
+        // if a notification arrives
+        _ = notify.notified() => WakeReason::Notified,
+        // if the sleep duration elapses
+        _ = tokio::time::sleep(sleep_interval) => WakeReason::TimerElapsed,
+        }
+    }
+
     /// Handle notification and sleep logic
     /// Returns (continue_loop, reset_timer)
     async fn handle_notification(
         &self,
         notify: &tokio::sync::Notify,
-        sleep: Duration,
+        sleep_interval: Duration,
         current_state: &str,
     ) -> (bool, bool) {
-        let time = Instant::now();
-        tokio::select! {
-            // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
-            // this is to handle quicker response to the secure channel state change during VM provisioning.
-            _ = notify.notified() => {
-                if current_state == DISABLE_STATE || current_state == UNKNOWN_STATE {
-                    logger::write_warning(format!("poll_secure_channel_status task notified and secure channel state is '{current_state}', reset states and start poll status now."));
-                    provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
-                    if let Err(e) = self.key_keeper_shared_state.update_current_secure_channel_state(UNKNOWN_STATE.to_string()).await {
-                        logger::write_warning(format!("Failed to update secure channel state to 'Unknown': {e}"));
-                    }
-                    (true, true)
-                } else {
-                    // report key latched ready to try update the provision finished time_tick
-                    provision::key_latched(self.create_event_threads_shared_state()).await;
-                    let slept_time_in_millisec = time.elapsed().as_millis();
-                    let continue_sleep = sleep.as_millis() - slept_time_in_millisec;
-                    if continue_sleep > 0 {
-                        let continue_sleep = Duration::from_millis(continue_sleep as u64);
-                        let message = format!("poll_secure_channel_status task notified but secure channel state is '{current_state}', continue with sleep wait for {continue_sleep:?}.");
-                        logger::write_warning(message);
-                        tokio::time::sleep(continue_sleep).await;
-                    }
-                    (true, false)
-                }
-            },
-            _ = tokio::time::sleep(sleep) => {
-                (true, false)
+        let start_time = Instant::now();
+
+        match Self::wait_for_wake(notify, sleep_interval).await {
+            WakeReason::Notified => {
+                self.handle_notified_state(current_state, sleep_interval, start_time)
+                    .await
             }
+            WakeReason::TimerElapsed => (true, false),
+        }
+    }
+
+    /// Handle the notified state - either reset or continue with key latched
+    /// Returns (continue_loop, reset_timer)
+    async fn handle_notified_state(
+        &self,
+        current_state: &str,
+        sleep_interval: Duration,
+        start_time: Instant,
+    ) -> (bool, bool) {
+        // notify to query the secure channel status immediately when the secure channel state is unknown or disabled
+        // this is to handle quicker response to the secure channel state change during VM provisioning.
+
+        if self.should_reset_state(current_state) {
+            self.reset_state_on_notification(current_state).await
+        } else {
+            self.continue_with_key_latched(current_state, sleep_interval, start_time)
+                .await
+        }
+    }
+
+    /// Check if the state should be reset based on current secure channel state
+    fn should_reset_state(&self, current_state: &str) -> bool {
+        current_state == DISABLE_STATE || current_state == UNKNOWN_STATE
+    }
+
+    /// Reset state when notified in disabled or unknown state
+    /// Returns (continue_loop, reset_timer)
+    async fn reset_state_on_notification(&self, current_state: &str) -> (bool, bool) {
+        logger::write_warning(format!(
+            "poll_secure_channel_status task notified and secure channel state is '{current_state}', reset states and start poll status now."
+        ));
+
+        provision::key_latch_ready_state_reset(self.provision_shared_state.clone()).await;
+
+        if let Err(e) = self
+            .key_keeper_shared_state
+            .update_current_secure_channel_state(UNKNOWN_STATE.to_string())
+            .await
+        {
+            logger::write_warning(format!(
+                "Failed to update secure channel state to 'Unknown': {e}"
+            ));
+        }
+
+        (true, true)
+    }
+
+    /// Continue with key latched when notified in a stable state
+    /// Returns (continue_loop, reset_timer)
+    async fn continue_with_key_latched(
+        &self,
+        current_state: &str,
+        sleep_interval: Duration,
+        current_loop_iteration_start_time: Instant,
+    ) -> (bool, bool) {
+        // report key latched ready to try update the provision finished time_tick
+        provision::key_latched(self.create_event_threads_shared_state()).await;
+
+        self.handle_remaining_sleep(
+            current_state,
+            sleep_interval,
+            current_loop_iteration_start_time,
+        )
+        .await;
+
+        (true, false)
+    }
+
+    /// Handle the remaining sleep time after the notification
+    async fn handle_remaining_sleep(
+        &self,
+        current_state: &str,
+        sleep_interval: Duration,
+        current_loop_iteration_start_time: Instant,
+    ) {
+        let slept_time_in_millisec = current_loop_iteration_start_time.elapsed().as_millis();
+        let continue_sleep = sleep_interval
+            .as_millis()
+            .saturating_sub(slept_time_in_millisec);
+        if continue_sleep > 0 {
+            // continue sleep with the remaining time for current loop iteration
+            // it is to avoid too frequent polling when the secure channel state is stable
+            let continue_sleep = Duration::from_millis(continue_sleep as u64);
+            let message = format!(
+                "poll_secure_channel_status task notified but secure channel state is '{current_state}', continue with sleep wait for {continue_sleep:?}."
+            );
+            logger::write_warning(message);
+            tokio::time::sleep(continue_sleep).await;
         }
     }
 
     /// Handle provision timeout logic
-    async fn handle_provision_timeup(&self, start: &mut Instant, provision_timeup: bool) -> bool {
-        if !provision_timeup && start.elapsed().as_millis() > PROVISION_TIMEUP_IN_MILLISECONDS {
-            provision::provision_timeup(
+    async fn handle_provision_timeout(&self, start: &mut Instant, provision_timeout: &mut bool) {
+        if !*provision_timeout && start.elapsed().as_millis() > PROVISION_TIMEOUT_IN_MILLISECONDS {
+            provision::provision_timeout(
                 None,
                 self.provision_shared_state.clone(),
                 self.agent_status_shared_state.clone(),
             )
             .await;
-            return true;
+            *provision_timeout = true;
         }
-        provision_timeup
     }
 
     /// Handle starting event threads
