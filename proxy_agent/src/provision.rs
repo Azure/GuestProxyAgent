@@ -8,11 +8,14 @@
 
 use crate::common::{config, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
-use crate::proxy_agent_status;
+use crate::proxy::authorization_rules::AuthorizationMode;
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
+use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::EventThreadsSharedState;
+use crate::{proxy_agent_status, redirector};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::event_reader::EventReader;
@@ -122,6 +125,15 @@ async fn update_provision_state(
         .await
     {
         if provision_state.contains(ProvisionFlags::ALL_READY) {
+            // update redirector/eBPF policy based on access control status
+            update_redirector_policy(
+                event_threads_shared_state.redirector_shared_state.clone(),
+                event_threads_shared_state
+                    .access_control_shared_state
+                    .clone(),
+            )
+            .await;
+
             if let Err(e) = event_threads_shared_state
                 .provision_shared_state
                 .set_provision_finished(true)
@@ -145,6 +157,51 @@ async fn update_provision_state(
             start_event_threads(event_threads_shared_state).await;
         }
     }
+}
+
+/// update the redirector/eBPF policy based on access control status
+/// it should be called when provision finished
+async fn update_redirector_policy(
+    redirector_shared_state: RedirectorSharedState,
+    access_control_shared_state: AccessControlSharedState,
+) {
+    let wireserver_mode =
+        if let Ok(Some(rules)) = access_control_shared_state.get_wireserver_rules().await {
+            rules.mode
+        } else {
+            // default to disabled if the rules are not ready
+            AuthorizationMode::Disabled
+        };
+    redirector::update_wire_server_redirect_policy(
+        wireserver_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
+
+    let imds_mode = if let Ok(Some(rules)) = access_control_shared_state.get_imds_rules().await {
+        rules.mode
+    } else {
+        // default to disabled if the rules are not ready
+        AuthorizationMode::Disabled
+    };
+    redirector::update_imds_redirect_policy(
+        imds_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
+
+    let ga_plugin_mode =
+        if let Ok(Some(rules)) = access_control_shared_state.get_hostga_rules().await {
+            rules.mode
+        } else {
+            // default to disabled if the rules are not ready
+            AuthorizationMode::Disabled
+        };
+    redirector::update_hostga_redirect_policy(
+        ga_plugin_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
 }
 
 pub async fn key_latch_ready_state_reset(provision_shared_state: ProvisionSharedState) {
@@ -180,9 +237,9 @@ async fn reset_provision_state(
 /// use std::sync::{Arc, Mutex};
 ///
 /// let shared_state = Arc::new(Mutex::new(SharedState::new()));
-/// provision::provision_timeup(None, shared_state.clone());
+/// provision::provision_timeout(None, shared_state.clone());
 /// ```
-pub async fn provision_timeup(
+pub async fn provision_timeout(
     provision_dir: Option<PathBuf>,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -887,7 +944,7 @@ mod tests {
                 super::AgentStatusModule::KeyKeeper,
             )
             .await;
-        super::provision_timeup(
+        super::provision_timeout(
             Some(temp_test_path.clone()),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),

@@ -45,14 +45,12 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
-use crate::common::constants;
 use crate::common::error::BpfErrorType;
 use crate::common::error::Error;
 use crate::common::helpers;
 use crate::common::result::Result;
 use crate::common::{config, logger};
 use crate::provision;
-use crate::proxy::authorization_rules::AuthorizationMode;
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
@@ -193,52 +191,9 @@ impl Redirector {
         logger::write_information(format!(
             "Success updated bpf skip_process map with pid={pid}."
         ));
-        let wireserver_mode = if let Ok(Some(rules)) = self
-            .access_control_shared_state
-            .get_wireserver_rules()
-            .await
-        {
-            rules.mode
-        } else {
-            AuthorizationMode::Audit
-        };
-        if wireserver_mode != AuthorizationMode::Disabled {
-            bpf_object.update_policy_elem_bpf_map(
-                "WireServer endpoints",
-                self.local_port,
-                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER, //0x10813FA8 - 168.63.129.16
-                constants::WIRE_SERVER_PORT,
-            )?;
-            logger::write_information(
-                "Success updated bpf map for WireServer support.".to_string(),
-            );
-        }
-        let imds_mode =
-            if let Ok(Some(rules)) = self.access_control_shared_state.get_imds_rules().await {
-                rules.mode
-            } else {
-                AuthorizationMode::Audit
-            };
-        if imds_mode != AuthorizationMode::Disabled {
-            bpf_object.update_policy_elem_bpf_map(
-                "IMDS endpoints",
-                self.local_port,
-                constants::IMDS_IP_NETWORK_BYTE_ORDER, //0xFEA9FEA9, // 169.254.169.254
-                constants::IMDS_PORT,
-            )?;
-            logger::write_information("Success updated bpf map for IMDS support.".to_string());
-        }
-        if config::get_host_gaplugin_support() > 0 {
-            bpf_object.update_policy_elem_bpf_map(
-                "Host GAPlugin endpoints",
-                self.local_port,
-                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER, //0x10813FA8, // 168.63.129.16
-                constants::GA_PLUGIN_PORT,
-            )?;
-            logger::write_information(
-                "Success updated bpf map for Host GAPlugin support.".to_string(),
-            );
-        }
+
+        // Do not update redirect policy map here, it will be updated by provision module
+        // When provision is finished, it will call update_xxx_redirect_policy functions to update the redirect policy maps.
 
         // programs
         self.attach_bpf_prog(&mut bpf_object)?;
@@ -285,6 +240,8 @@ impl Redirector {
         provision::redirector_ready(EventThreadsSharedState {
             cancellation_token: self.cancellation_token.clone(),
             common_state: self.common_state.clone(),
+            access_control_shared_state: self.access_control_shared_state.clone(),
+            redirector_shared_state: self.redirector_shared_state.clone(),
             key_keeper_shared_state: self.key_keeper_shared_state.clone(),
             provision_shared_state: self.provision_shared_state.clone(),
             agent_status_shared_state: self.agent_status_shared_state.clone(),
