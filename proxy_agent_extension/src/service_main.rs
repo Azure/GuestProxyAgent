@@ -434,8 +434,8 @@ fn extension_substatus(
     let proxy_agent_aggregate_status_file_version =
         proxy_agent_aggregate_status_obj.version.to_string();
 
-    // Compare the timestamp in the proxy agent aggregate status file with current time, if the time is greater than 5 minutes then the status is stale
-    match proxy_agent_status_timestamp_result {
+    // Check for timestamp staleness or parse errors
+    let timestamp_error = match proxy_agent_status_timestamp_result {
         Ok(status_timestamp) => {
             let current_time = misc_helpers::get_current_utc_time();
             let duration = current_time - status_timestamp;
@@ -450,40 +450,9 @@ fn extension_substatus(
                     &logger::get_logger_key(),
                     service_state,
                 );
-                status.status = status_state_obj.update_state(false);
-                status.configurationAppliedTime = misc_helpers::get_date_time_string();
-                status.substatus = {
-                    vec![
-                        SubStatus {
-                            name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                            status: constants::TRANSITIONING_STATUS.to_string(),
-                            code: constants::STATUS_CODE_NOT_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: stale_message.to_string(),
-                            },
-                        },
-                        SubStatus {
-                            name: constants::PLUGIN_STATUS_NAME.to_string(),
-                            status: constants::TRANSITIONING_STATUS.to_string(),
-                            code: constants::STATUS_CODE_NOT_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: stale_message.to_string(),
-                            },
-                        },
-                        SubStatus {
-                            name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                            status: constants::TRANSITIONING_STATUS.to_string(),
-                            code: constants::STATUS_CODE_NOT_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: stale_message.to_string(),
-                            },
-                        },
-                    ]
-                };
-                return;
+                Some(stale_message)
+            } else {
+                None
             }
         }
         Err(e) => {
@@ -498,45 +467,14 @@ fn extension_substatus(
                 &logger::get_logger_key(),
                 service_state,
             );
-            status.status = status_state_obj.update_state(false);
-            status.configurationAppliedTime = misc_helpers::get_date_time_string();
-            status.substatus = {
-                vec![
-                    SubStatus {
-                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                        status: constants::TRANSITIONING_STATUS.to_string(),
-                        code: constants::STATUS_CODE_NOT_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: error_message.to_string(),
-                        },
-                    },
-                    SubStatus {
-                        name: constants::PLUGIN_STATUS_NAME.to_string(),
-                        status: constants::TRANSITIONING_STATUS.to_string(),
-                        code: constants::STATUS_CODE_NOT_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: error_message.to_string(),
-                        },
-                    },
-                    SubStatus {
-                        name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                        status: constants::TRANSITIONING_STATUS.to_string(),
-                        code: constants::STATUS_CODE_NOT_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: error_message.to_string(),
-                        },
-                    },
-                ]
-            };
-            return;
+            Some(error_message)
         }
-    }
-    // Compare GPA version between proxy agent aggregate status file and proxy agent file in extension
-    if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
-        status.status = status_state_obj.update_state(false);
+    };
+
+    // Determine error message for status reporting
+    let error_message = if let Some(timestamp_error) = timestamp_error {
+        Some(timestamp_error)
+    } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
         write_state_event(
             constants::STATE_KEY_FILE_VERSION,
@@ -547,6 +485,13 @@ fn extension_substatus(
             &logger::get_logger_key(),
             service_state,
         );
+        Some(version_mismatch_message)
+    } else {
+        None
+    };
+
+    if let Some(error_message) = error_message {
+        status.status = status_state_obj.update_state(false);
         status.configurationAppliedTime = misc_helpers::get_date_time_string();
         status.substatus = {
             vec![
@@ -556,7 +501,7 @@ fn extension_substatus(
                     code: constants::STATUS_CODE_NOT_OK,
                     formattedMessage: FormattedMessage {
                         lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
+                        message: error_message.to_string(),
                     },
                 },
                 SubStatus {
@@ -565,7 +510,7 @@ fn extension_substatus(
                     code: constants::STATUS_CODE_NOT_OK,
                     formattedMessage: FormattedMessage {
                         lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
+                        message: error_message.to_string(),
                     },
                 },
                 SubStatus {
@@ -574,7 +519,7 @@ fn extension_substatus(
                     code: constants::STATUS_CODE_NOT_OK,
                     formattedMessage: FormattedMessage {
                         lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
+                        message: error_message.to_string(),
                     },
                 },
             ]
