@@ -4,8 +4,11 @@
 # SPDX-License-Identifier: MIT
 
 customOutputJsonUrl=$(echo $customOutputJsonSAS | base64 -d)
+expectedSecureChannelState=$(echo $expectedSecureChannelState)
 
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Start Guest Proxy Agent Validation"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - expectedSecureChannelState=$expectedSecureChannelState"
+
 currentDir=$(pwd)
 customOutputJsonPath=$currentDir/proxyagentvalidation.json
 
@@ -47,12 +50,47 @@ else
     echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - logdir does not exist"
 fi
 
+# check status.json file Content
+## check timestamp of last entry in status.json file
+## check the secure channel status
+timeout=300
+elapsed=0
+statusFile=$logdir/status.json
+secureChannelState=""
+
+# Current UTC time in epoch seconds
+currentUtcTime=$(date -u +%s)
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Checking GPA status file $statusFile with 5 minute timeout"
+while :; do 
+    timestamp=$(cat "$statusFile" | jq -r '.timestamp')
+    # Convert timestamp to epoch seconds
+    timestampEpoch=$(date -u -d "$timestamp" +%s)
+    if ((timestampEpoch > currentUtcTime)); then
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - The last entry timestamp '$timestamp' is valid."
+        ## check secure channel status
+        secureChannelState=$(cat "$statusFile" | jq -r '.proxyAgentStatus.keyLatchStatus.states.secureChannelState')
+        if [[ "$secureChannelState" == "$expectedSecureChannelState" ]]; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - The secure channel status '$secureChannelState' matches the expected state: '$expectedSecureChannelState'."
+            break
+        else
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - The secure channel status '$secureChannelState' does not match the expected state: '$expectedSecureChannelState'."
+        fi
+    fi
+    ((elapsed += 3))
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Timeout reached. Error, The secureChannelState is '$secureChannelState'."
+        break
+    fi
+    sleep 3
+done
+
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentServiceExist=$guestProxyAgentServiceExist"
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentServiceStatus=$guestProxyAgentServiceStatus"
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyProcessStarted=$guestProxyProcessStarted"
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - guestProxyAgentLogGenerated=$guestProxyAgentLogGenerated"
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - secureChannelState=$secureChannelState"
 
-jsonString='{"guestProxyAgentServiceInstalled": "'$guestProxyAgentServiceExist'", "guestProxyAgentServiceStatus": "'$guestProxyAgentServiceStatus'", "guestProxyProcessStarted": "'$guestProxyProcessStarted'", "guestProxyAgentLogGenerated": "'$guestProxyAgentLogGenerated'"}'
+jsonString='{"guestProxyAgentServiceInstalled": "'$guestProxyAgentServiceExist'", "guestProxyAgentServiceStatus": "'$guestProxyAgentServiceStatus'", "guestProxyProcessStarted": "'$guestProxyProcessStarted'", "secureChannelState": "'$secureChannelState'", "guestProxyAgentLogGenerated": "'$guestProxyAgentLogGenerated'"}'
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - $jsonString"
 
 # write to $customOutputJsonPath

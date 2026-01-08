@@ -14,6 +14,7 @@ namespace GuestProxyAgentTest.TestCases
     {
 
         private static readonly string EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS;
+        private string expectedSecureChannelState = "disabled";
         static GuestProxyAgentValidationCase()
         {
             if (Constants.IS_WINDOWS())
@@ -28,8 +29,15 @@ namespace GuestProxyAgentTest.TestCases
         public GuestProxyAgentValidationCase() : base("GuestProxyAgentValidationCase")
         { }
 
+        public GuestProxyAgentValidationCase(string testCaseName, string expectedSecureChannelState) : base(testCaseName)
+        {
+            this.expectedSecureChannelState = expectedSecureChannelState;
+        }
+
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
+            List<(string, string)> parameterList = new List<(string, string)>();
+            parameterList.Add(("expectedSecureChannelState", expectedSecureChannelState));
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME, null!)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {

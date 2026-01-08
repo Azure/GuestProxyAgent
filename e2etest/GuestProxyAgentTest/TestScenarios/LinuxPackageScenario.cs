@@ -13,6 +13,7 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new InstallOrUpdateGuestProxyAgentPackageCase());
             AddTestCase(new GuestProxyAgentValidationCase());
             AddTestCase(new EnableProxyAgentCase());
+            AddTestCase(new GuestProxyAgentValidationCase("GuestProxyAgentValidationWithSecureChannelEnabled", "WireServer Enforce -  IMDS Audit - HostGA Enforce"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", true));
             AddTestCase(new RebootVMCase("RebootVMCaseAfterInstallOrUpdateGuestProxyAgent"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", true));
