@@ -38,7 +38,7 @@ namespace GuestProxyAgentTest.TestCases
         {
             List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("expectedSecureChannelState", expectedSecureChannelState));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME, null!)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(ConsoleLog);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
                 var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentValidationDetails>();

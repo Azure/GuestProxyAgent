@@ -51,15 +51,14 @@ namespace GuestProxyAgentTest.TestCases
 
             if (EnableProxyAgent)
             {
+                // property 'inVMAccessControlProfileReferenceId' cannot be used together with property 'mode'
                 patch.SecurityProfile.ProxyAgentSettings.WireServer = new HostEndpointSettings
                 {
                     InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
-                    Mode = HostEndpointSettingsMode.Enforce
                 };
                 patch.SecurityProfile.ProxyAgentSettings.Imds = new HostEndpointSettings
                 {
                     InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId,
-                    Mode = HostEndpointSettingsMode.Audit
                 };
             }
 

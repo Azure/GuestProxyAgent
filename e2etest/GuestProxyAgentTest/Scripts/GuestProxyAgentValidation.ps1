@@ -104,7 +104,7 @@ do {
 $jsonString = '{"guestProxyAgentServiceInstalled": ' + $guestProxyAgentServiceExist.ToString().ToLower() `
         + ', "guestProxyProcessStarted": ' + $guestProxyAgentProcessExist.ToString().ToLower() `
         + ', "guestProxyAgentServiceStatus": "' + $guestProxyAgentServiceStatus `
-        + ', "secureChannelState": "' + $secureChannelState `
+        + '", "secureChannelState": "' + $secureChannelState `
         + '", "guestProxyAgentLogGenerated": ' + $guestProxyAgentLogGenerated.ToString().ToLower() + '}'
 
 Write-Output "$((Get-Date).ToUniversalTime()) - $jsonString"
