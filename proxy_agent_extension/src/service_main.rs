@@ -23,7 +23,7 @@ pub mod windows_main;
 #[cfg(windows)]
 use proxy_agent_shared::service;
 
-const MAX_STATE_COUNT: u32 = 120;
+pub const MAX_STATE_COUNT: u32 = 120;
 
 pub fn run() {
     let message = format!(
@@ -235,57 +235,6 @@ fn write_state_event(
             logger_key,
         );
     }
-}
-
-fn report_error_status(
-    status: &mut StatusObj,
-    status_state_obj: &mut common::StatusState,
-    service_state: &mut ServiceState,
-    error_key: &str,
-    error_message: String,
-) {
-    status.status = status_state_obj.update_state(false);
-    write_state_event(
-        error_key,
-        constants::ERROR_STATUS,
-        error_message.to_string(),
-        "extension_substatus",
-        "service_main",
-        &logger::get_logger_key(),
-        service_state,
-    );
-    status.configurationAppliedTime = misc_helpers::get_date_time_string();
-    status.substatus = {
-        vec![
-            SubStatus {
-                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                status: constants::TRANSITIONING_STATUS.to_string(),
-                code: constants::STATUS_CODE_NOT_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: error_message.to_string(),
-                },
-            },
-            SubStatus {
-                name: constants::PLUGIN_STATUS_NAME.to_string(),
-                status: constants::TRANSITIONING_STATUS.to_string(),
-                code: constants::STATUS_CODE_NOT_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: error_message.to_string(),
-                },
-            },
-            SubStatus {
-                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                status: constants::TRANSITIONING_STATUS.to_string(),
-                code: constants::STATUS_CODE_NOT_OK,
-                formattedMessage: FormattedMessage {
-                    lang: constants::LANG_EN_US.to_string(),
-                    message: error_message.to_string(),
-                },
-            },
-        ]
-    };
 }
 
 #[cfg(windows)]
@@ -503,10 +452,10 @@ fn extension_substatus(
 
     // Determine error for status reporting
     if let Some((error_key, error_message)) = timestamp_error {
-        report_error_status(status, status_state_obj, service_state, error_key, error_message);
+        common::report_error_status(status, status_state_obj, service_state, error_key, error_message);
     } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
-        report_error_status(status, status_state_obj, service_state, constants::STATE_KEY_FILE_VERSION, version_mismatch_message);
+        common::report_error_status(status, status_state_obj, service_state, constants::STATE_KEY_FILE_VERSION, version_mismatch_message);
     }
     // Success Status and report to status file for CRP to read from
     else {

@@ -113,6 +113,64 @@ pub fn report_status(
     }
 }
 
+pub fn report_error_status(
+    status: &mut structs::StatusObj,
+    status_state_obj: &mut StatusState,
+    service_state: &mut crate::service_main::service_state::ServiceState,
+    error_key: &str,
+    error_message: String,
+) {
+    use proxy_agent_shared::logger::LoggerLevel;
+    use proxy_agent_shared::telemetry::event_logger;
+
+    status.status = status_state_obj.update_state(false);
+    if service_state.update_service_state_entry(
+        error_key,
+        constants::ERROR_STATUS,
+        crate::service_main::MAX_STATE_COUNT,
+    ) {
+        event_logger::write_event(
+            LoggerLevel::Info,
+            error_message.clone(),
+            "extension_substatus",
+            "service_main",
+            &logger::get_logger_key(),
+        );
+    }
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    status.substatus = {
+        vec![
+            structs::SubStatus {
+                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            structs::SubStatus {
+                name: constants::PLUGIN_STATUS_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            structs::SubStatus {
+                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+        ]
+    };
+}
+
 /// Update the current seq no in the CURRENT_SEQ_NO_FILE
 /// If the seq no is different from the current seq no, update the seq no in the file
 /// If the seq no is same as the current seq no, do not update the seq no in the file
