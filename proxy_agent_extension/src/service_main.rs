@@ -432,11 +432,8 @@ fn report_error_status(
     use proxy_agent_shared::telemetry::event_logger;
 
     status.status = status_state_obj.update_state(false);
-    if service_state.update_service_state_entry(
-        error_key,
-        constants::ERROR_STATUS,
-        MAX_STATE_COUNT,
-    ) {
+    if service_state.update_service_state_entry(error_key, constants::ERROR_STATUS, MAX_STATE_COUNT)
+    {
         event_logger::write_event(
             LoggerLevel::Info,
             error_message.clone(),
@@ -554,21 +551,18 @@ fn extension_substatus(
         );
         match serde_json::to_string(&proxy_agent_aggregate_connection_status_obj) {
             Ok(proxy_agent_aggregate_connection_status) => {
-                substatus_proxy_agent_connection_message =
-                    proxy_agent_aggregate_connection_status;
+                substatus_proxy_agent_connection_message = proxy_agent_aggregate_connection_status;
             }
             Err(e) => {
-                let error_message = format!(
-                    "Error in serializing proxy agent aggregate connection status: {e}"
-                );
+                let error_message =
+                    format!("Error in serializing proxy agent aggregate connection status: {e}");
                 logger::write(error_message.to_string());
                 substatus_proxy_agent_connection_message = error_message;
             }
         }
     } else {
         logger::write("proxy connection summary is empty".to_string());
-        substatus_proxy_agent_connection_message =
-            "proxy connection summary is empty".to_string();
+        substatus_proxy_agent_connection_message = "proxy connection summary is empty".to_string();
     }
     let mut substatus_failed_auth_message: String;
     if !proxy_agent_aggregate_status_top_level
@@ -586,9 +580,8 @@ fn extension_substatus(
                 substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
             }
             Err(e) => {
-                let error_message = format!(
-                    "Error in serializing proxy agent aggregate failed auth status: {e}"
-                );
+                let error_message =
+                    format!("Error in serializing proxy agent aggregate failed auth status: {e}");
                 logger::write(error_message.to_string());
                 substatus_failed_auth_message = error_message;
             }
