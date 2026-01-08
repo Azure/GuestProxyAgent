@@ -9,6 +9,7 @@
       private preview feed for Azure SDK for .NET packages
       https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
     </RestoreAdditionalProjectSources> -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <ItemGroup>
