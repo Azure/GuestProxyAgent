@@ -445,17 +445,30 @@ fn extension_substatus(
                 None
             }
         }
-        Err(e) => {
-            Some((constants::STATE_KEY_PARSE_TIMESTAMP_ERROR, format!("Error in parsing timestamp from proxy agent aggregate status file: {e}")))
-        }
+        Err(e) => Some((
+            constants::STATE_KEY_PARSE_TIMESTAMP_ERROR,
+            format!("Error in parsing timestamp from proxy agent aggregate status file: {e}"),
+        )),
     };
 
     // Determine error for status reporting
     if let Some((error_key, error_message)) = timestamp_error {
-        common::report_error_status(status, status_state_obj, service_state, error_key, error_message);
+        common::report_error_status(
+            status,
+            status_state_obj,
+            service_state,
+            error_key,
+            error_message,
+        );
     } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
-        common::report_error_status(status, status_state_obj, service_state, constants::STATE_KEY_FILE_VERSION, version_mismatch_message);
+        common::report_error_status(
+            status,
+            status_state_obj,
+            service_state,
+            constants::STATE_KEY_FILE_VERSION,
+            version_mismatch_message,
+        );
     }
     // Success Status and report to status file for CRP to read from
     else {
