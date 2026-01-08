@@ -237,6 +237,57 @@ fn write_state_event(
     }
 }
 
+fn report_error_status(
+    status: &mut StatusObj,
+    status_state_obj: &mut common::StatusState,
+    service_state: &mut ServiceState,
+    error_key: &str,
+    error_message: String,
+) {
+    status.status = status_state_obj.update_state(false);
+    write_state_event(
+        error_key,
+        constants::ERROR_STATUS,
+        error_message.to_string(),
+        "extension_substatus",
+        "service_main",
+        &logger::get_logger_key(),
+        service_state,
+    );
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    status.substatus = {
+        vec![
+            SubStatus {
+                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_STATUS_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+        ]
+    };
+}
+
 #[cfg(windows)]
 fn report_ebpf_status(status_obj: &mut StatusObj) {
     match service::check_service_installed(constants::EBPF_CORE) {
@@ -440,90 +491,22 @@ fn extension_substatus(
             let current_time = misc_helpers::get_current_utc_time();
             let duration = current_time - status_timestamp;
             if duration > Duration::from_secs(constants::MAX_TIME_BEFORE_STALE_STATUS_SECS) {
-                let stale_message = format!("Proxy agent aggregate status file is stale. Status timestamp: {}, Current time: {}", status_timestamp, current_time);
-                write_state_event(
-                    constants::STATE_KEY_STALE_PROXY_AGENT_STATUS,
-                    constants::ERROR_STATUS,
-                    stale_message.to_string(),
-                    "extension_substatus",
-                    "service_main",
-                    &logger::get_logger_key(),
-                    service_state,
-                );
-                Some(stale_message)
+                Some((constants::STATE_KEY_STALE_PROXY_AGENT_STATUS, format!("Proxy agent aggregate status file is stale. Status timestamp: {}, Current time: {}", status_timestamp, current_time)))
             } else {
                 None
             }
         }
         Err(e) => {
-            let error_message =
-                format!("Error in parsing timestamp from proxy agent aggregate status file: {e}");
-            write_state_event(
-                constants::STATE_KEY_PARSE_TIMESTAMP_ERROR,
-                constants::ERROR_STATUS,
-                error_message.to_string(),
-                "extension_substatus",
-                "service_main",
-                &logger::get_logger_key(),
-                service_state,
-            );
-            Some(error_message)
+            Some((constants::STATE_KEY_PARSE_TIMESTAMP_ERROR, format!("Error in parsing timestamp from proxy agent aggregate status file: {e}")))
         }
     };
 
-    // Determine error message for status reporting
-    let error_message = if let Some(timestamp_error) = timestamp_error {
-        Some(timestamp_error)
+    // Determine error for status reporting
+    if let Some((error_key, error_message)) = timestamp_error {
+        report_error_status(status, status_state_obj, service_state, error_key, error_message);
     } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
         let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
-        write_state_event(
-            constants::STATE_KEY_FILE_VERSION,
-            constants::ERROR_STATUS,
-            version_mismatch_message.to_string(),
-            "extension_substatus",
-            "service_main",
-            &logger::get_logger_key(),
-            service_state,
-        );
-        Some(version_mismatch_message)
-    } else {
-        None
-    };
-
-    if let Some(error_message) = error_message {
-        status.status = status_state_obj.update_state(false);
-        status.configurationAppliedTime = misc_helpers::get_date_time_string();
-        status.substatus = {
-            vec![
-                SubStatus {
-                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: error_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_STATUS_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: error_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: error_message.to_string(),
-                    },
-                },
-            ]
-        };
+        report_error_status(status, status_state_obj, service_state, constants::STATE_KEY_FILE_VERSION, version_mismatch_message);
     }
     // Success Status and report to status file for CRP to read from
     else {
