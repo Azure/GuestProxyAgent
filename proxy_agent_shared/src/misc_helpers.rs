@@ -57,6 +57,10 @@ pub fn get_date_time_unix_nano() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
 }
 
+pub fn get_current_utc_time() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
 /// Parse a datetime string to OffsetDateTime (UTC)
 /// Supports multiple formats:
 /// - ISO 8601 with/without 'Z': "YYYY-MM-DDTHH:MM:SS" or "YYYY-MM-DDTHH:MM:SSZ"
