@@ -3,10 +3,7 @@
 using Azure.Core;
 using GuestProxyAgentTest.Models;
 using GuestProxyAgentTest.Utilities;
-using Newtonsoft.Json;
 using System.Reflection;
-using System.Runtime.Serialization;
-using System.Text.Json.Serialization;
 
 namespace GuestProxyAgentTest.Settings
 {

@@ -146,6 +146,7 @@ INVM
 Ioctl
 iusr
 jetbrains
+jqlang
 JOBOBJECT
 jobsjob
 joutvhu

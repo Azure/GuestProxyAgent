@@ -5,30 +5,21 @@ using GuestProxyAgentTest.Utilities;
 
 namespace GuestProxyAgentTest.TestScenarios
 {
-    public class ProxyAgentExtension : TestScenarioBase
+    public class LinuxImplicitExtension : TestScenarioBase
     {
         public override void TestScenarioSetup()
         {
-            string zipFile = Settings.TestSetting.Instance.zipFilePath;
-            string withoutExt = Path.GetFileNameWithoutExtension(zipFile);
-            string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
+            if (Constants.IS_WINDOWS())
+            {
+                throw new InvalidOperationException("LinuxImplicitExtension scenario can only run on Linux VMs.");
+            }
+
             // Passing in 0 version number for the first validation case
             string proxyAgentVersionBeforeUpdate = "0";
             string proxyAgentVersion = Settings.TestSetting.Instance.proxyAgentVersion;
             ConsoleLog(string.Format("Received ProxyAgent Version:{0}", proxyAgentVersion));
-
-            if (!Constants.IS_WINDOWS())
-            {
-                AddTestCase(new SetupCGroup2TestCase("SetupCGroup2"));
-                AddTestCase(new RebootVMCase("RebootVMCaseAfterSetupCGroup2"));
-                AddTestCase(new AddLinuxVMExtensionCase("AddLinuxVMExtensionCase"));
-                AddTestCase(new EnableProxyAgentCase());
-            }
-            else
-            {
-                EnableProxyAgentForNewVM = true;
-            }
-
+            // implicitly enable the Guest Proxy Agent extension by setting EnableProxyAgent to true and AddProxyAgentVMExtension to true
+            AddTestCase(new EnableProxyAgentCase("EnableProxyAgentCase", true, true));
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));

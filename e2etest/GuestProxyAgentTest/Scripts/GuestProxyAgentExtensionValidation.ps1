@@ -3,7 +3,7 @@
 
 param (
     [Parameter(Mandatory=$true, Position=0)]
-    [string]$customOutputJsonSAS,    
+    [string]$customOutputJsonSAS,
     [string]$expectedProxyAgentVersion
 )
 Write-Output "$((Get-Date).ToUniversalTime()) - expectedProxyAgentVersion=$expectedProxyAgentVersion"
