@@ -5,94 +5,23 @@
 //! It is used to track the provision state for each module and write the provision state to provisioned.tag and status.tag files.
 //! It also provides the http handler to query the provision status for GPA service.
 //! It is used to query the provision status from GPA service http listener.
-//! Example for GPA service:
-//! ```rust
-//! use proxy_agent::provision;
-//! use proxy_agent::shared_state::agent_status_wrapper::AgentStatusModule;
-//! use proxy_agent::shared_state::agent_status_wrapper::AgentStatusSharedState;
-//! use proxy_agent::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-//! use proxy_agent::shared_state::provision_wrapper::ProvisionSharedState;
-//! use proxy_agent::shared_state::SharedState;
-//! use proxy_agent::shared_state::telemetry_wrapper::TelemetrySharedState;
-//!
-//! use std::time::Duration;
-//!
-//! let shared_state = SharedState::start_all();
-//! let cancellation_token = shared_state.get_cancellation_token();
-//! let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-//! let telemetry_shared_state = shared_state.get_telemetry_shared_state();
-//! let provision_shared_state = shared_state.get_provision_shared_state();
-//! let agent_status_shared_state = shared_state.get_agent_status_shared_state();
-//!
-//! let provision_state = provision::get_provision_state(
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! assert_eq!(false, provision_state.finished);
-//! assert_eq!(0, provision_state.errorMessage.len());
-//!
-//! // update provision state when each provision finished
-//! provision::redirector_ready(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! provision::key_latched(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! provision::listener_started(
-//!     cancellation_token.clone(),
-//!     key_keeper_shared_state.clone(),
-//!     telemetry_shared_state.clone(),
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//!
-//! let provision_state = provision::get_provision_state(
-//!     provision_shared_state.clone(),
-//!     agent_status_shared_state.clone(),
-//! ).await;
-//! assert_eq!(true, provision_state.finished);
-//! assert_eq!(0, provision_state.errorMessage.len());
-//! ```
-//!
-//! Example for GPA command line option --status [--wait seconds]:
-//! ```rust
-//! use proxy_agent::provision::ProvisionQuery;
-//! use std::time::Duration;
-//!
-//! let proxy_server_port = 8092;
-//! let provision_query = ProvisionQuery::new(proxy_server_port, None);
-//! let provision_not_finished_state = provision_query.get_provision_status_wait().await;
-//! assert_eq!(false, provision_state.0);
-//! assert_eq!(0, provision_state.1.len());
-//!
-//! let provision_query = ProvisionQuery::new(proxy_server_port, Some(Duration::from_millis(5)));
-//! let provision_finished_state = provision_query.get_provision_status_wait().await;
-//! assert_eq!(true, provision_state.0);
-//! assert_eq!(0, provision_state.1.len());
-//! ```
 
-use crate::common::{config, helpers, logger};
+use crate::common::{config, logger};
 use crate::key_keeper::{DISABLE_STATE, UNKNOWN_STATE};
-use crate::proxy_agent_status;
+use crate::proxy::authorization_rules::AuthorizationMode;
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
-use crate::telemetry::event_reader::EventReader;
+use crate::shared_state::redirector_wrapper::RedirectorSharedState;
+use crate::shared_state::EventThreadsSharedState;
+use crate::{proxy_agent_status, redirector};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::telemetry::event_reader::EventReader;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio_util::sync::CancellationToken;
 
 const PROVISION_TAG_FILE_NAME: &str = "provisioned.tag";
 const STATUS_TAG_TMP_FILE_NAME: &str = "status.tag.tmp";
@@ -153,63 +82,33 @@ impl ProvisionStateInternal {
 
 /// Update provision state when redirector provision finished
 /// It could  be called by redirector module
-pub async fn redirector_ready(
-    cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn redirector_ready(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::REDIRECTOR_READY,
         None,
-        cancellation_token,
-        key_keeper_shared_state,
-        telemetry_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
 
 /// Update provision state when key latch provision finished
 /// It could  be called by key latch module
-pub async fn key_latched(
-    cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn key_latched(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::KEY_LATCH_READY,
         None,
-        cancellation_token,
-        key_keeper_shared_state,
-        telemetry_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
 
 /// Update provision state when listener provision finished
 /// It could  be called by listener module
-pub async fn listener_started(
-    cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
+pub async fn listener_started(event_threads_shared_state: EventThreadsSharedState) {
     update_provision_state(
         ProvisionFlags::LISTENER_READY,
         None,
-        cancellation_token,
-        key_keeper_shared_state,
-        telemetry_shared_state,
-        provision_shared_state,
-        agent_status_shared_state,
+        event_threads_shared_state,
     )
     .await;
 }
@@ -218,15 +117,28 @@ pub async fn listener_started(
 async fn update_provision_state(
     state: ProvisionFlags,
     provision_dir: Option<PathBuf>,
-    cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
+    event_threads_shared_state: EventThreadsSharedState,
 ) {
-    if let Ok(provision_state) = provision_shared_state.update_one_state(state).await {
+    if let Ok(provision_state) = event_threads_shared_state
+        .provision_shared_state
+        .update_one_state(state)
+        .await
+    {
         if provision_state.contains(ProvisionFlags::ALL_READY) {
-            if let Err(e) = provision_shared_state.set_provision_finished(true).await {
+            // update redirector/eBPF policy based on access control status
+            update_redirector_policy(
+                event_threads_shared_state.redirector_shared_state.clone(),
+                event_threads_shared_state
+                    .access_control_shared_state
+                    .clone(),
+            )
+            .await;
+
+            if let Err(e) = event_threads_shared_state
+                .provision_shared_state
+                .set_provision_finished(true)
+                .await
+            {
                 // log the error and continue
                 logger::write_error(format!(
                     "update_provision_state::Failed to set provision finished with error: {e}"
@@ -236,22 +148,60 @@ async fn update_provision_state(
             // write provision success state here
             write_provision_state(
                 provision_dir,
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.provision_shared_state.clone(),
+                event_threads_shared_state.agent_status_shared_state.clone(),
             )
             .await;
 
             // start event threads right after provision successfully
-            start_event_threads(
-                cancellation_token,
-                key_keeper_shared_state,
-                telemetry_shared_state,
-                provision_shared_state,
-                agent_status_shared_state,
-            )
-            .await;
+            start_event_threads(event_threads_shared_state).await;
         }
     }
+}
+
+/// update the redirector/eBPF policy based on access control status
+/// it should be called when provision finished
+async fn update_redirector_policy(
+    redirector_shared_state: RedirectorSharedState,
+    access_control_shared_state: AccessControlSharedState,
+) {
+    let wireserver_mode =
+        if let Ok(Some(rules)) = access_control_shared_state.get_wireserver_rules().await {
+            rules.mode
+        } else {
+            // default to disabled if the rules are not ready
+            AuthorizationMode::Disabled
+        };
+    redirector::update_wire_server_redirect_policy(
+        wireserver_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
+
+    let imds_mode = if let Ok(Some(rules)) = access_control_shared_state.get_imds_rules().await {
+        rules.mode
+    } else {
+        // default to disabled if the rules are not ready
+        AuthorizationMode::Disabled
+    };
+    redirector::update_imds_redirect_policy(
+        imds_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
+
+    let ga_plugin_mode =
+        if let Ok(Some(rules)) = access_control_shared_state.get_hostga_rules().await {
+            rules.mode
+        } else {
+            // default to disabled if the rules are not ready
+            AuthorizationMode::Disabled
+        };
+    redirector::update_hostga_redirect_policy(
+        ga_plugin_mode != AuthorizationMode::Disabled,
+        redirector_shared_state.clone(),
+    )
+    .await;
 }
 
 pub async fn key_latch_ready_state_reset(provision_shared_state: ProvisionSharedState) {
@@ -287,9 +237,9 @@ async fn reset_provision_state(
 /// use std::sync::{Arc, Mutex};
 ///
 /// let shared_state = Arc::new(Mutex::new(SharedState::new()));
-/// provision::provision_timeup(None, shared_state.clone());
+/// provision::provision_timeout(None, shared_state.clone());
 /// ```
-pub async fn provision_timeup(
+pub async fn provision_timeout(
     provision_dir: Option<PathBuf>,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
@@ -313,17 +263,78 @@ pub async fn provision_timeup(
     }
 }
 
+/// Set resource limits for Guest Proxy Agent service
+/// It will be called when provision finished or timedout,
+/// it is designed to delay set resource limits to give more cpu time to provision tasks
+/// For Linux GPA service, it sets CPUQuota for azure-proxy-agent.service to limit the CPU usage
+/// For Windows GPA service, it sets CPU and RAM limits for current process to limit the CPU and RAM usage
+fn set_resource_limits() {
+    #[cfg(not(windows))]
+    {
+        // Set CPUQuota for azure-proxy-agent.service to 15% to limit the CPU usage for Linux azure-proxy-agent service
+        // Linux GPA VM Extension is not required for Linux GPA service, it should not have the resource limits set in HandlerManifest.json file
+        const SERVICE_NAME: &str = "azure-proxy-agent.service";
+        const CPU_QUOTA: u16 = 15;
+        match proxy_agent_shared::linux::set_cpu_quota(SERVICE_NAME, CPU_QUOTA) {
+            Ok(_) => {
+                logger::write_warning(format!(
+                    "Successfully set {SERVICE_NAME} CPU quota to {CPU_QUOTA}%"
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!(
+                    "Failed to set {SERVICE_NAME} CPU quota with error: {e}"
+                ));
+            }
+        }
+
+        // Do not set MemoryMax or MemoryHigh for azure-proxy-agent.service to limit the RAM usage
+        // As Linux GPA service is designed to be lightweight and use minimal memory footprint (~20MB),
+        // but its provisioning process may need more memory temporarily (e.g., up to 100MB) and then shrinks to ~20MB.
+        // If we set MemoryMax to 20MB, it may cause the provisioning process OOM kill unexpectedly.
+        // If we set MemoryHigh to 20MB, it may cause the provisioning process being throttled/hung unexpectedly.
+    }
+
+    #[cfg(windows)]
+    {
+        // Set CPUQuota for GPA service process to limit the CPU usage for Windows GPA service
+        // As we need adjust the total CPU quota based on the number of CPU cores,
+        // Windows GPA VM Extension should not have the resource limits set in HandlerManifest.json file
+        let cpu_count = proxy_agent_shared::current_info::get_cpu_count();
+        let percent = if cpu_count <= 4 {
+            50
+        } else if cpu_count <= 8 {
+            30
+        } else if cpu_count <= 16 {
+            20
+        } else {
+            15
+        };
+
+        const RAM_LIMIT_IN_MB: usize = 20;
+        match proxy_agent_shared::windows::set_resource_limits(
+            std::process::id(),
+            percent,
+            RAM_LIMIT_IN_MB,
+        ) {
+            Ok(_) => {
+                logger::write_warning(format!(
+                    "Successfully set current process CPU quota to {percent}% and RAM limit to {RAM_LIMIT_IN_MB}MB"
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!("Failed to set CPU and RAM quota with error: {e}"));
+            }
+        }
+    }
+}
+
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
-pub async fn start_event_threads(
-    cancellation_token: CancellationToken,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
-    provision_shared_state: ProvisionSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-) {
-    if let Ok(logger_threads_initialized) = provision_shared_state
+pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedState) {
+    if let Ok(logger_threads_initialized) = event_threads_shared_state
+        .provision_shared_state
         .get_event_log_threads_initialized()
         .await
     {
@@ -332,7 +343,12 @@ pub async fn start_event_threads(
         }
     }
 
-    let cloned_agent_status_shared_state = agent_status_shared_state.clone();
+    // set resource limits before launching lower priority tasks,
+    // those tasks starts to run after provision finished or provision timedout
+    set_resource_limits();
+
+    let cloned_agent_status_shared_state =
+        event_threads_shared_state.agent_status_shared_state.clone();
     tokio::spawn({
         async {
             event_logger::start(
@@ -355,10 +371,10 @@ pub async fn start_event_threads(
         let event_reader = EventReader::new(
             config::get_events_dir(),
             true,
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.cancellation_token.clone(),
+            event_threads_shared_state.common_state.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
         );
         async move {
             event_reader
@@ -366,7 +382,8 @@ pub async fn start_event_threads(
                 .await;
         }
     });
-    if let Err(e) = provision_shared_state
+    if let Err(e) = event_threads_shared_state
+        .provision_shared_state
         .set_event_log_threads_initialized()
         .await
     {
@@ -379,9 +396,12 @@ pub async fn start_event_threads(
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.cancellation_token.clone(),
+            event_threads_shared_state.key_keeper_shared_state.clone(),
+            event_threads_shared_state.agent_status_shared_state.clone(),
+            event_threads_shared_state
+                .connection_summary_shared_state
+                .clone(),
         );
         async move {
             agent_status_task.start().await;
@@ -429,7 +449,7 @@ async fn write_provision_state(
 
     if !failed_state_message.is_empty() {
         // escape xml characters to allow the message to able be composed into xml payload
-        failed_state_message = helpers::xml_escape(failed_state_message);
+        failed_state_message = misc_helpers::xml_escape(failed_state_message);
 
         // write provision failed error message to event
         event_logger::write_event(
@@ -658,6 +678,7 @@ mod tests {
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
+    use crate::shared_state::EventThreadsSharedState;
     use crate::shared_state::SharedState;
     use std::env;
     use std::fs;
@@ -677,8 +698,10 @@ mod tests {
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let telemetry_shared_state = shared_state.get_telemetry_shared_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+        let event_threads_shared_state = EventThreadsSharedState::new(&shared_state);
+
+        // initialize key keeper secure channel state to UNKNOWN
         let port: u16 = 8092;
         let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
 
@@ -709,11 +732,7 @@ mod tests {
         _ = super::update_provision_state(
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.to_path_buf()),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         _ = key_keeper_shared_state
@@ -738,29 +757,17 @@ mod tests {
             super::update_provision_state(
                 ProvisionFlags::REDIRECTOR_READY,
                 Some(dir1),
-                cancellation_token.clone(),
-                key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
             super::update_provision_state(
                 ProvisionFlags::KEY_LATCH_READY,
                 Some(dir2),
-                cancellation_token.clone(),
-                key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
             super::update_provision_state(
                 ProvisionFlags::LISTENER_READY,
                 Some(dir3),
-                cancellation_token.clone(),
-                key_keeper_shared_state.clone(),
-                telemetry_shared_state.clone(),
-                provision_shared_state.clone(),
-                agent_status_shared_state.clone(),
+                event_threads_shared_state.clone(),
             ),
         ];
         for handle in handles {
@@ -812,14 +819,7 @@ mod tests {
         assert!(event_threads_initialized);
 
         // update provision finish time_tick
-        super::key_latched(
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
-        )
-        .await;
+        super::key_latched(event_threads_shared_state.clone()).await;
         let provision_state_internal = super::get_provision_state_internal(
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),
@@ -872,14 +872,7 @@ mod tests {
         );
 
         // test key_latched ready again
-        super::key_latched(
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
-        )
-        .await;
+        super::key_latched(event_threads_shared_state.clone()).await;
         let provision_state = provision_shared_state.get_state().await.unwrap();
         assert!(
             provision_state.contains(ProvisionFlags::ALL_READY),
@@ -910,39 +903,26 @@ mod tests {
         let shared_state = SharedState::start_all();
         let cancellation_token = shared_state.get_cancellation_token();
         let provision_shared_state = shared_state.get_provision_shared_state();
-        let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-        let telemetry_shared_state = shared_state.get_telemetry_shared_state();
         let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+        let event_threads_shared_state = EventThreadsSharedState::new(&shared_state);
 
         // test all 3 provision states as ready
         super::update_provision_state(
             ProvisionFlags::LISTENER_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         super::update_provision_state(
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
         super::update_provision_state(
             ProvisionFlags::REDIRECTOR_READY,
             Some(temp_test_path.clone()),
-            cancellation_token.clone(),
-            key_keeper_shared_state.clone(),
-            telemetry_shared_state.clone(),
-            provision_shared_state.clone(),
-            agent_status_shared_state.clone(),
+            event_threads_shared_state.clone(),
         )
         .await;
 
@@ -964,7 +944,7 @@ mod tests {
                 super::AgentStatusModule::KeyKeeper,
             )
             .await;
-        super::provision_timeup(
+        super::provision_timeout(
             Some(temp_test_path.clone()),
             provision_shared_state.clone(),
             agent_status_shared_state.clone(),

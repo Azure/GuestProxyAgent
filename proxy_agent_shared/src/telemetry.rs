@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 pub mod event_logger;
+pub mod event_reader;
 pub mod span;
+pub mod telemetry_event;
 
 use crate::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
@@ -24,7 +26,7 @@ impl Event {
         Event {
             EventLevel: level,
             Message: message,
-            Version: misc_helpers::get_current_version(),
+            Version: misc_helpers::get_current_exe_version(),
             TaskName: task_name,
             EventPid: std::process::id().to_string(),
             EventTid: misc_helpers::get_thread_identity(),

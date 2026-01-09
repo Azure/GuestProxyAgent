@@ -49,10 +49,6 @@ pub fn get_monitor_duration() -> Duration {
 pub fn get_poll_key_status_duration() -> Duration {
     Duration::from_secs(SYSTEM_CONFIG.get_poll_key_status_interval())
 }
-//TODO: remove this config/function once the contract is defined for HostGAPlugin
-pub fn get_host_gaplugin_support() -> u8 {
-    SYSTEM_CONFIG.hostGAPluginSupport
-}
 
 pub fn get_max_event_file_count() -> usize {
     SYSTEM_CONFIG.get_max_event_file_count()
@@ -90,7 +86,6 @@ pub struct Config {
     latchKeyFolder: String,
     monitorIntervalInSeconds: u64,
     pollKeyStatusIntervalInSeconds: u64,
-    hostGAPluginSupport: u8, // 0 not support; 1 proxy only; 2 proxy + authentication check
     #[serde(skip_serializing_if = "Option::is_none")]
     maxEventFileCount: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,10 +163,6 @@ impl Config {
 
     pub fn get_poll_key_status_interval(&self) -> u64 {
         self.pollKeyStatusIntervalInSeconds
-    }
-
-    pub fn get_host_gaplugin_support(&self) -> u8 {
-        self.hostGAPluginSupport
     }
 
     pub fn get_max_event_file_count(&self) -> usize {
@@ -267,12 +258,6 @@ mod tests {
             15u64,
             config.get_poll_key_status_interval(),
             "get_poll_key_status_interval mismatch"
-        );
-
-        assert_eq!(
-            1u8,
-            config.get_host_gaplugin_support(),
-            "get_host_gaplugin_support mismatch"
         );
 
         assert_eq!(

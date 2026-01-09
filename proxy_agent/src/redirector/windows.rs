@@ -144,7 +144,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
 pub async fn update_wire_server_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -173,13 +173,16 @@ pub async fn update_wire_server_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());
         }
+        true
+    } else {
+        false
     }
 }
 
 pub async fn update_imds_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -207,13 +210,16 @@ pub async fn update_imds_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
         }
+        true
+    } else {
+        false
     }
 }
 
 pub async fn update_hostga_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -242,5 +248,9 @@ pub async fn update_hostga_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for HostGAPlugin redirect policy.".to_string());
         }
+
+        true
+    } else {
+        false
     }
 }

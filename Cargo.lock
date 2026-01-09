@@ -957,6 +957,7 @@ dependencies = [
  "serde-xml-rs",
  "serde_derive",
  "serde_json",
+ "sysinfo",
  "thiserror",
  "thread-id",
  "time",

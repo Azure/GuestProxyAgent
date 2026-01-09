@@ -421,6 +421,61 @@ fn report_proxy_agent_aggregate_status(
     }
 }
 
+fn report_error_status(
+    status: &mut StatusObj,
+    status_state_obj: &mut common::StatusState,
+    service_state: &mut ServiceState,
+    error_key: &str,
+    error_message: String,
+) {
+    use proxy_agent_shared::logger::LoggerLevel;
+    use proxy_agent_shared::telemetry::event_logger;
+
+    status.status = status_state_obj.update_state(false);
+    if service_state.update_service_state_entry(error_key, constants::ERROR_STATUS, MAX_STATE_COUNT)
+    {
+        event_logger::write_event(
+            LoggerLevel::Info,
+            error_message.clone(),
+            "extension_substatus",
+            "service_main",
+            &logger::get_logger_key(),
+        );
+    }
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    status.substatus = {
+        vec![
+            SubStatus {
+                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_STATUS_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                status: constants::TRANSITIONING_STATUS.to_string(),
+                code: constants::STATUS_CODE_NOT_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: error_message.to_string(),
+                },
+            },
+        ]
+    };
+}
+
 fn extension_substatus(
     proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus,
     proxyagent_file_version_in_extension: &String,
@@ -428,173 +483,162 @@ fn extension_substatus(
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
 ) {
+    let proxy_agent_status_timestamp_result =
+        proxy_agent_aggregate_status_top_level.get_status_timestamp();
     let proxy_agent_aggregate_status_obj = proxy_agent_aggregate_status_top_level.proxyAgentStatus;
-
     let proxy_agent_aggregate_status_file_version =
         proxy_agent_aggregate_status_obj.version.to_string();
-    if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
-        status.status = status_state_obj.update_state(false);
-        let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
-        write_state_event(
-            constants::STATE_KEY_FILE_VERSION,
-            constants::ERROR_STATUS,
-            version_mismatch_message.to_string(),
-            "extension_substatus",
-            "service_main",
-            &logger::get_logger_key(),
+
+    // Check for timestamp staleness or parse errors
+    let timestamp_error = match proxy_agent_status_timestamp_result {
+        Ok(status_timestamp) => {
+            let current_time = misc_helpers::get_current_utc_time();
+            let duration = current_time - status_timestamp;
+            if duration > Duration::from_secs(constants::MAX_TIME_BEFORE_STALE_STATUS_SECS) {
+                Some((constants::STATE_KEY_STALE_PROXY_AGENT_STATUS, format!("Proxy agent aggregate status file is stale. Status timestamp: {}, Current time: {}", status_timestamp, current_time)))
+            } else {
+                None
+            }
+        }
+        Err(e) => Some((
+            constants::STATE_KEY_PARSE_TIMESTAMP_ERROR,
+            format!("Error in parsing timestamp from proxy agent aggregate status file: {e}"),
+        )),
+    };
+
+    // Determine error for status reporting
+    if let Some((error_key, error_message)) = timestamp_error {
+        report_error_status(
+            status,
+            status_state_obj,
             service_state,
+            error_key,
+            error_message,
         );
-        status.configurationAppliedTime = misc_helpers::get_date_time_string();
-        status.substatus = {
-            vec![
-                SubStatus {
-                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_STATUS_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                    status: constants::TRANSITIONING_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: version_mismatch_message.to_string(),
-                    },
-                },
-            ]
-        };
+        return;
+    } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
+        let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
+        report_error_status(
+            status,
+            status_state_obj,
+            service_state,
+            constants::STATE_KEY_FILE_VERSION,
+            version_mismatch_message,
+        );
+        return;
     }
     // Success Status and report to status file for CRP to read from
-    else {
-        let substatus_proxy_agent_message =
-            match serde_json::to_string(&proxy_agent_aggregate_status_obj) {
-                Ok(proxy_agent_aggregate_status) => proxy_agent_aggregate_status,
-                Err(e) => {
-                    let error_message =
-                        format!("Error in serializing proxy agent aggregate status: {e}");
-                    logger::write(error_message.to_string());
-                    error_message
-                }
-            };
-        let mut substatus_proxy_agent_connection_message: String;
-        if !proxy_agent_aggregate_status_top_level
-            .proxyConnectionSummary
-            .is_empty()
-        {
-            let proxy_agent_aggregate_connection_status_obj = get_top_proxy_connection_summary(
-                proxy_agent_aggregate_status_top_level
-                    .proxyConnectionSummary
-                    .clone(),
-                constants::MAX_CONNECTION_SUMMARY_LEN,
-            );
-            match serde_json::to_string(&proxy_agent_aggregate_connection_status_obj) {
-                Ok(proxy_agent_aggregate_connection_status) => {
-                    substatus_proxy_agent_connection_message =
-                        proxy_agent_aggregate_connection_status;
-                }
-                Err(e) => {
-                    let error_message = format!(
-                        "Error in serializing proxy agent aggregate connection status: {e}"
-                    );
-                    logger::write(error_message.to_string());
-                    substatus_proxy_agent_connection_message = error_message;
-                }
+    let substatus_proxy_agent_message =
+        match serde_json::to_string(&proxy_agent_aggregate_status_obj) {
+            Ok(proxy_agent_aggregate_status) => proxy_agent_aggregate_status,
+            Err(e) => {
+                let error_message =
+                    format!("Error in serializing proxy agent aggregate status: {e}");
+                logger::write(error_message.to_string());
+                error_message
             }
-        } else {
-            logger::write("proxy connection summary is empty".to_string());
-            substatus_proxy_agent_connection_message =
-                "proxy connection summary is empty".to_string();
-        }
-        let mut substatus_failed_auth_message: String;
-        if !proxy_agent_aggregate_status_top_level
-            .failedAuthenticateSummary
-            .is_empty()
-        {
-            let proxy_agent_aggregate_failed_auth_status_obj = get_top_proxy_connection_summary(
-                proxy_agent_aggregate_status_top_level
-                    .failedAuthenticateSummary
-                    .clone(),
-                constants::MAX_FAILED_AUTH_SUMMARY_LEN,
-            );
-            match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
-                Ok(proxy_agent_aggregate_failed_auth_status) => {
-                    substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
-                }
-                Err(e) => {
-                    let error_message = format!(
-                        "Error in serializing proxy agent aggregate failed auth status: {e}"
-                    );
-                    logger::write(error_message.to_string());
-                    substatus_failed_auth_message = error_message;
-                }
-            }
-        } else {
-            logger::write("proxy failed auth summary is empty".to_string());
-            substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
-        }
-
-        trim_proxy_agent_status_file(
-            &mut substatus_failed_auth_message,
-            &mut substatus_proxy_agent_connection_message,
-            constants::MAX_PROXYAGENT_CONNECTION_DATA_SIZE_IN_KB,
-        );
-
-        status.substatus = {
-            vec![
-                SubStatus {
-                    name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                    status: constants::SUCCESS_STATUS.to_string(),
-                    code: constants::STATUS_CODE_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: substatus_proxy_agent_connection_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_STATUS_NAME.to_string(),
-                    status: constants::SUCCESS_STATUS.to_string(),
-                    code: constants::STATUS_CODE_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: substatus_proxy_agent_message.to_string(),
-                    },
-                },
-                SubStatus {
-                    name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                    status: constants::SUCCESS_STATUS.to_string(),
-                    code: constants::STATUS_CODE_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: substatus_failed_auth_message.to_string(),
-                    },
-                },
-            ]
         };
-        status.status = status_state_obj.update_state(true);
-        status.configurationAppliedTime = misc_helpers::get_date_time_string();
-        write_state_event(
-            constants::STATE_KEY_FILE_VERSION,
-            constants::SUCCESS_STATUS,
-            substatus_proxy_agent_connection_message.to_string(),
-            "extension_substatus",
-            "service_main",
-            &logger::get_logger_key(),
-            service_state,
+    let mut substatus_proxy_agent_connection_message: String;
+    if !proxy_agent_aggregate_status_top_level
+        .proxyConnectionSummary
+        .is_empty()
+    {
+        let proxy_agent_aggregate_connection_status_obj = get_top_proxy_connection_summary(
+            proxy_agent_aggregate_status_top_level
+                .proxyConnectionSummary
+                .clone(),
+            constants::MAX_CONNECTION_SUMMARY_LEN,
         );
+        match serde_json::to_string(&proxy_agent_aggregate_connection_status_obj) {
+            Ok(proxy_agent_aggregate_connection_status) => {
+                substatus_proxy_agent_connection_message = proxy_agent_aggregate_connection_status;
+            }
+            Err(e) => {
+                let error_message =
+                    format!("Error in serializing proxy agent aggregate connection status: {e}");
+                logger::write(error_message.to_string());
+                substatus_proxy_agent_connection_message = error_message;
+            }
+        }
+    } else {
+        logger::write("proxy connection summary is empty".to_string());
+        substatus_proxy_agent_connection_message = "proxy connection summary is empty".to_string();
     }
+    let mut substatus_failed_auth_message: String;
+    if !proxy_agent_aggregate_status_top_level
+        .failedAuthenticateSummary
+        .is_empty()
+    {
+        let proxy_agent_aggregate_failed_auth_status_obj = get_top_proxy_connection_summary(
+            proxy_agent_aggregate_status_top_level
+                .failedAuthenticateSummary
+                .clone(),
+            constants::MAX_FAILED_AUTH_SUMMARY_LEN,
+        );
+        match serde_json::to_string(&proxy_agent_aggregate_failed_auth_status_obj) {
+            Ok(proxy_agent_aggregate_failed_auth_status) => {
+                substatus_failed_auth_message = proxy_agent_aggregate_failed_auth_status;
+            }
+            Err(e) => {
+                let error_message =
+                    format!("Error in serializing proxy agent aggregate failed auth status: {e}");
+                logger::write(error_message.to_string());
+                substatus_failed_auth_message = error_message;
+            }
+        }
+    } else {
+        logger::write("proxy failed auth summary is empty".to_string());
+        substatus_failed_auth_message = "proxy failed auth summary is empty".to_string();
+    }
+
+    trim_proxy_agent_status_file(
+        &mut substatus_failed_auth_message,
+        &mut substatus_proxy_agent_connection_message,
+        constants::MAX_PROXYAGENT_CONNECTION_DATA_SIZE_IN_KB,
+    );
+
+    status.substatus = {
+        vec![
+            SubStatus {
+                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: substatus_proxy_agent_connection_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_STATUS_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: substatus_proxy_agent_message.to_string(),
+                },
+            },
+            SubStatus {
+                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: substatus_failed_auth_message.to_string(),
+                },
+            },
+        ]
+    };
+    status.status = status_state_obj.update_state(true);
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    write_state_event(
+        constants::STATE_KEY_FILE_VERSION,
+        constants::SUCCESS_STATUS,
+        substatus_proxy_agent_connection_message.to_string(),
+        "extension_substatus",
+        "service_main",
+        &logger::get_logger_key(),
+        service_state,
+    );
 }
 
 fn trim_proxy_agent_status_file(
@@ -921,6 +965,12 @@ mod tests {
             proxyConnectionSummary: vec![proxy_connection_summary_obj],
             failedAuthenticateSummary: vec![proxy_failedAuthenticateSummary_obj],
         };
+        let result = toplevel_status.get_status_timestamp();
+        assert!(
+            result.is_ok(),
+            "Status timestamp parse expected Ok result, got Err: {:?}",
+            result.err()
+        );
 
         let mut status = StatusObj {
             name: constants::PLUGIN_NAME.to_string(),
@@ -1098,5 +1148,188 @@ mod tests {
         );
         assert_eq!(connection_summary, orig_conn);
         assert_eq!(failed_auth_summary, orig_auth);
+    }
+
+    #[test]
+    fn test_stale_status_timestamp_greater_than_5_minutes() {
+        let proxy_agent_status_obj = ProxyAgentStatus {
+            version: "1.0.0".to_string(),
+            status: OverallState::SUCCESS,
+            monitorStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            keyLatchStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            ebpfProgramStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            proxyListenerStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            telemetryLoggerStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            proxyConnectionsCount: 1,
+        };
+
+        let proxy_connection_summary_obj = ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        };
+
+        // Create a timestamp that is 10 minutes old (greater than 5 minutes)
+        // Use a fixed old timestamp format to simulate staleness
+        let stale_timestamp = "2024-01-01T00:00:00Z".to_string();
+
+        let toplevel_status = GuestProxyAgentAggregateStatus {
+            timestamp: stale_timestamp,
+            proxyAgentStatus: proxy_agent_status_obj,
+            proxyConnectionSummary: vec![proxy_connection_summary_obj.clone()],
+            failedAuthenticateSummary: vec![proxy_connection_summary_obj],
+        };
+
+        let mut status = StatusObj {
+            name: constants::PLUGIN_NAME.to_string(),
+            operation: constants::ENABLE_OPERATION.to_string(),
+            configurationAppliedTime: misc_helpers::get_date_time_string(),
+            code: constants::STATUS_CODE_OK,
+            status: constants::SUCCESS_STATUS.to_string(),
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: "Update Proxy Agent command output successfully".to_string(),
+            },
+            substatus: Default::default(),
+        };
+
+        let mut status_state_obj = super::common::StatusState::new();
+        let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let mut service_state = super::service_state::ServiceState::default();
+
+        super::extension_substatus(
+            toplevel_status,
+            proxyagent_file_version_in_extension,
+            &mut status,
+            &mut status_state_obj,
+            &mut service_state,
+        );
+
+        // Verify that status is not successful due to stale timestamp
+        assert_ne!(status.status, constants::SUCCESS_STATUS.to_string());
+        assert_eq!(status.substatus.len(), 3);
+        assert_eq!(
+            status.substatus[0].status,
+            constants::TRANSITIONING_STATUS.to_string()
+        );
+        assert_eq!(status.substatus[0].code, constants::STATUS_CODE_NOT_OK);
+        assert!(status.substatus[0]
+            .formattedMessage
+            .message
+            .contains("stale"));
+    }
+
+    #[test]
+    fn test_fresh_status_timestamp_within_5_minutes() {
+        let proxy_agent_status_obj = ProxyAgentStatus {
+            version: "1.0.0".to_string(),
+            status: OverallState::SUCCESS,
+            monitorStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            keyLatchStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            ebpfProgramStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            proxyListenerStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            telemetryLoggerStatus: ProxyAgentDetailStatus {
+                status: ModuleState::RUNNING,
+                message: "test".to_string(),
+                states: None,
+            },
+            proxyConnectionsCount: 1,
+        };
+
+        let proxy_connection_summary_obj = ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        };
+
+        // Create a fresh timestamp (current time)
+        let fresh_timestamp = misc_helpers::get_date_time_string();
+
+        let toplevel_status = GuestProxyAgentAggregateStatus {
+            timestamp: fresh_timestamp,
+            proxyAgentStatus: proxy_agent_status_obj,
+            proxyConnectionSummary: vec![proxy_connection_summary_obj.clone()],
+            failedAuthenticateSummary: vec![proxy_connection_summary_obj],
+        };
+
+        let mut status = StatusObj {
+            name: constants::PLUGIN_NAME.to_string(),
+            operation: constants::ENABLE_OPERATION.to_string(),
+            configurationAppliedTime: misc_helpers::get_date_time_string(),
+            code: constants::STATUS_CODE_OK,
+            status: constants::SUCCESS_STATUS.to_string(),
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: "Update Proxy Agent command output successfully".to_string(),
+            },
+            substatus: Default::default(),
+        };
+
+        let mut status_state_obj = super::common::StatusState::new();
+        let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let mut service_state = super::service_state::ServiceState::default();
+
+        super::extension_substatus(
+            toplevel_status,
+            proxyagent_file_version_in_extension,
+            &mut status,
+            &mut status_state_obj,
+            &mut service_state,
+        );
+
+        // Verify that status is successful with fresh timestamp
+        assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
+        assert_eq!(status.substatus.len(), 3);
+        assert_eq!(
+            status.substatus[0].status,
+            constants::SUCCESS_STATUS.to_string()
+        );
+        assert_eq!(status.substatus[0].code, constants::STATUS_CODE_OK);
     }
 }

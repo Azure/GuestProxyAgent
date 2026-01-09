@@ -1,13 +1,15 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod access_control_wrapper;
 pub mod agent_status_wrapper;
+pub mod connection_summary_wrapper;
 pub mod key_keeper_wrapper;
 pub mod provision_wrapper;
 pub mod proxy_server_wrapper;
 pub mod redirector_wrapper;
-pub mod telemetry_wrapper;
 
+use proxy_agent_shared::common_state::CommonState;
 use tokio_util::sync::CancellationToken;
 
 const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
@@ -22,7 +24,7 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 /// use proxy_agent::shared_state::SharedState;
 /// let shared_state = SharedState::start_all();
 /// let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
-/// let telemetry_shared_state = shared_state.get_telemetry_shared_state();
+/// let common_state = shared_state.get_common_state();
 /// let provision_shared_state = shared_state.get_provision_shared_state();
 /// let agent_status_shared_state = shared_state.get_agent_status_shared_state();
 /// let redirector_shared_state = shared_state.get_redirector_shared_state();
@@ -34,10 +36,10 @@ const UNKNOWN_STATUS_MESSAGE: &str = "Status unknown.";
 pub struct SharedState {
     /// The cancellation token is used to cancel the agent when the agent is stopped
     cancellation_token: CancellationToken,
+    /// The sender for the common states
+    common_state: proxy_agent_shared::common_state::CommonState,
     /// The sender for the key keeper module
     key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
-    /// The sender for the telemetry event modules
-    telemetry_shared_state: telemetry_wrapper::TelemetrySharedState,
     /// The sender for the provision module
     provision_shared_state: provision_wrapper::ProvisionSharedState,
     /// The sender for the agent status module
@@ -46,6 +48,10 @@ pub struct SharedState {
     redirector_shared_state: redirector_wrapper::RedirectorSharedState,
     /// The sender for the proxy server module
     proxy_server_shared_state: proxy_server_wrapper::ProxyServerSharedState,
+    /// The sender for the access control module
+    access_control_shared_state: access_control_wrapper::AccessControlSharedState,
+    /// The sender for the connection summary module
+    connection_summary_shared_state: connection_summary_wrapper::ConnectionSummarySharedState,
 }
 
 impl SharedState {
@@ -53,11 +59,15 @@ impl SharedState {
         SharedState {
             cancellation_token: CancellationToken::new(),
             key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState::start_new(),
-            telemetry_shared_state: telemetry_wrapper::TelemetrySharedState::start_new(),
+            common_state: CommonState::start_new(),
             provision_shared_state: provision_wrapper::ProvisionSharedState::start_new(),
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
             proxy_server_shared_state: proxy_server_wrapper::ProxyServerSharedState::start_new(),
+            access_control_shared_state:
+                access_control_wrapper::AccessControlSharedState::start_new(),
+            connection_summary_shared_state:
+                connection_summary_wrapper::ConnectionSummarySharedState::start_new(),
         }
     }
 
@@ -65,8 +75,8 @@ impl SharedState {
         self.key_keeper_shared_state.clone()
     }
 
-    pub fn get_telemetry_shared_state(&self) -> telemetry_wrapper::TelemetrySharedState {
-        self.telemetry_shared_state.clone()
+    pub fn get_common_state(&self) -> CommonState {
+        self.common_state.clone()
     }
 
     pub fn get_provision_shared_state(&self) -> provision_wrapper::ProvisionSharedState {
@@ -85,11 +95,54 @@ impl SharedState {
         self.proxy_server_shared_state.clone()
     }
 
+    pub fn get_access_control_shared_state(
+        &self,
+    ) -> access_control_wrapper::AccessControlSharedState {
+        self.access_control_shared_state.clone()
+    }
+
+    pub fn get_connection_summary_shared_state(
+        &self,
+    ) -> connection_summary_wrapper::ConnectionSummarySharedState {
+        self.connection_summary_shared_state.clone()
+    }
+
     pub fn get_cancellation_token(&self) -> CancellationToken {
         self.cancellation_token.clone()
     }
 
     pub fn cancel_cancellation_token(&self) {
         self.cancellation_token.cancel();
+    }
+}
+
+/// The shared state for the lower priority event threads, including event logger & reader tasks and status reporting task
+/// It contains the cancellation token, which is used to cancel the event threads when the agent is stopped.
+/// It also contains the senders for the key keeper, provision, agent status, and connection summary modules.
+/// This struct contains multiple shared states to avoid too_many_arguments error from `cargo clippy`.
+#[derive(Clone)]
+pub struct EventThreadsSharedState {
+    pub cancellation_token: CancellationToken,
+    pub common_state: CommonState,
+    pub access_control_shared_state: access_control_wrapper::AccessControlSharedState,
+    pub redirector_shared_state: redirector_wrapper::RedirectorSharedState,
+    pub key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState,
+    pub provision_shared_state: provision_wrapper::ProvisionSharedState,
+    pub agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState,
+    pub connection_summary_shared_state: connection_summary_wrapper::ConnectionSummarySharedState,
+}
+
+impl EventThreadsSharedState {
+    pub fn new(shared_state: &SharedState) -> Self {
+        EventThreadsSharedState {
+            cancellation_token: shared_state.get_cancellation_token(),
+            common_state: shared_state.get_common_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
+            redirector_shared_state: shared_state.get_redirector_shared_state(),
+            key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
+            provision_shared_state: shared_state.get_provision_shared_state(),
+            agent_status_shared_state: shared_state.get_agent_status_shared_state(),
+            connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
+        }
     }
 }

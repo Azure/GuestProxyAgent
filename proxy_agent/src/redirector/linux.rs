@@ -279,7 +279,7 @@ impl BpfObject {
         dest_port: u16,
         local_port: u16,
         redirect: bool,
-    ) {
+    ) -> bool {
         let policy_map_name = "policy_map";
         match self.0.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
@@ -301,7 +301,7 @@ impl BpfObject {
                                 );
                             }
                             Err(err) => {
-                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write(format!("Failed to remove destination: {}:{} from policy_map with error: {}. The policy_map may not contain this entry, skip and continue.", ip_to_string(dest_ipv4), dest_port, err));
                             }
                         };
                     } else {
@@ -319,22 +319,26 @@ impl BpfObject {
                         let local_ip: u32 = super::string_to_ip(&local_ip);
                         let value = destination_entry::from_ipv4(local_ip, local_port);
                         match policy_map.insert(key.to_array(), value.to_array(), 0) {
-                            Ok(_) => event_logger::write_event(
-                                LoggerLevel::Info,
-                                format!(
-                                    "policy_map updated for destination: {}:{}",
-                                    ip_to_string(dest_ipv4),
-                                    dest_port
-                                ),
-                                "update_redirect_policy_internal",
-                                "redirector/linux",
-                                logger::AGENT_LOGGER_KEY,
-                            ),
+                            Ok(_) => {
+                                event_logger::write_event(
+                                    LoggerLevel::Info,
+                                    format!(
+                                        "policy_map updated for destination: {}:{}",
+                                        ip_to_string(dest_ipv4),
+                                        dest_port
+                                    ),
+                                    "update_redirect_policy_internal",
+                                    "redirector/linux",
+                                    logger::AGENT_LOGGER_KEY,
+                                );
+                                return true;
+                            }
                             Err(err) => {
-                                logger::write(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
+                                logger::write_error(format!("Failed to insert destination: {}:{} to policy_map with error: {}", ip_to_string(dest_ipv4), dest_port, err));
                             }
                         }
                     }
+                    return true;
                 }
                 Err(err) => {
                     logger::write(format!(
@@ -346,6 +350,8 @@ impl BpfObject {
                 logger::write("Failed to get map 'policy_map'.".to_string());
             }
         }
+
+        false
     }
 
     pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
@@ -425,52 +431,56 @@ impl super::Redirector {
 pub async fn update_wire_server_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let (Ok(Some(bpf_object)), Ok(local_port)) = (
         redirector_shared_state.get_bpf_object().await,
         redirector_shared_state.get_local_port().await,
     ) {
-        bpf_object.lock().unwrap().update_redirect_policy(
+        return bpf_object.lock().unwrap().update_redirect_policy(
             constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
             constants::WIRE_SERVER_PORT,
             local_port,
             redirect,
         );
     }
+
+    false
 }
 
 pub async fn update_imds_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let (Ok(Some(bpf_object)), Ok(local_port)) = (
         redirector_shared_state.get_bpf_object().await,
         redirector_shared_state.get_local_port().await,
     ) {
-        bpf_object.lock().unwrap().update_redirect_policy(
+        return bpf_object.lock().unwrap().update_redirect_policy(
             constants::IMDS_IP_NETWORK_BYTE_ORDER,
             constants::IMDS_PORT,
             local_port,
             redirect,
         );
     }
+    false
 }
 
 pub async fn update_hostga_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let (Ok(Some(bpf_object)), Ok(local_port)) = (
         redirector_shared_state.get_bpf_object().await,
         redirector_shared_state.get_local_port().await,
     ) {
-        bpf_object.lock().unwrap().update_redirect_policy(
+        return bpf_object.lock().unwrap().update_redirect_policy(
             constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
             constants::GA_PLUGIN_PORT,
             local_port,
             redirect,
         );
     }
+    false
 }
 
 #[cfg(test)]
