@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+pub mod common_state;
+pub mod current_info;
 pub mod error;
 #[cfg(windows)]
 pub mod etw;
@@ -14,6 +16,7 @@ pub mod secrets_redactor;
 pub mod service;
 pub mod telemetry;
 pub mod version;
+
 #[cfg(windows)]
 pub mod windows;
 

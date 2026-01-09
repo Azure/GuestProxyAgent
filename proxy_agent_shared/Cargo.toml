@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.38"
+version = "1.0.39"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 concurrent-queue = "2.1.0"    # for event queue
 once_cell = "1.17.0"          # use Lazy
-time = { version = "0.3.30", features = ["formatting"] } 
+time = { version = "0.3.30", features = ["formatting", "parsing"] } 
 thread-id = "4.0.0"
 serde = "1.0.152"
 serde_derive = "1.0.152"
@@ -54,10 +54,12 @@ features = [
   "Win32_System_Diagnostics_Debug",
   "Win32_System_SystemInformation",
   "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
 ]
 
 [target.'cfg(not(windows))'.dependencies]
 os_info = "3.7.0"   # read Linux OS version and arch
+sysinfo = "0.30.13" # read CPU & RAM information for Linux
 
 # For MUSL targets (Linux MUSL)
 [target.'cfg(all(target_env = "musl", not(target_os = "windows")))'.dependencies]

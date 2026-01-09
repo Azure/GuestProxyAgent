@@ -140,6 +140,12 @@ namespace GuestProxyAgentTest.Utilities
                         },
                     }
                 };
+                if (!Constants.IS_WINDOWS())
+                {
+                    // Only Linux VMs support flag 'AddProxyAgentExtension',
+                    // Windows VMs always have the GPA VM Extension installed when ProxyAgentSettings.Enabled is true.
+                    vmData.SecurityProfile.ProxyAgentSettings.AddProxyAgentExtension = true;
+                }
             }
 
             if (Constants.IS_WINDOWS())

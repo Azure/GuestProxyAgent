@@ -94,44 +94,46 @@ pub fn update_service(
     }
 }
 
-pub fn query_service_executable_path(_service_name: &str) -> PathBuf {
+pub fn query_service_executable_path(service_name: &str) -> PathBuf {
     #[cfg(windows)]
     {
-        match windows_service::query_service_config(_service_name) {
+        match windows_service::query_service_config(service_name) {
             Ok(service_config) => {
-                logger_manager::write_info(
-                    format!("Service {_service_name} successfully queried",),
-                );
+                logger_manager::write_info(format!("Service {service_name} successfully queried",));
                 service_config.executable_path.to_path_buf()
             }
             Err(e) => {
-                logger_manager::write_info(format!("Service {_service_name} query failed: {e}",));
-                eprintln!("Service {_service_name} query failed: {e}");
+                logger_manager::write_info(format!("Service {service_name} query failed: {e}",));
+                eprintln!("Service {service_name} query failed: {e}");
                 PathBuf::new()
             }
         }
     }
     #[cfg(not(windows))]
     {
-        println!("Not support query service on this platform");
-        PathBuf::new()
+        match linux_service::query_service_executable_path(service_name) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("Service {service_name} query failed: {e}");
+                PathBuf::new()
+            }
+        }
     }
 }
 
-pub fn check_service_installed(_service_name: &str) -> (bool, String) {
-    let message;
+pub fn check_service_installed(service_name: &str) -> (bool, String) {
     #[cfg(windows)]
     {
-        match windows_service::query_service_config(_service_name) {
-            Ok(_service_config) => {
-                message = format!(
-                    "check_service_installed: service: {_service_name} successfully queried.",
+        match windows_service::query_service_config(service_name) {
+            Ok(_) => {
+                let message = format!(
+                    "check_service_installed: service: {service_name} successfully queried.",
                 );
                 (true, message)
             }
             Err(e) => {
-                message = format!(
-                    "check_service_installed: service: {_service_name} unsuccessfully queried with error: {e}"
+                let message = format!(
+                    "check_service_installed: service: {service_name} unsuccessfully queried with error: {e}"
                 );
                 (false, message)
             }
@@ -139,8 +141,7 @@ pub fn check_service_installed(_service_name: &str) -> (bool, String) {
     }
     #[cfg(not(windows))]
     {
-        message = "Not support query service on this platform".to_string();
-        (false, message)
+        linux_service::check_service_installed(service_name)
     }
 }
 

@@ -56,7 +56,11 @@ pub async fn start_service_with_retry(
         }
         tokio::time::sleep(duration).await;
     }
-    Ok(())
+
+    // reach here means all retries exhausted
+    Err(Error::Io(std::io::Error::other(
+        "start_service_with_retry exceeded maximum retry attempts".to_string(),
+    )))
 }
 
 async fn start_service_once(service_name: &str) -> Result<ServiceStatus> {

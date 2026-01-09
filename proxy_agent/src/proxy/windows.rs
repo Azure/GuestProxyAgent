@@ -15,7 +15,7 @@ use windows_sys::Wdk::System::Threading::{
     NtQueryInformationProcess, // ntdll.dll
     PROCESSINFOCLASS,
 };
-use windows_sys::Win32::Foundation::{CloseHandle, BOOL, HANDLE, LUID, NTSTATUS, UNICODE_STRING};
+use windows_sys::Win32::Foundation::{LUID, NTSTATUS, UNICODE_STRING};
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::{
     LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
@@ -25,9 +25,6 @@ use windows_sys::Win32::System::ProcessStatus::{
     K32GetModuleFileNameExW, // kernel32.dll
 };
 use windows_sys::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
-use windows_sys::Win32::System::Threading::{
-    OpenProcess, //kernel32.dll
-};
 
 const LG_INCLUDE_INDIRECT: u32 = 1u32;
 const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
@@ -238,14 +235,10 @@ fn to_pwstr(s: &str) -> Vec<u16> {
 /*
     Get process information
 */
-const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
-const PROCESS_VM_READ: u32 = 0x0010;
-const FALSE: BOOL = 0;
 const MAX_PATH: usize = 260;
 const STATUS_BUFFER_OVERFLOW: NTSTATUS = -2147483643;
 const STATUS_BUFFER_TOO_SMALL: NTSTATUS = -1073741789;
 const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = -1073741820;
-
 const PROCESS_BASIC_INFORMATION_CLASS: PROCESSINFOCLASS = 0;
 const PROCESS_COMMAND_LINE_INFORMATION_CLASS: PROCESSINFOCLASS = 60;
 
@@ -268,51 +261,6 @@ pub fn query_basic_process_info(handler: isize) -> Result<PROCESS_BASIC_INFORMAT
         }
         Ok(process_basic_information)
     }
-}
-
-/// Get process handler by pid
-/// # Arguments
-/// * `pid` - Process ID
-/// # Returns
-/// * `Result<HANDLE>` - Process handler
-/// # Errors
-/// * `Error::Invalid` - If the pid is 0
-/// * `Error::WindowsApi` - If the OpenProcess call fails
-/// # Safety
-/// This function is safe to call as it does not dereference any raw pointers.
-/// However, the caller is responsible for closing the process handler using `close_process_handler`
-/// when it is no longer needed to avoid resource leaks.
-pub fn get_process_handler(pid: u32) -> Result<HANDLE> {
-    if pid == 0 {
-        return Err(Error::Invalid("pid 0".to_string()));
-    }
-    let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-
-    // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
-    let handler = unsafe { OpenProcess(options, FALSE, pid) };
-    if handler == 0 {
-        return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
-            std::io::Error::last_os_error(),
-        )));
-    }
-    Ok(handler)
-}
-
-/// Close process handler
-/// # Arguments
-/// * `handler` - Process handler
-/// # Returns
-/// * `Result<()>` - Ok if successful, Err if failed
-pub fn close_process_handler(handler: HANDLE) -> Result<()> {
-    if handler != 0 {
-        // https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
-        if 0 != unsafe { CloseHandle(handler) } {
-            return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
-                std::io::Error::last_os_error(),
-            )));
-        }
-    }
-    Ok(())
 }
 
 pub fn get_process_cmd(handler: isize) -> Result<String> {
@@ -432,8 +380,11 @@ mod tests {
 
     #[test]
     fn get_process_test() {
+        use windows_sys::Win32::System::Threading::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+
         let pid = std::process::id();
-        let handler = super::get_process_handler(pid).unwrap();
+        let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+        let handler = proxy_agent_shared::windows::get_process_handler(pid, options).unwrap();
         let name = super::get_process_name(handler).unwrap();
         let full_name = super::get_process_full_name(handler).unwrap();
         let cmd = super::get_process_cmd(handler).unwrap();

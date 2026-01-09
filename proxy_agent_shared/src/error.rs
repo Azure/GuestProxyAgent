@@ -47,6 +47,15 @@ pub enum Error {
 
     #[error("{0} command: {1}")]
     Command(CommandErrorType, String),
+
+    #[error("Failed to send '{0}' action response with error {1}")]
+    SendError(String, String),
+
+    #[error("Failed to receive '{0}' action response with error {1}")]
+    RecvError(String, tokio::sync::oneshot::error::RecvError),
+
+    #[error("Parse datetime string error: {0}")]
+    ParseDateTimeStringError(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -80,8 +89,8 @@ pub enum HyperErrorType {
     #[error("Failed to build request with error: {0}")]
     RequestBuilder(String),
 
-    #[error("Failed to receive the request body with error: {0}")]
-    RequestBody(String),
+    #[error("Failed to receive the body with error: {0}")]
+    ReceiveBody(String),
 
     #[error("Failed to get response from {0}, status code: {1}")]
     ServerError(String, StatusCode),

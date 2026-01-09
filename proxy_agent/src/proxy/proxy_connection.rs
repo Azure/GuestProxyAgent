@@ -10,7 +10,6 @@ use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
@@ -23,7 +22,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
-pub type RequestBody = Full<Bytes>;
+pub type RequestBody =
+    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
 struct Client {
     sender: http1::SendRequest<RequestBody>,
 }
