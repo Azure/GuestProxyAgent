@@ -48,7 +48,8 @@ namespace GuestProxyAgentTest.TestCases
                     && validationDetails.GuestProxyAgentServiceInstalled
                     && validationDetails.GuestProxyAgentServiceStatus.Equals(EXPECTED_GUEST_PROXY_AGENT_SERVICE_STATUS, StringComparison.OrdinalIgnoreCase)
                     && validationDetails.GuestProxyProcessStarted
-                    && validationDetails.GuestProxyAgentLogGenerated)
+                    && validationDetails.GuestProxyAgentLogGenerated
+                    && validationDetails.SecureChannelState.Equals(expectedSecureChannelState, StringComparison.OrdinalIgnoreCase))
                 {
                     context.TestResultDetails.Succeed = true;
                 }
@@ -66,5 +67,6 @@ namespace GuestProxyAgentTest.TestCases
         public bool GuestProxyProcessStarted { get; set; }
         public bool GuestProxyAgentLogGenerated { get; set; }
         public string GuestProxyAgentServiceStatus { get; set; } = null!;
+        public string SecureChannelState { get; set; } = null!;
     }
 }

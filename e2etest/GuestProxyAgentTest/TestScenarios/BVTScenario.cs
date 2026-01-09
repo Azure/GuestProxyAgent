@@ -27,7 +27,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 // it will add GPA VM Extension and overwrite the private GPA package
                 AddTestCase(new EnableProxyAgentCase());
                 secureChannelEnabled = true;
-                AddTestCase(new GuestProxyAgentValidationCase("GuestProxyAgentValidationWithSecureChannelEnabled", "WireServer Enforce -  IMDS Audit - HostGA Enforce"));
+                AddTestCase(new GuestProxyAgentValidationCase("GuestProxyAgentValidationWithSecureChannelEnabled", "WireServer Enforce -  IMDS Enforce - HostGA Enforce"));
             }
 
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", secureChannelEnabled));
