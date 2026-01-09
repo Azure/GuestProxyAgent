@@ -72,7 +72,7 @@ elif [[ $os == *"SUSE"* ]]; then
     arch=$(uname -m)
     echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - detected architecture: $arch"
     if [[ $arch == "x86_64" ]]; then
-        jq_binary="jq-linux64"
+        jq_binary="jq-linux-amd64"
     elif [[ $arch == "aarch64" ]] || [[ $arch == "arm64" ]]; then
         jq_binary="jq-linux-arm64"
     else
@@ -82,7 +82,7 @@ elif [[ $os == *"SUSE"* ]]; then
     # Download jq binary directly from GitHub
     for i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - downloading $jq_binary binary (attempt $i)"
-        sudo curl -L https://github.com/jqlang/jq/releases/download/jq-1.6/$jq_binary -o /usr/local/bin/jq
+        sudo curl -L https://github.com/jqlang/jq/releases/download/jq-1.8.1/$jq_binary -o /usr/local/bin/jq
         if [ $? -eq 0 ]; then
             sudo chmod +x /usr/local/bin/jq
             if command -v jq &> /dev/null; then
