@@ -67,6 +67,11 @@ pub const MIN_SUPPORTED_OS_BUILD: u32 = 17763;
 
 pub const STATE_KEY_READ_PROXY_AGENT_STATUS_FILE: &str = "ReadProxyAgentStatusFile";
 pub const STATE_KEY_FILE_VERSION: &str = "FileVersion";
+pub const STATE_KEY_STALE_PROXY_AGENT_STATUS: &str = "StaleProxyAgentStatus";
+pub const STATE_KEY_PARSE_TIMESTAMP_ERROR: &str = "ParseTimestampError";
+
+// Max time in seconds before proxy agent status is considered stale
+pub const MAX_TIME_BEFORE_STALE_STATUS_SECS: u64 = 5 * 60;
 
 pub const EBPF_CORE: &str = "EbpfCore";
 pub const EBPF_EXT: &str = "NetEbpfExt";
