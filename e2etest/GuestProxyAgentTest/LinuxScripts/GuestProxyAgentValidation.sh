@@ -66,6 +66,33 @@ if [[ $os == *"Ubuntu"* ]]; then
             break
         fi
     done
+elif [[ $os == *"SUSE"* ]]; then
+    # SUSE repo does not have jq package, so we download jq binary directly
+    # Detect architecture
+    arch=$(uname -m)
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - detected architecture: $arch"
+    if [[ $arch == "x86_64" ]]; then
+        jq_binary="jq-linux64"
+    elif [[ $arch == "aarch64" ]] || [[ $arch == "arm64" ]]; then
+        jq_binary="jq-linux-arm64"
+    else
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - unsupported architecture: $arch"
+        jq_binary="jq-linux64"
+    fi
+    # Download jq binary directly from GitHub
+    for i in {1..3}; do
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - downloading $jq_binary binary (attempt $i)"
+        sudo curl -L https://github.com/jqlang/jq/releases/download/jq-1.6/$jq_binary -o /usr/local/bin/jq
+        if [ $? -eq 0 ]; then
+            sudo chmod +x /usr/local/bin/jq
+            if command -v jq &> /dev/null; then
+                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - jq installed successfully"
+                jq --version
+                break
+            fi
+        fi
+        sleep 5
+    done
 else
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via dnf $i"
