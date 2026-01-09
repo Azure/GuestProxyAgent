@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ProxyAgentExt"
-version = "1.0.38"
+version = "1.0.39"
 dependencies = [
  "clap",
  "ctor",
@@ -172,7 +172,7 @@ dependencies = [
 
 [[package]]
 name = "azure-proxy-agent"
-version = "1.0.38"
+version = "1.0.39"
 dependencies = [
  "aya",
  "bitflags",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "proxy_agent_setup"
-version = "1.0.38"
+version = "1.0.39"
 dependencies = [
  "clap",
  "proxy_agent_shared",
@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "proxy_agent_shared"
-version = "1.0.38"
+version = "1.0.39"
 dependencies = [
  "chrono",
  "concurrent-queue",
