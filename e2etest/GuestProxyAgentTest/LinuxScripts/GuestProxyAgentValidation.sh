@@ -50,6 +50,36 @@ else
     echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - logdir does not exist"
 fi
 
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - detecting os and installing jq" 
+os=$(hostnamectl | grep "Operating System")
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - os=$os"
+if [[ $os == *"Ubuntu"* ]]; then
+    for  i in {1..3}; do
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via apt-get $i"
+        sudo apt update
+        sudo apt-get install -y jq
+        sleep 10
+        install=$(apt list --installed jq)
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
+        if [[ $install == *"jq"* ]]; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - jq installed successfully"
+            break
+        fi
+    done
+else
+    for  i in {1..3}; do
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via dnf $i"
+        sudo dnf -y install jq
+        sleep 10
+        install=$(dnf list --installed jq)
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
+        if [[ $install == *"jq"* ]]; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - jq installed successfully"
+            break
+        fi
+    done
+fi
+
 # check status.json file Content
 ## check timestamp of last entry in status.json file
 ## check the secure channel status
