@@ -93,7 +93,7 @@ impl TelemetryEvent {
         event_name: String,
         ga_version: Option<String>,
     ) -> Self {
-        // if ga_version is provided, append it to event version to event_name
+        // if ga_version is provided, append event_log.version to event_name
         // if ga_version is None, use event_log.Version as ga_version and keep event_name unchanged
         let (ga_version, event_name) = match ga_version {
             Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
