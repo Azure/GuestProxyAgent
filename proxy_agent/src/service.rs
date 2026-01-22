@@ -158,31 +158,3 @@ pub fn stop_service(shared_state: SharedState) {
 
     event_logger::stop();
 }
-
-#[cfg(test)]
-mod tests {
-    use ctor::{ctor, dtor};
-    use proxy_agent_shared::logger::LoggerLevel;
-    use std::env;
-    use std::fs;
-
-    const TEST_LOGGER_KEY: &str = "proxy_agent_test";
-
-    fn get_temp_test_dir() -> std::path::PathBuf {
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push(TEST_LOGGER_KEY);
-        temp_test_path
-    }
-
-    #[ctor]
-    fn setup() {
-        // Setup logger_manager for unit tests
-        super::setup_loggers(get_temp_test_dir(), LoggerLevel::Trace);
-    }
-
-    #[dtor]
-    fn cleanup() {
-        // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&get_temp_test_dir());
-    }
-}
