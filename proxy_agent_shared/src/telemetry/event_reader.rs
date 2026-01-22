@@ -310,7 +310,7 @@ impl EventReader {
                                 file.display()
                             ));
                     // do not delete this event json file, will try process it at next round
-                    continue;
+                    break;
                 }
             }
 
