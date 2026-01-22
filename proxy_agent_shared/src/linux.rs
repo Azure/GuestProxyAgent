@@ -5,6 +5,9 @@ use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::result::Result;
 use once_cell::sync::Lazy;
+use openssl::hash::MessageDigest;
+use openssl::pkey::PKey;
+use openssl::sign::Signer;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -110,6 +113,65 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
         CommandErrorType::Findmnt,
         format!("Cannot find cgroup2 file mount: {}.", output.message()),
     ))
+}
+
+pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
+    match hex::decode(hex_encoded_key) {
+        Ok(key) => {
+            let pkey = PKey::hmac(&key)
+                .map_err(|e| Error::ComputeSignature("PKey HMAC".to_string(), e))?;
+            let mut signer = Signer::new(MessageDigest::sha256(), &pkey)
+                .map_err(|e| Error::ComputeSignature("Signer".to_string(), e))?;
+            signer
+                .update(input_to_sign)
+                .map_err(|e| Error::ComputeSignature("Signer update".to_string(), e))?;
+            let signature = signer
+                .sign_to_vec()
+                .map_err(|e| Error::ComputeSignature("Signer sign_to_vec".to_string(), e))?;
+            Ok(hex::encode(signature))
+        }
+        Err(e) => Err(Error::Hex(hex_encoded_key.to_string(), e)),
+    }
+}
+
+/// Set the CPU quota for a service.
+/// The CPU quota is set in percentage of the one CPU time available.
+/// For example, if the total CPU time available is 100%, setting the CPU quota to 50% will limit the service to use up to 50% of the total CPU time available.
+pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
+    misc_helpers::execute_command(
+        "systemctl",
+        vec![
+            "set-property",
+            service_name,
+            &format!("CPUQuota={cpu_quota}%"),
+        ],
+        -1,
+    )?;
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct MemStatus {
+    pub vmrss_kb: Option<u64>,
+    pub vmhwm_kb: Option<u64>,
+}
+
+pub fn read_proc_memory_status(pid: u32) -> Result<MemStatus> {
+    let s = fs::read_to_string(format!("/proc/{pid}/status"))?;
+    let mut vmrss_kb = None;
+    let mut vmhwm_kb = None;
+    for line in s.lines() {
+        if line.starts_with("VmRSS:") {
+            // Format: "VmRSS:\t  12345 kB"
+            let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
+            vmrss_kb = val;
+        } else if line.starts_with("VmHWM:") {
+            let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
+            vmhwm_kb = val;
+        }
+    }
+    Ok(MemStatus { vmrss_kb, vmhwm_kb })
 }
 
 #[cfg(test)]

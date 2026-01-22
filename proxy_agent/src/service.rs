@@ -9,12 +9,13 @@ use crate::proxy::proxy_connection::ConnectionLogger;
 use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::logger::rolling_logger::RollingLogger;
 use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use proxy_agent_shared::proxy_agent_aggregate_status;
 use proxy_agent_shared::telemetry::event_logger;
-
 use std::path::PathBuf;
+
 #[cfg(not(windows))]
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ pub async fn start_service(shared_state: SharedState) {
     }
 
     let log_folder = config::get_logs_dir();
-    if log_folder == PathBuf::from("") {
+    if log_folder == proxy_agent_shared::misc_helpers::empty_path() {
         println!("The log folder is not set, skip write to GPA managed file log.");
     } else {
         setup_loggers(log_folder, config::get_file_log_level());
@@ -46,8 +47,8 @@ pub async fn start_service(shared_state: SharedState) {
     let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}({}), elapsed: {}",
         proxy_agent_shared::misc_helpers::get_current_version(),
-        helpers::get_long_os_version(),
-        helpers::get_cpu_arch(),
+        current_info::get_long_os_version(),
+        current_info::get_cpu_arch(),
         helpers::get_elapsed_time_in_millisec()
     );
     logger::write_information(start_message.clone());

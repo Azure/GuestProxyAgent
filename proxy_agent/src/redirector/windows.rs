@@ -14,7 +14,11 @@ use std::mem;
 use std::ptr;
 use windows_sys::Win32::Networking::WinSock;
 
-pub struct BpfObject(pub *mut bpf_obj::bpf_object);
+/// Wrapper for eBPF object and link
+/// This struct holds pointers to the eBPF object and its associated link.
+/// Start from ebpf-for-windows v1.0.0-rc, eBPF programs need to keep the link alive
+/// to ensure the eBPF program remains attached.
+pub struct BpfObject(pub *mut bpf_obj::bpf_object, pub *mut bpf_obj::ebpf_link_t);
 // Safety: bpf_object, which is a reference to an eBPF object, has no dependencies on thread-local storage and can
 // safely be sent to another thread. This is not explicitly documented in the Windows eBPF library, but the library does
 // document it aims to be source-compatible with libbpf[0]. Note that synchronization is required to share this object
@@ -140,7 +144,7 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
 pub async fn update_wire_server_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -169,13 +173,16 @@ pub async fn update_wire_server_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());
         }
+        true
+    } else {
+        false
     }
 }
 
 pub async fn update_imds_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -203,13 +210,16 @@ pub async fn update_imds_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
         }
+        true
+    } else {
+        false
     }
 }
 
 pub async fn update_hostga_redirect_policy(
     redirect: bool,
     redirector_shared_state: RedirectorSharedState,
-) {
+) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
         if redirect {
             if let Ok(local_port) = redirector_shared_state.get_local_port().await {
@@ -238,5 +248,9 @@ pub async fn update_hostga_redirect_policy(
         } else {
             logger::write("Success deleted bpf map for HostGAPlugin redirect policy.".to_string());
         }
+
+        true
+    } else {
+        false
     }
 }

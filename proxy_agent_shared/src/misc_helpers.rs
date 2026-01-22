@@ -13,7 +13,7 @@ use std::{
     process::Command,
 };
 use thread_id;
-use time::{format_description, OffsetDateTime};
+use time::{format_description, OffsetDateTime, PrimitiveDateTime};
 
 #[cfg(windows)]
 use super::windows;
@@ -55,6 +55,58 @@ pub fn get_date_time_rfc1123_string() -> String {
 
 pub fn get_date_time_unix_nano() -> i128 {
     OffsetDateTime::now_utc().unix_timestamp_nanos()
+}
+
+pub fn get_current_utc_time() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
+/// Parse a datetime string to OffsetDateTime (UTC)
+/// Supports multiple formats:
+/// - ISO 8601 with/without 'Z': "YYYY-MM-DDTHH:MM:SS" or "YYYY-MM-DDTHH:MM:SSZ"
+/// - With milliseconds: "YYYY-MM-DDTHH:MM:SS.mmm"
+/// # Arguments
+/// * `datetime_str` - A datetime string to parse
+/// # Returns
+/// A Result containing the parsed OffsetDateTime (UTC) or an error if parsing fails
+/// # Example
+/// ```rust
+/// use proxy_agent_shared::misc_helpers;
+/// let datetime1 = misc_helpers::parse_date_time_string("2024-01-15T10:30:45Z").unwrap();
+/// let datetime2 = misc_helpers::parse_date_time_string("2024-01-15T10:30:45").unwrap();
+/// let datetime3 = misc_helpers::parse_date_time_string("2024-01-15T10:30:45.123").unwrap();
+/// ```
+pub fn parse_date_time_string(datetime_str: &str) -> Result<OffsetDateTime> {
+    // Remove the 'Z' suffix if present
+    let datetime_str_trimmed = datetime_str.trim_end_matches('Z');
+
+    // Try parsing with milliseconds first
+    let date_format_with_millis =
+        format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]")
+            .map_err(|e| {
+                Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}"))
+            })?;
+
+    if let Ok(primitive_datetime) =
+        PrimitiveDateTime::parse(datetime_str_trimmed, &date_format_with_millis)
+    {
+        return Ok(primitive_datetime.assume_utc());
+    }
+
+    // Fall back to parsing without milliseconds
+    let date_format = format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]")
+        .map_err(|e| {
+            Error::ParseDateTimeStringError(format!("Failed to parse date format: {e}"))
+        })?;
+
+    let primitive_datetime =
+        PrimitiveDateTime::parse(datetime_str_trimmed, &date_format).map_err(|e| {
+            Error::ParseDateTimeStringError(format!(
+                "Failed to parse datetime string '{datetime_str}': {e}"
+            ))
+        })?;
+
+    Ok(primitive_datetime.assume_utc())
 }
 
 pub fn try_create_folder(dir: &Path) -> Result<()> {
@@ -150,10 +202,42 @@ pub fn get_file_name(path: &Path) -> String {
     }
 }
 
+/// It is the version from Cargo.toml of proxy_agent_shared crate
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn get_current_version() -> String {
     VERSION.to_string()
+}
+
+/// Get the current executable version,
+/// trying to read version from file properties on Windows,
+/// otherwise fallback to Cargo.toml version.
+/// # Returns
+/// A string representing the current executable version
+pub fn get_current_exe_version() -> String {
+    #[cfg(windows)]
+    {
+        match try_get_current_exe_version() {
+            Ok(version) => version,
+            Err(e) => {
+                eprintln!(
+                    "Failed to get current exe version from file properties, fallback to Cargo.toml version: {e}",
+                );
+                get_current_version()
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        get_current_version()
+    }
+}
+
+#[cfg(windows)]
+pub fn try_get_current_exe_version() -> Result<String> {
+    let exe_path = std::env::current_exe()?;
+    let version = windows::get_file_product_version(&exe_path)?;
+    Ok(version.to_string())
 }
 
 pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -170,6 +254,11 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
     }
     files.sort();
     Ok(files)
+}
+
+// Returns a new empty PathBuf
+pub fn empty_path() -> PathBuf {
+    PathBuf::new()
 }
 
 /// Search files in a directory with a regex pattern
@@ -304,6 +393,33 @@ pub fn resolve_env_variables(input: &str) -> Result<String> {
         .to_string();
 
     Ok(ret)
+}
+
+/// Compute HMAC-SHA256 signature for the input using the provided hex-encoded key
+/// # Arguments
+/// * `hex_encoded_key` - The hex-encoded key used for HMAC-SHA256
+/// * `input_to_sign` - The input data to be signed
+/// # Returns
+/// A Result containing the hex-encoded signature or an error if the key is invalid
+/// # Example
+/// ```rust
+/// use proxy_agent_shared::misc_helpers;
+/// let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+/// let input_to_sign = b"Sample input data";
+/// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
+/// ```
+#[cfg(not(windows))]
+pub use linux::compute_signature;
+#[cfg(windows)]
+pub use windows::compute_signature;
+
+// replace xml escape characters
+pub fn xml_escape(s: String) -> String {
+    s.replace('&', "&amp;")
+        .replace('\'', "&apos;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 #[cfg(test)]
@@ -490,6 +606,12 @@ mod tests {
     }
 
     #[test]
+    fn empty_path_test() {
+        let empty_path = super::empty_path();
+        assert_eq!(PathBuf::from(""), empty_path, "Empty path is not empty");
+    }
+
+    #[test]
     fn json_clone_test() {
         let test = TestStruct {
             thread_id: super::get_thread_identity(),
@@ -532,5 +654,128 @@ mod tests {
         let expected = "/var/log/azure-proxy-agent/".to_string();
         let resolved = super::resolve_env_variables(input).unwrap();
         assert_eq!(expected, resolved, "resolved string mismatch");
+    }
+
+    #[test]
+    fn compute_signature_test() {
+        let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let message = "Hello world";
+        let result = super::compute_signature(hex_encoded_key, message.as_bytes()).unwrap();
+        println!("compute_signature: {result}");
+        assert_eq!(
+            "a15b46f621193876a6d3121b836dc2af4180e2786642e55235ef916fc5b082a3", result,
+            "compute_signature results mismatch"
+        );
+        let invalid_hex_encoded_key =
+            "YA404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
+        let result = super::compute_signature(invalid_hex_encoded_key, message.as_bytes());
+        assert!(result.is_err(), "invalid key should fail.");
+
+        let e = result.unwrap_err();
+        let error = e.to_string();
+        assert!(
+            error.contains(invalid_hex_encoded_key),
+            "Error does not contains the invalid key"
+        )
+    }
+
+    #[test]
+    fn get_current_exe_version_test() {
+        let version = super::get_current_exe_version();
+        println!("get_current_exe_version: {version}");
+        assert!(
+            !version.is_empty(),
+            "get_current_exe_version should return a non-empty string"
+        );
+
+        let cargo_version = super::get_current_version();
+        #[cfg(windows)]
+        {
+            // "%UserProfile%\\.cargo\\bin\\rustup.exe" does not have file version info
+            // so get_current_exe_version uses the version from current Cargo.toml file
+            assert_eq!(
+                cargo_version, version,
+                "get_current_exe_version should return the same version as Cargo.toml as '%UserProfile%\\.cargo\\bin\\rustup.exe' does not have file version info"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(
+                cargo_version, version,
+                "get_current_exe_version should return the same version as Cargo.toml in Linux"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_date_time_string_test() {
+        // Test parsing with milliseconds
+        let datetime_str = "2024-01-15T10:30:45.123";
+        let result = super::parse_date_time_string(datetime_str);
+        assert!(
+            result.is_ok(),
+            "Failed to parse datetime string with milliseconds"
+        );
+
+        let datetime = result.unwrap();
+        assert_eq!(datetime.year(), 2024);
+        assert_eq!(datetime.month() as u8, 1);
+        assert_eq!(datetime.day(), 15);
+        assert_eq!(datetime.hour(), 10);
+        assert_eq!(datetime.minute(), 30);
+        assert_eq!(datetime.second(), 45);
+        assert_eq!(datetime.millisecond(), 123);
+
+        // Test parsing with 'Z' suffix
+        let datetime_str = "2024-01-15T10:30:45Z";
+        let result = super::parse_date_time_string(datetime_str);
+        assert!(
+            result.is_ok(),
+            "Failed to parse datetime string with Z suffix"
+        );
+
+        let datetime = result.unwrap();
+        assert_eq!(datetime.year(), 2024);
+        assert_eq!(datetime.month() as u8, 1);
+        assert_eq!(datetime.day(), 15);
+        assert_eq!(datetime.hour(), 10);
+        assert_eq!(datetime.minute(), 30);
+        assert_eq!(datetime.second(), 45);
+
+        // Test parsing without 'Z' suffix
+        let datetime_str_without_z = "2024-01-15T10:30:45";
+        let result = super::parse_date_time_string(datetime_str_without_z);
+        assert!(result.is_ok(), "Should parse datetime string without 'Z'");
+
+        // Test round-trip with milliseconds format
+        let original_datetime_str = super::get_date_time_string_with_milliseconds();
+        let result = super::parse_date_time_string(&original_datetime_str);
+        assert!(
+            result.is_ok(),
+            "Failed to parse datetime string with milliseconds"
+        );
+
+        // Test round-trip with standard format
+        let original_datetime_str = super::get_date_time_string();
+        let result = super::parse_date_time_string(&original_datetime_str);
+        assert!(
+            result.is_ok(),
+            "Failed to parse datetime string without milliseconds"
+        );
+
+        // Test invalid format
+        let invalid_datetime_str = "2024-01-15 10:30:45"; // space instead of 'T'
+        let result = super::parse_date_time_string(invalid_datetime_str);
+        assert!(
+            result.is_err(),
+            "Should fail to parse invalid datetime string"
+        );
+
+        let invalid_datetime_str = "2024-01-15T10:30"; // without seconds
+        let result = super::parse_date_time_string(invalid_datetime_str);
+        assert!(
+            result.is_err(),
+            "Should fail to parse invalid datetime string"
+        );
     }
 }

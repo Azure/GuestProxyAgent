@@ -9,12 +9,13 @@
       private preview feed for Azure SDK for .NET packages
       https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-net/nuget/v3/index.json
     </RestoreAdditionalProjectSources> -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.11.4" />
-    <PackageReference Include="Azure.ResourceManager" Version="1.13.0" />
-    <PackageReference Include="Azure.ResourceManager.Compute" Version="1.9" />
+    <PackageReference Include="Azure.ResourceManager" Version="1.13.2" />
+    <PackageReference Include="Azure.ResourceManager.Compute" Version="1.13.0" />
     <PackageReference Include="Azure.ResourceManager.Network" Version="1.9" />
     <PackageReference Include="Azure.ResourceManager.Resources" Version="1.9" />
     <PackageReference Include="Azure.ResourceManager.Storage" Version="1.1.1" />

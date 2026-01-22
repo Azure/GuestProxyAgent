@@ -26,13 +26,14 @@ use crate::{
     common::{
         constants,
         error::{Error, KeyErrorType},
-        hyper_client, logger,
+        logger,
         result::Result,
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
 use http::{Method, StatusCode};
 use hyper::Uri;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -409,7 +410,7 @@ impl KeyStatus {
 
         // validate authorizationScheme
         let authorization_scheme = self.authorizationScheme.to_string();
-        if authorization_scheme != constants::AUTHORIZATION_SCHEME {
+        if authorization_scheme != hyper_client::AUTHORIZATION_SCHEME {
             validate_message.push_str("authorizationScheme must be 'Azure-HMAC-SHA256'; ");
         }
 
@@ -579,12 +580,14 @@ impl KeyStatus {
     }
 
     pub fn get_hostga_rules(&self) -> Option<AuthorizationItem> {
-        // short-term: HostGA has no rules
+        // match &self.authorizationRules {
+        //     Some(rules) => rules.hostga.clone(),
+        //     None => None,
+        // }
+
+        // short-term: HostGA uses wireserver rules
         // long-term: TBD
-        match &self.authorizationRules {
-            Some(rules) => rules.hostga.clone(),
-            None => None,
-        }
+        self.get_wireserver_rules()
     }
 
     pub fn get_wire_server_mode(&self) -> String {
@@ -679,7 +682,7 @@ impl Key {
     // create a default empty Key
     pub fn empty() -> Self {
         Key {
-            authorizationScheme: constants::AUTHORIZATION_SCHEME.to_string(),
+            authorizationScheme: hyper_client::AUTHORIZATION_SCHEME.to_string(),
             incarnationId: None,
             guid: "00000000-0000-0000-0000-000000000000".to_string(),
             issued: String::new(),
@@ -728,7 +731,10 @@ pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
         ))
     })?;
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     let status: KeyStatus =
         hyper_client::get(&url, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
@@ -749,7 +755,10 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
 
     let (host, port) = hyper_client::host_port_from_uri(&url)?;
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
     let request = hyper_client::build_request(
@@ -776,7 +785,9 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
             response.status(),
         )));
     }
-    hyper_client::read_response_body(response).await
+    hyper_client::read_response_body(response)
+        .await
+        .map_err(Error::ProxyAgentSharedError)
 }
 
 pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
@@ -791,7 +802,10 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
         .map_err(|e| Error::Key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
 
     let mut headers = HashMap::new();
-    headers.insert(constants::METADATA_HEADER.to_string(), "True ".to_string());
+    headers.insert(
+        hyper_client::METADATA_HEADER.to_string(),
+        "True ".to_string(),
+    );
     let request = hyper_client::build_request(
         Method::POST,
         &url,
@@ -831,11 +845,11 @@ mod tests {
 
     use super::Key;
     use super::KeyStatus;
-    use crate::common::constants;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
     use hyper::Uri;
+    use proxy_agent_shared::hyper_client;
     use serde_json::json;
 
     #[test]
@@ -851,7 +865,7 @@ mod tests {
 
         let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME,
+            hyper_client::AUTHORIZATION_SCHEME,
             status_v1.authorizationScheme,
             "authorizationScheme mismatch"
         );
@@ -1105,7 +1119,7 @@ mod tests {
 
         let status: KeyStatus = serde_json::from_str(status_response).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME,
+            hyper_client::AUTHORIZATION_SCHEME,
             status.authorizationScheme,
             "authorizationScheme mismatch"
         );
@@ -1249,95 +1263,105 @@ mod tests {
             "roleAssignment identities mismatch"
         );
 
-        // Validate HostGA rules
+        // Validate HostGA rules to match WireServer rules
         let hostga_rules = status.get_hostga_rules().unwrap();
         assert_eq!(
-            "allow", hostga_rules.defaultAccess,
-            "defaultAccess mismatch"
+            wireserver_rules.defaultAccess, hostga_rules.defaultAccess,
+            "hostga_rules defaultAccess mismatch"
         );
         assert_eq!(
-            "sigid",
+            status.get_wireserver_rule_id(),
             status.get_hostga_rule_id(),
             "HostGA rule id mismatch"
         );
-        assert_eq!("enforce", status.get_hostga_mode(), "HostGA mode mismatch");
-
-        // Validate HostGA rule details
-        // Retrieve and validate second privilege for HostGA
-        let privilege = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .privileges
-            .as_ref()
-            .unwrap()[1];
-
-        assert_eq!("test2", privilege.name, "privilege name mismatch");
-        assert_eq!("/test2", privilege.path, "privilege path mismatch");
-
         assert_eq!(
-            "value3",
-            privilege.queryParameters.as_ref().unwrap()["key1"],
-            "privilege queryParameters mismatch"
-        );
-        assert_eq!(
-            "value4",
-            privilege.queryParameters.as_ref().unwrap()["key2"],
-            "privilege queryParameters mismatch"
+            status.get_wire_server_mode(),
+            status.get_hostga_mode(),
+            "HostGA mode mismatch"
         );
 
-        // Retrieve and validate second role for HostGA
-        let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
-        assert_eq!("test6", role.name, "role name mismatch");
-        assert_eq!("test4", role.privileges[0], "role privilege mismatch");
-        assert_eq!("test5", role.privileges[1], "role privilege mismatch");
+        /***
+        *
+        * Validate HostGA rule details in future when HostGA has independent rules
 
-        // Retrieve and validate first identity for HostGA
-        let identity = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .identities
-            .as_ref()
-            .unwrap()[0];
-        assert_eq!("test", identity.name, "identity name mismatch");
-        assert_eq!(
-            "test",
-            identity.userName.as_ref().unwrap(),
-            "identity userName mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.groupName.as_ref().unwrap(),
-            "identity groupName mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.exePath.as_ref().unwrap(),
-            "identity exePath mismatch"
-        );
-        assert_eq!(
-            "test",
-            identity.processName.as_ref().unwrap(),
-            "identity processName mismatch"
-        );
+           // Validate HostGA rule details
+           // Retrieve and validate second privilege for HostGA
+           let privilege = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .privileges
+               .as_ref()
+               .unwrap()[1];
 
-        // Retrieve and validate first role assignment for HostGA
-        let role_assignment = &hostga_rules
-            .rules
-            .as_ref()
-            .unwrap()
-            .roleAssignments
-            .as_ref()
-            .unwrap()[0];
-        assert_eq!(
-            "test4", role_assignment.role,
-            "roleAssignment role mismatch"
-        );
-        assert_eq!(
-            "test", role_assignment.identities[0],
-            "roleAssignment identities mismatch"
-        );
+           assert_eq!("test2", privilege.name, "privilege name mismatch");
+           assert_eq!("/test2", privilege.path, "privilege path mismatch");
+
+           assert_eq!(
+               "value3",
+               privilege.queryParameters.as_ref().unwrap()["key1"],
+               "privilege queryParameters mismatch"
+           );
+           assert_eq!(
+               "value4",
+               privilege.queryParameters.as_ref().unwrap()["key2"],
+               "privilege queryParameters mismatch"
+           );
+
+           // Retrieve and validate second role for HostGA
+           let role = &hostga_rules.rules.as_ref().unwrap().roles.as_ref().unwrap()[1];
+           assert_eq!("test6", role.name, "role name mismatch");
+           assert_eq!("test4", role.privileges[0], "role privilege mismatch");
+           assert_eq!("test5", role.privileges[1], "role privilege mismatch");
+
+           // Retrieve and validate first identity for HostGA
+           let identity = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .identities
+               .as_ref()
+               .unwrap()[0];
+           assert_eq!("test", identity.name, "identity name mismatch");
+           assert_eq!(
+               "test",
+               identity.userName.as_ref().unwrap(),
+               "identity userName mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.groupName.as_ref().unwrap(),
+               "identity groupName mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.exePath.as_ref().unwrap(),
+               "identity exePath mismatch"
+           );
+           assert_eq!(
+               "test",
+               identity.processName.as_ref().unwrap(),
+               "identity processName mismatch"
+           );
+
+           // Retrieve and validate first role assignment for HostGA
+           let role_assignment = &hostga_rules
+               .rules
+               .as_ref()
+               .unwrap()
+               .roleAssignments
+               .as_ref()
+               .unwrap()[0];
+           assert_eq!(
+               "test4", role_assignment.role,
+               "roleAssignment role mismatch"
+           );
+           assert_eq!(
+               "test", role_assignment.identities[0],
+               "roleAssignment identities mismatch"
+           );
+        *
+        */
     }
 
     #[test]
@@ -1352,7 +1376,7 @@ mod tests {
 
         let key: Key = serde_json::from_str(key_response).unwrap();
         assert_eq!(
-            constants::AUTHORIZATION_SCHEME.to_string(),
+            hyper_client::AUTHORIZATION_SCHEME.to_string(),
             key.authorizationScheme,
             "authorizationScheme mismatch"
         );

@@ -22,29 +22,28 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
-use crate::common::{
-    constants,
-    error::{Error, HyperErrorType},
-    helpers, hyper_client, logger,
-    result::Result,
-};
+use crate::common::{constants, error::Error, helpers, logger, result::Result};
 use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
+use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
+use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use crate::shared_state::telemetry_wrapper::TelemetrySharedState;
-use crate::shared_state::SharedState;
+use crate::shared_state::{EventThreadsSharedState, SharedState};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt};
-use hyper::body::{Bytes, Frame, Incoming};
+use hyper::body::{Bytes, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use proxy_agent_shared::common_state::CommonState;
+use proxy_agent_shared::error::HyperErrorType;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -52,6 +51,7 @@ use proxy_agent_shared::telemetry::event_logger;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
 use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
@@ -66,11 +66,13 @@ pub struct ProxyServer {
     port: u16,
     cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
-    telemetry_shared_state: TelemetrySharedState,
+    common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
     redirector_shared_state: RedirectorSharedState,
     proxy_server_shared_state: ProxyServerSharedState,
+    access_control_shared_state: AccessControlSharedState,
+    connection_summary_shared_state: ConnectionSummarySharedState,
 }
 
 impl ProxyServer {
@@ -79,11 +81,13 @@ impl ProxyServer {
             port,
             cancellation_token: shared_state.get_cancellation_token(),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            telemetry_shared_state: shared_state.get_telemetry_shared_state(),
+            common_state: shared_state.get_common_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
             agent_status_shared_state: shared_state.get_agent_status_shared_state(),
             redirector_shared_state: shared_state.get_redirector_shared_state(),
             proxy_server_shared_state: shared_state.get_proxy_server_shared_state(),
+            access_control_shared_state: shared_state.get_access_control_shared_state(),
+            connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
         }
     }
 
@@ -185,13 +189,16 @@ impl ProxyServer {
         {
             logger::write_warning(format!("Failed to set module state: {e}"));
         }
-        provision::listener_started(
-            self.cancellation_token.clone(),
-            self.key_keeper_shared_state.clone(),
-            self.telemetry_shared_state.clone(),
-            self.provision_shared_state.clone(),
-            self.agent_status_shared_state.clone(),
-        )
+        provision::listener_started(EventThreadsSharedState {
+            cancellation_token: self.cancellation_token.clone(),
+            common_state: self.common_state.clone(),
+            access_control_shared_state: self.access_control_shared_state.clone(),
+            redirector_shared_state: self.redirector_shared_state.clone(),
+            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+            provision_shared_state: self.provision_shared_state.clone(),
+            agent_status_shared_state: self.agent_status_shared_state.clone(),
+            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+        })
         .await;
 
         // We start a loop to continuously accept incoming connections
@@ -279,7 +286,7 @@ impl ProxyServer {
                     let large_limited_tower_service =
                         tower::ServiceBuilder::new().layer(large_limit_layer);
                     let tower_service_layer =
-                        if crate::common::hyper_client::should_skip_sig(req.method(), req.uri()) {
+                        if hyper_client::should_skip_sig(req.method(), req.uri()) {
                             // skip signature check for large request
                             large_limited_tower_service.clone()
                         } else {
@@ -470,7 +477,7 @@ impl ProxyServer {
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
             ip.to_string(),
             port,
-            self.key_keeper_shared_state.clone(),
+            self.access_control_shared_state.clone(),
         )
         .await
         {
@@ -525,11 +532,11 @@ impl ProxyServer {
         // Add required headers
         let host_claims = format!(
             "{{ \"{}\": \"{}\"}}",
-            constants::CLAIMS_IS_ROOT,
+            hyper_client::CLAIMS_IS_ROOT,
             claims.runAsElevated
         );
         proxy_request.headers_mut().insert(
-            HeaderName::from_static(constants::CLAIMS_HEADER),
+            HeaderName::from_static(hyper_client::CLAIMS_HEADER),
             match HeaderValue::from_str(&host_claims) {
                 Ok(value) => value,
                 Err(e) => {
@@ -542,7 +549,7 @@ impl ProxyServer {
             },
         );
         proxy_request.headers_mut().insert(
-            HeaderName::from_static(constants::DATE_HEADER),
+            HeaderName::from_static(hyper_client::DATE_HEADER),
             match HeaderValue::from_str(&misc_helpers::get_date_time_rfc1123_string()) {
                 Ok(value) => value,
                 Err(e) => {
@@ -577,16 +584,10 @@ impl ProxyServer {
                 http_connection_context.method, http_connection_context.url
             ),
         );
-        let request = match Self::convert_request(proxy_request).await {
-            Ok(r) => r,
-            Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Error,
-                    format!("Failed to convert request: {e}"),
-                );
-                return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
-            }
-        };
+
+        let (head, body) = proxy_request.into_parts();
+        // Stream the request body directly without buffering
+        let request = Request::from_parts(head, body.boxed());
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
@@ -606,27 +607,17 @@ impl ProxyServer {
             .await
     }
 
-    async fn convert_request(
-        request: Request<Limited<hyper::body::Incoming>>,
-    ) -> Result<Request<Full<Bytes>>> {
-        let (head, body) = request.into_parts();
-        let whole_body = match body.collect().await {
-            Ok(data) => data.to_bytes(),
-            Err(e) => {
-                return Err(Error::Hyper(HyperErrorType::RequestBody(e.to_string())));
-            }
-        };
-
-        Ok(Request::from_parts(head, Full::new(whole_body)))
-    }
-
     async fn handle_provision_state_check_request(
         &self,
         logger: &mut ConnectionLogger,
         request: Request<Limited<hyper::body::Incoming>>,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
         // check MetaData header exists or not
-        if request.headers().get(constants::METADATA_HEADER).is_none() {
+        if request
+            .headers()
+            .get(hyper_client::METADATA_HEADER)
+            .is_none()
+        {
             logger.write(
                 LoggerLevel::Warn,
                 "No MetaData header found in the request.".to_string(),
@@ -639,7 +630,10 @@ impl ProxyServer {
             None => {
                 logger.write(
                     LoggerLevel::Warn,
-                    "No 'x-ms-azure-time_tick' header found in the request, use '0'.".to_string(),
+                    format!(
+                        "No '{}' header found in the request, use '0'.",
+                        constants::TIME_TICK_HEADER
+                    ),
                 );
                 "0"
             }
@@ -663,10 +657,11 @@ impl ProxyServer {
         .await;
 
         // report as provision finished state
-        // true only if the finished_time_tick is greater than or equal to the query_time_tick
-        //          or the secure channel is latched already
+        // true only if the finished_time_tick is greater than or equal to the query_time_tick or
+        //      the secure channel is latched already and finished_time_tick is greater than 0
         let report_provision_finished = provision_state.finished_time_tick >= query_time_tick
-            || provision_state.is_secure_channel_latched();
+            || (provision_state.is_secure_channel_latched()
+                && provision_state.finished_time_tick > 0);
 
         let find_notify_header = request.headers().get(constants::NOTIFY_HEADER).is_some();
         if find_notify_header && !report_provision_finished {
@@ -734,28 +729,14 @@ impl ProxyServer {
             LoggerLevel::Trace,
             "Converting response to the client format.".to_string(),
         );
-        let mut logger = http_connection_context.logger.clone();
         let (head, body) = proxy_response.into_parts();
-        let frame_stream = body.map_frame(move |frame| {
-            let frame = match frame.into_data() {
-                Ok(data) => data.iter().map(|byte| byte.to_be()).collect::<Bytes>(),
-                Err(e) => {
-                    logger.write(
-                        LoggerLevel::Error,
-                        format!("Failed to get frame data: {e:?}"),
-                    );
-                    Bytes::new()
-                }
-            };
-
-            Frame::data(frame)
-        });
-        let mut response = Response::from_parts(head, frame_stream.boxed());
+        // Stream the response body directly without buffering
+        let mut response = Response::from_parts(head, body.boxed());
 
         http_connection_context.log(LoggerLevel::Trace, "Adding proxy agent header.".to_string());
         // insert default x-ms-azure-host-authorization header to let the client know it is through proxy agent
         response.headers_mut().insert(
-            HeaderName::from_static(constants::AUTHORIZATION_HEADER),
+            HeaderName::from_static(hyper_client::AUTHORIZATION_HEADER),
             HeaderValue::from_static("value"),
         );
 
@@ -852,7 +833,7 @@ impl ProxyServer {
 
         if log_authorize_failed {
             if let Err(e) = self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .add_one_failed_connection_summary(summary)
                 .await
             {
@@ -862,7 +843,7 @@ impl ProxyServer {
                 );
             }
         } else if let Err(e) = self
-            .agent_status_shared_state
+            .connection_summary_shared_state
             .add_one_connection_summary(summary)
             .await
         {
@@ -907,17 +888,7 @@ impl ProxyServer {
             LoggerLevel::Trace,
             "Starting to collect the client request body.".to_string(),
         );
-        let whole_body = match body.collect().await {
-            Ok(data) => data.to_bytes(),
-            Err(e) => {
-                http_connection_context.log(
-                    LoggerLevel::Error,
-                    format!("Failed to receive the request body: {e}"),
-                );
-                return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
-            }
-        };
-
+        let whole_body = Self::read_body_bytes(body).await?;
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
@@ -929,8 +900,11 @@ impl ProxyServer {
         );
 
         // create a new request to the Host endpoint
-        let mut proxy_request: Request<Full<Bytes>> =
-            Request::from_parts(head.clone(), Full::new(whole_body.clone()));
+        let body = Full::new(whole_body.clone())
+            .map_err(|never| -> Box<dyn std::error::Error + Send + Sync> { match never {} })
+            .boxed();
+        let mut proxy_request: Request<super::proxy_connection::RequestBody> =
+            Request::from_parts(head.clone(), body);
 
         // sign the request
         // Add header x-ms-azure-host-authorization
@@ -949,12 +923,16 @@ impl ProxyServer {
                 .unwrap_or(None),
         ) {
             let input_to_sign = hyper_client::as_sig_input(head, whole_body);
-            match helpers::compute_signature(&key, input_to_sign.as_slice()) {
+            match misc_helpers::compute_signature(&key, input_to_sign.as_slice()) {
                 Ok(sig) => {
-                    let authorization_value =
-                        format!("{} {} {}", constants::AUTHORIZATION_SCHEME, key_guid, sig);
+                    let authorization_value = format!(
+                        "{} {} {}",
+                        hyper_client::AUTHORIZATION_SCHEME,
+                        key_guid,
+                        sig
+                    );
                     proxy_request.headers_mut().insert(
-                        HeaderName::from_static(constants::AUTHORIZATION_HEADER),
+                        HeaderName::from_static(hyper_client::AUTHORIZATION_HEADER),
                         match HeaderValue::from_str(&authorization_value) {
                             Ok(value) => value,
                             Err(e) => {
@@ -1008,15 +986,41 @@ impl ProxyServer {
         self.forward_response(proxy_response, http_connection_context)
             .await
     }
+
+    /// It reads the body in chunks and concatenates them into a single Bytes object
+    /// It also yields control to the tokio scheduler to avoid blocking the thread if the body is large
+    async fn read_body_bytes<B>(mut body: B) -> Result<Bytes>
+    where
+        B: hyper::body::Body<Data = Bytes> + Unpin,
+        B::Error: std::fmt::Display + Send + Sync + 'static,
+    {
+        let body_size = body.size_hint().upper().unwrap_or(4 * 1024 * 1024);
+        let mut buf = BytesMut::with_capacity(body_size as usize);
+        while let Some(chunk) = body.frame().await {
+            match chunk {
+                Ok(chunk) => {
+                    if let Ok(data) = chunk.into_data() {
+                        buf.extend_from_slice(&data)
+                    }
+                }
+                Err(e) => {
+                    return Err(Error::Hyper(HyperErrorType::ReceiveBody(e.to_string())));
+                }
+            }
+            // yield control to the tokio scheduler to avoid blocking the thread if the body is large
+            tokio::task::yield_now().await;
+        }
+        Ok(buf.freeze())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::common::hyper_client;
     use crate::common::logger;
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
+    use proxy_agent_shared::hyper_client;
     use std::collections::HashMap;
     use std::time::Duration;
 

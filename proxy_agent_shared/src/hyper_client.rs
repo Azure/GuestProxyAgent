@@ -2,41 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 //! This module contains the logic to send http requests and read the response body via hyper crate.
-//!
-//! Example
-//! ```rust
-//! use proxy_agent::hyper_client;
-//! use host_clients::goal_state::GoalState;
-//! use std::collections::HashMap;
-//! use hyper::Uri;
-//! use std::str::FromStr;
-//!
-//! let mut headers = HashMap::new();
-//! headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
-//! let full_url = Uri::from_str("http://168.63.129.16/machine/machine?comp=goalstate").unwrap();
-//!
-//! // use get method to get response, and deserialize it
-//! let response: GoalState = hyper_client::get(full_url, &headers, None, None, |log| {
-//!    println!("{}", log);
-//! }).await.unwrap();
-//!
-//! // build request
-//! let request = hyper_client::build_request(Method::GET, full_url.clone(), &headers, None, None, None).unwrap();
-//!
-//! // send request
-//! let (host, port) = hyper_client::host_port_from_uri(full_url.clone()).unwrap();
-//! let response = hyper_client::send_request(&host, port, request, |log| {
-//!   println!("{}", log);
-//! }).await.unwrap();
-//!
-//! // read response body and deserialize it
-//! let response_body: GoalState = hyper_client::read_response_body(response).await.unwrap();
-//!
-//! ```
 
 use super::error::{Error, HyperErrorType};
+use super::misc_helpers;
 use super::result::Result;
-use super::{constants, helpers};
 use http::request::Builder;
 use http::request::Parts;
 use http::Method;
@@ -49,10 +18,16 @@ use hyper::Request;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
 use itertools::Itertools;
-use proxy_agent_shared::misc_helpers;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tokio::net::TcpStream;
+
+pub const DATE_HEADER: &str = "x-ms-azure-host-date";
+pub const METADATA_HEADER: &str = "Metadata";
+pub const CLAIMS_HEADER: &str = "x-ms-azure-host-claims";
+pub const AUTHORIZATION_HEADER: &str = "x-ms-azure-host-authorization";
+pub const AUTHORIZATION_SCHEME: &str = "Azure-HMAC-SHA256";
+pub const CLAIMS_IS_ROOT: &str = "isRoot";
 
 const LF: &str = "\n";
 
@@ -201,14 +176,11 @@ pub fn build_request(
             Some(pq) => pq.as_str(),
             None => full_url.path(),
         })
-        .header(
-            constants::DATE_HEADER,
-            misc_helpers::get_date_time_rfc1123_string(),
-        )
+        .header(DATE_HEADER, misc_helpers::get_date_time_rfc1123_string())
         .header(hyper::header::HOST, host)
         .header(
-            constants::CLAIMS_HEADER,
-            format!("{{ \"{}\": \"{}\"}}", constants::CLAIMS_IS_ROOT, true,),
+            CLAIMS_HEADER,
+            format!("{{ \"{}\": \"{}\"}}", CLAIMS_IS_ROOT, true,),
         )
         .header(
             hyper::header::CONTENT_LENGTH,
@@ -227,12 +199,12 @@ pub fn build_request(
         let input_to_sign = request_to_sign_input(&request_builder, body_vec)?;
         let authorization_value = format!(
             "{} {} {}",
-            constants::AUTHORIZATION_SCHEME,
+            AUTHORIZATION_SCHEME,
             key_guid,
-            helpers::compute_signature(&key, input_to_sign.as_slice())?
+            misc_helpers::compute_signature(&key, input_to_sign.as_slice())?
         );
         request_builder = request_builder.header(
-            constants::AUTHORIZATION_HEADER.to_string(),
+            AUTHORIZATION_HEADER.to_string(),
             authorization_value.to_string(),
         );
     }
@@ -285,12 +257,7 @@ where
     let addr = format!("{host}:{port}");
     let stream = match TcpStream::connect(addr.to_string()).await {
         Ok(tcp_stream) => tcp_stream,
-        Err(e) => {
-            return Err(Error::Io(
-                format!("Failed to open TCP connection to {addr}"),
-                e,
-            ))
-        }
+        Err(e) => return Err(Error::Io(e)),
     };
 
     let io = TokioIo::new(stream);
@@ -403,7 +370,7 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
 
     for key in map.keys().sorted() {
         // skip the expect header
-        if key.eq_ignore_ascii_case(constants::AUTHORIZATION_HEADER) {
+        if key.eq_ignore_ascii_case(AUTHORIZATION_HEADER) {
             continue;
         }
         let h = format!("{}:{}{}", key, map[key].1.trim(), separator);
@@ -501,6 +468,12 @@ pub fn should_skip_sig(method: &hyper::Method, relative_uri: &Uri) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        host_clients::{imds_client::ImdsClient, wire_server_client::WireServerClient},
+        logger::logger_manager,
+    };
+    use tokio_util::sync::CancellationToken;
+
     #[test]
     fn get_path_and_canonicalized_parameters_test() {
         let url_str = "/machine/a8016240-7286-49ef-8981-63520cb8f6d0/49c242ba%2Dc18a%2D4f6c%2D8cf8%2D85ff790b6431.%5Fzpeng%2Debpf%2Dvm2?comp=config&keyOnly&comp=again&type=hostingEnvironmentConfig&incarnation=1&resource=https%3a%2f%2fstorage.azure.com%2f";
@@ -512,5 +485,60 @@ mod tests {
             "comp=again&comp=config&incarnation=1&keyonly&resource=https%3a%2f%2fstorage.azure.com%2f&type=hostingEnvironmentConfig", path_para.1,
             "query parameters mismatch"
         );
+    }
+
+    #[test]
+    fn should_skip_sig_test() {
+        let url_str = "/vmAgentLog";
+        let url = url_str.parse::<hyper::Uri>().unwrap();
+        assert!(super::should_skip_sig(&hyper::Method::PUT, &url));
+
+        let url_str = "/machine/?comp=telemetrydata";
+        let url = url_str.parse::<hyper::Uri>().unwrap();
+        assert!(super::should_skip_sig(&hyper::Method::POST, &url));
+
+        let url_str = "/machine/?comp=telemetrydata";
+        let url = url_str.parse::<hyper::Uri>().unwrap();
+        assert!(!super::should_skip_sig(&hyper::Method::GET, &url));
+
+        let url_str = "/vmAgentLog";
+        let url = url_str.parse::<hyper::Uri>().unwrap();
+        assert!(!super::should_skip_sig(&hyper::Method::GET, &url));
+    }
+
+    #[tokio::test]
+    async fn http_request_tests() {
+        // start mock server
+        let ip = "127.0.0.1";
+        let port = 7072u16;
+        let cancellation_token = CancellationToken::new();
+        tokio::spawn(crate::server_mock::start(
+            ip.to_string(),
+            port,
+            cancellation_token.clone(),
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        logger_manager::write_info("server_mock started.".to_string());
+
+        let wire_server_client = WireServerClient::new(ip, port);
+        let goal_state = wire_server_client.get_goalstate(None, None).await.unwrap();
+        let shared_config = wire_server_client
+            .get_shared_config(goal_state.get_shared_config_uri(), None, None)
+            .await
+            .unwrap();
+        assert!(!shared_config.get_role_name().is_empty());
+        wire_server_client
+            .send_telemetry_data("xml_data".to_string())
+            .await
+            .unwrap();
+
+        let imds_client = ImdsClient::new(ip, port);
+        let instance_info = imds_client
+            .get_imds_instance_info(None, None)
+            .await
+            .unwrap();
+        assert!(!instance_info.get_resource_group_name().is_empty());
+
+        cancellation_token.cancel();
     }
 }

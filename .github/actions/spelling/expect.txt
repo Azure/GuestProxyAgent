@@ -63,6 +63,7 @@ daddr
 datacenter
 davidanson
 DDCE
+DDTHH
 debbuild
 DEBHELPER
 debian
@@ -129,6 +130,7 @@ guiddef
 handleapi
 hklm
 hlist
+HMAC
 hostga
 httpwg
 Iaa
@@ -150,6 +152,8 @@ INVM
 Ioctl
 iusr
 jetbrains
+jqlang
+JOBOBJECT
 jobsjob
 joutvhu
 JScript
@@ -180,6 +184,7 @@ MFC
 microsoftcblmariner
 microsoftlosangeles
 microsoftwindowsdesktop
+mmm
 mnt
 msasn
 msp
@@ -275,6 +280,7 @@ spellright
 splitn
 SRPMS
 SSRF
+SSZ
 stackoverflow
 stdbool
 stdint
@@ -287,6 +293,7 @@ suse
 Swatinem
 SWbem
 sysinfoapi
+sysinit
 SYSLIB
 SYSTEMDRIVE
 taiki
@@ -319,14 +326,17 @@ unregisters
 unspec
 uzers
 vcruntime
+vendored
 vflji
 vhd
 vmagentlog
 VMGA
+vmhwm
 VMId
 vmlinux
 vmr
 vmrcs
+vmrss
 vms
 vns
 VTeam
@@ -354,6 +364,7 @@ wireserverand
 wireserverandimds
 WMI
 workarounds
+WORKINGSET
 WORKDIR
 WScript
 wsf

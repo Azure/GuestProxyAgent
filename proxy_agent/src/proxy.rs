@@ -165,10 +165,16 @@ impl Process {
         let (process_full_path, cmd);
         #[cfg(windows)]
         {
-            let handler = windows::get_process_handler(pid).unwrap_or_else(|e| {
-                println!("Failed to get process handler: {e}");
-                0
-            });
+            use windows_sys::Win32::System::Threading::{
+                PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+            };
+
+            let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)
+                .unwrap_or_else(|e| {
+                    println!("Failed to get process handler: {e}");
+                    0
+                });
             let base_info = windows::query_basic_process_info(handler);
             match base_info {
                 Ok(_) => {
@@ -182,7 +188,7 @@ impl Process {
                 }
             }
             // close the handle
-            if let Err(e) = windows::close_process_handler(handler) {
+            if let Err(e) = proxy_agent_shared::windows::close_handler(handler) {
                 println!("Failed to close process handler: {e}");
             }
         }

@@ -31,6 +31,7 @@
 use crate::common::logger;
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
+use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
@@ -50,6 +51,7 @@ pub struct ProxyAgentStatusTask {
     cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
     agent_status_shared_state: AgentStatusSharedState,
+    connection_summary_shared_state: ConnectionSummarySharedState,
 }
 
 impl ProxyAgentStatusTask {
@@ -59,6 +61,7 @@ impl ProxyAgentStatusTask {
         cancellation_token: CancellationToken,
         key_keeper_shared_state: KeyKeeperSharedState,
         agent_status_shared_state: AgentStatusSharedState,
+        connection_summary_shared_state: ConnectionSummarySharedState,
     ) -> ProxyAgentStatusTask {
         ProxyAgentStatusTask {
             interval,
@@ -66,6 +69,7 @@ impl ProxyAgentStatusTask {
             cancellation_token,
             key_keeper_shared_state,
             agent_status_shared_state,
+            connection_summary_shared_state,
         }
     }
 
@@ -126,6 +130,11 @@ impl ProxyAgentStatusTask {
         }
 
         loop {
+            #[cfg(not(windows))]
+            {
+                self.monitor_memory_usage();
+            }
+
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
             // write proxyAgentStatus event
             if status_report_time.elapsed() >= status_report_duration {
@@ -151,7 +160,11 @@ impl ProxyAgentStatusTask {
                     "Clearing the connection summary map and failed authenticate summary map."
                         .to_string(),
                 );
-                if let Err(e) = self.agent_status_shared_state.clear_all_summary().await {
+                if let Err(e) = self
+                    .connection_summary_shared_state
+                    .clear_all_summary()
+                    .await
+                {
                     logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {e}"));
                 }
                 start_time = Instant::now();
@@ -261,7 +274,7 @@ impl ProxyAgentStatusTask {
             timestamp: misc_helpers::get_date_time_string_with_milliseconds(),
             proxyAgentStatus: self.proxy_agent_status_new().await,
             proxyConnectionSummary: match self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .get_all_connection_summary()
                 .await
             {
@@ -272,7 +285,7 @@ impl ProxyAgentStatusTask {
                 }
             },
             failedAuthenticateSummary: match self
-                .agent_status_shared_state
+                .connection_summary_shared_state
                 .get_all_failed_connection_summary()
                 .await
             {
@@ -301,6 +314,46 @@ impl ProxyAgentStatusTask {
             .await;
         }
     }
+
+    /// Monitor the memory usage of the current process and log it.
+    /// If the memory usage exceeds the limit, log a warning.
+    /// If the memory usage exceeds the limits for multiple times, take action (e.g., restart the process).
+    #[cfg(not(windows))]
+    fn monitor_memory_usage(&self) {
+        const RAM_LIMIT_IN_MB: u64 = 20;
+        match proxy_agent_shared::linux::read_proc_memory_status(std::process::id()) {
+            Ok(memory_status) => {
+                if let Some(vmrss_kb) = memory_status.vmrss_kb {
+                    let ram_in_mb = vmrss_kb / 1024;
+                    logger::write_information(format!(
+                        "Current process memory usage: {ram_in_mb} MB",
+                    ));
+
+                    if ram_in_mb > RAM_LIMIT_IN_MB {
+                        logger::write_warning(format!(
+                            "Current process memory usage {ram_in_mb} MB exceeds the limit of {RAM_LIMIT_IN_MB} MB.",
+                        ));
+                        // take action if needed, e.g., restart the process
+                    }
+                } else {
+                    logger::write_information("Current process memory usage: Unknown".to_string());
+                }
+                if let Some(vmhwm_kb) = memory_status.vmhwm_kb {
+                    logger::write_information(format!(
+                        "Current process peak memory usage: {} MB",
+                        vmhwm_kb / 1024
+                    ));
+                } else {
+                    logger::write_information(
+                        "Current process peak memory usage: Unknown".to_string(),
+                    );
+                }
+            }
+            Err(e) => {
+                logger::write_error(format!("Error reading process memory status: {e}"));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -308,7 +361,9 @@ mod tests {
     use crate::{
         proxy_agent_status::ProxyAgentStatusTask,
         shared_state::{
-            agent_status_wrapper::AgentStatusSharedState, key_keeper_wrapper::KeyKeeperSharedState,
+            agent_status_wrapper::AgentStatusSharedState,
+            connection_summary_wrapper::ConnectionSummarySharedState,
+            key_keeper_wrapper::KeyKeeperSharedState,
         },
     };
     use proxy_agent_shared::{
@@ -330,6 +385,7 @@ mod tests {
             CancellationToken::new(),
             KeyKeeperSharedState::start_new(),
             AgentStatusSharedState::start_new(),
+            ConnectionSummarySharedState::start_new(),
         );
         let aggregate_status = task.guest_proxy_agent_aggregate_status_new().await;
         task.write_aggregate_status_to_file(aggregate_status).await;

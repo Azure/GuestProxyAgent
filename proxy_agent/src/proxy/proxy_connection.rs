@@ -3,17 +3,18 @@
 
 //! This module contains the connection context struct for the proxy listener, and write proxy processing logs to local file.
 
-use crate::common::error::{Error, HyperErrorType};
+use crate::common::config;
+use crate::common::error::Error;
 use crate::common::result::Result;
-use crate::common::{config, hyper_client};
 use crate::proxy::Claims;
 use crate::redirector::{self, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
 use hyper::Request;
+use proxy_agent_shared::error::HyperErrorType;
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
 use proxy_agent_shared::misc_helpers;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -21,7 +22,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
-pub type RequestBody = Full<Bytes>;
+pub type RequestBody =
+    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
 struct Client {
     sender: http1::SendRequest<RequestBody>,
 }
@@ -352,7 +354,7 @@ impl ConnectionLogger {
         }
 
         if logger_level > logger_manager::get_max_logger_level()
-            || config::get_logs_dir() == std::path::PathBuf::from("")
+            || config::get_logs_dir() == misc_helpers::empty_path()
         {
             // If the logger level is higher than the max logger level or logs directory is not set, skip logging
             return;
