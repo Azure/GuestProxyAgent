@@ -91,11 +91,17 @@ impl TelemetryEvent {
         vm_meta_data: VmMetaData,
         execution_mode: String,
         event_name: String,
+        ga_version: Option<String>,
     ) -> Self {
+        // if ga_version is provided, append event_log.version to event_name
+        // if ga_version is None, use event_log.Version as ga_version and keep event_name unchanged
+        let (ga_version, event_name) = match ga_version {
+            Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
+            None => (event_log.Version.to_string(), event_name),
+        };
         TelemetryEvent {
             event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
             event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
-            ga_version: event_log.Version.to_string(),
             task_name: event_log.TaskName.to_string(),
             opcode_name: event_log.TimeStamp.to_string(),
             capability_used: event_log.EventLevel.to_string(),
@@ -103,6 +109,7 @@ impl TelemetryEvent {
             context2: event_log.TimeStamp.to_string(),
             context3: event_log.OperationId.to_string(),
 
+            ga_version,
             execution_mode,
             event_name,
             os_version: current_info::get_long_os_version(),
