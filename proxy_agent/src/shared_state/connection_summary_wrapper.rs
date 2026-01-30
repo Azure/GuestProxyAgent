@@ -107,8 +107,10 @@ impl ConnectionSummarySharedState {
                     ConnectionSummaryAction::GetAllFailedConnection { response } => {
                         // Remove entries with no recent failed connections and collect summaries
                         failed_authenticate_summary.retain(|_, v| !v.is_empty());
-                        let copy_summary: Vec<ProxyConnectionSummary> =
-                            failed_authenticate_summary.values_mut().map(|v| v.to_item()).collect();
+                        let copy_summary: Vec<ProxyConnectionSummary> = failed_authenticate_summary
+                            .values_mut()
+                            .map(|v| v.to_item())
+                            .collect();
                         if let Err(summary) = response.send(copy_summary) {
                             logger::write_warning(format!(
                                 "Failed to send response to ConnectionSummaryAction::GetAllFailedConnection with summary count '{:?}'",
@@ -135,7 +137,7 @@ impl ConnectionSummarySharedState {
     }
 
     /// Add one connection summary
-     /// Returns true if a new time-bucketed item was created.
+    /// Returns true if a new time-bucketed item was created.
     /// It does implicitly removes expired time-bucketed items
     pub async fn add_one_connection_summary(&self, summary: ProxySummary) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
