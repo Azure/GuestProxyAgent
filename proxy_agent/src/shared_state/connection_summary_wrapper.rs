@@ -9,17 +9,21 @@ use crate::common::logger;
 use crate::common::result::Result;
 use crate::{common::error::Error, proxy::proxy_summary::ProxySummary};
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
+use proxy_agent_shared::time_buckets::TimeBucketedItem;
 use std::collections::{hash_map, HashMap};
 use tokio::sync::{mpsc, oneshot};
+
+const BUCKET_DURATION_SECS: u64 = 900; // 15-minute buckets
+const MAX_AGE_SECS: u64 = 4 * 3600; // 4 hours
 
 enum ConnectionSummaryAction {
     AddOneConnection {
         summary: ProxySummary,
-        response: oneshot::Sender<()>,
+        response: oneshot::Sender<bool>,
     },
     AddOneFailedConnection {
         summary: ProxySummary,
-        response: oneshot::Sender<()>,
+        response: oneshot::Sender<bool>,
     },
     GetAllConnection {
         response: oneshot::Sender<Vec<ProxyConnectionSummary>>,
@@ -39,47 +43,60 @@ impl ConnectionSummarySharedState {
     pub fn start_new() -> Self {
         let (tx, mut rx) = mpsc::channel(100);
         tokio::spawn(async move {
-            // The proxy connection summary from the proxy
-            let mut proxy_summary: HashMap<String, ProxyConnectionSummary> = HashMap::new();
-            // The failed authenticate summary from the proxy
-            let mut failed_authenticate_summary: HashMap<String, ProxyConnectionSummary> =
+            // The proxy connection summary from the proxy (using time-bucketed items)
+            let mut proxy_summary: HashMap<String, TimeBucketedItem<ProxyConnectionSummary>> =
                 HashMap::new();
+            // The failed authenticate summary from the proxy (using time-bucketed items)
+            let mut failed_authenticate_summary: HashMap<
+                String,
+                TimeBucketedItem<ProxyConnectionSummary>,
+            > = HashMap::new();
+            let max_age_duration = std::time::Duration::from_secs(MAX_AGE_SECS);
+            let bucket_duration = std::time::Duration::from_secs(BUCKET_DURATION_SECS);
 
             while let Some(action) = rx.recv().await {
                 match action {
                     ConnectionSummaryAction::AddOneConnection { summary, response } => {
+                        let mut is_new_bucket = true;
                         let key = summary.to_key_string();
                         if let hash_map::Entry::Vacant(e) = proxy_summary.entry(key.clone()) {
-                            e.insert(summary.into());
+                            e.insert(TimeBucketedItem::new(
+                                summary.into(),
+                                bucket_duration,
+                                max_age_duration,
+                            ));
                         } else if let Some(connection_summary) = proxy_summary.get_mut(&key) {
-                            //increase_count(connection_summary);
-                            connection_summary.count += 1;
+                            is_new_bucket = connection_summary.add_one();
                         }
-                        if response.send(()).is_err() {
+                        if response.send(is_new_bucket).is_err() {
                             logger::write_warning("Failed to send response to ConnectionSummaryAction::AddOneConnection".to_string());
                         }
                     }
                     ConnectionSummaryAction::AddOneFailedConnection { summary, response } => {
+                        let mut is_new_bucket = true;
                         let key = summary.to_key_string();
                         if let hash_map::Entry::Vacant(e) =
                             failed_authenticate_summary.entry(key.clone())
                         {
-                            e.insert(summary.into());
+                            e.insert(TimeBucketedItem::new(
+                                summary.into(),
+                                bucket_duration,
+                                max_age_duration,
+                            ));
                         } else if let Some(connection_summary) =
                             failed_authenticate_summary.get_mut(&key)
                         {
-                            //increase_count(connection_summary);
-                            connection_summary.count += 1;
+                            is_new_bucket = connection_summary.add_one();
                         }
-                        if response.send(()).is_err() {
+                        if response.send(is_new_bucket).is_err() {
                             logger::write_warning("Failed to send response to ConnectionSummaryAction::AddOneFailedConnection".to_string());
                         }
                     }
                     ConnectionSummaryAction::GetAllConnection { response } => {
-                        let mut copy_summary: Vec<ProxyConnectionSummary> = Vec::new();
-                        for (_, connection_summary) in proxy_summary.iter() {
-                            copy_summary.push(connection_summary.clone());
-                        }
+                        // Remove entries with no recent connections and collect summaries
+                        proxy_summary.retain(|_, v| !v.is_empty());
+                        let copy_summary: Vec<ProxyConnectionSummary> =
+                            proxy_summary.values_mut().map(|v| v.to_item()).collect();
                         if let Err(summary) = response.send(copy_summary) {
                             logger::write_warning(format!(
                                 "Failed to send response to ConnectionSummaryAction::GetAllConnection with summary count '{:?}'",
@@ -88,10 +105,10 @@ impl ConnectionSummarySharedState {
                         }
                     }
                     ConnectionSummaryAction::GetAllFailedConnection { response } => {
-                        let mut copy_summary: Vec<ProxyConnectionSummary> = Vec::new();
-                        for (_, connection_summary) in failed_authenticate_summary.iter() {
-                            copy_summary.push(connection_summary.clone());
-                        }
+                        // Remove entries with no recent failed connections and collect summaries
+                        failed_authenticate_summary.retain(|_, v| !v.is_empty());
+                        let copy_summary: Vec<ProxyConnectionSummary> =
+                            failed_authenticate_summary.values_mut().map(|v| v.to_item()).collect();
                         if let Err(summary) = response.send(copy_summary) {
                             logger::write_warning(format!(
                                 "Failed to send response to ConnectionSummaryAction::GetAllFailedConnection with summary count '{:?}'",
@@ -100,6 +117,7 @@ impl ConnectionSummarySharedState {
                         }
                     }
                     ConnectionSummaryAction::ClearAll { response } => {
+                        // force clear all summaries
                         proxy_summary.clear();
                         failed_authenticate_summary.clear();
                         if response.send(()).is_err() {
@@ -116,7 +134,10 @@ impl ConnectionSummarySharedState {
         ConnectionSummarySharedState(tx)
     }
 
-    pub async fn add_one_connection_summary(&self, summary: ProxySummary) -> Result<()> {
+    /// Add one connection summary
+     /// Returns true if a new time-bucketed item was created.
+    /// It does implicitly removes expired time-bucketed items
+    pub async fn add_one_connection_summary(&self, summary: ProxySummary) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
             .send(ConnectionSummaryAction::AddOneConnection {
@@ -135,7 +156,10 @@ impl ConnectionSummarySharedState {
         })
     }
 
-    pub async fn add_one_failed_connection_summary(&self, summary: ProxySummary) -> Result<()> {
+    /// Add one failed connection summary
+    /// Returns true if a new time bucket is created for this summary, false otherwise
+    /// It does implicitly removes expired time-bucketed items
+    pub async fn add_one_failed_connection_summary(&self, summary: ProxySummary) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
             .send(ConnectionSummaryAction::AddOneFailedConnection {
@@ -157,6 +181,7 @@ impl ConnectionSummarySharedState {
         })
     }
 
+    /// Clear both connection summaries explicitly
     pub async fn clear_all_summary(&self) -> Result<()> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
@@ -176,6 +201,8 @@ impl ConnectionSummarySharedState {
         Ok(())
     }
 
+    /// Get success connection summaries
+    /// Returns a vector of ProxyConnectionSummary, implicitly removed expired time-bucketed items
     pub async fn get_all_connection_summary(&self) -> Result<Vec<ProxyConnectionSummary>> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
@@ -194,6 +221,8 @@ impl ConnectionSummarySharedState {
         })
     }
 
+    /// Get failed connection summaries
+    /// Returns a vector of ProxyConnectionSummary, implicitly removed expired time-bucketed items
     pub async fn get_all_failed_connection_summary(&self) -> Result<Vec<ProxyConnectionSummary>> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
