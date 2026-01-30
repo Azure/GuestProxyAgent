@@ -246,7 +246,7 @@ impl ProxyServer {
         };
         let mut tcp_connection_logger = ConnectionLogger::new(tcp_connection_id, 0);
         tcp_connection_logger.write(
-            LoggerLevel::Info,
+            LoggerLevel::Trace,
             format!("Accepted new tcp connection [{tcp_connection_id}]."),
         );
 
@@ -393,7 +393,7 @@ impl ProxyServer {
             tcp_connection_context.clone(),
         );
         http_connection_context.log(
-            LoggerLevel::Info,
+            LoggerLevel::Trace,
             format!(
                 "Got request from {} for {} {}",
                 tcp_connection_context.client_addr,
@@ -471,7 +471,7 @@ impl ProxyServer {
                 return Ok(Self::closed_response(StatusCode::MISDIRECTED_REQUEST));
             }
         };
-        http_connection_context.log(LoggerLevel::Info, claim_details.to_string());
+        http_connection_context.log(LoggerLevel::Trace, claim_details.to_string());
 
         // authenticate the connection
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
