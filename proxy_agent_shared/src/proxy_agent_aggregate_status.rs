@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::misc_helpers;
+use crate::{misc_helpers, time_buckets::Countable};
 use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use time::OffsetDateTime;
@@ -78,6 +78,12 @@ impl Clone for ProxyConnectionSummary {
             responseStatus: self.responseStatus.clone(),
             count: self.count,
         }
+    }
+}
+
+impl Countable for ProxyConnectionSummary {
+    fn set_count(&mut self, count: u64) {
+        self.count = count;
     }
 }
 

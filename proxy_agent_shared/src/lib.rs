@@ -15,6 +15,7 @@ pub mod result;
 pub mod secrets_redactor;
 pub mod service;
 pub mod telemetry;
+pub mod time_buckets;
 pub mod version;
 
 #[cfg(windows)]
