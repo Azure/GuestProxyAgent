@@ -123,6 +123,8 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
+/// Write event and log to file
+/// This event will send out as `TelemetryGenericLogsEvent`
 pub fn write_event(
     level: Level,
     message: String,
@@ -136,6 +138,8 @@ pub fn write_event(
     logger_manager::log(logger_key.to_string(), level, message);
 }
 
+/// Write event only without logging to file
+/// This event will send out as `TelemetryGenericLogsEvent`
 pub fn write_event_only(level: Level, message: String, method_name: &str, module_name: &str) {
     let event_message = if message.len() > MAX_MESSAGE_LENGTH {
         message[..MAX_MESSAGE_LENGTH].to_string()
