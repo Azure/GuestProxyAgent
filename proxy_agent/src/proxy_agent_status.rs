@@ -116,8 +116,6 @@ impl ProxyAgentStatusTask {
     }
 
     async fn loop_status(&self) {
-        let map_clear_duration = Duration::from_secs(60 * 60 * 24);
-        let mut start_time = Instant::now();
         let status_report_duration = Duration::from_secs(60 * 15);
         let mut status_report_time = Instant::now();
 
@@ -153,22 +151,6 @@ impl ProxyAgentStatusTask {
             }
             // write the aggregate status to status.json file
             self.write_aggregate_status_to_file(aggregate_status).await;
-
-            //Clear the connection map and reset start_time after 24 hours
-            if start_time.elapsed() >= map_clear_duration {
-                logger::write_information(
-                    "Clearing the connection summary map and failed authenticate summary map."
-                        .to_string(),
-                );
-                if let Err(e) = self
-                    .connection_summary_shared_state
-                    .clear_all_summary()
-                    .await
-                {
-                    logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {e}"));
-                }
-                start_time = Instant::now();
-            }
 
             tokio::time::sleep(self.interval).await;
         }
