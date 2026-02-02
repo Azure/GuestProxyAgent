@@ -214,7 +214,7 @@ pub fn get_current_version() -> String {
 /// otherwise fallback to Cargo.toml version.
 /// # Returns
 /// A string representing the current executable version
-pub fn get_current_exe_version() -> String {
+pub(crate) fn get_current_exe_version() -> String {
     #[cfg(windows)]
     {
         match try_get_current_exe_version() {

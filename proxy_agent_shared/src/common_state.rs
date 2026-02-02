@@ -4,8 +4,10 @@
 //! This module contains the logic to get and update common states.
 
 use crate::result::Result;
-use crate::{error::Error, logger::logger_manager, telemetry::event_reader::VmMetaData};
-use tokio::sync::{mpsc, oneshot};
+use crate::{error::Error, logger::logger_manager, telemetry::telemetry_event::VmMetaData};
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, Notify};
+use tokio_util::sync::CancellationToken;
 
 pub const SECURE_KEY_GUID: &str = "key_guid";
 pub const SECURE_KEY_VALUE: &str = "key_value";
@@ -27,18 +29,27 @@ enum CommonStateAction {
         key: String,
         response: oneshot::Sender<Option<String>>,
     },
+    GetTelemetryEventNotify {
+        response: oneshot::Sender<Arc<Notify>>,
+    },
 }
 
 #[derive(Clone, Debug)]
-pub struct CommonState(mpsc::Sender<CommonStateAction>);
+pub struct CommonState {
+    /// The cancellation token is used to cancel the agent when the agent is stopped
+    cancellation_token: CancellationToken,
+    sender: mpsc::Sender<CommonStateAction>,
+}
 
 impl CommonState {
-    pub fn start_new() -> Self {
+    pub fn start_new(cancellation_token: CancellationToken) -> Self {
         let (sender, mut receiver) = mpsc::channel(100);
         tokio::spawn(async move {
             let mut vm_meta_data: Option<VmMetaData> = None;
             let mut states: std::collections::HashMap<String, String> =
                 std::collections::HashMap::new();
+            let telemetry_event_notify = Arc::new(Notify::new());
+
             loop {
                 match receiver.recv().await {
                     Some(CommonStateAction::SetVmMetaData {
@@ -79,6 +90,13 @@ impl CommonState {
                             ));
                         }
                     }
+                    Some(CommonStateAction::GetTelemetryEventNotify { response }) => {
+                        if let Err(notify) = response.send(telemetry_event_notify.clone()) {
+                            logger_manager::write_warn(format!(
+                                "Failed to send response to CommonStateAction::GetTelemetryEventNotify '{notify:?}'"
+                            ));
+                        }
+                    }
                     None => {
                         break;
                     }
@@ -86,12 +104,15 @@ impl CommonState {
             }
         });
 
-        Self(sender)
+        Self {
+            cancellation_token,
+            sender,
+        }
     }
 
     pub async fn set_vm_meta_data(&self, vm_meta_data: Option<VmMetaData>) -> Result<()> {
         let (response, receiver) = oneshot::channel();
-        self.0
+        self.sender
             .send(CommonStateAction::SetVmMetaData {
                 vm_meta_data,
                 response,
@@ -110,7 +131,7 @@ impl CommonState {
 
     pub async fn get_vm_meta_data(&self) -> Result<Option<VmMetaData>> {
         let (response, receiver) = oneshot::channel();
-        self.0
+        self.sender
             .send(CommonStateAction::GetVmMetaData { response })
             .await
             .map_err(|e| {
@@ -126,7 +147,7 @@ impl CommonState {
 
     pub async fn set_state(&self, key: String, value: String) -> Result<()> {
         let (response, receiver) = oneshot::channel();
-        self.0
+        self.sender
             .send(CommonStateAction::SetState {
                 key,
                 value,
@@ -143,7 +164,7 @@ impl CommonState {
 
     pub async fn get_state(&self, key: String) -> Result<Option<String>> {
         let (response, receiver) = oneshot::channel();
-        self.0
+        self.sender
             .send(CommonStateAction::GetState { key, response })
             .await
             .map_err(|e| {
@@ -152,5 +173,35 @@ impl CommonState {
         receiver
             .await
             .map_err(|e| Error::RecvError("CommonStateAction::GetState".to_string(), e))
+    }
+
+    pub async fn get_telemetry_event_notify(&self) -> Result<Arc<Notify>> {
+        let (response, receiver) = oneshot::channel();
+        self.sender
+            .send(CommonStateAction::GetTelemetryEventNotify { response })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "CommonStateAction::GetTelemetryEventNotify".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        receiver.await.map_err(|e| {
+            Error::RecvError("CommonStateAction::GetTelemetryEventNotify".to_string(), e)
+        })
+    }
+
+    pub async fn notify_telemetry_event(&self) -> Result<()> {
+        let notify = self.get_telemetry_event_notify().await?;
+        notify.notify_one();
+        Ok(())
+    }
+
+    pub fn get_cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
+    }
+
+    pub fn cancel_cancellation_token(&self) {
+        self.cancellation_token.cancel();
     }
 }

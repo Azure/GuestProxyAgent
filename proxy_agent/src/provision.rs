@@ -19,6 +19,7 @@ use crate::{proxy_agent_status, redirector};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::event_reader::EventReader;
+use proxy_agent_shared::telemetry::event_sender::EventSender;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -370,18 +371,23 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
     tokio::spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
-            true,
-            event_threads_shared_state.cancellation_token.clone(),
             event_threads_shared_state.common_state.clone(),
             "ProxyAgent".to_string(),
             "MicrosoftAzureGuestProxyAgent".to_string(),
         );
         async move {
             event_reader
-                .start(Some(Duration::from_secs(300)), None, None)
+                .start(true, Some(Duration::from_secs(300)))
                 .await;
         }
     });
+    tokio::spawn({
+        let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
+        async move {
+            event_sender.start(None, None).await;
+        }
+    });
+
     if let Err(e) = event_threads_shared_state
         .provision_shared_state
         .set_event_log_threads_initialized()

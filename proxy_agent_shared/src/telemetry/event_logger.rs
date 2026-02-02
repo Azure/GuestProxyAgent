@@ -72,7 +72,10 @@ pub async fn start<F, Fut>(
 
         // Check the event file counts,
         // if it exceeds the max file number, drop the new events
-        match misc_helpers::get_files(&event_dir) {
+        match misc_helpers::search_files(
+            &event_dir,
+            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+        ) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
                     logger_manager::write_log(Level::Warn, format!(

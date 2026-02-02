@@ -1059,7 +1059,7 @@ mod tests {
             interval: Duration::from_millis(10),
             cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper::KeyKeeperSharedState::start_new(),
-            common_state: key_keeper::CommonState::start_new(),
+            common_state: key_keeper::CommonState::start_new(cancellation_token.clone()),
             redirector_shared_state: key_keeper::RedirectorSharedState::start_new(),
             provision_shared_state: key_keeper::ProvisionSharedState::start_new(),
             agent_status_shared_state: key_keeper::AgentStatusSharedState::start_new(),

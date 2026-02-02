@@ -56,10 +56,12 @@ pub struct SharedState {
 
 impl SharedState {
     pub fn start_all() -> Self {
+        let cancellation_token = CancellationToken::new();
+
         SharedState {
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: cancellation_token.clone(),
             key_keeper_shared_state: key_keeper_wrapper::KeyKeeperSharedState::start_new(),
-            common_state: CommonState::start_new(),
+            common_state: CommonState::start_new(cancellation_token.clone()),
             provision_shared_state: provision_wrapper::ProvisionSharedState::start_new(),
             agent_status_shared_state: agent_status_wrapper::AgentStatusSharedState::start_new(),
             redirector_shared_state: redirector_wrapper::RedirectorSharedState::start_new(),
