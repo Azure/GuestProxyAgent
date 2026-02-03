@@ -534,7 +534,10 @@ mod tests {
         // Test provider ID
         let event = create_test_telemetry_event("Test message");
         assert_eq!(event.get_provider_id(), METRICS_PROVIDER_ID);
-        assert_eq!(TelemetryGenericLogsEvent::get_provider_id(), METRICS_PROVIDER_ID);
+        assert_eq!(
+            TelemetryGenericLogsEvent::get_provider_id(),
+            METRICS_PROVIDER_ID
+        );
 
         // Test XML event generation
         let vm_data = create_test_vm_data();

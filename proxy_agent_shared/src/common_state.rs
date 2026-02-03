@@ -216,7 +216,10 @@ mod tests {
         let common_state = CommonState::start_new(cancellation_token);
 
         // Get non-existent key should return None
-        let value = common_state.get_state("non_existent_key".to_string()).await.unwrap();
+        let value = common_state
+            .get_state("non_existent_key".to_string())
+            .await
+            .unwrap();
         assert!(value.is_none(), "Non-existent key should return None");
 
         // Set and get a key-value pair
@@ -224,7 +227,10 @@ mod tests {
             .set_state(SECURE_KEY_GUID.to_string(), "test-guid-value".to_string())
             .await
             .unwrap();
-        let value = common_state.get_state(SECURE_KEY_GUID.to_string()).await.unwrap();
+        let value = common_state
+            .get_state(SECURE_KEY_GUID.to_string())
+            .await
+            .unwrap();
         assert_eq!(value, Some("test-guid-value".to_string()));
 
         // Set and get another key-value pair
@@ -232,19 +238,31 @@ mod tests {
             .set_state(SECURE_KEY_VALUE.to_string(), "test-key-value".to_string())
             .await
             .unwrap();
-        let value = common_state.get_state(SECURE_KEY_VALUE.to_string()).await.unwrap();
+        let value = common_state
+            .get_state(SECURE_KEY_VALUE.to_string())
+            .await
+            .unwrap();
         assert_eq!(value, Some("test-key-value".to_string()));
 
         // Update existing key
         common_state
-            .set_state(SECURE_KEY_GUID.to_string(), "updated-guid-value".to_string())
+            .set_state(
+                SECURE_KEY_GUID.to_string(),
+                "updated-guid-value".to_string(),
+            )
             .await
             .unwrap();
-        let value = common_state.get_state(SECURE_KEY_GUID.to_string()).await.unwrap();
+        let value = common_state
+            .get_state(SECURE_KEY_GUID.to_string())
+            .await
+            .unwrap();
         assert_eq!(value, Some("updated-guid-value".to_string()));
 
         // First key should still have its value
-        let value = common_state.get_state(SECURE_KEY_VALUE.to_string()).await.unwrap();
+        let value = common_state
+            .get_state(SECURE_KEY_VALUE.to_string())
+            .await
+            .unwrap();
         assert_eq!(value, Some("test-key-value".to_string()));
     }
 
@@ -257,7 +275,10 @@ mod tests {
         for i in 0..10 {
             let key = format!("key_{}", i);
             let value = format!("value_{}", i);
-            common_state.set_state(key.clone(), value.clone()).await.unwrap();
+            common_state
+                .set_state(key.clone(), value.clone())
+                .await
+                .unwrap();
             let retrieved = common_state.get_state(key).await.unwrap();
             assert_eq!(retrieved, Some(value));
         }
