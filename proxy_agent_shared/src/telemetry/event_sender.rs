@@ -362,7 +362,7 @@ mod tests {
 
         // Mock server details
         let ip = "127.0.0.1";
-        let port = 7076u16;
+        let port = 7071u16;
 
         // Create EventSender
         let cancellation_token = CancellationToken::new();
@@ -439,8 +439,8 @@ mod tests {
         // Notify again to process events now that VM data can be retrieved
         process_common_state.notify_telemetry_event().await.unwrap();
 
-        // Give it a moment to process the events
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Give it a moment to process the events (needs enough time for HTTP requests)
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Verify queue is empty after processing
         assert_eq!(

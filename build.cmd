@@ -134,12 +134,10 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configuration%\
 
     echo ======= run rust proxy_agent_shared tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    if  %ERRORLEVEL% NEQ 0 (
-        echo call cargo test proxy_agent_shared with exit-code: %errorlevel%
-        exit /b %errorlevel%
-    )
+    REM %ERRORLEVEL% inside a (...) block is expanded when the entire block is parsed, not when each line run
+    REM use exit /b 1 to propagate error codes inside a (...) block
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
 echo ======= copy config file for windows platform
@@ -167,12 +165,9 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 
     echo ======= run rust proxy_agent tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    if  %ERRORLEVEL% NEQ 0 (
-        echo call cargo test proxy_agent with exit-code: %errorlevel%
-        exit /b %errorlevel%
-    )
+    REM use exit /b 1 to propagate error codes inside a (...) block
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture || exit /b 1
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
 echo ======= build proxy_agent_extension
@@ -196,12 +191,9 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Configuration%\
 
     echo ======= run rust proxy_agent_extension tests
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
-    if  %ERRORLEVEL% NEQ 0 (
-        echo call cargo test proxy_agent_extension with exit-code: %errorlevel%
-        exit /b %errorlevel%
-    )
+    REM use exit /b 1 to propagate error codes inside a (...) block
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture || exit /b 1
+    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
 echo ======= build proxy_agent_setup
