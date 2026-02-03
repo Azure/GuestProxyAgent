@@ -417,7 +417,7 @@ mod tests {
         // Give it a moment to start event sender task
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Notifiy to process events
+        // Notify to process events
         process_common_state.notify_telemetry_event().await.unwrap();
 
         // Give it a moment to process the events while the VM data is still not set as Mock server not started yet
