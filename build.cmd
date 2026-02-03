@@ -136,7 +136,7 @@ if "%Target%"=="arm64" (
     echo ======= run rust proxy_agent_shared tests
     REM %ERRORLEVEL% inside a (...) block is expanded when the entire block is parsed, not when each line run
     REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
@@ -166,7 +166,7 @@ if "%Target%"=="arm64" (
 
     echo ======= run rust proxy_agent tests
     REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture || exit /b 1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
@@ -192,7 +192,7 @@ if "%Target%"=="arm64" (
 
     echo ======= run rust proxy_agent_extension tests
     REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture || exit /b 1
+    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
 
