@@ -364,3 +364,229 @@ impl KeywordName {
         serde_json::to_string(self).unwrap_or_else(|_| "".to_owned())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_vm_meta_data() -> VmMetaData {
+        VmMetaData {
+            container_id: "test-container-id".to_string(),
+            tenant_name: "test-tenant".to_string(),
+            role_name: "test-role".to_string(),
+            role_instance_name: "test-role-instance".to_string(),
+            subscription_id: "test-subscription-id".to_string(),
+            resource_group_name: "test-resource-group".to_string(),
+            vm_id: "test-vm-id".to_string(),
+            image_origin: 1,
+        }
+    }
+
+    fn create_test_vm_data() -> TelemetryEventVMData {
+        TelemetryEventVMData::new_from_vm_meta_data(&create_test_vm_meta_data())
+    }
+
+    fn create_test_event(message: &str) -> Event {
+        Event::new(
+            "Informational".to_string(),
+            message.to_string(),
+            "test_task".to_string(),
+            "test_module".to_string(),
+        )
+    }
+
+    fn create_test_telemetry_event(message: &str) -> TelemetryEvent {
+        let event_log = create_test_event(message);
+        TelemetryEvent::GenericLogsEvent(TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "test_execution_mode".to_string(),
+            "test_event_name".to_string(),
+            Some("1.0.0".to_string()),
+        ))
+    }
+
+    /// Tests VmMetaData, TelemetryEventVMData creation and XML params generation
+    #[test]
+    fn test_vm_meta_data_and_vm_data() {
+        // Test VmMetaData clone
+        let meta_data = create_test_vm_meta_data();
+        let cloned = meta_data.clone();
+        assert_eq!(cloned.container_id, "test-container-id");
+        assert_eq!(cloned.tenant_name, "test-tenant");
+        assert_eq!(cloned.vm_id, "test-vm-id");
+        assert_eq!(cloned.image_origin, 1);
+
+        // Test TelemetryEventVMData creation from VmMetaData
+        let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&meta_data);
+        assert_eq!(vm_data.container_id, "test-container-id");
+        assert_eq!(vm_data.tenant_name, "test-tenant");
+        assert_eq!(vm_data.role_name, "test-role");
+        assert_eq!(vm_data.role_instance_name, "test-role-instance");
+        assert_eq!(vm_data.subscription_id, "test-subscription-id");
+        assert_eq!(vm_data.resource_group_name, "test-resource-group");
+        assert_eq!(vm_data.vm_id, "test-vm-id");
+        assert_eq!(vm_data.image_origin, 1);
+        // These are populated from current_info
+        assert!(!vm_data.keyword_name.is_empty());
+        assert!(!vm_data.os_version.is_empty());
+        assert!(vm_data.ram > 0);
+        assert!(vm_data.processors > 0);
+
+        // Test XML params generation
+        let xml = vm_data.to_xml_params();
+        assert!(xml.contains("KeywordName"));
+        assert!(xml.contains("TenantName"));
+        assert!(xml.contains("test-tenant"));
+        assert!(xml.contains("RoleName"));
+        assert!(xml.contains("ContainerId"));
+        assert!(xml.contains("ResourceGroupName"));
+        assert!(xml.contains("SubscriptionId"));
+        assert!(xml.contains("VMId"));
+        assert!(xml.contains("ImageOrigin"));
+        assert!(xml.contains("OSVersion"));
+        assert!(xml.contains("RAM"));
+        assert!(xml.contains("Processors"));
+    }
+
+    /// Tests TelemetryProvider operations: add, remove, count, and XML generation
+    #[test]
+    fn test_telemetry_provider() {
+        let mut provider = TelemetryProvider::new(METRICS_PROVIDER_ID.to_string());
+        assert_eq!(provider.id, METRICS_PROVIDER_ID);
+        assert_eq!(provider.event_count(), 0);
+
+        // Add events
+        let event1 = create_test_telemetry_event("Test message 1");
+        let event2 = create_test_telemetry_event("Test message 2");
+
+        provider.add_event(event1.clone());
+        assert_eq!(provider.event_count(), 1);
+
+        provider.add_event(event2);
+        assert_eq!(provider.event_count(), 2);
+
+        // Remove event
+        let removed = provider.remove_event(event1.clone());
+        assert!(removed.is_some());
+        assert_eq!(provider.event_count(), 1);
+
+        // Remove non-existent event returns None
+        let removed = provider.remove_event(event1);
+        assert!(removed.is_none());
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = provider.to_xml(&vm_data);
+        assert!(xml.starts_with(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.ends_with("</Provider>"));
+        assert!(xml.contains("<Event id=\"7\">"));
+    }
+
+    /// Tests TelemetryData operations: add, remove, count, size, and XML generation
+    #[test]
+    fn test_telemetry_data() {
+        let vm_data = create_test_vm_data();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+        assert_eq!(telemetry_data.event_count(), 0);
+
+        // Test empty XML
+        let empty_xml = telemetry_data.to_xml();
+        assert!(empty_xml.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(empty_xml.contains("<TelemetryData version=\"1.0\">"));
+        assert!(empty_xml.contains("</TelemetryData>"));
+        assert!(!empty_xml.contains("<Provider")); // No provider when empty
+
+        let initial_size = telemetry_data.get_size();
+        assert!(initial_size > 0);
+
+        // Add events
+        let event1 = create_test_telemetry_event("Test message 1");
+        let event2 = create_test_telemetry_event("Test message 2");
+        let event3 = create_test_telemetry_event("Test message 3");
+
+        telemetry_data.add_event(event1);
+        assert_eq!(telemetry_data.event_count(), 1);
+
+        telemetry_data.add_event(event2);
+        telemetry_data.add_event(event3.clone());
+        assert_eq!(telemetry_data.event_count(), 3);
+
+        // Size should increase after adding events
+        let new_size = telemetry_data.get_size();
+        assert!(new_size > initial_size);
+
+        // Remove last event
+        let removed = telemetry_data.remove_last_event(event3);
+        assert!(removed.is_some());
+        assert_eq!(telemetry_data.event_count(), 2);
+
+        // Test XML with events
+        let xml = telemetry_data.to_xml();
+        assert!(xml.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(xml.contains("<TelemetryData version=\"1.0\">"));
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.contains("<Event id=\"7\">"));
+    }
+
+    /// Tests TelemetryEvent and TelemetryGenericLogsEvent
+    #[test]
+    fn test_telemetry_event() {
+        // Test provider ID
+        let event = create_test_telemetry_event("Test message");
+        assert_eq!(event.get_provider_id(), METRICS_PROVIDER_ID);
+        assert_eq!(TelemetryGenericLogsEvent::get_provider_id(), METRICS_PROVIDER_ID);
+
+        // Test XML event generation
+        let vm_data = create_test_vm_data();
+        let xml = event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"7\">"));
+        assert!(xml.contains("<![CDATA["));
+        assert!(xml.contains("]]></Event>"));
+        assert!(xml.contains("EventName"));
+        assert!(xml.contains("CapabilityUsed"));
+        assert!(xml.contains("Context1"));
+        assert!(xml.contains("Context2"));
+        assert!(xml.contains("Context3"));
+
+        // Test that different messages produce different events
+        let event2 = create_test_telemetry_event("Different message");
+        assert!(event != event2); // Different messages create different events
+    }
+
+    /// Tests TelemetryGenericLogsEvent from_event_log with and without ga_version
+    #[test]
+    fn test_telemetry_generic_logs_event_creation() {
+        let event_log = create_test_event("Test message");
+
+        // With ga_version provided
+        let event_with_version = TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "execution_mode".to_string(),
+            "event_name".to_string(),
+            Some("1.0.0".to_string()),
+        );
+        assert_eq!(event_with_version.ga_version, "1.0.0");
+        assert!(event_with_version.event_name.starts_with("event_name-"));
+        assert_eq!(event_with_version.execution_mode, "execution_mode");
+
+        // Without ga_version (None)
+        let event_without_version = TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "execution_mode".to_string(),
+            "event_name".to_string(),
+            None,
+        );
+        assert_eq!(event_without_version.ga_version, event_log.Version);
+        assert_eq!(event_without_version.event_name, "event_name");
+    }
+
+    /// Tests KeywordName JSON serialization
+    #[test]
+    fn test_keyword_name() {
+        let keyword = KeywordName::new("x86_64".to_string());
+        let json = keyword.to_json();
+
+        assert!(json.contains("CpuArchitecture"));
+        assert!(json.contains("x86_64"));
+    }
+}

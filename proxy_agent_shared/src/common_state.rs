@@ -205,3 +205,69 @@ impl CommonState {
         self.cancellation_token.cancel();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_common_state_key_value_operations() {
+        let cancellation_token = CancellationToken::new();
+        let common_state = CommonState::start_new(cancellation_token);
+
+        // Get non-existent key should return None
+        let value = common_state.get_state("non_existent_key".to_string()).await.unwrap();
+        assert!(value.is_none(), "Non-existent key should return None");
+
+        // Set and get a key-value pair
+        common_state
+            .set_state(SECURE_KEY_GUID.to_string(), "test-guid-value".to_string())
+            .await
+            .unwrap();
+        let value = common_state.get_state(SECURE_KEY_GUID.to_string()).await.unwrap();
+        assert_eq!(value, Some("test-guid-value".to_string()));
+
+        // Set and get another key-value pair
+        common_state
+            .set_state(SECURE_KEY_VALUE.to_string(), "test-key-value".to_string())
+            .await
+            .unwrap();
+        let value = common_state.get_state(SECURE_KEY_VALUE.to_string()).await.unwrap();
+        assert_eq!(value, Some("test-key-value".to_string()));
+
+        // Update existing key
+        common_state
+            .set_state(SECURE_KEY_GUID.to_string(), "updated-guid-value".to_string())
+            .await
+            .unwrap();
+        let value = common_state.get_state(SECURE_KEY_GUID.to_string()).await.unwrap();
+        assert_eq!(value, Some("updated-guid-value".to_string()));
+
+        // First key should still have its value
+        let value = common_state.get_state(SECURE_KEY_VALUE.to_string()).await.unwrap();
+        assert_eq!(value, Some("test-key-value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_common_state_multiple_operations() {
+        let cancellation_token = CancellationToken::new();
+        let common_state = CommonState::start_new(cancellation_token);
+
+        // Perform multiple operations in sequence
+        for i in 0..10 {
+            let key = format!("key_{}", i);
+            let value = format!("value_{}", i);
+            common_state.set_state(key.clone(), value.clone()).await.unwrap();
+            let retrieved = common_state.get_state(key).await.unwrap();
+            assert_eq!(retrieved, Some(value));
+        }
+
+        // Verify all values are still accessible
+        for i in 0..10 {
+            let key = format!("key_{}", i);
+            let expected_value = format!("value_{}", i);
+            let retrieved = common_state.get_state(key).await.unwrap();
+            assert_eq!(retrieved, Some(expected_value));
+        }
+    }
+}
