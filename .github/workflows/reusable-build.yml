@@ -76,7 +76,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent_shared
         run: |
-          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release
+          cargo llvm-cov --target x86_64-pc-windows-msvc --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release -- --test-threads=1
           type ./out/proxy_agent_shared_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent_shared
@@ -325,7 +325,7 @@ jobs:
 
       - name: Run Code Coverage for proxy_agent_shared
         run: |
-          cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release
+          cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release -- --test-threads=1
           cat ./out/proxy_agent_shared_codeCov.txt
 
       - name: Parse Code Coverage for proxy_agent_shared
