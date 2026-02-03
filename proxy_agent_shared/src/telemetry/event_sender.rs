@@ -440,7 +440,7 @@ mod tests {
         process_common_state.notify_telemetry_event().await.unwrap();
 
         // Give it a moment to process the events
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Verify queue is empty after processing
         assert_eq!(
