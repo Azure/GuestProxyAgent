@@ -221,8 +221,10 @@ pub(crate) fn enqueue_event(event: TelemetryEvent) {
 mod tests {
     use super::*;
     use crate::host_clients::wire_server_client::WireServerClient;
-    use crate::telemetry::telemetry_event::{TelemetryGenericLogsEvent, VmMetaData};
-    use crate::telemetry::Event;
+    use crate::telemetry::telemetry_event::{
+        TelemetryExtensionEventsEvent, TelemetryGenericLogsEvent, VmMetaData,
+    };
+    use crate::telemetry::{Event, ExtensionStatusEvent};
     use tokio_util::sync::CancellationToken;
 
     fn create_test_vm_meta_data() -> VmMetaData {
@@ -251,6 +253,39 @@ mod tests {
             "test_event_name".to_string(),
             Some("1.0.0".to_string()),
         ))
+    }
+
+    fn create_test_extension_event() -> TelemetryEvent {
+        let extension = crate::telemetry::Extension {
+            name: "test_extension".to_string(),
+            version: "1.0.0".to_string(),
+            is_internal: true,
+            extension_type: "test_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: true,
+            operation: "install".to_string(),
+            task_name: "test_task".to_string(),
+            message: "Installation successful".to_string(),
+            duration: 500,
+        };
+        let extension_status_event = ExtensionStatusEvent::new(extension, operation_status);
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        TelemetryEvent::ExtensionEvent(telemetry_event)
+    }
+
+    #[tokio::test]
+    async fn test_event_sender_new() {
+        let cancellation_token = CancellationToken::new();
+        let common_state = CommonState::start_new(cancellation_token);
+        let event_sender = EventSender::new(common_state);
+
+        // Verify EventSender was created (common_state is private, so we just check it doesn't panic)
+        assert!(std::mem::size_of_val(&event_sender) > 0);
     }
 
     #[tokio::test]
@@ -346,6 +381,135 @@ mod tests {
         assert!(xml.contains("</Provider>"));
     }
 
+    #[test]
+    fn test_extension_event_xml_format() {
+        let vm_meta_data = create_test_vm_meta_data();
+        let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&vm_meta_data);
+
+        // Test extension event XML
+        let event = create_test_extension_event();
+        let event_xml = event.to_xml_event(&vm_data);
+        assert!(event_xml.contains("<Event id=\"1\">"));
+        assert!(event_xml.contains("<![CDATA["));
+        assert!(event_xml.contains("]]></Event>"));
+        assert!(event_xml.contains("ExtensionType"));
+        assert!(event_xml.contains("test_type"));
+        assert!(event_xml.contains("Name"));
+        assert!(event_xml.contains("test_extension"));
+
+        // Test provider ID for extension events
+        assert_eq!(
+            event.get_provider_id(),
+            "69B669B9-4AF8-4C50-BDC4-6006FA76E975"
+        );
+
+        // Test TelemetryData with extension event
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+        telemetry_data.add_event(event);
+        let xml = telemetry_data.to_xml();
+        assert!(xml.contains("<Provider id=\"69B669B9-4AF8-4C50-BDC4-6006FA76E975\">"));
+    }
+
+    #[test]
+    fn test_mixed_events_xml_format() {
+        let vm_meta_data = create_test_vm_meta_data();
+        let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&vm_meta_data);
+
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+
+        // Add generic logs event
+        let generic_event = create_test_event("Test generic message");
+        telemetry_data.add_event(generic_event);
+
+        // Add extension event
+        let extension_event = create_test_extension_event();
+        telemetry_data.add_event(extension_event);
+
+        assert_eq!(telemetry_data.event_count(), 2);
+
+        let xml = telemetry_data.to_xml();
+
+        // Verify both providers are present
+        assert!(xml.contains("<Provider id=\"FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F\">"));
+        assert!(xml.contains("<Provider id=\"69B669B9-4AF8-4C50-BDC4-6006FA76E975\">"));
+        assert!(xml.contains("<Event id=\"7\">")); // Generic logs event
+        assert!(xml.contains("<Event id=\"1\">")); // Extension event
+    }
+
+    #[test]
+    fn test_queue_with_extension_events() {
+        // Create a local bounded queue for testing
+        let test_queue: ConcurrentQueue<TelemetryEvent> = ConcurrentQueue::bounded(10);
+
+        // Add generic and extension events
+        let generic_event = create_test_event("Generic message");
+        let extension_event = create_test_extension_event();
+
+        assert!(test_queue.push(generic_event.clone()).is_ok());
+        assert!(test_queue.push(extension_event.clone()).is_ok());
+
+        assert_eq!(test_queue.len(), 2);
+
+        // Verify FIFO order and event types
+        let popped1 = test_queue.pop();
+        assert!(popped1.is_ok());
+        assert_eq!(
+            popped1.unwrap().get_provider_id(),
+            "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F"
+        );
+
+        let popped2 = test_queue.pop();
+        assert!(popped2.is_ok());
+        assert_eq!(
+            popped2.unwrap().get_provider_id(),
+            "69B669B9-4AF8-4C50-BDC4-6006FA76E975"
+        );
+
+        assert!(test_queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_update_vm_meta_data_with_mock_server() {
+        let ip = "127.0.0.1";
+        let port = 7072u16;
+
+        let cancellation_token = CancellationToken::new();
+        let common_state = CommonState::start_new(cancellation_token.clone());
+        let event_sender = EventSender::new(common_state.clone());
+
+        // Start mock server
+        tokio::spawn(crate::server_mock::start(
+            ip.to_string(),
+            port,
+            cancellation_token.clone(),
+        ));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let wire_server_client = WireServerClient::new(ip, port);
+        let imds_client = ImdsClient::new(ip, port);
+
+        // Initially vm_meta_data should be None
+        let vm_meta_data = common_state.get_vm_meta_data().await.unwrap();
+        assert!(vm_meta_data.is_none());
+
+        // Update vm_meta_data
+        let result = event_sender
+            .update_vm_meta_data(&wire_server_client, &imds_client)
+            .await;
+        assert!(result.is_ok(), "update_vm_meta_data should succeed");
+
+        // Verify vm_meta_data was set
+        let vm_meta_data = common_state.get_vm_meta_data().await.unwrap();
+        assert!(vm_meta_data.is_some(), "vm_meta_data should be set");
+
+        let vm_data = vm_meta_data.unwrap();
+        // Values come from mock server responses
+        assert!(!vm_data.container_id.is_empty());
+        assert!(!vm_data.role_name.is_empty());
+
+        cancellation_token.cancel();
+    }
+
     /// Consolidated test for all TELEMETRY_EVENT_QUEUE and wire server operations.
     /// This test must run in a single test function because the global static queue
     /// cannot be reopened once closed. The test covers:
@@ -394,7 +558,22 @@ mod tests {
         event_sender.process_event_queue(None, None).await;
         assert!(TELEMETRY_EVENT_QUEUE.is_empty());
 
-        // ===== Part 3: Test enqueue and process with mock server =====
+        // ===== Part 3: Test enqueue mixed events (generic and extension) =====
+        let generic_event = create_test_event("Generic event for queue");
+        let extension_event = create_test_extension_event();
+
+        enqueue_event(generic_event);
+        enqueue_event(extension_event);
+        assert_eq!(
+            TELEMETRY_EVENT_QUEUE.len(),
+            2,
+            "Queue should have 2 mixed events"
+        );
+
+        // Clear for next test
+        while TELEMETRY_EVENT_QUEUE.pop().is_ok() {}
+
+        // ===== Part 4: Test enqueue and process with mock server =====
         // Enqueue events
         let event_a = create_test_event("Test event A for processing");
         let event_b = create_test_event("Test event B for processing");
@@ -455,7 +634,7 @@ mod tests {
             "Queue should not be closed after processing"
         );
 
-        // ===== Part 4: Test send_data_to_wire_server =====
+        // ===== Part 5: Test send_data_to_wire_server =====
         let wire_server_client = WireServerClient::new(ip, port);
         let vm_meta_data = create_test_vm_meta_data();
         let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&vm_meta_data);
@@ -466,13 +645,20 @@ mod tests {
         EventSender::send_data_to_wire_server(empty_data, &wire_server_client).await;
 
         // Test sending data with events
-        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data.clone());
         telemetry_data.add_event(create_test_event("Test event 1"));
         telemetry_data.add_event(create_test_event("Test event 2"));
         assert_eq!(telemetry_data.event_count(), 2);
         EventSender::send_data_to_wire_server(telemetry_data, &wire_server_client).await;
 
-        // ===== Part 5: Test EventSender lifecycle (cancellation) =====
+        // Test sending data with mixed events
+        let mut mixed_data = TelemetryData::new_with_vm_data(vm_data);
+        mixed_data.add_event(create_test_event("Generic event"));
+        mixed_data.add_event(create_test_extension_event());
+        assert_eq!(mixed_data.event_count(), 2);
+        EventSender::send_data_to_wire_server(mixed_data, &wire_server_client).await;
+
+        // ===== Part 6: Test EventSender lifecycle (cancellation) =====
         // This MUST be last as it closes the queue permanently
 
         // Cancel the token - this will close the queue, stop the event sender task and stop mock server

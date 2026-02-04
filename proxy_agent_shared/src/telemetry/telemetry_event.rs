@@ -708,4 +708,208 @@ mod tests {
         assert!(json.contains("CpuArchitecture"));
         assert!(json.contains("x86_64"));
     }
+
+    fn create_test_extension_status_event() -> ExtensionStatusEvent {
+        let extension = crate::telemetry::Extension {
+            name: "test_extension".to_string(),
+            version: "2.0.0".to_string(),
+            is_internal: true,
+            extension_type: "test_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: true,
+            operation: "install".to_string(),
+            task_name: "test_task".to_string(),
+            message: "Installation successful".to_string(),
+            duration: 500,
+        };
+        ExtensionStatusEvent::new(extension, operation_status)
+    }
+
+    /// Tests TelemetryExtensionEventsEvent creation and XML generation
+    #[test]
+    fn test_telemetry_extension_events_event() {
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+
+        // Verify field mappings
+        assert_eq!(telemetry_event.ga_version, "1.0.0");
+        assert_eq!(telemetry_event.execution_mode, "production");
+        assert_eq!(telemetry_event.extension_type, "test_type");
+        assert!(telemetry_event.is_internal);
+        assert_eq!(telemetry_event.name, "test_extension");
+        assert_eq!(telemetry_event.version, "2.0.0");
+        assert_eq!(telemetry_event.operation, "install");
+        assert_eq!(telemetry_event.task_name, "test_task");
+        assert!(telemetry_event.operation_success);
+        assert_eq!(telemetry_event.message, "Installation successful");
+        assert_eq!(telemetry_event.duration, 500);
+
+        // Verify provider ID
+        assert_eq!(
+            TelemetryExtensionEventsEvent::get_provider_id(),
+            STATUS_PROVIDER_ID
+        );
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = telemetry_event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"1\">"));
+        assert!(xml.contains("<![CDATA["));
+        assert!(xml.contains("]]></Event>"));
+        assert!(xml.contains("ExtensionType"));
+        assert!(xml.contains("test_type"));
+        assert!(xml.contains("IsInternal"));
+        assert!(xml.contains("True")); // is_internal = true
+        assert!(xml.contains("Name"));
+        assert!(xml.contains("test_extension"));
+        assert!(xml.contains("Version"));
+        assert!(xml.contains("2.0.0"));
+        assert!(xml.contains("Operation"));
+        assert!(xml.contains("install"));
+        assert!(xml.contains("OperationSuccess"));
+        assert!(xml.contains("Message"));
+        assert!(xml.contains("Installation successful"));
+        assert!(xml.contains("Duration"));
+        assert!(xml.contains("500"));
+    }
+
+    /// Tests TelemetryExtensionEventsEvent with operation failure
+    #[test]
+    fn test_telemetry_extension_events_event_failure() {
+        let extension = crate::telemetry::Extension {
+            name: "failed_extension".to_string(),
+            version: "1.0.0".to_string(),
+            is_internal: false,
+            extension_type: "external_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: false,
+            operation: "enable".to_string(),
+            task_name: "enable_task".to_string(),
+            message: "Enable failed with error".to_string(),
+            duration: 100,
+        };
+        let extension_status_event = ExtensionStatusEvent::new(extension, operation_status);
+
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "test".to_string(),
+            "2.0.0".to_string(),
+        );
+
+        assert!(!telemetry_event.is_internal);
+        assert!(!telemetry_event.operation_success);
+        assert_eq!(telemetry_event.name, "failed_extension");
+        assert_eq!(telemetry_event.operation, "enable");
+
+        // Test XML with False values
+        let vm_data = create_test_vm_data();
+        let xml = telemetry_event.to_xml_event(&vm_data);
+        assert!(xml.contains("IsInternal"));
+        assert!(xml.contains("\"False\"")); // is_internal = false
+        assert!(xml.contains("OperationSuccess"));
+    }
+
+    /// Tests TelemetryEvent enum with ExtensionEvent variant
+    #[test]
+    fn test_telemetry_event_extension_variant() {
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let event = TelemetryEvent::ExtensionEvent(telemetry_event);
+
+        // Test provider ID through enum
+        assert_eq!(event.get_provider_id(), STATUS_PROVIDER_ID);
+
+        // Test XML generation through enum
+        let vm_data = create_test_vm_data();
+        let xml = event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"1\">"));
+        assert!(xml.contains("ExtensionType"));
+    }
+
+    /// Tests TelemetryData with mixed event types (GenericLogs and Extension events)
+    #[test]
+    fn test_telemetry_data_mixed_events() {
+        let vm_data = create_test_vm_data();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+
+        // Add generic logs event
+        let generic_event = create_test_telemetry_event("Generic log message");
+        telemetry_data.add_event(generic_event);
+        assert_eq!(telemetry_data.event_count(), 1);
+
+        // Add extension event
+        let extension_status_event = create_test_extension_status_event();
+        let extension_telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let extension_event = TelemetryEvent::ExtensionEvent(extension_telemetry_event);
+        telemetry_data.add_event(extension_event.clone());
+        assert_eq!(telemetry_data.event_count(), 2);
+
+        // Add another extension event
+        let extension_status_event2 = create_test_extension_status_event();
+        let extension_telemetry_event2 = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event2,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let extension_event2 = TelemetryEvent::ExtensionEvent(extension_telemetry_event2);
+        telemetry_data.add_event(extension_event2);
+        assert_eq!(telemetry_data.event_count(), 3);
+
+        // Verify XML contains both provider types
+        let xml = telemetry_data.to_xml();
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID)));
+        assert!(xml.contains("<Event id=\"7\">")); // Generic logs event
+        assert!(xml.contains("<Event id=\"1\">")); // Extension event
+
+        // Remove extension event
+        let removed = telemetry_data.remove_last_event(extension_event);
+        assert!(removed.is_some());
+        assert_eq!(telemetry_data.event_count(), 2);
+    }
+
+    /// Tests TelemetryProvider with extension events
+    #[test]
+    fn test_telemetry_provider_with_extension_events() {
+        let mut provider = TelemetryProvider::new(STATUS_PROVIDER_ID.to_string());
+        assert_eq!(provider.id, STATUS_PROVIDER_ID);
+        assert_eq!(provider.event_count(), 0);
+
+        // Add extension events
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let event = TelemetryEvent::ExtensionEvent(telemetry_event);
+        provider.add_event(event.clone());
+        assert_eq!(provider.event_count(), 1);
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = provider.to_xml(&vm_data);
+        assert!(xml.starts_with(&format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID)));
+        assert!(xml.ends_with("</Provider>"));
+        assert!(xml.contains("<Event id=\"1\">"));
+
+        // Remove event
+        let removed = provider.remove_event(event);
+        assert!(removed.is_some());
+        assert_eq!(provider.event_count(), 0);
+    }
 }
