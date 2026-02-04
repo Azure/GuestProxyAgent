@@ -5,10 +5,12 @@
 //! //! The telemetry event files are written by the event_logger module.
 
 use crate::common_state::CommonState;
+use crate::current_info;
 use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::telemetry::event_sender;
 use crate::telemetry::telemetry_event::TelemetryEvent;
+use crate::telemetry::telemetry_event::TelemetryExtensionEventsEvent;
 use crate::telemetry::telemetry_event::TelemetryGenericLogsEvent;
 use crate::telemetry::Event;
 use std::fs::remove_file;
@@ -243,6 +245,95 @@ impl EventReader {
                 ));
             }
         }
+    }
+
+    pub async fn start_extension_status_event_processor(
+        &self,
+        delay_start: bool,
+        interval: Option<Duration>,
+    ) {
+        if delay_start {
+            // delay start the event_reader task to give additional CPU cycles to more important threads
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+
+        logger_manager::write_info(
+            "telemetry extension status event reader task started.".to_string(),
+        );
+        let interval = interval.unwrap_or(Duration::from_secs(60));
+        let cancellation_token = self.common_state.get_cancellation_token();
+        tokio::select! {
+            _ = self.loop_extension_status_event_processor(interval ) => {}
+            _ = cancellation_token.cancelled() => {
+                logger_manager::write_warn("cancellation token signal received, stop the telemetry extension status event reader task.".to_string());
+            }
+        }
+    }
+
+    async fn loop_extension_status_event_processor(&self, interval: Duration) {
+        loop {
+            self.process_extension_status_events().await;
+            tokio::time::sleep(interval).await;
+        }
+    }
+
+    async fn process_extension_status_events(&self) -> usize {
+        let mut event_count: usize = 0;
+        // get all extension status event filenames in the directory
+        match misc_helpers::search_files(
+            &self.dir_path,
+            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+        ) {
+            Ok(files) => {
+                let file_count = files.len();
+                for file in files {
+                    event_count += self.process_one_extension_status_event_file(file).await;
+                }
+                logger_manager::write_info( format!(
+                    "Telemetry event reader sent {event_count} extension status events from {file_count} files"
+                ));
+            }
+            Err(e) => {
+                logger_manager::write_warn(format!(
+                    "Extension Status Event Files not found in directory {}: {}",
+                    self.dir_path.display(),
+                    e
+                ));
+            }
+        }
+        event_count
+    }
+
+    async fn process_one_extension_status_event_file(&self, file: PathBuf) -> usize {
+        let mut num_events_logged = 0;
+
+        match misc_helpers::json_read_from_file::<crate::telemetry::ExtensionStatusEvent>(&file) {
+            Ok(event) => {
+                num_events_logged += 1;
+                let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+                    &event,
+                    self.execution_mode.clone(),
+                    current_info::get_current_exe_version(),
+                );
+                let telemetry_event = TelemetryEvent::ExtensionEvent(telemetry_event);
+                event_sender::enqueue_event(telemetry_event);
+                if let Err(e) = self.common_state.notify_telemetry_event().await {
+                    logger_manager::write_warn(format!(
+                        "Failed to notify telemetry event with error: {e}"
+                    ));
+                }
+            }
+            Err(e) => {
+                logger_manager::write_warn(format!(
+                    "EventReader:: Failed to read extension status event from file {}: {}",
+                    file.display(),
+                    e
+                ));
+            }
+        }
+
+        Self::clean_file(file);
+        num_events_logged
     }
 }
 

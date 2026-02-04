@@ -3,12 +3,13 @@
 
 //! This module contains the logic to generate the telemetry data to be send to wire server.
 
-use crate::telemetry::Event;
+use crate::telemetry::{Event, ExtensionStatusEvent};
 use crate::{current_info, misc_helpers};
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
 const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
+const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
 
 /// VmMetaData contains the metadata of the VM.
 /// The metadata is used to identify the VM and the image origin.
@@ -158,6 +159,9 @@ impl TelemetryProvider {
                 TelemetryEvent::GenericLogsEvent(event) => {
                     xml.push_str(&event.to_xml_event(vm_data));
                 }
+                TelemetryEvent::ExtensionEvent(event) => {
+                    xml.push_str(&event.to_xml_event(vm_data));
+                }
             }
         }
 
@@ -212,10 +216,17 @@ impl TelemetryData {
                         return;
                     }
                 }
+                TelemetryEvent::ExtensionEvent(_) => {
+                    if provider.id == STATUS_PROVIDER_ID {
+                        provider.add_event(event);
+                        return;
+                    }
+                }
             }
         }
         let mut p = TelemetryProvider::new(match &event {
             TelemetryEvent::GenericLogsEvent(_) => METRICS_PROVIDER_ID.to_string(),
+            TelemetryEvent::ExtensionEvent(_) => STATUS_PROVIDER_ID.to_string(),
         });
         p.add_event(event);
         self.providers.push(p);
@@ -228,6 +239,11 @@ impl TelemetryData {
             match &last_event {
                 TelemetryEvent::GenericLogsEvent(_) => {
                     if provider.id == METRICS_PROVIDER_ID {
+                        return provider.remove_event(last_event);
+                    }
+                }
+                TelemetryEvent::ExtensionEvent(_) => {
+                    if provider.id == STATUS_PROVIDER_ID {
                         return provider.remove_event(last_event);
                     }
                 }
@@ -246,18 +262,21 @@ impl TelemetryData {
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum TelemetryEvent {
     GenericLogsEvent(TelemetryGenericLogsEvent),
+    ExtensionEvent(TelemetryExtensionEventsEvent),
 }
 
 impl TelemetryEvent {
     pub fn get_provider_id(&self) -> String {
         match self {
             TelemetryEvent::GenericLogsEvent(_) => TelemetryGenericLogsEvent::get_provider_id(),
+            TelemetryEvent::ExtensionEvent(_) => TelemetryExtensionEventsEvent::get_provider_id(),
         }
     }
 
     pub fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
         match self {
             TelemetryEvent::GenericLogsEvent(event) => event.to_xml_event(vm_data),
+            TelemetryEvent::ExtensionEvent(event) => event.to_xml_event(vm_data),
         }
     }
 }
@@ -337,6 +356,103 @@ impl TelemetryGenericLogsEvent {
         xml.push_str(&format!(
             "<Param Name=\"Context3\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.context3.to_string())
+        ));
+
+        xml.push_str("]]></Event>");
+        xml
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct TelemetryExtensionEventsEvent {
+    event_pid: u64,
+    event_tid: u64,
+    ga_version: String,
+    task_name: String,
+    opcode_name: String,
+    execution_mode: String,
+
+    extension_type: String,
+    is_internal: bool,
+    name: String,
+    version: String,
+    operation: String,
+    operation_success: bool,
+    message: String,
+    duration: u64,
+}
+
+impl TelemetryExtensionEventsEvent {
+    pub fn from_extension_status_event(
+        event: &ExtensionStatusEvent,
+        execution_mode: String,
+        ga_version: String,
+    ) -> Self {
+        TelemetryExtensionEventsEvent {
+            ga_version,
+            execution_mode,
+            event_pid: event.event_pid.parse::<u64>().unwrap_or(0),
+            event_tid: event.event_tid.parse::<u64>().unwrap_or(0),
+            opcode_name: event.time_stamp.to_string(),
+            extension_type: event.extension.extension_type.to_string(),
+            is_internal: event.extension.is_internal,
+            name: event.extension.name.to_string(),
+            version: event.extension.version.to_string(),
+            operation: event.operation_status.operation.to_string(),
+            task_name: event.operation_status.task_name.to_string(),
+            operation_success: event.operation_status.operation_success,
+            message: event.operation_status.message.to_string(),
+            duration: event.operation_status.duration as u64,
+        }
+    }
+
+    pub fn get_provider_id() -> String {
+        STATUS_PROVIDER_ID.to_string()
+    }
+
+    fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
+        let mut xml: String = String::new();
+        // Event ID 1 is for Extension Events
+        xml.push_str("<Event id=\"1\"><![CDATA[");
+
+        xml.push_str(&vm_data.to_xml_params());
+
+        // ... Additional parameters similar to TelemetryGenericLogsEvent
+        xml.push_str(&format!(
+            "<Param Name=\"ExtensionType\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.extension_type.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"IsInternal\" Value=\"{}\" T=\"mt:bool\" />",
+            if self.is_internal { "True" } else { "False" }
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Name\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.name.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Version\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.version.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Operation\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.operation.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OperationSuccess\" Value=\"{}\" T=\"mt:bool\" />",
+            if self.operation_success {
+                "True"
+            } else {
+                "False"
+            }
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Message\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.message.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Duration\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.duration
         ));
 
         xml.push_str("]]></Event>");
