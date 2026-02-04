@@ -292,7 +292,6 @@ jobs:
                   build-essential \
                   linux-tools-$(uname -r) \
                   linux-tools-common \
-                  linux-tools-generic \
                   rpm \
                   musl-tools \
                   libssl-dev \
@@ -464,7 +463,6 @@ jobs:
                   build-essential \
                   linux-tools-$(uname -r) \
                   linux-tools-common \
-                  linux-tools-generic \
                   rpm \
                   musl-tools \
                   gcc-aarch64-linux-gnu \
