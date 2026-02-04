@@ -72,7 +72,10 @@ pub async fn start<F, Fut>(
 
         // Check the event file counts,
         // if it exceeds the max file number, drop the new events
-        match misc_helpers::get_files(&event_dir) {
+        match misc_helpers::search_files(
+            &event_dir,
+            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+        ) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
                     logger_manager::write_log(Level::Warn, format!(
@@ -120,6 +123,8 @@ pub fn stop() {
     SHUT_DOWN.store(true, Ordering::Relaxed);
 }
 
+/// Write event and log to file
+/// This event will send out as `TelemetryGenericLogsEvent`
 pub fn write_event(
     level: Level,
     message: String,
@@ -133,6 +138,8 @@ pub fn write_event(
     logger_manager::log(logger_key.to_string(), level, message);
 }
 
+/// Write event only without logging to file
+/// This event will send out as `TelemetryGenericLogsEvent`
 pub fn write_event_only(level: Level, message: String, method_name: &str, module_name: &str) {
     let event_message = if message.len() > MAX_MESSAGE_LENGTH {
         message[..MAX_MESSAGE_LENGTH].to_string()

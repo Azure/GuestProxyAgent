@@ -2,12 +2,19 @@
 // SPDX-License-Identifier: MIT
 pub mod event_logger;
 pub mod event_reader;
+pub mod event_sender;
 pub mod span;
 pub mod telemetry_event;
 
-use crate::misc_helpers;
+use crate::{current_info, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 
+pub const GENERIC_EVENT_FILE_SEARCH_PATTERN: &str = r"^[0-9]+\.json$";
+pub fn new_generic_event_file_name() -> String {
+    format!("{}.json", misc_helpers::get_date_time_unix_nano())
+}
+
+/// Represents a telemetry event for TelemetryGenericLogsEvent
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Event {
@@ -26,7 +33,7 @@ impl Event {
         Event {
             EventLevel: level,
             Message: message,
-            Version: misc_helpers::get_current_exe_version(),
+            Version: current_info::get_current_exe_version(),
             TaskName: task_name,
             EventPid: std::process::id().to_string(),
             EventTid: misc_helpers::get_thread_identity(),
