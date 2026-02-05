@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::common_state::{self, CommonState};
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
-use crate::logger::logger_manager;
+use crate::logger::{logger_manager, LoggerLevel};
 use crate::result::Result;
 use crate::telemetry::telemetry_event::{
     TelemetryData, TelemetryEvent, TelemetryEventVMData, VmMetaData,
@@ -191,12 +191,17 @@ impl EventSender {
             return;
         }
 
+        let event_count = telemetry_data.event_count();
         for _ in [0; 5] {
             match wire_server_client
                 .send_telemetry_data(telemetry_data.to_xml())
                 .await
             {
                 Ok(()) => {
+                    logger_manager::write_log(
+                        LoggerLevel::Trace,
+                        format!("Successfully sent {event_count} telemetry events to wire server."),
+                    );
                     break;
                 }
                 Err(e) => {
