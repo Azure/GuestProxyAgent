@@ -338,6 +338,32 @@ impl TelemetryGenericLogsEvent {
         xml.push_str(&vm_data.to_xml_params());
 
         xml.push_str(&format!(
+            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_pid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_tid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"GaVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.ga_version.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.execution_mode.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.task_name.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.opcode_name.to_string())
+        ));
+        
+
+        xml.push_str(&format!(
             "<Param Name=\"EventName\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.event_name.to_string())
         ));
@@ -417,7 +443,30 @@ impl TelemetryExtensionEventsEvent {
 
         xml.push_str(&vm_data.to_xml_params());
 
-        // ... Additional parameters similar to TelemetryGenericLogsEvent
+        xml.push_str(&format!(
+            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_pid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_tid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"GaVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.ga_version.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.execution_mode.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.task_name.to_string())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.opcode_name.to_string())
+        ));
         xml.push_str(&format!(
             "<Param Name=\"ExtensionType\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.extension_type.to_string())

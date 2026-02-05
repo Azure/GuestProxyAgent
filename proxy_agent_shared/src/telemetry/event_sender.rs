@@ -647,6 +647,7 @@ mod tests {
         telemetry_data.add_event(create_test_event("Test event 1"));
         telemetry_data.add_event(create_test_event("Test event 2"));
         assert_eq!(telemetry_data.event_count(), 2);
+        println!("{}", telemetry_data.to_xml());
         EventSender::send_data_to_wire_server(telemetry_data, &wire_server_client).await;
 
         // Test sending data with mixed events
