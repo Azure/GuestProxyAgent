@@ -75,7 +75,6 @@ jobs:
                 build-essential \
                 linux-tools-$(uname -r) \
                 linux-tools-common \
-                linux-tools-generic \
                 rpm \
                 musl-tools \
 
