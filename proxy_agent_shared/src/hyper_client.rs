@@ -471,6 +471,7 @@ mod tests {
     use crate::{
         host_clients::{imds_client::ImdsClient, wire_server_client::WireServerClient},
         logger::logger_manager,
+        server_mock,
     };
     use tokio_util::sync::CancellationToken;
 
@@ -510,13 +511,11 @@ mod tests {
     async fn http_request_tests() {
         // start mock server
         let ip = "127.0.0.1";
-        let port = 7072u16;
+        let port = 9072u16;
         let cancellation_token = CancellationToken::new();
-        tokio::spawn(crate::server_mock::start(
-            ip.to_string(),
-            port,
-            cancellation_token.clone(),
-        ));
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         logger_manager::write_info("server_mock started.".to_string());
 

@@ -226,6 +226,7 @@ pub(crate) fn enqueue_event(event: TelemetryEvent) {
 mod tests {
     use super::*;
     use crate::host_clients::wire_server_client::WireServerClient;
+    use crate::server_mock;
     use crate::telemetry::telemetry_event::{
         TelemetryExtensionEventsEvent, TelemetryGenericLogsEvent, VmMetaData,
     };
@@ -476,18 +477,15 @@ mod tests {
     #[tokio::test]
     async fn test_update_vm_meta_data_with_mock_server() {
         let ip = "127.0.0.1";
-        let port = 7072u16;
+        let port = 9073u16;
 
         let cancellation_token = CancellationToken::new();
         let common_state = CommonState::start_new(cancellation_token.clone());
         let event_sender = EventSender::new(common_state.clone());
 
-        // Start mock server
-        tokio::spawn(crate::server_mock::start(
-            ip.to_string(),
-            port,
-            cancellation_token.clone(),
-        ));
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let wire_server_client = WireServerClient::new(ip, port);
@@ -531,7 +529,7 @@ mod tests {
 
         // Mock server details
         let ip = "127.0.0.1";
-        let port = 7071u16;
+        let port = 9071u16;
 
         // Create EventSender
         let cancellation_token = CancellationToken::new();
@@ -593,6 +591,20 @@ mod tests {
             "Queue should have 3 events after enqueue"
         );
 
+        // Process events - VM data cannot be retrieved yet as mock server not started, but should still attempt to process and log warnings
+        event_sender.process_event_queue(Some(ip), Some(port)).await;
+        assert_eq!(
+            TELEMETRY_EVENT_QUEUE.len(),
+            3,
+            "Queue should have 3 events after process_event_queue but without VM data"
+        );
+
+        // Start mock server to respond to goalstate and shared config requests
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
         // Start the event sender in a separate task
         let handle = tokio::spawn(async move {
             event_sender.start(Some(ip), Some(port)).await;
@@ -601,26 +613,7 @@ mod tests {
         // Give it a moment to start event sender task
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Notify to process events
-        process_common_state.notify_telemetry_event().await.unwrap();
-
-        // Give it a moment to process the events while the VM data is still not set as Mock server not started yet
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            TELEMETRY_EVENT_QUEUE.len(),
-            3,
-            "Queue should have 3 events after notify_telemetry_event but without VM data"
-        );
-
-        // Start mock server to respond to goalstate and shared config requests
-        tokio::spawn(crate::server_mock::start(
-            ip.to_string(),
-            port,
-            cancellation_token.clone(),
-        ));
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Notify again to process events now that VM data can be retrieved
+        // Notify to process events now that VM data can be retrieved
         process_common_state.notify_telemetry_event().await.unwrap();
 
         // Give it a moment to process the events (needs enough time for HTTP requests)

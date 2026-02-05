@@ -544,7 +544,7 @@ mod tests {
         match std::fs::remove_dir_all(&temp_test_path) {
             Ok(_) => {}
             Err(e) => {
-                print!("Failed to remove_dir_all with error {}.", e);
+                eprintln!("Failed to remove_dir_all with error {}.", e);
             }
         }
         misc_helpers::try_create_folder(&temp_test_path).unwrap();
