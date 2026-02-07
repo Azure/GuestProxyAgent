@@ -382,6 +382,19 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
         }
     });
     tokio::spawn({
+        let event_reader = EventReader::new(
+            config::get_events_dir(),
+            event_threads_shared_state.common_state.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
+        );
+        async move {
+            event_reader
+                .start_extension_status_event_processor(true, Some(Duration::from_secs(60)))
+                .await;
+        }
+    });
+    tokio::spawn({
         let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
         async move {
             event_sender.start(None, None).await;

@@ -32,7 +32,7 @@ async fn main() {
     let cli = args::Cli::parse();
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         cli
     ));
 

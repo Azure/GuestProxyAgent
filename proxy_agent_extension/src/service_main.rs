@@ -28,7 +28,7 @@ const MAX_STATE_COUNT: u32 = 120;
 pub fn run() {
     let message = format!(
         "==============  GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         misc_helpers::get_processor_arch(),
         misc_helpers::get_long_os_version()
     );

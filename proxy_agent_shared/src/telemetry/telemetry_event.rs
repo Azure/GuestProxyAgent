@@ -361,7 +361,6 @@ impl TelemetryGenericLogsEvent {
             "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.opcode_name.to_string())
         ));
-        
 
         xml.push_str(&format!(
             "<Param Name=\"EventName\" Value=\"{}\" T=\"mt:wstr\" />",

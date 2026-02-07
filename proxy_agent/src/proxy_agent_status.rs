@@ -28,18 +28,17 @@
 //! tokio::spawn(proxy_agent_status_task.start());
 //! ```
 
-use crate::common::logger;
+use crate::common::{constants, logger};
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use proxy_agent_shared::logger::LoggerLevel;
-use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
     ProxyAgentStatus,
 };
-use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::telemetry::{event_logger, Extension, OperationStatus};
+use proxy_agent_shared::{current_info, misc_helpers};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -126,7 +125,12 @@ impl ProxyAgentStatusTask {
                 e
             ));
         }
-
+        let agent_status = Extension {
+            name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            version: current_info::get_current_exe_version(),
+            is_internal: true,
+            extension_type: "Monitoring".to_string(),
+        };
         loop {
             #[cfg(not(windows))]
             {
@@ -140,12 +144,17 @@ impl ProxyAgentStatusTask {
                     Ok(status) => status,
                     Err(e) => format!("Error serializing proxy agent status: {e}"),
                 };
-                event_logger::write_event(
-                    LoggerLevel::Info,
-                    status,
-                    "loop_status",
-                    "proxy_agent_status",
-                    logger::AGENT_LOGGER_KEY,
+                // private build tests report_extension_status_event
+                event_logger::report_extension_status_event(
+                    agent_status.clone(),
+                    OperationStatus {
+                        operation_success: aggregate_status.proxyAgentStatus.status
+                            == OverallState::SUCCESS,
+                        task_name: "loop_status".to_string(),
+                        operation: "report_proxy_agent_status".to_string(),
+                        message: status,
+                        duration: status_report_time.elapsed().as_millis() as i64,
+                    },
                 );
                 status_report_time = Instant::now();
             }
@@ -225,7 +234,7 @@ impl ProxyAgentStatusTask {
         };
 
         ProxyAgentStatus {
-            version: misc_helpers::get_current_version(),
+            version: current_info::get_current_exe_version(),
             status,
             // monitorStatus is proxy_agent_status itself status
             monitorStatus: ProxyAgentDetailStatus {
