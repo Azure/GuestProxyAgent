@@ -44,6 +44,8 @@ pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken)
         }
     };
     let local_addr = listener.local_addr().unwrap();
+    // Update the port if we had to bind to an ephemeral port
+    let port = local_addr.port();
     println!("Mock Server Listening on http://{local_addr}");
     tokio::spawn(async move {
         loop {
@@ -73,7 +75,7 @@ pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken)
             }
         }
     });
-    Ok(local_addr.port())
+    Ok(port)
 }
 
 async fn handle_request(

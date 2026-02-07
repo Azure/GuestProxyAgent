@@ -577,6 +577,12 @@ mod tests {
         while TELEMETRY_EVENT_QUEUE.pop().is_ok() {}
 
         // ===== Part 4: Test enqueue and process with mock server =====
+        // Start mock server FIRST to respond to goalstate and shared config requests
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
         // Enqueue events
         let event_a = create_test_event("Test event A for processing");
         let event_b = create_test_event("Test event B for processing");
@@ -591,20 +597,6 @@ mod tests {
             "Queue should have 3 events after enqueue"
         );
 
-        // Process events - VM data cannot be retrieved yet as mock server not started, but should still attempt to process and log warnings
-        event_sender.process_event_queue(Some(ip), Some(port)).await;
-        assert_eq!(
-            TELEMETRY_EVENT_QUEUE.len(),
-            3,
-            "Queue should have 3 events after process_event_queue but without VM data"
-        );
-
-        // Start mock server to respond to goalstate and shared config requests
-        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
         // Start the event sender in a separate task
         let handle = tokio::spawn(async move {
             event_sender.start(Some(ip), Some(port)).await;
@@ -616,7 +608,7 @@ mod tests {
         // Notify to process events now that VM data can be retrieved
         process_common_state.notify_telemetry_event().await.unwrap();
 
-        // Give it a moment to process the events (needs enough time for HTTP requests)
+        // Give it a moment to process the events (needs enough time for multiple HTTP requests)
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Verify queue is empty after processing

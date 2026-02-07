@@ -4,6 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs::*;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     self, GuestProxyAgentAggregateStatus, ProxyConnectionSummary,
