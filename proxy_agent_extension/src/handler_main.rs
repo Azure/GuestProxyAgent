@@ -6,6 +6,7 @@ use crate::logger;
 use crate::structs;
 use crate::ExtensionCommand;
 use once_cell::sync::Lazy;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::version::Version;
 use std::fs::{self};

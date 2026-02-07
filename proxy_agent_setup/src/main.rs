@@ -13,6 +13,7 @@ pub mod setup;
 mod linux;
 
 use clap::Parser;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
 use std::process;
