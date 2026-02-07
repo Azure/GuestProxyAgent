@@ -346,7 +346,7 @@ impl TelemetryGenericLogsEvent {
             self.event_tid
         ));
         xml.push_str(&format!(
-            "<Param Name=\"GaVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.ga_version.to_string())
         ));
         xml.push_str(&format!(
@@ -451,7 +451,7 @@ impl TelemetryExtensionEventsEvent {
             self.event_tid
         ));
         xml.push_str(&format!(
-            "<Param Name=\"GaVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.ga_version.to_string())
         ));
         xml.push_str(&format!(
@@ -923,6 +923,7 @@ mod tests {
         assert!(xml.contains(&format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID)));
         assert!(xml.contains("<Event id=\"7\">")); // Generic logs event
         assert!(xml.contains("<Event id=\"1\">")); // Extension event
+        println!("{xml}");
 
         // Remove extension event
         let removed = telemetry_data.remove_last_event(extension_event);
