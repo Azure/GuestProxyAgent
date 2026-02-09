@@ -144,7 +144,6 @@ impl ProxyAgentStatusTask {
                     Ok(status) => status,
                     Err(e) => format!("Error serializing proxy agent status: {e}"),
                 };
-                // private build tests report_extension_status_event
                 event_logger::report_extension_status_event(
                     agent_status.clone(),
                     OperationStatus {
