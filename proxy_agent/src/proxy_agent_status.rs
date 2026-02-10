@@ -154,7 +154,8 @@ impl ProxyAgentStatusTask {
                         message: status,
                         duration: status_report_time.elapsed().as_millis() as i64,
                     },
-                );
+                )
+                .await;
                 status_report_time = Instant::now();
             }
             // write the aggregate status to status.json file
@@ -290,7 +291,7 @@ impl ProxyAgentStatusTask {
 
     async fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
         let full_file_path = self.status_dir.join("status.json");
-        if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
+        if let Err(e) = misc_helpers::json_write_to_file_async(&status, &full_file_path).await {
             self.update_agent_status_message(format!(
                 "Error writing aggregate status to status file: {e}"
             ))
