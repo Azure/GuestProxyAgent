@@ -200,7 +200,7 @@ impl Process {
         }
 
         // redact the secrets in the command line
-        let cmd = proxy_agent_shared::secrets_redactor::redact_secrets(cmd);
+        let cmd = proxy_agent_shared::secrets_redactor::redact_secrets_string(cmd);
 
         let process_name = process_full_path
             .file_name()

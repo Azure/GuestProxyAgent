@@ -263,6 +263,10 @@ pub struct AuthorizationRulesForLogging {
     pub computedRules: ComputedAuthorizationRules,
 }
 
+/// Remark: Regex::new is performance-sensitive, so we use LazyLock to compile it only once and reuse it for subsequent calls
+static AUTHORIZATION_RULES_FILE_SEARCH_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"^AuthorizationRules_.*\.json$").unwrap());
+
 impl AuthorizationRulesForLogging {
     pub fn new(
         input_rules: Option<AuthorizationRules>,
@@ -280,7 +284,10 @@ impl AuthorizationRulesForLogging {
     /// The file is written to the path_dir specified by the input parameter
     pub fn write_all(&self, path_dir: &Path, max_file_count: usize) {
         // remove the old files
-        let files = match misc_helpers::search_files(path_dir, r"^AuthorizationRules_.*\.json$") {
+        let files = match misc_helpers::search_files(
+            path_dir,
+            &AUTHORIZATION_RULES_FILE_SEARCH_REGEX,
+        ) {
             Ok(files) => files,
             Err(e) => {
                 // This should not happen, log the error and skip write the file
@@ -343,7 +350,9 @@ mod tests {
         AccessControlRules, AuthorizationItem, AuthorizationRules, Identity, Privilege, Role,
         RoleAssignment,
     };
-    use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
+    use crate::proxy::authorization_rules::{
+        AuthorizationMode, ComputedAuthorizationItem, AUTHORIZATION_RULES_FILE_SEARCH_REGEX,
+    };
     use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
     use proxy_agent_shared::misc_helpers;
     use std::ffi::OsString;
@@ -600,7 +609,8 @@ mod tests {
         }
 
         let files =
-            misc_helpers::search_files(&temp_test_path, r"^AuthorizationRules_.*\.json$").unwrap();
+            misc_helpers::search_files(&temp_test_path, &AUTHORIZATION_RULES_FILE_SEARCH_REGEX)
+                .unwrap();
         assert_eq!(files.len(), max_file_count);
 
         // clean up and ignore the clean up errors

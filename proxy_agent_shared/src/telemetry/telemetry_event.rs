@@ -309,20 +309,23 @@ impl TelemetryGenericLogsEvent {
         // if ga_version is None, use event_log.Version as ga_version and keep event_name unchanged
         let (ga_version, event_name) = match ga_version {
             Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
-            None => (event_log.Version.to_string(), event_name),
+            None => (event_log.Version.clone(), event_name),
         };
+        // redact secrets in the message before sending to telemetry
+        let message = event_log.Message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
         TelemetryGenericLogsEvent {
             event_name,
             ga_version,
             execution_mode,
             event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
             event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
-            task_name: event_log.TaskName.to_string(),
-            opcode_name: event_log.TimeStamp.to_string(),
-            capability_used: event_log.EventLevel.to_string(),
-            context1: event_log.Message.to_string(),
-            context2: event_log.TimeStamp.to_string(),
-            context3: event_log.OperationId.to_string(),
+            task_name: event_log.TaskName.clone(),
+            opcode_name: event_log.TimeStamp.clone(),
+            capability_used: event_log.EventLevel.clone(),
+            context1: message,
+            context2: event_log.TimeStamp.clone(),
+            context3: event_log.OperationId.clone(),
         }
     }
 
@@ -413,20 +416,23 @@ impl TelemetryExtensionEventsEvent {
         execution_mode: String,
         ga_version: String,
     ) -> Self {
+        // redact secrets in the message before sending to telemetry
+        let message = event.operation_status.message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
         TelemetryExtensionEventsEvent {
             ga_version,
             execution_mode,
             event_pid: event.event_pid.parse::<u64>().unwrap_or(0),
             event_tid: event.event_tid.parse::<u64>().unwrap_or(0),
-            opcode_name: event.time_stamp.to_string(),
-            extension_type: event.extension.extension_type.to_string(),
+            opcode_name: event.time_stamp.clone(),
+            extension_type: event.extension.extension_type.clone(),
             is_internal: event.extension.is_internal,
-            name: event.extension.name.to_string(),
-            version: event.extension.version.to_string(),
-            operation: event.operation_status.operation.to_string(),
-            task_name: event.operation_status.task_name.to_string(),
+            name: event.extension.name.clone(),
+            version: event.extension.version.clone(),
+            operation: event.operation_status.operation.clone(),
+            task_name: event.operation_status.task_name.clone(),
             operation_success: event.operation_status.operation_success,
-            message: event.operation_status.message.to_string(),
+            message,
             duration: event.operation_status.duration as u64,
         }
     }

@@ -1,7 +1,31 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use std::borrow::Cow;
+
 const REDACTED_TEXT: &str = "[REDACTED]";
+/// Common substrings that indicate a secret might be present - for quick pre-filtering
+/// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
+const SECRET_INDICATORS: [&str; 15] = [
+    "pwd=",
+    "password=",
+    "AccountKey=",
+    "PrimaryKey=",
+    "SecondaryKey=",
+    "sig=",
+    "AzCa",
+    "PRIVATE KEY",
+    "token",
+    "ado",
+    "vsts",
+    "key",
+    "secret",
+    "authorization",
+    "eyJ",
+];
+/// Regular expression patterns to identify secrets. These are more expensive to run, so we first check for indicators.
+/// Remarks: when add more patterns, please also add corresponding indicators in SECRET_INDICATORS for better performance.
+///     And try to make the pattern as specific as possible to avoid false positives and unnecessary redaction.
 const CRED_PATTERNS: [&str; 17] = [
             // SQL Connection String Password
             "pwd=[^;]*", 
@@ -45,18 +69,44 @@ fn init_regex_patterns() -> Vec<regex::Regex> {
     patterns
 }
 
-pub fn redact_secrets(text: String) -> String {
-    if text.is_empty() {
-        return text;
+/// Quick check if text might contain secrets (case-insensitive for most indicators)
+#[inline]
+fn might_contain_secrets(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    SECRET_INDICATORS.iter().any(|indicator| {
+        if *indicator == "AzCa" || *indicator == "PRIVATE KEY" || *indicator == "eyJ" {
+            // Case-sensitive check for these
+            text.contains(indicator)
+        } else {
+            lower.contains(&indicator.to_ascii_lowercase())
+        }
+    })
+}
+
+/// Redacts secrets from text. Returns the original text unchanged if no secrets found.
+/// Takes `&str` to avoid unnecessary ownership transfer.
+fn redact_secrets(text: &str) -> Cow<'_, str> {
+    if text.is_empty() || !might_contain_secrets(text) {
+        return Cow::Borrowed(text);
     }
 
-    let mut redacted_text = text.clone();
+    let mut redacted_text = Cow::Borrowed(text);
     for pattern in REGEX_PATTERNS.iter() {
-        redacted_text = pattern
-            .replace_all(&redacted_text, REDACTED_TEXT)
-            .to_string();
+        if let Cow::Owned(s) = pattern.replace_all(&redacted_text, REDACTED_TEXT) {
+            redacted_text = Cow::Owned(s);
+        }
     }
     redacted_text
+}
+
+/// Convenience function that takes ownership and returns String
+/// Use this when you already have a String and need a String back
+#[inline]
+pub fn redact_secrets_string(text: String) -> String {
+    match redact_secrets(&text) {
+        Cow::Borrowed(_) => text, // No changes, return original
+        Cow::Owned(s) => s,       // Changed, return new string
+    }
 }
 
 #[cfg(test)]
@@ -121,7 +171,23 @@ authorization: aws4-hmac-sha256"#,
             ),
         ];
         for (input, expected) in test_strings {
-            assert_eq!(redact_secrets(input.to_string()), expected.to_string());
+            assert_eq!(redact_secrets(input), expected);
         }
+    }
+
+    #[test]
+    fn test_no_secrets_no_allocation() {
+        let text = "This is a normal log message without any secrets";
+        let result = redact_secrets(text);
+        // Should return Borrowed (no allocation) when no secrets found
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_redact_secrets_string() {
+        let text = "pwd=secret123;".to_string();
+        let result = redact_secrets_string(text);
+        assert_eq!(result, "[REDACTED];");
     }
 }
