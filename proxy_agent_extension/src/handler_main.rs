@@ -6,6 +6,7 @@ use crate::logger;
 use crate::structs;
 use crate::ExtensionCommand;
 use once_cell::sync::Lazy;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::version::Version;
 use std::fs::{self};
@@ -41,7 +42,7 @@ pub async fn program_start(command: ExtensionCommand, config_seq_no: String) {
 
     logger::write(format!(
         "GuestProxyAgentExtension Version: {}, OS Arch: {}, OS Version: {}",
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         misc_helpers::get_processor_arch(),
         misc_helpers::get_long_os_version()
     ));

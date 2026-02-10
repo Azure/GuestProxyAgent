@@ -564,7 +564,7 @@ impl ProxyServer {
 
         if http_connection_context.should_skip_sig() {
             http_connection_context.log(
-                LoggerLevel::Info,
+                LoggerLevel::Trace,
                 format!(
                     "Skip compute signature for the request for {} {}",
                     http_connection_context.method, http_connection_context.url

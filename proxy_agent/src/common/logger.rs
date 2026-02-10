@@ -43,14 +43,14 @@ fn log(log_level: LoggerLevel, message: String) {
 
 #[cfg(not(windows))]
 pub fn write_serial_console_log(message: String) {
-    use proxy_agent_shared::misc_helpers;
+    use proxy_agent_shared::{current_info, misc_helpers};
     use std::io::Write;
 
     let message = format!(
         "{} {}_{}({}) - {}\n",
         misc_helpers::get_date_time_string_with_milliseconds(),
         env!("CARGO_PKG_NAME"),
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         std::process::id(),
         message
     );

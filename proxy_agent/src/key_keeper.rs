@@ -1032,7 +1032,7 @@ mod tests {
         match fs::remove_dir_all(&temp_test_path) {
             Ok(_) => {}
             Err(e) => {
-                print!("Failed to remove_dir_all with error {}.", e);
+                eprintln!("Failed to remove_dir_all with error {}.", e);
             }
         }
 
@@ -1040,11 +1040,9 @@ mod tests {
         // start wire_server listener
         let ip = "127.0.0.1";
         let port = 8081u16;
-        tokio::spawn(server_mock::start(
-            ip.to_string(),
-            port,
-            cancellation_token.clone(),
-        ));
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // start with disabled secure channel state

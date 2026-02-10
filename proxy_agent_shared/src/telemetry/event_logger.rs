@@ -12,11 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub const MAX_MESSAGE_LENGTH: usize = 1024 * 4; // 4KB
-
+const MAX_MESSAGE_LENGTH: usize = 1024 * 4; // 4KB
 static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+/// Store the event directory path, so that other modules can access it if needed.
+static EVENTS_DIR: tokio::sync::OnceCell<PathBuf> = tokio::sync::OnceCell::const_new();
+const MAX_EXTENSION_EVENT_FILE_COUNT: usize = 1000;
 
 pub async fn start<F, Fut>(
     event_dir: PathBuf,
@@ -35,6 +37,12 @@ pub async fn start<F, Fut>(
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {e}");
         set_status_fn(message.to_string());
+    }
+
+    if EVENTS_DIR.set(event_dir.clone()).is_err() {
+        let message = "Event directory is already set, cannot set it again.";
+        set_status_fn(message.to_string());
+        logger_manager::write_log(Level::Warn, message.to_string());
     }
 
     let shutdown = SHUT_DOWN.clone();
@@ -93,8 +101,7 @@ pub async fn start<F, Fut>(
         }
 
         let mut file_path = event_dir.to_path_buf();
-
-        file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
+        file_path.push(crate::telemetry::new_generic_event_file_name());
         match misc_helpers::json_write_to_file(&events, &file_path) {
             Ok(()) => {
                 logger_manager::write_log(
@@ -162,6 +169,59 @@ pub fn write_event_only(level: Level, message: String, method_name: &str, module
     };
 }
 
+pub fn report_extension_status_event(
+    extension: crate::telemetry::Extension,
+    operation_status: crate::telemetry::OperationStatus,
+) {
+    let event_dir = match EVENTS_DIR.get() {
+        Some(dir) => dir.clone(),
+        None => {
+            logger_manager::write_log(
+                Level::Warn,
+                "Event directory is not set, cannot report extension status event.".to_string(),
+            );
+            return;
+        }
+    };
+
+    // Check the event file counts,
+    // if it exceeds the max file number, drop the new events
+    match misc_helpers::search_files(
+        &event_dir,
+        crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+    ) {
+        Ok(files) => {
+            if files.len() >= MAX_EXTENSION_EVENT_FILE_COUNT {
+                logger_manager::write_log(Level::Warn, format!(
+                        "Event files exceed the max file count {}, drop and skip the write to disk.",
+                        MAX_EXTENSION_EVENT_FILE_COUNT
+                    ));
+                return;
+            }
+        }
+        Err(e) => {
+            logger_manager::write_log(
+                Level::Warn,
+                format!("Failed to get event files with error: {e}"),
+            );
+        }
+    }
+
+    let event = crate::telemetry::ExtensionStatusEvent::new(extension, operation_status);
+    let mut file_path = event_dir.to_path_buf();
+    file_path.push(crate::telemetry::new_extension_event_file_name());
+    if let Err(e) = misc_helpers::json_write_to_file(&event, &file_path) {
+        logger_manager::write_log(
+            Level::Warn,
+            format!(
+                "Failed to write extension status event to the file {} with error: {}",
+                file_path.display(),
+                e
+            ),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::misc_helpers;
@@ -169,16 +229,41 @@ mod tests {
     use std::fs;
     use std::time::Duration;
 
+    const TEST_EVENTS_DIR: &str = "test_events_dir";
+    const TEST_LOGGER_KEY: &str = "test_logger_key";
+
     #[tokio::test]
     async fn event_logger_test() {
         let mut temp_test_path = env::temp_dir();
-        let logger_key = "event_logger_test";
-        temp_test_path.push(logger_key);
+        temp_test_path.push(TEST_EVENTS_DIR);
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
         let mut events_dir: std::path::PathBuf = temp_test_path.to_path_buf();
         events_dir.push("Events");
 
+        // When EVENTS_DIR is not set, report_extension_status_event should return early
+        // This test verifies the function handles the case gracefully
+        // Note: Since EVENTS_DIR is a static OnceCell, if other tests set it first,
+        // this test will still pass but will write to that directory instead
+
+        let extension = crate::telemetry::Extension {
+            name: "test_extension".to_string(),
+            version: "1.0.0".to_string(),
+            is_internal: false,
+            extension_type: "test_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: false,
+            operation: "test_operation".to_string(),
+            task_name: "test_task".to_string(),
+            message: "error message".to_string(),
+            duration: 50,
+        };
+
+        // This should not panic even if EVENTS_DIR is not set
+        super::report_extension_status_event(extension, operation_status);
+
+        // Start the event logger loop and set the EVENTS_DIR
         let cloned_events_dir = events_dir.to_path_buf();
         tokio::spawn(async {
             super::start(cloned_events_dir, Duration::from_millis(100), 3, |_| {
@@ -190,7 +275,7 @@ mod tests {
         });
 
         // write some events to the queue and flush to disk
-        write_events(logger_key).await;
+        write_events(TEST_LOGGER_KEY).await;
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
         let file_count = files.len();
@@ -201,7 +286,7 @@ mod tests {
 
         // write some events to the queue and flush to disk 3 times
         for _ in [0; 3] {
-            write_events(logger_key).await;
+            write_events(TEST_LOGGER_KEY).await;
         }
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
@@ -216,7 +301,7 @@ mod tests {
         // wait for stop signal responded
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        write_events(logger_key).await;
+        write_events(TEST_LOGGER_KEY).await;
 
         let files = misc_helpers::get_files(&events_dir).unwrap();
         assert_eq!(
@@ -224,6 +309,54 @@ mod tests {
             files.len(),
             "No more files could write to event folder after stop()"
         );
+
+        // Create test extension and operation status
+        let extension = crate::telemetry::Extension {
+            name: "test_extension".to_string(),
+            version: "1.0.0".to_string(),
+            is_internal: true,
+            extension_type: "test_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: true,
+            operation: "test_operation".to_string(),
+            task_name: "test_task".to_string(),
+            message: "test_message".to_string(),
+            duration: 100,
+        };
+
+        // Call report_extension_status_event
+        super::report_extension_status_event(extension.clone(), operation_status.clone());
+
+        // Wait for the file to be written
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify extension event file was created
+        let files = misc_helpers::search_files(
+            &events_dir,
+            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+        )
+        .unwrap();
+        assert!(
+            !files.is_empty(),
+            "Extension status event file should be created"
+        );
+
+        // Read and verify the event content
+        let event: crate::telemetry::ExtensionStatusEvent =
+            misc_helpers::json_read_from_file(&files[0]).unwrap();
+        assert_eq!(event.extension.name, extension.name);
+        assert_eq!(event.extension.version, extension.version);
+        assert_eq!(event.extension.is_internal, extension.is_internal);
+        assert_eq!(event.extension.extension_type, extension.extension_type);
+        assert_eq!(
+            event.operation_status.operation_success,
+            operation_status.operation_success
+        );
+        assert_eq!(event.operation_status.operation, operation_status.operation);
+        assert_eq!(event.operation_status.task_name, operation_status.task_name);
+        assert_eq!(event.operation_status.message, operation_status.message);
+        assert_eq!(event.operation_status.duration, operation_status.duration);
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
