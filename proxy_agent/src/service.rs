@@ -57,9 +57,8 @@ pub async fn start_service(shared_state: SharedState) {
 
     tokio::spawn({
         let key_keeper = KeyKeeper::new(
-            (format!("http://{}/", constants::WIRE_SERVER_IP))
-                .parse()
-                .unwrap(),
+            constants::WIRE_SERVER_IP.to_string(),
+            80,
             config::get_keys_dir(),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
             config::get_poll_key_status_duration(),

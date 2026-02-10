@@ -661,16 +661,11 @@ pub mod provision_query {
         //  bool - true provision finished; false provision not finished
         //  String - provision error message, empty means provision success or provision failed.
         async fn get_current_provision_status(&self, notify: bool) -> Result<ProvisionState> {
-            let provision_url: String = format!(
-                "http://{}:{}{}",
-                Ipv4Addr::LOCALHOST,
+            let endpoint = hyper_client::HostEndpoint::new(
+                Ipv4Addr::LOCALHOST.to_string(),
                 self.port,
-                PROVISION_URL_PATH
+                PROVISION_URL_PATH,
             );
-
-            let provision_url: hyper::Uri = provision_url
-                .parse::<hyper::Uri>()
-                .map_err(|e| Error::ParseUrl(provision_url, e.to_string()))?;
 
             let mut headers = HashMap::new();
             headers.insert(
@@ -684,7 +679,7 @@ pub mod provision_query {
             if notify {
                 headers.insert(constants::NOTIFY_HEADER.to_string(), "true".to_string());
             }
-            hyper_client::get(&provision_url, &headers, None, None, logger::write_warning)
+            hyper_client::get(&endpoint, &headers, None, None, logger::write_warning)
                 .await
                 .map_err(Error::ProxyAgentSharedError)
         }
