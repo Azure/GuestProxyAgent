@@ -327,7 +327,7 @@ impl ProxyServer {
 
     // Set the read timeout for the stream
     // Uses socket2::SockRef to set socket options directly on the tokio stream
-    // socket2 crate alreasdy used by tokio internally, so it won't cause extra dependency
+    // socket2 crate already used by tokio internally, so it won't cause extra dependency
     fn set_stream_read_time_out(stream: &TcpStream, connection_logger: &mut ConnectionLogger) {
         use socket2::SockRef;
 
