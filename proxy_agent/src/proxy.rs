@@ -171,12 +171,8 @@ impl Process {
             };
 
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)
-                .unwrap_or_else(|_e| {
-                    #[cfg(test)]
-                    eprintln!("Failed to get process handler: {_e}");
-                    0
-                });
+            let handler =
+                proxy_agent_shared::windows::get_process_handler(pid, options).unwrap_or(0);
             if handler != 0 {
                 // Get process info directly - if either fails, the process may have exited
                 process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
