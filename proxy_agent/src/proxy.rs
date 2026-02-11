@@ -98,7 +98,7 @@ async fn get_user(
 /// Reads directly from the /proc filesystem on Linux for better performance.
 /// Returns (executable path, command line). If the process information cannot be retrieved, returns (empty path, "undefined" command line).
 /// Remarks: both /proc/{pid}/exe and /proc/{pid}/cmdline are universally supported across all Linux distributions since kernel 1.0
-/// Remarks: Donot use sysinfo::System::refresh_process_specifics(pid, refresh_kind) to get this information,
+/// Remarks: Do not use sysinfo::System::refresh_process_specifics(pid, refresh_kind) to get this information,
 ///     as it reads all files from /proc/{pid}/* and Create Process struct with all fields,
 ///     which is very inefficient when we only need the executable path and command line.
 #[cfg(not(windows))]
