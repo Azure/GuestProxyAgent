@@ -261,7 +261,7 @@ mod tests {
         };
 
         // This should not panic even if EVENTS_DIR is not set
-        super::report_extension_status_event(extension, operation_status);
+        super::report_extension_status_event(extension, operation_status).await;
 
         // Start the event logger loop and set the EVENTS_DIR
         let cloned_events_dir = events_dir.to_path_buf();
@@ -326,7 +326,7 @@ mod tests {
         };
 
         // Call report_extension_status_event
-        super::report_extension_status_event(extension.clone(), operation_status.clone());
+        super::report_extension_status_event(extension.clone(), operation_status.clone()).await;
 
         // Wait for the file to be written
         tokio::time::sleep(Duration::from_millis(100)).await;
