@@ -48,13 +48,13 @@ impl ProxySummary {
 impl From<ProxySummary> for ProxyConnectionSummary {
     fn from(proxy_summary: ProxySummary) -> ProxyConnectionSummary {
         ProxyConnectionSummary {
-            userName: proxy_summary.userName.to_string(),
-            userGroups: Some(proxy_summary.userGroups.clone()),
-            ip: proxy_summary.ip.to_string(),
+            userName: proxy_summary.userName,
+            userGroups: Some(proxy_summary.userGroups),
+            ip: proxy_summary.ip,
             port: proxy_summary.port,
             processFullPath: Some(proxy_summary.processFullPath.to_string_lossy().to_string()),
-            processCmdLine: proxy_summary.processCmdLine.to_string(),
-            responseStatus: proxy_summary.responseStatus.to_string(),
+            processCmdLine: proxy_summary.processCmdLine,
+            responseStatus: proxy_summary.responseStatus,
             count: 1,
         }
     }
