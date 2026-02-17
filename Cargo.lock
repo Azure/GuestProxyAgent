@@ -191,6 +191,7 @@ dependencies = [
  "serde-xml-rs",
  "serde_derive",
  "serde_json",
+ "socket2",
  "static_vcruntime",
  "sysinfo",
  "thiserror",
