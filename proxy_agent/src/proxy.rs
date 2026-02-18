@@ -46,9 +46,6 @@ use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use serde_derive::{Deserialize, Serialize};
 use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 
-#[cfg(not(windows))]
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind};
-
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct Claims {
@@ -98,26 +95,33 @@ async fn get_user(
     }
 }
 
+/// Get process information (executable path and command line) for the given process ID.
+/// Reads directly from the /proc filesystem on Linux for better performance.
+/// Returns (executable path, command line). If the process information cannot be retrieved, returns (empty path, "undefined" command line).
+/// Remarks: both /proc/{pid}/exe and /proc/{pid}/cmdline are universally supported across all Linux distributions since kernel 1.0
+/// Remarks: Do not use sysinfo::System::refresh_process_specifics(pid, refresh_kind) to get this information,
+///     as it reads all files from /proc/{pid}/* and Create Process struct with all fields,
+///     which is very inefficient when we only need the executable path and command line.
 #[cfg(not(windows))]
 fn get_process_info(process_id: u32) -> (PathBuf, String) {
-    let mut process_name = PathBuf::default();
-    let mut process_cmd_line = UNDEFINED.to_string();
+    // Get executable path from /proc/{pid}/exe symlink
+    let exe_path = format!("/proc/{}/exe", process_id);
+    let process_name = std::fs::read_link(&exe_path).unwrap_or_default();
 
-    let pid = Pid::from_u32(process_id);
-    let sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(
-            ProcessRefreshKind::new()
-                .with_cmd(UpdateKind::Always)
-                .with_exe(UpdateKind::Always),
-        ),
-    );
-    if let Some(p) = sys.process(pid) {
-        process_name = match p.exe() {
-            Some(path) => path.to_path_buf(),
-            None => PathBuf::default(),
-        };
-        process_cmd_line = p.cmd().join(" ");
-    }
+    // Get command line from /proc/{pid}/cmdline (null-separated arguments)
+    let cmdline_path = format!("/proc/{}/cmdline", process_id);
+    let process_cmd_line = match std::fs::read(&cmdline_path) {
+        Ok(bytes) => {
+            // cmdline is null-separated, convert to space-separated string
+            bytes
+                .split(|&b| b == 0)
+                .filter(|s| !s.is_empty())
+                .map(|s| String::from_utf8_lossy(s).into_owned())
+                .collect::<Vec<String>>()
+                .join(" ")
+        }
+        Err(_) => UNDEFINED.to_string(),
+    };
 
     (process_name, process_cmd_line)
 }
