@@ -10,10 +10,15 @@ use crate::{current_info, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 
 pub const GENERIC_EVENT_FILE_SEARCH_PATTERN: &str = r"^[0-9]+\.json$";
+pub static GENERIC_EVENT_FILE_SEARCH_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(GENERIC_EVENT_FILE_SEARCH_PATTERN).unwrap());
 pub fn new_generic_event_file_name() -> String {
     format!("{}.json", misc_helpers::get_date_time_unix_nano())
 }
 pub const EXTENSION_EVENT_FILE_SEARCH_PATTERN: &str = r"^extension_[0-9]+\.json$";
+pub static EXTENSION_EVENT_FILE_SEARCH_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(EXTENSION_EVENT_FILE_SEARCH_PATTERN).unwrap());
+
 pub fn new_extension_event_file_name() -> String {
     format!("extension_{}.json", misc_helpers::get_date_time_unix_nano())
 }

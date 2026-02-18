@@ -123,7 +123,7 @@ impl EventReader {
         // get all [0-9]+.json event filenames with numbers in the directory
         match misc_helpers::search_files(
             &self.dir_path,
-            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::GENERIC_EVENT_FILE_SEARCH_REGEX,
         ) {
             Ok(files) => {
                 let file_count = files.len();
@@ -282,7 +282,7 @@ impl EventReader {
         // get all extension status event filenames in the directory
         match misc_helpers::search_files(
             &self.dir_path,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         ) {
             Ok(files) => {
                 let file_count = files.len();
@@ -518,7 +518,7 @@ mod tests {
         // Verify files were created
         let files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert_eq!(2, files.len(), "Should have 2 extension event files");
@@ -533,7 +533,7 @@ mod tests {
         // Verify files were cleaned up after processing
         let files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert!(
@@ -597,7 +597,7 @@ mod tests {
         // Verify the file was processed
         let files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert!(
@@ -686,14 +686,14 @@ mod tests {
         // Verify all files were created
         let generic_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::GENERIC_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert_eq!(2, generic_files.len(), "Should have 2 generic event files");
 
         let extension_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert_eq!(
@@ -712,7 +712,7 @@ mod tests {
         // Verify only generic files were cleaned up
         let generic_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::GENERIC_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert!(
@@ -722,7 +722,7 @@ mod tests {
 
         let extension_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert_eq!(
@@ -741,7 +741,7 @@ mod tests {
         // Verify extension files were cleaned up
         let extension_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert!(
@@ -773,7 +773,7 @@ mod tests {
         // Generic file should still exist
         let generic_files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::GENERIC_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert_eq!(

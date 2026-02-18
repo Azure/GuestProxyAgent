@@ -12,8 +12,7 @@ const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
 pub const PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME: &str = "status.json";
 
 pub fn get_proxy_agent_aggregate_status_folder() -> std::path::PathBuf {
-    let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER)
-        .unwrap_or(PROXY_AGENT_AGGREGATE_STATUS_FOLDER.to_string());
+    let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER);
     PathBuf::from(path)
 }
 

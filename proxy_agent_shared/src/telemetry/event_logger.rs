@@ -82,7 +82,7 @@ pub async fn start<F, Fut>(
         // if it exceeds the max file number, drop the new events
         match misc_helpers::search_files(
             &event_dir,
-            crate::telemetry::GENERIC_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::GENERIC_EVENT_FILE_SEARCH_REGEX,
         ) {
             Ok(files) => {
                 if files.len() >= max_event_file_count {
@@ -188,7 +188,7 @@ pub async fn report_extension_status_event(
     // if it exceeds the max file number, drop the new events
     match misc_helpers::search_files(
         &event_dir,
-        crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+        &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
     ) {
         Ok(files) => {
             if files.len() >= MAX_EXTENSION_EVENT_FILE_COUNT {
@@ -334,7 +334,7 @@ mod tests {
         // Verify extension event file was created
         let files = misc_helpers::search_files(
             &events_dir,
-            crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_PATTERN,
+            &crate::telemetry::EXTENSION_EVENT_FILE_SEARCH_REGEX,
         )
         .unwrap();
         assert!(

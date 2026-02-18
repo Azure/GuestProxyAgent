@@ -122,39 +122,44 @@ impl Default for Config {
             config_file_full_path = misc_helpers::get_current_exe_dir();
             config_file_full_path.push(CONFIG_FILE_NAME);
         }
+
         Config::from_json_file(config_file_full_path)
     }
 }
 
 impl Config {
+    /// Load config from a specific JSON file path
     pub fn from_json_file(file_path: PathBuf) -> Self {
-        misc_helpers::json_read_from_file::<Config>(&file_path).unwrap_or_else(|_| {
-            panic!(
-                "Error in reading Config from Json file: {}",
-                misc_helpers::path_to_string(&file_path)
-            )
-        })
+        let mut config =
+            misc_helpers::json_read_from_file::<Config>(&file_path).unwrap_or_else(|_| {
+                panic!(
+                    "Error in reading Config from Json file: {}",
+                    misc_helpers::path_to_string(&file_path)
+                )
+            });
+        config.resolve_env_variables();
+        config
+    }
+
+    /// Resolve environment variables in path fields once during construction
+    /// This allows us to keep the rest of the code simple without worrying about env vars,
+    /// and also ensures that we only pay the cost of resolving env vars once at startup rather than on every access.
+    fn resolve_env_variables(&mut self) {
+        self.logFolder = misc_helpers::resolve_env_variables(&self.logFolder);
+        self.eventFolder = misc_helpers::resolve_env_variables(&self.eventFolder);
+        self.latchKeyFolder = misc_helpers::resolve_env_variables(&self.latchKeyFolder);
     }
 
     pub fn get_log_folder(&self) -> String {
-        match misc_helpers::resolve_env_variables(&self.logFolder) {
-            Ok(val) => val,
-            Err(_) => self.logFolder.clone(),
-        }
+        self.logFolder.clone()
     }
 
     pub fn get_event_folder(&self) -> String {
-        match misc_helpers::resolve_env_variables(&self.eventFolder) {
-            Ok(val) => val,
-            Err(_) => self.eventFolder.clone(),
-        }
+        self.eventFolder.clone()
     }
 
     pub fn get_latch_key_folder(&self) -> String {
-        match misc_helpers::resolve_env_variables(&self.latchKeyFolder) {
-            Ok(val) => val,
-            Err(_) => self.latchKeyFolder.clone(),
-        }
+        self.latchKeyFolder.clone()
     }
 
     pub fn get_monitor_interval(&self) -> u64 {
@@ -231,19 +236,19 @@ mod tests {
         let config = create_config_file(config_file_path);
 
         assert_eq!(
-            r#"C:\logFolderName"#.to_string(),
+            r#"C:\logFolderName"#,
             config.get_log_folder(),
             "Log Folder mismatch"
         );
 
         assert_eq!(
-            r#"C:\eventFolderName"#.to_string(),
+            r#"C:\eventFolderName"#,
             config.get_event_folder(),
             "Event Folder mismatch"
         );
 
         assert_eq!(
-            r#"C:\latchKeyFolderName"#.to_string(),
+            r#"C:\latchKeyFolderName"#,
             config.get_latch_key_folder(),
             "Latch Key Folder mismatch"
         );
@@ -267,7 +272,7 @@ mod tests {
         );
 
         assert_eq!(
-            "ebpfProgramName".to_string(),
+            "ebpfProgramName",
             config.get_ebpf_program_name(),
             "get_ebpf_program_name mismatch"
         );

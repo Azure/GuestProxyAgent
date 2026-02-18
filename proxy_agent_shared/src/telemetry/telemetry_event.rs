@@ -311,6 +311,9 @@ impl TelemetryGenericLogsEvent {
             Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
             None => (event_log.Version.clone(), event_name),
         };
+        // redact secrets in the message before sending to telemetry
+        let message = event_log.Message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
         TelemetryGenericLogsEvent {
             event_name,
             ga_version,
@@ -320,7 +323,7 @@ impl TelemetryGenericLogsEvent {
             task_name: event_log.TaskName.clone(),
             opcode_name: event_log.TimeStamp.clone(),
             capability_used: event_log.EventLevel.clone(),
-            context1: event_log.Message.clone(),
+            context1: message,
             context2: event_log.TimeStamp.clone(),
             context3: event_log.OperationId.clone(),
         }
@@ -413,6 +416,9 @@ impl TelemetryExtensionEventsEvent {
         execution_mode: String,
         ga_version: String,
     ) -> Self {
+        // redact secrets in the message before sending to telemetry
+        let message = event.operation_status.message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
         TelemetryExtensionEventsEvent {
             ga_version,
             execution_mode,
@@ -426,7 +432,7 @@ impl TelemetryExtensionEventsEvent {
             operation: event.operation_status.operation.clone(),
             task_name: event.operation_status.task_name.clone(),
             operation_success: event.operation_status.operation_success,
-            message: event.operation_status.message.clone(),
+            message,
             duration: event.operation_status.duration as u64,
         }
     }
