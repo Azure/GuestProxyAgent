@@ -67,35 +67,35 @@ impl TelemetryEventVMData {
         let mut xml = String::new();
         xml.push_str(&format!(
             "<Param Name=\"KeywordName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.keyword_name.to_string())
+            misc_helpers::xml_escape(self.keyword_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TenantName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.tenant_name.to_string())
+            misc_helpers::xml_escape(self.tenant_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.role_name.to_string())
+            misc_helpers::xml_escape(self.role_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleInstanceName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.role_instance_name.to_string())
+            misc_helpers::xml_escape(self.role_instance_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ContainerId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.container_id.to_string())
+            misc_helpers::xml_escape(self.container_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ResourceGroupName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.resource_group_name.to_string())
+            misc_helpers::xml_escape(self.resource_group_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"SubscriptionId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.subscription_id.to_string())
+            misc_helpers::xml_escape(self.subscription_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"VMId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.vm_id.to_string())
+            misc_helpers::xml_escape(self.vm_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ImageOrigin\" Value=\"{}\" T=\"mt:uint64\" />",
@@ -103,7 +103,7 @@ impl TelemetryEventVMData {
         ));
         xml.push_str(&format!(
             "<Param Name=\"OSVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.os_version.to_string())
+            misc_helpers::xml_escape(self.os_version.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RAM\" Value=\"{}\" T=\"mt:uint64\" />",
@@ -151,7 +151,7 @@ impl TelemetryProvider {
         let mut xml: String = String::new();
         xml.push_str(&format!(
             "<Provider id=\"{}\">",
-            misc_helpers::xml_escape(self.id.to_string())
+            misc_helpers::xml_escape(self.id.clone())
         ));
 
         for e in &self.events {
@@ -350,40 +350,40 @@ impl TelemetryGenericLogsEvent {
         ));
         xml.push_str(&format!(
             "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.ga_version.to_string())
+            misc_helpers::xml_escape(self.ga_version.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.execution_mode.to_string())
+            misc_helpers::xml_escape(self.execution_mode.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.task_name.to_string())
+            misc_helpers::xml_escape(self.task_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.opcode_name.to_string())
+            misc_helpers::xml_escape(self.opcode_name.clone())
         ));
 
         xml.push_str(&format!(
             "<Param Name=\"EventName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.event_name.to_string())
+            misc_helpers::xml_escape(self.event_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"CapabilityUsed\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.capability_used.to_string())
+            misc_helpers::xml_escape(self.capability_used.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context1\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context1.to_string())
+            misc_helpers::xml_escape(self.context1.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context2\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context2.to_string())
+            misc_helpers::xml_escape(self.context2.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context3\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context3.to_string())
+            misc_helpers::xml_escape(self.context3.clone())
         ));
 
         xml.push_str("]]></Event>");
@@ -458,23 +458,23 @@ impl TelemetryExtensionEventsEvent {
         ));
         xml.push_str(&format!(
             "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.ga_version.to_string())
+            misc_helpers::xml_escape(self.ga_version.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.execution_mode.to_string())
+            misc_helpers::xml_escape(self.execution_mode.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.task_name.to_string())
+            misc_helpers::xml_escape(self.task_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.opcode_name.to_string())
+            misc_helpers::xml_escape(self.opcode_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ExtensionType\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.extension_type.to_string())
+            misc_helpers::xml_escape(self.extension_type.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"IsInternal\" Value=\"{}\" T=\"mt:bool\" />",
@@ -482,15 +482,15 @@ impl TelemetryExtensionEventsEvent {
         ));
         xml.push_str(&format!(
             "<Param Name=\"Name\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.name.to_string())
+            misc_helpers::xml_escape(self.name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Version\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.version.to_string())
+            misc_helpers::xml_escape(self.version.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Operation\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.operation.to_string())
+            misc_helpers::xml_escape(self.operation.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"OperationSuccess\" Value=\"{}\" T=\"mt:bool\" />",
@@ -502,7 +502,7 @@ impl TelemetryExtensionEventsEvent {
         ));
         xml.push_str(&format!(
             "<Param Name=\"Message\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.message.to_string())
+            misc_helpers::xml_escape(self.message.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Duration\" Value=\"{}\" T=\"mt:uint64\" />",
