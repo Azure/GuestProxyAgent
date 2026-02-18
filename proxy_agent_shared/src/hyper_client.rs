@@ -42,6 +42,9 @@ pub struct HostEndpoint {
 }
 
 impl HostEndpoint {
+    pub const DEFAULT_HTTP_PORT: u16 = 80;
+    pub const DEFAULT_HTTPS_PORT: u16 = 443;
+    
     /// Create a new HostEndpoint with explicit components
     pub fn new(host: impl Into<String>, port: u16, path_and_query: impl Into<String>) -> Self {
         Self {
@@ -66,9 +69,9 @@ impl HostEndpoint {
             }
         };
         let default_port = if uri.scheme_str() == Some("https") {
-            443
+            Self::DEFAULT_HTTPS_PORT
         } else {
-            80
+            Self::DEFAULT_HTTP_PORT
         };
         let port = uri.port_u16().unwrap_or(default_port);
         let path_and_query = match uri.path_and_query() {
