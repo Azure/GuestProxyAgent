@@ -26,8 +26,7 @@ pub fn proxy_agent_running_folder(_service_name: &str) -> PathBuf {
 pub fn proxy_agent_parent_folder() -> PathBuf {
     #[cfg(windows)]
     {
-        let path = misc_helpers::resolve_env_variables("%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent")
-            .unwrap_or("C:\\WindowsAzure\\ProxyAgent".to_string());
+        let path = misc_helpers::resolve_env_variables("%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent");
         PathBuf::from(path)
     }
     #[cfg(not(windows))]

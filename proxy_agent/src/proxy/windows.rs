@@ -24,7 +24,6 @@ use windows_sys::Win32::System::ProcessStatus::{
     K32GetModuleBaseNameW,   // kernel32.dll
     K32GetModuleFileNameExW, // kernel32.dll
 };
-use windows_sys::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 
 const LG_INCLUDE_INDIRECT: u32 = 1u32;
 const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
@@ -239,80 +238,61 @@ const MAX_PATH: usize = 260;
 const STATUS_BUFFER_OVERFLOW: NTSTATUS = -2147483643;
 const STATUS_BUFFER_TOO_SMALL: NTSTATUS = -1073741789;
 const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = -1073741820;
-const PROCESS_BASIC_INFORMATION_CLASS: PROCESSINFOCLASS = 0;
 const PROCESS_COMMAND_LINE_INFORMATION_CLASS: PROCESSINFOCLASS = 60;
 
-pub fn query_basic_process_info(handler: isize) -> Result<PROCESS_BASIC_INFORMATION> {
-    unsafe {
-        let mut process_basic_information = std::mem::zeroed::<PROCESS_BASIC_INFORMATION>();
-        let mut return_length = 0;
-        let status: NTSTATUS = NtQueryInformationProcess(
-            handler,
-            PROCESS_BASIC_INFORMATION_CLASS,
-            &mut process_basic_information as *mut _ as *mut _,
-            std::mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
-            &mut return_length,
-        );
-
-        if status != 0 {
-            return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
-                std::io::Error::from_raw_os_error(status),
-            )));
-        }
-        Ok(process_basic_information)
-    }
-}
-
 pub fn get_process_cmd(handler: isize) -> Result<String> {
-    unsafe {
-        let mut return_length = 0;
-        let status: NTSTATUS = NtQueryInformationProcess(
+    let mut return_length = 0;
+    let status: NTSTATUS = unsafe {
+        NtQueryInformationProcess(
             handler,
             PROCESS_COMMAND_LINE_INFORMATION_CLASS,
             null_mut(),
             0,
             &mut return_length as *mut _,
-        );
+        )
+    };
 
-        if status != STATUS_BUFFER_OVERFLOW
-            && status != STATUS_BUFFER_TOO_SMALL
-            && status != STATUS_INFO_LENGTH_MISMATCH
-        {
-            return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
-                std::io::Error::from_raw_os_error(status),
-            )));
-        }
-        println!("return_length: {return_length}");
+    if status != STATUS_BUFFER_OVERFLOW
+        && status != STATUS_BUFFER_TOO_SMALL
+        && status != STATUS_INFO_LENGTH_MISMATCH
+    {
+        return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
+            std::io::Error::from_raw_os_error(status),
+        )));
+    }
+    #[cfg(test)]
+    println!("return_length: {return_length}");
 
-        let buf_len = (return_length as usize) / 2;
-        let mut buffer: Vec<u16> = vec![0; buf_len + 1];
-        buffer.resize(buf_len + 1, 0); // set everything to 0
+    let buf_len = (return_length as usize) / 2;
+    let mut buffer: Vec<u16> = vec![0; buf_len + 1];
+    buffer.resize(buf_len + 1, 0); // set everything to 0
 
-        let status: NTSTATUS = NtQueryInformationProcess(
+    let status: NTSTATUS = unsafe {
+        NtQueryInformationProcess(
             handler,
             PROCESS_COMMAND_LINE_INFORMATION_CLASS,
             buffer.as_mut_ptr() as *mut _,
             return_length,
             &mut return_length as *mut _,
-        );
-        if status < 0 {
-            eprintln!("NtQueryInformationProcess failed with status: {status}");
-            return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
-                std::io::Error::from_raw_os_error(status),
-            )));
-        }
-        buffer.set_len(buf_len);
-        buffer.push(0);
-
-        let cmd_buffer = *(buffer.as_ptr() as *const UNICODE_STRING);
-
-        let cmd = String::from_utf16_lossy(std::slice::from_raw_parts(
-            cmd_buffer.Buffer,
-            (cmd_buffer.Length / 2) as usize,
-        ));
-
-        Ok(cmd)
+        )
+    };
+    if status < 0 {
+        #[cfg(test)]
+        eprintln!("NtQueryInformationProcess failed with status: {status}");
+        return Err(Error::WindowsApi(WindowsApiErrorType::WindowsOsError(
+            std::io::Error::from_raw_os_error(status),
+        )));
     }
+    unsafe { buffer.set_len(buf_len) };
+    buffer.push(0);
+
+    let cmd_buffer = unsafe { *(buffer.as_ptr() as *const UNICODE_STRING) };
+
+    let cmd = String::from_utf16_lossy(unsafe {
+        std::slice::from_raw_parts(cmd_buffer.Buffer, (cmd_buffer.Length / 2) as usize)
+    });
+
+    Ok(cmd)
 }
 
 #[allow(dead_code)]
@@ -388,9 +368,6 @@ mod tests {
         let name = super::get_process_name(handler).unwrap();
         let full_name = super::get_process_full_name(handler).unwrap();
         let cmd = super::get_process_cmd(handler).unwrap();
-
-        let base_info = super::query_basic_process_info(handler);
-        assert!(base_info.is_ok(), "base_info must be ok");
 
         assert!(
             !name.as_os_str().is_empty(),

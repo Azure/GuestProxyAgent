@@ -46,9 +46,6 @@ use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use serde_derive::{Deserialize, Serialize};
 use std::{ffi::OsString, net::IpAddr, path::PathBuf};
 
-#[cfg(not(windows))]
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind};
-
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct Claims {
@@ -90,33 +87,41 @@ async fn get_user(
         Ok(user)
     } else {
         let user = User::from_logon_id(logon_id)?;
-        if let Err(e) = proxy_server_shared_state.add_user(user.clone()).await {
-            println!("Failed to add user: {e} to cache");
+        if let Err(_e) = proxy_server_shared_state.add_user(user.clone()).await {
+            #[cfg(test)]
+            eprintln!("Failed to add user: {_e} to cache");
         }
         Ok(user)
     }
 }
 
+/// Get process information (executable path and command line) for the given process ID.
+/// Reads directly from the /proc filesystem on Linux for better performance.
+/// Returns (executable path, command line). If the process information cannot be retrieved, returns (empty path, "undefined" command line).
+/// Remarks: both /proc/{pid}/exe and /proc/{pid}/cmdline are universally supported across all Linux distributions since kernel 1.0
+/// Remarks: Do not use sysinfo::System::refresh_process_specifics(pid, refresh_kind) to get this information,
+///     as it reads all files from /proc/{pid}/* and Create Process struct with all fields,
+///     which is very inefficient when we only need the executable path and command line.
 #[cfg(not(windows))]
 fn get_process_info(process_id: u32) -> (PathBuf, String) {
-    let mut process_name = PathBuf::default();
-    let mut process_cmd_line = UNDEFINED.to_string();
+    // Get executable path from /proc/{pid}/exe symlink
+    let exe_path = format!("/proc/{}/exe", process_id);
+    let process_name = std::fs::read_link(&exe_path).unwrap_or_default();
 
-    let pid = Pid::from_u32(process_id);
-    let sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(
-            ProcessRefreshKind::new()
-                .with_cmd(UpdateKind::Always)
-                .with_exe(UpdateKind::Always),
-        ),
-    );
-    if let Some(p) = sys.process(pid) {
-        process_name = match p.exe() {
-            Some(path) => path.to_path_buf(),
-            None => PathBuf::default(),
-        };
-        process_cmd_line = p.cmd().join(" ");
-    }
+    // Get command line from /proc/{pid}/cmdline (null-separated arguments)
+    let cmdline_path = format!("/proc/{}/cmdline", process_id);
+    let process_cmd_line = match std::fs::read(&cmdline_path) {
+        Ok(bytes) => {
+            // cmdline is null-separated, convert to space-separated string
+            bytes
+                .split(|&b| b == 0)
+                .filter(|s| !s.is_empty())
+                .map(|s| String::from_utf8_lossy(s).into_owned())
+                .collect::<Vec<String>>()
+                .join(" ")
+        }
+        Err(_) => UNDEFINED.to_string(),
+    };
 
     (process_name, process_cmd_line)
 }
@@ -147,12 +152,12 @@ impl Claims {
         let u = get_user(entry.logon_id, proxy_server_shared_state).await?;
         Ok(Claims {
             userId: entry.logon_id,
-            userName: u.user_name.to_string(),
+            userName: u.user_name.clone(),
             userGroups: u.user_groups.clone(),
             processId: p.pid,
             processName: p.name,
             processFullPath: p.exe_full_name,
-            processCmdLine: p.command_line.to_string(),
+            processCmdLine: p.command_line.clone(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
             clientPort: client_port,
@@ -170,26 +175,26 @@ impl Process {
             };
 
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)
-                .unwrap_or_else(|e| {
-                    println!("Failed to get process handler: {e}");
-                    0
-                });
-            let base_info = windows::query_basic_process_info(handler);
-            match base_info {
-                Ok(_) => {
-                    process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
-                    cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+            let handler =
+                proxy_agent_shared::windows::get_process_handler(pid, options).unwrap_or(0);
+            if handler != 0 {
+                // Get process info directly - if either fails, the process may have exited
+                process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
+                cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+
+                // close the handle
+                if let Err(_e) = proxy_agent_shared::windows::close_handler(handler) {
+                    #[cfg(test)]
+                    println!("Failed to close process handler: {_e}");
                 }
-                Err(e) => {
-                    process_full_path = PathBuf::default();
-                    cmd = UNDEFINED.to_string();
-                    println!("Failed to query basic process info: {e}");
-                }
-            }
-            // close the handle
-            if let Err(e) = proxy_agent_shared::windows::close_handler(handler) {
-                println!("Failed to close process handler: {e}");
+            } else {
+                process_full_path = PathBuf::default();
+                cmd = UNDEFINED.to_string();
+                #[cfg(test)]
+                eprintln!(
+                    "Failed to get_process_handler: {}",
+                    std::io::Error::last_os_error()
+                );
             }
         }
         #[cfg(not(windows))]
@@ -200,7 +205,7 @@ impl Process {
         }
 
         // redact the secrets in the command line
-        let cmd = proxy_agent_shared::secrets_redactor::redact_secrets(cmd);
+        let cmd = proxy_agent_shared::secrets_redactor::redact_secrets_string(cmd);
 
         let process_name = process_full_path
             .file_name()
@@ -249,8 +254,8 @@ impl User {
 
         Ok(User {
             logon_id,
-            user_name: user_name.to_string(),
-            user_groups: user_groups.clone(),
+            user_name,
+            user_groups,
         })
     }
 }

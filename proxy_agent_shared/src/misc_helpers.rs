@@ -25,32 +25,47 @@ pub fn get_thread_identity() -> String {
     format!("{:0>8}", thread_id::get())
 }
 
-pub fn get_date_time_string_with_milliseconds() -> String {
-    let date_format =
-        format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]")
-            .unwrap();
+// Static format descriptors parsed once and reused for all calls
+static ISO8601_MILLIS_FORMAT: std::sync::LazyLock<
+    Vec<time::format_description::FormatItem<'static>>,
+> = std::sync::LazyLock::new(|| {
+    format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond]")
+        .expect("Invalid ISO8601 millis date format")
+});
 
-    let time_str = OffsetDateTime::now_utc().format(&date_format).unwrap();
+static ISO8601_FORMAT: std::sync::LazyLock<Vec<time::format_description::FormatItem<'static>>> =
+    std::sync::LazyLock::new(|| {
+        format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z")
+            .expect("Invalid ISO8601 date format")
+    });
+
+// This format is also the preferred HTTP date format. https://httpwg.org/specs/rfc9110.html#http.date
+static RFC1123_FORMAT: std::sync::LazyLock<Vec<time::format_description::FormatItem<'static>>> =
+    std::sync::LazyLock::new(|| {
+        format_description::parse(
+            "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT",
+        )
+        .expect("Invalid RFC1123 date format")
+    });
+
+pub fn get_date_time_string_with_milliseconds() -> String {
+    let time_str = OffsetDateTime::now_utc()
+        .format(&*ISO8601_MILLIS_FORMAT)
+        .expect("Failed to format ISO8601 millis date");
+    // Truncate to 23 chars: "YYYY-MM-DDTHH:MM:SS.mmm"
     time_str.chars().take(23).collect()
 }
 
 pub fn get_date_time_string() -> String {
-    let date_format =
-        format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z").unwrap();
-
-    let time_str = OffsetDateTime::now_utc().format(&date_format).unwrap();
-    time_str.chars().collect()
+    OffsetDateTime::now_utc()
+        .format(&*ISO8601_FORMAT)
+        .expect("Failed to format ISO8601 date")
 }
 
-// This format is also the preferred HTTP date format. https://httpwg.org/specs/rfc9110.html#http.date
 pub fn get_date_time_rfc1123_string() -> String {
-    let date_format = format_description::parse(
-        "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT",
-    )
-    .unwrap();
-
-    let time_str = OffsetDateTime::now_utc().format(&date_format).unwrap();
-    time_str.chars().collect()
+    OffsetDateTime::now_utc()
+        .format(&*RFC1123_FORMAT)
+        .expect("Failed to format RFC1123 date")
 }
 
 pub fn get_date_time_unix_nano() -> i128 {
@@ -126,15 +141,41 @@ pub fn try_create_folder(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Writes a serializable object to a file in JSON format.
+/// It first writes to a temporary file and then renames it to the target file to avoid leaving a corrupted file if the write operation fails.
+/// Remark: it uses BufWriter to reduce system calls and improve performance.
+/// Remark: Called from sync code, infrequent writes and small objects
 pub fn json_write_to_file<T>(obj: &T, file_path: &Path) -> Result<()>
 where
     T: ?Sized + Serialize,
 {
+    use std::io::BufWriter;
+
     // write to a temp file and rename to avoid corrupted file
     let temp_file_path = file_path.with_extension("tmp");
     let file = File::create(&temp_file_path)?;
-    serde_json::to_writer_pretty(file, obj)?;
+    let writer = BufWriter::new(file); // Reduces system calls
+    serde_json::to_writer_pretty(writer, obj)?;
     std::fs::rename(temp_file_path, file_path)?;
+
+    Ok(())
+}
+
+/// Async version of json_write_to_file using tokio::fs
+/// Serializes to memory first (CPU work), then writes asynchronously (IO work)
+/// This avoids blocking the async runtime during serialization
+/// Remark: Called from async context, writing while handing concurrent requests, and potentially larger objects
+pub async fn json_write_to_file_async<T>(obj: &T, file_path: &Path) -> Result<()>
+where
+    T: ?Sized + Serialize,
+{
+    // Serialize to memory first (CPU work - fast)
+    let json_bytes = serde_json::to_vec_pretty(obj)?;
+
+    // Write asynchronously (IO work)
+    let temp_file_path = file_path.with_extension("tmp");
+    tokio::fs::write(&temp_file_path, json_bytes).await?;
+    tokio::fs::rename(&temp_file_path, file_path).await?;
 
     Ok(())
 }
@@ -261,28 +302,18 @@ pub fn empty_path() -> PathBuf {
     PathBuf::new()
 }
 
-/// Search files in a directory with a regex pattern
+/// Search files in a directory with a regex
 /// # Arguments
 /// * `dir` - The directory to search
-/// * `search_regex_pattern` - The regex pattern to search
+/// * `search_regex` - The regex to search
 /// # Returns
 /// A vector of PathBufs that match the search pattern in ascending order
 /// # Errors
 /// Returns an error if the regex pattern is invalid or if there is an IO error
-/// # Example
-/// ```rust
-/// use std::path::PathBuf;
-/// use proxy_agent_shared::misc_helpers;
-/// let dir = PathBuf::from(".");
-/// let search_regex_pattern = r"^(.*\.log)$";  // search for files with .log extension
-/// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
-///
-/// let search_regex_pattern = r"^MyFile.*\.json$"; // Regex pattern to match "MyFile*.json"
-/// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
-/// ```
-pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBuf>> {
+/// Remarks: The Regex::new is expensive, so the caller should cache the regex if it is used frequently,
+///     for example, by using once_cell::sync::Lazy or std::sync::LazyLock to create a static regex instance.
+pub fn search_files(dir: &Path, search_regex: &Regex) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    let regex = Regex::new(search_regex_pattern)?;
 
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -292,7 +323,7 @@ pub fn search_files(dir: &Path, search_regex_pattern: &str) -> Result<Vec<PathBu
             continue;
         }
         let file_name = get_file_name(&file_full_path);
-        if regex.is_match(&file_name) {
+        if search_regex.is_match(&file_name) {
             files.push(file_full_path);
         }
     }
@@ -378,21 +409,32 @@ pub fn get_proxy_agent_version(proxy_agent_exe: &Path) -> Result<String> {
     }
 }
 
+/// Static regex for matching environment variables like %VAR%
+/// expect() only panics on failure to compile the regex, which should not happen since the pattern is constant and valid
+/// This is the idiomatic Rust pattern for creating a static regex that is compiled once and reused, ensuring thread safety and performance
+/// Remark: Regex::new is performance-sensitive, so we use LazyLock to compile it only once and reuse it for subsequent calls to resolve_env_variables, which can be called frequently.
+///     This avoids the overhead of compiling the regex on every call, improving performance while ensuring thread safety.
+static ENV_VAR_REGEX: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"%(\w+)%").expect("Invalid env var regex pattern"));
+
 /// This function replaces all occurrences of %VAR% in the input string with the value of the environment variable VAR
 /// If the environment variable is not set, it returns the original string with VAR unchanged.
 /// # Arguments
 /// * `input` - The input string to resolve environment variables in
 /// # Returns
 /// A Result containing the resolved string or an error if the regex pattern is invalid
-pub fn resolve_env_variables(input: &str) -> Result<String> {
-    let re = Regex::new(r"%(\w+)%")?;
-    let ret = re
+/// The resolved string with environment variables expanded
+pub fn resolve_env_variables(input: &str) -> String {
+    if input.is_empty() || !input.contains('%') {
+        // If the input string is empty or does not contain '%', return the original string
+        return input.to_string();
+    }
+
+    ENV_VAR_REGEX
         .replace_all(input, |caps: &regex::Captures| {
             std::env::var(&caps[1]).unwrap_or_else(|_| caps[1].to_string())
         })
-        .to_string();
-
-    Ok(ret)
+        .to_string()
 }
 
 /// Compute HMAC-SHA256 signature for the input using the provided hex-encoded key
@@ -424,6 +466,7 @@ pub fn xml_escape(s: String) -> String {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
     use serde_derive::{Deserialize, Serialize};
     use std::env;
     use std::fs;
@@ -578,14 +621,16 @@ mod tests {
         let json_file = json_file.join("test_1.json");
         super::json_write_to_file(&test, &json_file).unwrap();
 
-        let files = super::search_files(&temp_test_path, "test.json").unwrap();
+        let regex = Regex::new(r"test.json").unwrap();
+        let files = super::search_files(&temp_test_path, &regex).unwrap();
         assert_eq!(
             1,
             files.len(),
             "file count mismatch with 'test.json' search"
         );
 
-        let files = super::search_files(&temp_test_path, r"^test.*\.json$").unwrap();
+        let regex = Regex::new(r"^test.*\.json$").unwrap();
+        let files = super::search_files(&temp_test_path, &regex).unwrap();
         assert_eq!(
             2,
             files.len(),
@@ -647,12 +692,12 @@ mod tests {
             "{}\\WindowsAzure\\ProxyAgent\\Package_1.0.0",
             env::var("SYSTEMDRIVE").unwrap_or("SYSTEMDRIVE".to_string())
         );
-        let resolved = super::resolve_env_variables(input).unwrap();
+        let resolved = super::resolve_env_variables(input);
         assert_eq!(expected, resolved, "resolved string mismatch");
 
         let input = "/var/log/azure-proxy-agent/";
         let expected = "/var/log/azure-proxy-agent/".to_string();
-        let resolved = super::resolve_env_variables(input).unwrap();
+        let resolved = super::resolve_env_variables(input);
         assert_eq!(expected, resolved, "resolved string mismatch");
     }
 
