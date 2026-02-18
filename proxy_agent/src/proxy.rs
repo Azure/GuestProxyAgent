@@ -87,8 +87,9 @@ async fn get_user(
         Ok(user)
     } else {
         let user = User::from_logon_id(logon_id)?;
-        if let Err(e) = proxy_server_shared_state.add_user(user.clone()).await {
-            println!("Failed to add user: {e} to cache");
+        if let Err(_e) = proxy_server_shared_state.add_user(user.clone()).await {
+            #[cfg(test)]
+            eprintln!("Failed to add user: {_e} to cache");
         }
         Ok(user)
     }
@@ -151,12 +152,12 @@ impl Claims {
         let u = get_user(entry.logon_id, proxy_server_shared_state).await?;
         Ok(Claims {
             userId: entry.logon_id,
-            userName: u.user_name.to_string(),
+            userName: u.user_name.clone(),
             userGroups: u.user_groups.clone(),
             processId: p.pid,
             processName: p.name,
             processFullPath: p.exe_full_name,
-            processCmdLine: p.command_line.to_string(),
+            processCmdLine: p.command_line.clone(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),
             clientPort: client_port,
@@ -174,26 +175,26 @@ impl Process {
             };
 
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)
-                .unwrap_or_else(|e| {
-                    println!("Failed to get process handler: {e}");
-                    0
-                });
-            let base_info = windows::query_basic_process_info(handler);
-            match base_info {
-                Ok(_) => {
-                    process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
-                    cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+            let handler =
+                proxy_agent_shared::windows::get_process_handler(pid, options).unwrap_or(0);
+            if handler != 0 {
+                // Get process info directly - if either fails, the process may have exited
+                process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
+                cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+
+                // close the handle
+                if let Err(_e) = proxy_agent_shared::windows::close_handler(handler) {
+                    #[cfg(test)]
+                    println!("Failed to close process handler: {_e}");
                 }
-                Err(e) => {
-                    process_full_path = PathBuf::default();
-                    cmd = UNDEFINED.to_string();
-                    println!("Failed to query basic process info: {e}");
-                }
-            }
-            // close the handle
-            if let Err(e) = proxy_agent_shared::windows::close_handler(handler) {
-                println!("Failed to close process handler: {e}");
+            } else {
+                process_full_path = PathBuf::default();
+                cmd = UNDEFINED.to_string();
+                #[cfg(test)]
+                eprintln!(
+                    "Failed to get_process_handler: {}",
+                    std::io::Error::last_os_error()
+                );
             }
         }
         #[cfg(not(windows))]
@@ -253,8 +254,8 @@ impl User {
 
         Ok(User {
             logon_id,
-            user_name: user_name.to_string(),
-            user_groups: user_groups.clone(),
+            user_name,
+            user_groups,
         })
     }
 }

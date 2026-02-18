@@ -376,12 +376,15 @@ mod tests {
         misc_helpers::try_create_folder(&events_dir).unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
-
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         // test EventReader with limits
         let event_reader_limits = EventReaderLimits::new()
             .with_max_event_file_size_bytes(1024 * 10)
@@ -413,11 +416,15 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         let files = misc_helpers::get_files(&events_dir).unwrap();
         assert_eq!(2, files.len(), "Must have 2 event files.");
 
@@ -435,10 +442,14 @@ mod tests {
             "{}.notjson",
             misc_helpers::get_date_time_unix_nano()
         ));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         let mut file_path = events_dir.to_path_buf();
         file_path.push(format!("a{}.json", misc_helpers::get_date_time_unix_nano()));
-        misc_helpers::json_write_to_file(&events, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&events, &file_path)
+            .await
+            .unwrap();
         let events_processed = event_reader.process_once().await;
         assert_eq!(0, events_processed, "events_processed must be 0.");
         let files = misc_helpers::get_files(&events_dir).unwrap();
@@ -492,13 +503,17 @@ mod tests {
         // Write extension event files with proper naming pattern
         let mut file_path = events_dir.to_path_buf();
         file_path.push(crate::telemetry::new_extension_event_file_name());
-        misc_helpers::json_write_to_file(&event, &file_path).unwrap();
+        misc_helpers::json_write_to_file_async(&event, &file_path)
+            .await
+            .unwrap();
 
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         let mut file_path2 = events_dir.to_path_buf();
         file_path2.push(crate::telemetry::new_extension_event_file_name());
-        misc_helpers::json_write_to_file(&event, &file_path2).unwrap();
+        misc_helpers::json_write_to_file_async(&event, &file_path2)
+            .await
+            .unwrap();
 
         // Verify files were created
         let files = misc_helpers::search_files(
@@ -529,7 +544,9 @@ mod tests {
         // Test with non-matching file names (should not be processed)
         let mut non_matching_file = events_dir.to_path_buf();
         non_matching_file.push("not_extension_event.json");
-        misc_helpers::json_write_to_file(&event, &non_matching_file).unwrap();
+        misc_helpers::json_write_to_file_async(&event, &non_matching_file)
+            .await
+            .unwrap();
 
         let events_processed = event_reader.process_extension_status_events().await;
         assert_eq!(
@@ -547,7 +564,9 @@ mod tests {
         // Write another event file
         let mut file_path3 = events_dir.to_path_buf();
         file_path3.push(crate::telemetry::new_extension_event_file_name());
-        misc_helpers::json_write_to_file(&event, &file_path3).unwrap();
+        misc_helpers::json_write_to_file_async(&event, &file_path3)
+            .await
+            .unwrap();
 
         // Start the processor in a separate task
         let event_reader_for_task = EventReader::new(
@@ -623,13 +642,17 @@ mod tests {
         // Write 2 generic event files
         let mut generic_file1 = events_dir.to_path_buf();
         generic_file1.push(crate::telemetry::new_generic_event_file_name());
-        misc_helpers::json_write_to_file(&generic_events, &generic_file1).unwrap();
+        misc_helpers::json_write_to_file_async(&generic_events, &generic_file1)
+            .await
+            .unwrap();
 
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         let mut generic_file2 = events_dir.to_path_buf();
         generic_file2.push(crate::telemetry::new_generic_event_file_name());
-        misc_helpers::json_write_to_file(&generic_events, &generic_file2).unwrap();
+        misc_helpers::json_write_to_file_async(&generic_events, &generic_file2)
+            .await
+            .unwrap();
 
         // Create extension status event files
         let extension = crate::telemetry::Extension {
@@ -654,7 +677,9 @@ mod tests {
         for _ in 0..3 {
             let mut ext_file = events_dir.to_path_buf();
             ext_file.push(crate::telemetry::new_extension_event_file_name());
-            misc_helpers::json_write_to_file(&extension_event, &ext_file).unwrap();
+            misc_helpers::json_write_to_file_async(&extension_event, &ext_file)
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
@@ -728,11 +753,15 @@ mod tests {
         // Write one of each type again
         let mut generic_file = events_dir.to_path_buf();
         generic_file.push(crate::telemetry::new_generic_event_file_name());
-        misc_helpers::json_write_to_file(&generic_events, &generic_file).unwrap();
+        misc_helpers::json_write_to_file_async(&generic_events, &generic_file)
+            .await
+            .unwrap();
 
         let mut ext_file = events_dir.to_path_buf();
         ext_file.push(crate::telemetry::new_extension_event_file_name());
-        misc_helpers::json_write_to_file(&extension_event, &ext_file).unwrap();
+        misc_helpers::json_write_to_file_async(&extension_event, &ext_file)
+            .await
+            .unwrap();
 
         // Process extension events - should only process extension file
         let extension_events_processed = event_reader.process_extension_status_events().await;
