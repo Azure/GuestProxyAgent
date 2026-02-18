@@ -15,11 +15,12 @@
 //! use std::time::Duration;
 //!
 //! let shared_state = SharedState::start_all();
-//! let base_url = "http://127:0.0.1:8081/";
+//! let host = "127.0.0.1".to_string();
+//! let port = 8081u16;
 //! let key_dir = PathBuf::from("path");
 //! let interval = Duration::from_secs(10);
 //! let config_start_redirector = false;
-//! let key_keeper = key_keeper::KeyKeeper::new(base_url.parse().unwrap(), key_dir, interval, config_start_redirector, &shared_state);
+//! let key_keeper = key_keeper::KeyKeeper::new(host, port, key_dir, interval, config_start_redirector, &shared_state);
 //! tokio::spawn(key_keeper.poll_secure_channel_status());
 //! ```
 
@@ -40,7 +41,6 @@ use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::{EventThreadsSharedState, SharedState};
 use crate::{acl, redirector};
-use hyper::Uri;
 use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
@@ -64,8 +64,10 @@ const DELAY_START_EVENT_THREADS_IN_MILLISECONDS: u128 = 60000; // 1 minute
 
 #[derive(Clone)]
 pub struct KeyKeeper {
-    /// base_url: the WireServer endpoint to poll the secure channel status
-    base_url: Uri,
+    /// host: the WireServer host to poll the secure channel status
+    host: String,
+    /// port: the WireServer port to poll the secure channel status
+    port: u16,
     /// key_dir: the folder to save the key details
     key_dir: PathBuf,
     /// status_dir: the folder to log the access control rule details
@@ -101,14 +103,16 @@ enum WakeReason {
 
 impl KeyKeeper {
     pub fn new(
-        base_url: Uri,
+        host: String,
+        port: u16,
         key_dir: PathBuf,
         status_dir: PathBuf,
         interval: Duration,
         shared_state: &SharedState,
     ) -> Self {
         KeyKeeper {
-            base_url,
+            host,
+            port,
             key_dir,
             status_dir,
             interval,
@@ -247,7 +251,7 @@ impl KeyKeeper {
                 .await;
             started_event_threads = self.handle_event_threads_start(started_event_threads).await;
 
-            let status = match key::get_status(&self.base_url).await {
+            let status = match key::get_status(&self.host, self.port).await {
                 Ok(s) => s,
                 Err(e) => {
                     self.update_status_message(format!("Failed to get key status - {e}"), true)
@@ -629,7 +633,7 @@ impl KeyKeeper {
     /// Acquire key from server, persist it, and attest it
     /// Returns true if successful, false if should continue to next iteration
     async fn acquire_key_from_server(&self) -> bool {
-        let key = match key::acquire_key(&self.base_url).await {
+        let key = match key::acquire_key(&self.host, self.port).await {
             Ok(k) => k,
             Err(e) => {
                 self.update_status_message(format!("Failed to acquire key details: {e:?}"), true)
@@ -660,7 +664,7 @@ impl KeyKeeper {
         }
 
         // attest the key
-        match key::attest_key(&self.base_url, &key).await {
+        match key::attest_key(&self.host, self.port, &key).await {
             Ok(()) => {
                 // update in memory
                 if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
@@ -1051,7 +1055,8 @@ mod tests {
         // start poll_secure_channel_status
         let cloned_keys_dir = keys_dir.to_path_buf();
         let key_keeper = KeyKeeper {
-            base_url: (format!("http://{}:{}/", ip, port)).parse().unwrap(),
+            host: ip.to_string(),
+            port,
             key_dir: cloned_keys_dir.clone(),
             status_dir: cloned_keys_dir.clone(),
             interval: Duration::from_millis(10),

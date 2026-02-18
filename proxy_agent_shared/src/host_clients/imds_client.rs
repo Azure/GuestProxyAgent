@@ -6,10 +6,9 @@
 //! The GPA service uses the IMDS service to get the instance information of the VM.
 
 use super::instance_info::InstanceInfo;
-use crate::hyper_client;
+use crate::hyper_client::{self, HostEndpoint};
 use crate::logger::logger_manager;
-use crate::{error::Error, result::Result};
-use hyper::Uri;
+use crate::result::Result;
 use std::collections::HashMap;
 
 pub struct ImdsClient {
@@ -17,7 +16,7 @@ pub struct ImdsClient {
     port: u16,
 }
 
-const IMDS_URI: &str = "metadata/instance?api-version=2018-02-01";
+const IMDS_URI: &str = "/metadata/instance?api-version=2018-02-01";
 
 impl ImdsClient {
     pub fn new(ip: &str, port: u16) -> Self {
@@ -27,19 +26,26 @@ impl ImdsClient {
         }
     }
 
+    fn endpoint(&self, path: &str) -> HostEndpoint {
+        HostEndpoint::new(&self.ip, self.port, path)
+    }
+
     pub async fn get_imds_instance_info(
         &self,
         key_guid: Option<String>,
         key: Option<String>,
     ) -> Result<InstanceInfo> {
-        let url: String = format!("http://{}:{}/{}", self.ip, self.port, IMDS_URI);
-
-        let url: Uri = url
-            .parse::<hyper::Uri>()
-            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
+        let endpoint = self.endpoint(IMDS_URI);
         let mut headers = HashMap::new();
         headers.insert("Metadata".to_string(), "true".to_string());
 
-        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn).await
+        hyper_client::get(
+            &endpoint,
+            &headers,
+            key_guid,
+            key,
+            logger_manager::write_warn,
+        )
+        .await
     }
 }

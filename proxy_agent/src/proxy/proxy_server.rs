@@ -1045,10 +1045,10 @@ mod tests {
         let sleep_duration = Duration::from_millis(100);
         tokio::time::sleep(sleep_duration).await;
 
-        let url: hyper::Uri = format!("http://{}:{}/", host, port).parse().unwrap();
+        let endpoint = hyper_client::HostEndpoint::new(host, port, "/");
         let request = hyper_client::build_request(
             Method::GET,
-            &url,
+            &endpoint,
             &HashMap::new(),
             None,
             key_keeper_shared_state
@@ -1085,12 +1085,10 @@ mod tests {
         );
 
         // test with traversal characters
-        let url: hyper::Uri = format!("http://{}:{}/test/../", host, port)
-            .parse()
-            .unwrap();
+        let endpoint = hyper_client::HostEndpoint::new(host, port, "/test/../");
         let request = hyper_client::build_request(
             Method::GET,
-            &url,
+            &endpoint,
             &HashMap::new(),
             None,
             key_keeper_shared_state
@@ -1116,7 +1114,7 @@ mod tests {
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
         let request = hyper_client::build_request(
             Method::POST,
-            &url,
+            &endpoint,
             &HashMap::new(),
             Some(body.as_slice()),
             key_keeper_shared_state
