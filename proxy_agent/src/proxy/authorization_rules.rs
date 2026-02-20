@@ -111,7 +111,21 @@ impl ComputedAuthorizationItem {
                     .collect::<HashMap<String, Identity>>();
                 privilege_dict = privileges
                     .into_iter()
-                    .map(|privilege| (privilege.name.clone(), privilege))
+                    .map(|privilege| {
+                        // case insensitive for path and query parameters key/values,
+                        // to make it easier for users to write the rules without worrying about the case sensitivity.
+                        // The name of the privilege is case sensitive, as it is used as the key in the privilege_dict and privilege_assignments.
+                        let normalized = Privilege {
+                            name: privilege.name,
+                            path: privilege.path.to_lowercase(),
+                            queryParameters: privilege.queryParameters.map(|qp| {
+                                qp.into_iter()
+                                    .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                                    .collect()
+                            }),
+                        };
+                        (normalized.name.clone(), normalized)
+                    })
                     .collect::<HashMap<String, Privilege>>();
 
                 for role_assignment in role_assignments {
@@ -177,10 +191,11 @@ impl ComputedAuthorizationItem {
             return true;
         }
 
+        let lowered_request_path = request_url.path().to_lowercase();
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
-            if privilege.is_match(logger, &request_url) {
+            if privilege.is_match(logger, &request_url, &lowered_request_path) {
                 any_privilege_matched = true;
                 logger.write(
                     LoggerLevel::Trace,
@@ -374,7 +389,7 @@ mod tests {
             }]),
             privileges: Some(vec![Privilege {
                 name: "test".to_string(),
-                path: "/test".to_string(),
+                path: "/TEST".to_string(), // test the case insensitivity of the path
                 queryParameters: None,
             }]),
             identities: Some(vec![Identity {
@@ -416,8 +431,12 @@ mod tests {
             runAsElevated: true,
         };
         // assert the claim is allowed given the rules above
-        let url = hyper::Uri::from_str("http://localhost/test/test").unwrap();
+
+        // test the case insensitivity of the path
+        let url = hyper::Uri::from_str("http://localhost/tESt/test").unwrap();
         assert!(rules.is_allowed(&mut test_logger, url, claims.clone()));
+
+        // test the case insensitivity of the path and the relative url
         let relative_url = hyper::Uri::from_str("/test/test").unwrap();
         assert!(rules.is_allowed(&mut test_logger, relative_url.clone(), claims.clone()));
         claims.userName = "test1".to_string();
