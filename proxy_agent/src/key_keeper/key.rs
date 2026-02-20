@@ -242,6 +242,8 @@ impl Privilege {
                 );
 
                 for (key, value) in query_parameters {
+                    // We may need to optimize this like `lowered_request_path` if there are too many query parameters in the future, 
+                    // but currently we expect only a few query parameters at most, so the performance impact should be minimal.
                     match hyper_client::query_pairs(request_url)
                         .into_iter()
                         .find(|(k, _)| k.to_lowercase() == *key)
