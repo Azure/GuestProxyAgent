@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 concurrent-queue = "2.1.0"    # for event queue
 once_cell = "1.17.0"          # use Lazy
-time = { version = "0.3.30", features = ["formatting", "parsing"] } 
+time = { version = "0.3.47", features = ["formatting", "parsing"] } 
 thread-id = "4.0.0"
 serde = "1.0.152"
 serde_derive = "1.0.152"
@@ -16,10 +16,10 @@ serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 regex = "1.11"               # match file name 
 thiserror = "1.0.64"
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "rt", "macros", "net", "sync", "time"] }
 tokio-util = "0.7.11"
+libc = "0.2.147"
 log = { version = "0.4.26", features = ["std"] }
-ctor = "0.3.6"                # used for test setup and clean up
 hex = "0.4.3"                 # hex encode 
 itertools = "0.10.5"          # use to sort iterator elements into a new iterator in ascending order
 http = "1.1.0"

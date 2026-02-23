@@ -13,6 +13,7 @@ pub mod setup;
 mod linux;
 
 use clap::Parser;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
 use std::process;
@@ -32,7 +33,7 @@ async fn main() {
     let cli = args::Cli::parse();
     logger::write(format!(
         "\r\n\r\n============== ProxyAgent Setup Tool ({}) is starting with args: {} ==============",
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         cli
     ));
 

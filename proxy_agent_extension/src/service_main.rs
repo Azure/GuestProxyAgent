@@ -4,6 +4,7 @@ use crate::common;
 use crate::constants;
 use crate::logger;
 use crate::structs::*;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     self, GuestProxyAgentAggregateStatus, ProxyConnectionSummary,
@@ -28,7 +29,7 @@ const MAX_STATE_COUNT: u32 = 120;
 pub fn run() {
     let message = format!(
         "==============  GuestProxyAgentExtension Enabling Agent, Version: {}, OS Arch: {}, OS Version: {}",
-        misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         misc_helpers::get_processor_arch(),
         misc_helpers::get_long_os_version()
     );

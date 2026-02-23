@@ -21,38 +21,61 @@ static EMPTY_GUID: Lazy<String> = Lazy::new(|| "00000000-0000-0000-0000-00000000
 static GUID: Lazy<String> = Lazy::new(|| Uuid::new_v4().to_string());
 static mut CURRENT_STATE: Lazy<String> = Lazy::new(|| String::from("wireserver"));
 
-pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken) {
+/// A mock server to simulate the behavior of the Azure WireServer for testing purposes.
+/// It listens for incoming HTTP requests and responds with predefined responses based on the request path and method.
+/// The server can be started on a specified IP and port, and it can be gracefully shut down using a cancellation token.
+/// If the port is already in use, it will automatically bind to an ephemeral port and log a warning message.
+/// Returns the port number that the server is listening on, or an error if the server fails to start.
+pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken) -> Result<u16> {
     logger_manager::write_info("Mock Server starting...".to_string());
     let addr = format!("{ip}:{port}");
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    println!("Listening on http://{addr}");
-
-    loop {
-        tokio::select! {
-            _ = cancellation_token.cancelled() => {
-                logger_manager::write_warn("cancellation token signal received, stop the listener.".to_string());
-                return;
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            // if the specified port is already in use, bind to an ephemeral port instead
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                logger_manager::write_warn(format!(
+                    "Port {port} is already in use, trying to bind to an ephemeral port."
+                ));
+                TcpListener::bind(format!("{ip}:0")).await?
+            } else {
+                return Err(e.into());
             }
-            result = listener.accept() => {
-                match result {
-                    Ok((stream, _)) =>{
-                        let ip = ip.to_string();
-                        tokio::spawn(async move {
-                            let io = TokioIo::new(stream);
+        }
+    };
+    let local_addr = listener.local_addr().unwrap();
+    // Update the port if we had to bind to an ephemeral port
+    let port = local_addr.port();
+    println!("Mock Server Listening on http://{local_addr}");
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    logger_manager::write_warn("cancellation token signal received, stop the listener.".to_string());
+                    return;
+                }
+                result = listener.accept() => {
+                    match result {
+                        Ok((stream, _)) =>{
                             let ip = ip.to_string();
-                            let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
-                            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                                println!("Error serving connection: {err:?}");
-                            }
-                        });
-                    },
-                    Err(e) => {
-                        logger_manager::write_err(format!("Failed to accept connection: {e}"));
+                            tokio::spawn(async move {
+                                let io = TokioIo::new(stream);
+                                let ip = ip.to_string();
+                                let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
+                                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                                    println!("Error serving connection: {err:?}");
+                                }
+                            });
+                        },
+                        Err(e) => {
+                            logger_manager::write_err(format!("Failed to accept connection: {e}"));
+                        }
                     }
                 }
             }
         }
-    }
+    });
+    Ok(port)
 }
 
 async fn handle_request(

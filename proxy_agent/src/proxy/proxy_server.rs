@@ -246,31 +246,27 @@ impl ProxyServer {
         };
         let mut tcp_connection_logger = ConnectionLogger::new(tcp_connection_id, 0);
         tcp_connection_logger.write(
-            LoggerLevel::Info,
+            LoggerLevel::Trace,
             format!("Accepted new tcp connection [{tcp_connection_id}]."),
         );
 
         tokio::spawn({
             let cloned_proxy_server = self.clone();
             async move {
-                let (stream, _cloned_std_stream) =
-                    match Self::set_stream_read_time_out(stream, &mut tcp_connection_logger) {
-                        Ok((stream, cloned_std_stream)) => (stream, cloned_std_stream),
-                        Err(e) => {
-                            tcp_connection_logger.write(
-                                LoggerLevel::Error,
-                                format!("Failed to set stream read timeout: {e}"),
-                            );
-                            return;
-                        }
-                    };
+                // Get raw socket ID before any conversion (Windows only)
+                #[cfg(windows)]
+                let raw_socket_id = Self::get_stream_raw_socket_id(&stream);
+
+                // Set read timeout directly on the socket without conversion
+                Self::set_stream_read_time_out(&stream, &mut tcp_connection_logger);
+
                 let tcp_connection_context = TcpConnectionContext::new(
                     tcp_connection_id,
                     client_addr,
                     cloned_proxy_server.redirector_shared_state.clone(),
                     cloned_proxy_server.proxy_server_shared_state.clone(),
                     #[cfg(windows)]
-                    ProxyServer::get_stream_rocket_id(&_cloned_std_stream),
+                    raw_socket_id,
                 )
                 .await;
 
@@ -324,46 +320,24 @@ impl ProxyServer {
     }
 
     #[cfg(windows)]
-    fn get_stream_rocket_id(stream: &std::net::TcpStream) -> usize {
+    fn get_stream_raw_socket_id(stream: &TcpStream) -> usize {
         use std::os::windows::io::AsRawSocket;
         stream.as_raw_socket() as usize
     }
 
     // Set the read timeout for the stream
-    fn set_stream_read_time_out(
-        stream: TcpStream,
-        connection_logger: &mut ConnectionLogger,
-    ) -> Result<(TcpStream, std::net::TcpStream)> {
-        // Convert the stream to a std stream
-        let std_stream = stream.into_std().map_err(|e| {
-            Error::Io(
-                "Failed to convert Tokio stream into std equivalent".to_string(),
-                e,
-            )
-        })?;
+    // Uses socket2::SockRef to set socket options directly on the tokio stream
+    // socket2 crate already used by tokio internally, so it won't cause extra dependency
+    fn set_stream_read_time_out(stream: &TcpStream, connection_logger: &mut ConnectionLogger) {
+        use socket2::SockRef;
 
-        // Set the read timeout
-        if let Err(e) = std_stream.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
+        let sock_ref = SockRef::from(stream);
+        if let Err(e) = sock_ref.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
             connection_logger.write(
                 LoggerLevel::Warn,
                 format!("Failed to set read timeout: {e}"),
             );
         }
-
-        // Clone the stream for the service_fn
-        let cloned_std_stream = std_stream
-            .try_clone()
-            .map_err(|e| Error::Io("Failed to clone TCP stream".to_string(), e))?;
-
-        // Convert the std stream back
-        let tokio_tcp_stream = TcpStream::from_std(std_stream).map_err(|e| {
-            Error::Io(
-                "Failed to convert std stream into Tokio equivalent".to_string(),
-                e,
-            )
-        })?;
-
-        Ok((tokio_tcp_stream, cloned_std_stream))
     }
 
     async fn handle_new_http_request(
@@ -393,7 +367,7 @@ impl ProxyServer {
             tcp_connection_context.clone(),
         );
         http_connection_context.log(
-            LoggerLevel::Info,
+            LoggerLevel::Trace,
             format!(
                 "Got request from {} for {} {}",
                 tcp_connection_context.client_addr,
@@ -471,7 +445,7 @@ impl ProxyServer {
                 return Ok(Self::closed_response(StatusCode::MISDIRECTED_REQUEST));
             }
         };
-        http_connection_context.log(LoggerLevel::Info, claim_details.to_string());
+        http_connection_context.log(LoggerLevel::Trace, claim_details.to_string());
 
         // authenticate the connection
         let access_control_rules = match proxy_authorizer::get_access_control_rules(
@@ -564,7 +538,7 @@ impl ProxyServer {
 
         if http_connection_context.should_skip_sig() {
             http_connection_context.log(
-                LoggerLevel::Info,
+                LoggerLevel::Trace,
                 format!(
                     "Skip compute signature for the request for {} {}",
                     http_connection_context.method, http_connection_context.url
@@ -798,12 +772,12 @@ impl ProxyServer {
         let summary = ProxySummary {
             id: http_connection_context.id,
             userId: claims.userId,
-            userName: claims.userName.to_string(),
+            userName: claims.userName.clone(),
             userGroups: claims.userGroups.clone(),
-            clientIp: claims.clientIp.to_string(),
+            clientIp: claims.clientIp.clone(),
             clientPort: claims.clientPort,
             processFullPath: claims.processFullPath,
-            processCmdLine: claims.processCmdLine.to_string(),
+            processCmdLine: claims.processCmdLine.clone(),
             runAsElevated: claims.runAsElevated,
             method: http_connection_context.method.to_string(),
             url: http_connection_context.url.to_string(),
@@ -817,41 +791,67 @@ impl ProxyServer {
             elapsedTime: elapsed_time.as_millis(),
             errorDetails: error_details,
         };
-        if let Ok(json) = serde_json::to_string(&summary) {
-            event_logger::write_event(
-                LoggerLevel::Info,
-                json,
-                "log_connection_summary",
-                "proxy_server",
-                ConnectionLogger::CONNECTION_LOGGER_KEY,
-            );
-        };
         http_connection_context.log(
             LoggerLevel::Trace,
             "Starting add connection summary for status reporting.".to_string(),
         );
 
         if log_authorize_failed {
-            if let Err(e) = self
+            match self
                 .connection_summary_shared_state
-                .add_one_failed_connection_summary(summary)
+                .add_one_failed_connection_summary(summary.clone())
                 .await
             {
-                http_connection_context.log(
-                    LoggerLevel::Warn,
-                    format!("Failed to add failed connection summary: {e}"),
-                );
+                Ok(is_new_bucket) => {
+                    if is_new_bucket {
+                        // if it's a new bucket, we don't need to add to failed connection summary again
+                        if let Ok(json) = serde_json::to_string(&summary) {
+                            event_logger::write_event(
+                                LoggerLevel::Info,
+                                json,
+                                "log_connection_summary",
+                                "proxy_server",
+                                ConnectionLogger::CONNECTION_LOGGER_KEY,
+                            );
+                        };
+                    }
+                }
+                Err(e) => {
+                    http_connection_context.log(
+                        LoggerLevel::Warn,
+                        format!("Failed to add failed connection summary: {e}"),
+                    );
+                }
             }
-        } else if let Err(e) = self
-            .connection_summary_shared_state
-            .add_one_connection_summary(summary)
-            .await
-        {
-            http_connection_context.log(
-                LoggerLevel::Warn,
-                format!("Failed to add connection summary: {e}"),
-            );
+        } else {
+            match self
+                .connection_summary_shared_state
+                .add_one_connection_summary(summary.clone())
+                .await
+            {
+                Ok(is_new_bucket) => {
+                    if is_new_bucket {
+                        // if it's a new bucket, we log it to event logger
+                        if let Ok(json) = serde_json::to_string(&summary) {
+                            event_logger::write_event(
+                                LoggerLevel::Info,
+                                json,
+                                "log_connection_summary",
+                                "proxy_server",
+                                ConnectionLogger::CONNECTION_LOGGER_KEY,
+                            );
+                        };
+                    }
+                }
+                Err(e) => {
+                    http_connection_context.log(
+                        LoggerLevel::Warn,
+                        format!("Failed to add connection summary: {e}"),
+                    );
+                }
+            }
         }
+
         http_connection_context.log(
             LoggerLevel::Trace,
             "Finished log_connection_summary.".to_string(),
@@ -1045,10 +1045,10 @@ mod tests {
         let sleep_duration = Duration::from_millis(100);
         tokio::time::sleep(sleep_duration).await;
 
-        let url: hyper::Uri = format!("http://{}:{}/", host, port).parse().unwrap();
+        let endpoint = hyper_client::HostEndpoint::new(host, port, "/");
         let request = hyper_client::build_request(
             Method::GET,
-            &url,
+            &endpoint,
             &HashMap::new(),
             None,
             key_keeper_shared_state
@@ -1085,12 +1085,10 @@ mod tests {
         );
 
         // test with traversal characters
-        let url: hyper::Uri = format!("http://{}:{}/test/../", host, port)
-            .parse()
-            .unwrap();
+        let endpoint = hyper_client::HostEndpoint::new(host, port, "/test/../");
         let request = hyper_client::build_request(
             Method::GET,
-            &url,
+            &endpoint,
             &HashMap::new(),
             None,
             key_keeper_shared_state
@@ -1116,7 +1114,7 @@ mod tests {
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
         let request = hyper_client::build_request(
             Method::POST,
-            &url,
+            &endpoint,
             &HashMap::new(),
             Some(body.as_slice()),
             key_keeper_shared_state

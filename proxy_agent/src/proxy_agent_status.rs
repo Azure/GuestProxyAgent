@@ -28,18 +28,17 @@
 //! tokio::spawn(proxy_agent_status_task.start());
 //! ```
 
-use crate::common::logger;
+use crate::common::{constants, logger};
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use proxy_agent_shared::logger::LoggerLevel;
-use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
     GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
     ProxyAgentStatus,
 };
-use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::telemetry::{event_logger, Extension, OperationStatus};
+use proxy_agent_shared::{current_info, misc_helpers};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -116,8 +115,6 @@ impl ProxyAgentStatusTask {
     }
 
     async fn loop_status(&self) {
-        let map_clear_duration = Duration::from_secs(60 * 60 * 24);
-        let mut start_time = Instant::now();
         let status_report_duration = Duration::from_secs(60 * 15);
         let mut status_report_time = Instant::now();
 
@@ -128,7 +125,12 @@ impl ProxyAgentStatusTask {
                 e
             ));
         }
-
+        let agent_status = Extension {
+            name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            version: current_info::get_current_exe_version(),
+            is_internal: true,
+            extension_type: "Monitoring".to_string(),
+        };
         loop {
             #[cfg(not(windows))]
             {
@@ -142,33 +144,22 @@ impl ProxyAgentStatusTask {
                     Ok(status) => status,
                     Err(e) => format!("Error serializing proxy agent status: {e}"),
                 };
-                event_logger::write_event(
-                    LoggerLevel::Info,
-                    status,
-                    "loop_status",
-                    "proxy_agent_status",
-                    logger::AGENT_LOGGER_KEY,
-                );
+                event_logger::report_extension_status_event(
+                    agent_status.clone(),
+                    OperationStatus {
+                        operation_success: aggregate_status.proxyAgentStatus.status
+                            == OverallState::SUCCESS,
+                        task_name: "loop_status".to_string(),
+                        operation: "report_proxy_agent_status".to_string(),
+                        message: status,
+                        duration: status_report_time.elapsed().as_millis() as i64,
+                    },
+                )
+                .await;
                 status_report_time = Instant::now();
             }
             // write the aggregate status to status.json file
             self.write_aggregate_status_to_file(aggregate_status).await;
-
-            //Clear the connection map and reset start_time after 24 hours
-            if start_time.elapsed() >= map_clear_duration {
-                logger::write_information(
-                    "Clearing the connection summary map and failed authenticate summary map."
-                        .to_string(),
-                );
-                if let Err(e) = self
-                    .connection_summary_shared_state
-                    .clear_all_summary()
-                    .await
-                {
-                    logger::write_error(format!("Error clearing the connection summary map and failed authenticate summary map: {e}"));
-                }
-                start_time = Instant::now();
-            }
 
             tokio::time::sleep(self.interval).await;
         }
@@ -243,7 +234,7 @@ impl ProxyAgentStatusTask {
         };
 
         ProxyAgentStatus {
-            version: misc_helpers::get_current_version(),
+            version: current_info::get_current_exe_version(),
             status,
             // monitorStatus is proxy_agent_status itself status
             monitorStatus: ProxyAgentDetailStatus {
@@ -300,7 +291,7 @@ impl ProxyAgentStatusTask {
 
     async fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
         let full_file_path = self.status_dir.join("status.json");
-        if let Err(e) = misc_helpers::json_write_to_file(&status, &full_file_path) {
+        if let Err(e) = misc_helpers::json_write_to_file_async(&status, &full_file_path).await {
             self.update_agent_status_message(format!(
                 "Error writing aggregate status to status file: {e}"
             ))

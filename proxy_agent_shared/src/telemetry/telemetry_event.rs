@@ -3,192 +3,107 @@
 
 //! This module contains the logic to generate the telemetry data to be send to wire server.
 
-use super::event_reader::VmMetaData;
-use crate::telemetry::Event;
+use crate::telemetry::{Event, ExtensionStatusEvent};
 use crate::{current_info, misc_helpers};
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
-/// TelemetryData struct to hold the telemetry events send to wire server.
-pub struct TelemetryData {
-    events: Vec<TelemetryEvent>,
+const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
+const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
+
+/// VmMetaData contains the metadata of the VM.
+/// The metadata is used to identify the VM and the image origin.
+/// It will be part of the telemetry data send to the wire server.
+/// The metadata is updated by the wire server and the IMDS client.
+#[derive(Clone, Debug)]
+pub struct VmMetaData {
+    pub container_id: String,
+    pub tenant_name: String,
+    pub role_name: String,
+    pub role_instance_name: String,
+    pub subscription_id: String,
+    pub resource_group_name: String,
+    pub vm_id: String,
+    pub image_origin: u64,
 }
 
-impl Default for TelemetryData {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Base struct containing common fields shared between telemetry event types.
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct TelemetryEventVMData {
+    pub container_id: String,
+    pub keyword_name: String,
+    pub os_version: String,
+    pub ram: u64,
+    pub processors: u64,
+    pub tenant_name: String,
+    pub role_name: String,
+    pub role_instance_name: String,
+    pub subscription_id: String,
+    pub resource_group_name: String,
+    pub vm_id: String,
+    pub image_origin: u64,
 }
 
-impl TelemetryData {
-    pub fn new() -> Self {
-        TelemetryData { events: Vec::new() }
-    }
-
-    /// Convert the telemetry data to xml format.
-    /// The xml format is defined by the wire server.
-    pub fn to_xml(&self) -> String {
-        let mut xml: String = String::new();
-
-        xml.push_str("<?xml version=\"1.0\"?><TelemetryData version=\"1.0\"><Provider id=\"FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F\">");
-
-        for e in &self.events {
-            xml.push_str(&e.to_xml_event());
-        }
-
-        xml.push_str("</Provider></TelemetryData>");
-        xml
-    }
-
-    /// Get the size of the telemetry data in bytes.
-    pub fn get_size(&self) -> usize {
-        self.to_xml().len()
-    }
-
-    pub fn add_event(&mut self, event: TelemetryEvent) {
-        self.events.push(event);
-    }
-
-    pub fn remove_last_event(&mut self) -> Option<TelemetryEvent> {
-        self.events.pop()
-    }
-
-    pub fn event_count(&self) -> usize {
-        self.events.len()
-    }
-}
-
-pub struct TelemetryEvent {
-    event_pid: u64,
-    event_tid: u64,
-    ga_version: String,
-    container_id: String,
-    task_name: String,
-    opcode_name: String,
-    keyword_name: String,
-    os_version: String,
-    execution_mode: String,
-    ram: u64,
-    processors: u64,
-    tenant_name: String,
-    role_name: String,
-    role_instance_name: String,
-    subscription_id: String,
-    resource_group_name: String,
-    vm_id: String,
-    image_origin: u64,
-
-    event_name: String,
-    capability_used: String,
-    context1: String,
-    context2: String,
-    context3: String,
-}
-
-impl TelemetryEvent {
-    pub fn from_event_log(
-        event_log: &Event,
-        vm_meta_data: VmMetaData,
-        execution_mode: String,
-        event_name: String,
-    ) -> Self {
-        TelemetryEvent {
-            event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
-            event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
-            ga_version: event_log.Version.to_string(),
-            task_name: event_log.TaskName.to_string(),
-            opcode_name: event_log.TimeStamp.to_string(),
-            capability_used: event_log.EventLevel.to_string(),
-            context1: event_log.Message.to_string(),
-            context2: event_log.TimeStamp.to_string(),
-            context3: event_log.OperationId.to_string(),
-
-            execution_mode,
-            event_name,
-            os_version: current_info::get_long_os_version(),
+impl TelemetryEventVMData {
+    pub fn new_from_vm_meta_data(vm_meta_data: &VmMetaData) -> Self {
+        TelemetryEventVMData {
             keyword_name: CURRENT_KEYWORD_NAME.to_string(),
+            os_version: current_info::get_long_os_version(),
             ram: current_info::get_ram_in_mb(),
             processors: current_info::get_cpu_count() as u64,
-
-            container_id: vm_meta_data.container_id,
-            tenant_name: vm_meta_data.tenant_name,
-            role_name: vm_meta_data.role_name,
-            role_instance_name: vm_meta_data.role_instance_name,
-            subscription_id: vm_meta_data.subscription_id,
-            resource_group_name: vm_meta_data.resource_group_name,
-            vm_id: vm_meta_data.vm_id,
+            container_id: vm_meta_data.container_id.clone(),
+            tenant_name: vm_meta_data.tenant_name.clone(),
+            role_name: vm_meta_data.role_name.clone(),
+            role_instance_name: vm_meta_data.role_instance_name.clone(),
+            subscription_id: vm_meta_data.subscription_id.clone(),
+            resource_group_name: vm_meta_data.resource_group_name.clone(),
+            vm_id: vm_meta_data.vm_id.clone(),
             image_origin: vm_meta_data.image_origin,
         }
     }
 
-    fn to_xml_event(&self) -> String {
-        let mut xml: String = String::new();
-        xml.push_str("<Event id=\"7\"><![CDATA[");
-
-        xml.push_str(&format!(
-            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.opcode_name.to_string())
-        ));
+    /// Convert the base fields to XML format.
+    pub fn to_xml_params(&self) -> String {
+        let mut xml = String::new();
         xml.push_str(&format!(
             "<Param Name=\"KeywordName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.keyword_name.to_string())
-        ));
-        xml.push_str(&format!(
-            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.task_name.to_string())
+            misc_helpers::xml_escape(self.keyword_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"TenantName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.tenant_name.to_string())
+            misc_helpers::xml_escape(self.tenant_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.role_name.to_string())
+            misc_helpers::xml_escape(self.role_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RoleInstanceName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.role_instance_name.to_string())
+            misc_helpers::xml_escape(self.role_instance_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ContainerId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.container_id.to_string())
+            misc_helpers::xml_escape(self.container_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ResourceGroupName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.resource_group_name.to_string())
+            misc_helpers::xml_escape(self.resource_group_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"SubscriptionId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.subscription_id.to_string())
+            misc_helpers::xml_escape(self.subscription_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"VMId\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.vm_id.to_string())
-        ));
-        xml.push_str(&format!(
-            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
-            self.event_pid
-        ));
-        xml.push_str(&format!(
-            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
-            self.event_tid
+            misc_helpers::xml_escape(self.vm_id.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"ImageOrigin\" Value=\"{}\" T=\"mt:uint64\" />",
             self.image_origin
         ));
-
-        xml.push_str(&format!(
-            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.execution_mode.to_string())
-        ));
         xml.push_str(&format!(
             "<Param Name=\"OSVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.os_version.to_string())
-        ));
-        xml.push_str(&format!(
-            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.ga_version.to_string())
+            misc_helpers::xml_escape(self.os_version.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"RAM\" Value=\"{}\" T=\"mt:uint64\" />",
@@ -198,26 +113,400 @@ impl TelemetryEvent {
             "<Param Name=\"Processors\" Value=\"{}\" T=\"mt:uint64\" />",
             self.processors
         ));
+        xml
+    }
+}
+
+/// TelemetryProvider struct to hold the telemetry events for a specific provider.
+pub struct TelemetryProvider {
+    pub id: String,
+    events: Vec<TelemetryEvent>,
+}
+
+impl TelemetryProvider {
+    pub fn new(id: String) -> Self {
+        TelemetryProvider {
+            id,
+            events: Vec::new(),
+        }
+    }
+
+    pub fn add_event(&mut self, event: TelemetryEvent) {
+        self.events.push(event);
+    }
+
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn remove_event(&mut self, event: TelemetryEvent) -> Option<TelemetryEvent> {
+        if let Some(pos) = self.events.iter().position(|x| *x == event) {
+            Some(self.events.remove(pos))
+        } else {
+            None
+        }
+    }
+
+    pub fn to_xml(&self, vm_data: &TelemetryEventVMData) -> String {
+        let mut xml: String = String::new();
+        xml.push_str(&format!(
+            "<Provider id=\"{}\">",
+            misc_helpers::xml_escape(self.id.clone())
+        ));
+
+        for e in &self.events {
+            match e {
+                TelemetryEvent::GenericLogsEvent(event) => {
+                    xml.push_str(&event.to_xml_event(vm_data));
+                }
+                TelemetryEvent::ExtensionEvent(event) => {
+                    xml.push_str(&event.to_xml_event(vm_data));
+                }
+            }
+        }
+
+        xml.push_str("</Provider>");
+        xml
+    }
+}
+
+/// TelemetryData struct to hold the telemetry events send to wire server.
+pub struct TelemetryData {
+    providers: Vec<TelemetryProvider>,
+    vm_data: TelemetryEventVMData,
+}
+
+impl TelemetryData {
+    /// Create a new TelemetryData instance with VM data.
+    pub fn new_with_vm_data(vm_data: TelemetryEventVMData) -> Self {
+        TelemetryData {
+            providers: Vec::new(),
+            vm_data,
+        }
+    }
+
+    /// Convert the telemetry data to xml format.
+    /// The xml format is defined by the wire server.
+    pub fn to_xml(&self) -> String {
+        let mut xml: String = String::new();
+
+        xml.push_str("<?xml version=\"1.0\"?><TelemetryData version=\"1.0\">");
+
+        for provider in &self.providers {
+            xml.push_str(&provider.to_xml(&self.vm_data));
+        }
+
+        xml.push_str("</TelemetryData>");
+        xml
+    }
+
+    /// Get the size of the telemetry data in bytes.
+    pub fn get_size(&self) -> usize {
+        self.to_xml().len()
+    }
+
+    /// Add a telemetry event to the telemetry data.
+    /// It will be added to the corresponding provider.
+    pub fn add_event(&mut self, event: TelemetryEvent) {
+        for provider in &mut self.providers {
+            match &event {
+                TelemetryEvent::GenericLogsEvent(_) => {
+                    if provider.id == METRICS_PROVIDER_ID {
+                        provider.add_event(event);
+                        return;
+                    }
+                }
+                TelemetryEvent::ExtensionEvent(_) => {
+                    if provider.id == STATUS_PROVIDER_ID {
+                        provider.add_event(event);
+                        return;
+                    }
+                }
+            }
+        }
+        let mut p = TelemetryProvider::new(match &event {
+            TelemetryEvent::GenericLogsEvent(_) => METRICS_PROVIDER_ID.to_string(),
+            TelemetryEvent::ExtensionEvent(_) => STATUS_PROVIDER_ID.to_string(),
+        });
+        p.add_event(event);
+        self.providers.push(p);
+    }
+
+    /// Remove the last added telemetry event from the telemetry data.
+    /// This is used when the telemetry data size exceeds the maximum allowed size.
+    pub fn remove_last_event(&mut self, last_event: TelemetryEvent) -> Option<TelemetryEvent> {
+        for provider in &mut self.providers {
+            match &last_event {
+                TelemetryEvent::GenericLogsEvent(_) => {
+                    if provider.id == METRICS_PROVIDER_ID {
+                        return provider.remove_event(last_event);
+                    }
+                }
+                TelemetryEvent::ExtensionEvent(_) => {
+                    if provider.id == STATUS_PROVIDER_ID {
+                        return provider.remove_event(last_event);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the total number of events in the telemetry data.
+    /// It adds up the event counts from all providers.
+    pub fn event_count(&self) -> usize {
+        self.providers.iter().map(|p| p.event_count()).sum()
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub enum TelemetryEvent {
+    GenericLogsEvent(TelemetryGenericLogsEvent),
+    ExtensionEvent(TelemetryExtensionEventsEvent),
+}
+
+impl TelemetryEvent {
+    pub fn get_provider_id(&self) -> String {
+        match self {
+            TelemetryEvent::GenericLogsEvent(_) => TelemetryGenericLogsEvent::get_provider_id(),
+            TelemetryEvent::ExtensionEvent(_) => TelemetryExtensionEventsEvent::get_provider_id(),
+        }
+    }
+
+    pub fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
+        match self {
+            TelemetryEvent::GenericLogsEvent(event) => event.to_xml_event(vm_data),
+            TelemetryEvent::ExtensionEvent(event) => event.to_xml_event(vm_data),
+        }
+    }
+}
+
+/// Struct to hold Generic Logs telemetry event data without VM metadata.
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct TelemetryGenericLogsEvent {
+    event_pid: u64,
+    event_tid: u64,
+    ga_version: String,
+    task_name: String,
+    opcode_name: String,
+    execution_mode: String,
+
+    event_name: String,
+    capability_used: String,
+    context1: String,
+    context2: String,
+    context3: String,
+}
+
+impl TelemetryGenericLogsEvent {
+    pub fn from_event_log(
+        event_log: &Event,
+        execution_mode: String,
+        event_name: String,
+        ga_version: Option<String>,
+    ) -> Self {
+        // if ga_version is provided, append event_log.version to event_name
+        // if ga_version is None, use event_log.Version as ga_version and keep event_name unchanged
+        let (ga_version, event_name) = match ga_version {
+            Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
+            None => (event_log.Version.clone(), event_name),
+        };
+        // redact secrets in the message before sending to telemetry
+        let message = event_log.Message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
+        TelemetryGenericLogsEvent {
+            event_name,
+            ga_version,
+            execution_mode,
+            event_pid: event_log.EventPid.parse::<u64>().unwrap_or(0),
+            event_tid: event_log.EventTid.parse::<u64>().unwrap_or(0),
+            task_name: event_log.TaskName.clone(),
+            opcode_name: event_log.TimeStamp.clone(),
+            capability_used: event_log.EventLevel.clone(),
+            context1: message,
+            context2: event_log.TimeStamp.clone(),
+            context3: event_log.OperationId.clone(),
+        }
+    }
+
+    pub fn get_provider_id() -> String {
+        METRICS_PROVIDER_ID.to_string()
+    }
+
+    fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
+        let mut xml: String = String::new();
+        // Event ID 7 is for Generic Logs Events
+        xml.push_str("<Event id=\"7\"><![CDATA[");
+
+        xml.push_str(&vm_data.to_xml_params());
+
+        xml.push_str(&format!(
+            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_pid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_tid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.ga_version.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.execution_mode.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.task_name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.opcode_name.clone())
+        ));
 
         xml.push_str(&format!(
             "<Param Name=\"EventName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.event_name.to_string())
+            misc_helpers::xml_escape(self.event_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"CapabilityUsed\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.capability_used.to_string())
+            misc_helpers::xml_escape(self.capability_used.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context1\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context1.to_string())
+            misc_helpers::xml_escape(self.context1.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context2\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context2.to_string())
+            misc_helpers::xml_escape(self.context2.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"Context3\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.context3.to_string())
+            misc_helpers::xml_escape(self.context3.clone())
+        ));
+
+        xml.push_str("]]></Event>");
+        xml
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct TelemetryExtensionEventsEvent {
+    event_pid: u64,
+    event_tid: u64,
+    ga_version: String,
+    task_name: String,
+    opcode_name: String,
+    execution_mode: String,
+
+    extension_type: String,
+    is_internal: bool,
+    name: String,
+    version: String,
+    operation: String,
+    operation_success: bool,
+    message: String,
+    duration: u64,
+}
+
+impl TelemetryExtensionEventsEvent {
+    pub fn from_extension_status_event(
+        event: &ExtensionStatusEvent,
+        execution_mode: String,
+        ga_version: String,
+    ) -> Self {
+        // redact secrets in the message before sending to telemetry
+        let message = event.operation_status.message.clone();
+        let message = crate::secrets_redactor::redact_secrets_string(message);
+        TelemetryExtensionEventsEvent {
+            ga_version,
+            execution_mode,
+            event_pid: event.event_pid.parse::<u64>().unwrap_or(0),
+            event_tid: event.event_tid.parse::<u64>().unwrap_or(0),
+            opcode_name: event.time_stamp.clone(),
+            extension_type: event.extension.extension_type.clone(),
+            is_internal: event.extension.is_internal,
+            name: event.extension.name.clone(),
+            version: event.extension.version.clone(),
+            operation: event.operation_status.operation.clone(),
+            task_name: event.operation_status.task_name.clone(),
+            operation_success: event.operation_status.operation_success,
+            message,
+            duration: event.operation_status.duration as u64,
+        }
+    }
+
+    pub fn get_provider_id() -> String {
+        STATUS_PROVIDER_ID.to_string()
+    }
+
+    fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
+        let mut xml: String = String::new();
+        // Event ID 1 is for Extension Events
+        xml.push_str("<Event id=\"1\"><![CDATA[");
+
+        xml.push_str(&vm_data.to_xml_params());
+
+        xml.push_str(&format!(
+            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_pid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_tid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.ga_version.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.execution_mode.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.task_name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.opcode_name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExtensionType\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.extension_type.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"IsInternal\" Value=\"{}\" T=\"mt:bool\" />",
+            if self.is_internal { "True" } else { "False" }
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Name\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Version\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.version.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Operation\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.operation.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OperationSuccess\" Value=\"{}\" T=\"mt:bool\" />",
+            if self.operation_success {
+                "True"
+            } else {
+                "False"
+            }
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Message\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.message.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Duration\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.duration
         ));
 
         xml.push_str("]]></Event>");
@@ -243,5 +532,439 @@ impl KeywordName {
 
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_vm_meta_data() -> VmMetaData {
+        VmMetaData {
+            container_id: "test-container-id".to_string(),
+            tenant_name: "test-tenant".to_string(),
+            role_name: "test-role".to_string(),
+            role_instance_name: "test-role-instance".to_string(),
+            subscription_id: "test-subscription-id".to_string(),
+            resource_group_name: "test-resource-group".to_string(),
+            vm_id: "test-vm-id".to_string(),
+            image_origin: 1,
+        }
+    }
+
+    fn create_test_vm_data() -> TelemetryEventVMData {
+        TelemetryEventVMData::new_from_vm_meta_data(&create_test_vm_meta_data())
+    }
+
+    fn create_test_event(message: &str) -> Event {
+        Event::new(
+            "Informational".to_string(),
+            message.to_string(),
+            "test_task".to_string(),
+            "test_module".to_string(),
+        )
+    }
+
+    fn create_test_telemetry_event(message: &str) -> TelemetryEvent {
+        let event_log = create_test_event(message);
+        TelemetryEvent::GenericLogsEvent(TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "test_execution_mode".to_string(),
+            "test_event_name".to_string(),
+            Some("1.0.0".to_string()),
+        ))
+    }
+
+    /// Tests VmMetaData, TelemetryEventVMData creation and XML params generation
+    #[test]
+    fn test_vm_meta_data_and_vm_data() {
+        // Test VmMetaData clone
+        let meta_data = create_test_vm_meta_data();
+        let cloned = meta_data.clone();
+        assert_eq!(cloned.container_id, "test-container-id");
+        assert_eq!(cloned.tenant_name, "test-tenant");
+        assert_eq!(cloned.vm_id, "test-vm-id");
+        assert_eq!(cloned.image_origin, 1);
+
+        // Test TelemetryEventVMData creation from VmMetaData
+        let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&meta_data);
+        assert_eq!(vm_data.container_id, "test-container-id");
+        assert_eq!(vm_data.tenant_name, "test-tenant");
+        assert_eq!(vm_data.role_name, "test-role");
+        assert_eq!(vm_data.role_instance_name, "test-role-instance");
+        assert_eq!(vm_data.subscription_id, "test-subscription-id");
+        assert_eq!(vm_data.resource_group_name, "test-resource-group");
+        assert_eq!(vm_data.vm_id, "test-vm-id");
+        assert_eq!(vm_data.image_origin, 1);
+        // These are populated from current_info
+        assert!(!vm_data.keyword_name.is_empty());
+        assert!(!vm_data.os_version.is_empty());
+        assert!(vm_data.ram > 0);
+        assert!(vm_data.processors > 0);
+
+        // Test XML params generation
+        let xml = vm_data.to_xml_params();
+        assert!(xml.contains("KeywordName"));
+        assert!(xml.contains("TenantName"));
+        assert!(xml.contains("test-tenant"));
+        assert!(xml.contains("RoleName"));
+        assert!(xml.contains("ContainerId"));
+        assert!(xml.contains("ResourceGroupName"));
+        assert!(xml.contains("SubscriptionId"));
+        assert!(xml.contains("VMId"));
+        assert!(xml.contains("ImageOrigin"));
+        assert!(xml.contains("OSVersion"));
+        assert!(xml.contains("RAM"));
+        assert!(xml.contains("Processors"));
+    }
+
+    /// Tests TelemetryProvider operations: add, remove, count, and XML generation
+    #[test]
+    fn test_telemetry_provider() {
+        let mut provider = TelemetryProvider::new(METRICS_PROVIDER_ID.to_string());
+        assert_eq!(provider.id, METRICS_PROVIDER_ID);
+        assert_eq!(provider.event_count(), 0);
+
+        // Add events
+        let event1 = create_test_telemetry_event("Test message 1");
+        let event2 = create_test_telemetry_event("Test message 2");
+
+        provider.add_event(event1.clone());
+        assert_eq!(provider.event_count(), 1);
+
+        provider.add_event(event2);
+        assert_eq!(provider.event_count(), 2);
+
+        // Remove event
+        let removed = provider.remove_event(event1.clone());
+        assert!(removed.is_some());
+        assert_eq!(provider.event_count(), 1);
+
+        // Remove non-existent event returns None
+        let removed = provider.remove_event(event1);
+        assert!(removed.is_none());
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = provider.to_xml(&vm_data);
+        assert!(xml.starts_with(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.ends_with("</Provider>"));
+        assert!(xml.contains("<Event id=\"7\">"));
+    }
+
+    /// Tests TelemetryData operations: add, remove, count, size, and XML generation
+    #[test]
+    fn test_telemetry_data() {
+        let vm_data = create_test_vm_data();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+        assert_eq!(telemetry_data.event_count(), 0);
+
+        // Test empty XML
+        let empty_xml = telemetry_data.to_xml();
+        assert!(empty_xml.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(empty_xml.contains("<TelemetryData version=\"1.0\">"));
+        assert!(empty_xml.contains("</TelemetryData>"));
+        assert!(!empty_xml.contains("<Provider")); // No provider when empty
+
+        let initial_size = telemetry_data.get_size();
+        assert!(initial_size > 0);
+
+        // Add events
+        let event1 = create_test_telemetry_event("Test message 1");
+        let event2 = create_test_telemetry_event("Test message 2");
+        let event3 = create_test_telemetry_event("Test message 3");
+
+        telemetry_data.add_event(event1);
+        assert_eq!(telemetry_data.event_count(), 1);
+
+        telemetry_data.add_event(event2);
+        telemetry_data.add_event(event3.clone());
+        assert_eq!(telemetry_data.event_count(), 3);
+
+        // Size should increase after adding events
+        let new_size = telemetry_data.get_size();
+        assert!(new_size > initial_size);
+
+        // Remove last event
+        let removed = telemetry_data.remove_last_event(event3);
+        assert!(removed.is_some());
+        assert_eq!(telemetry_data.event_count(), 2);
+
+        // Test XML with events
+        let xml = telemetry_data.to_xml();
+        assert!(xml.starts_with("<?xml version=\"1.0\"?>"));
+        assert!(xml.contains("<TelemetryData version=\"1.0\">"));
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.contains("<Event id=\"7\">"));
+    }
+
+    /// Tests TelemetryEvent and TelemetryGenericLogsEvent
+    #[test]
+    fn test_telemetry_event() {
+        // Test provider ID
+        let event = create_test_telemetry_event("Test message");
+        assert_eq!(event.get_provider_id(), METRICS_PROVIDER_ID);
+        assert_eq!(
+            TelemetryGenericLogsEvent::get_provider_id(),
+            METRICS_PROVIDER_ID
+        );
+
+        // Test XML event generation
+        let vm_data = create_test_vm_data();
+        let xml = event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"7\">"));
+        assert!(xml.contains("<![CDATA["));
+        assert!(xml.contains("]]></Event>"));
+        assert!(xml.contains("EventName"));
+        assert!(xml.contains("CapabilityUsed"));
+        assert!(xml.contains("Context1"));
+        assert!(xml.contains("Context2"));
+        assert!(xml.contains("Context3"));
+
+        // Test that different messages produce different events
+        let event2 = create_test_telemetry_event("Different message");
+        assert!(event != event2); // Different messages create different events
+    }
+
+    /// Tests TelemetryGenericLogsEvent from_event_log with and without ga_version
+    #[test]
+    fn test_telemetry_generic_logs_event_creation() {
+        let event_log = create_test_event("Test message");
+
+        // With ga_version provided
+        let event_with_version = TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "execution_mode".to_string(),
+            "event_name".to_string(),
+            Some("1.0.0".to_string()),
+        );
+        assert_eq!(event_with_version.ga_version, "1.0.0");
+        assert!(event_with_version.event_name.starts_with("event_name-"));
+        assert_eq!(event_with_version.execution_mode, "execution_mode");
+
+        // Without ga_version (None)
+        let event_without_version = TelemetryGenericLogsEvent::from_event_log(
+            &event_log,
+            "execution_mode".to_string(),
+            "event_name".to_string(),
+            None,
+        );
+        assert_eq!(event_without_version.ga_version, event_log.Version);
+        assert_eq!(event_without_version.event_name, "event_name");
+    }
+
+    /// Tests KeywordName JSON serialization
+    #[test]
+    fn test_keyword_name() {
+        let keyword = KeywordName::new("x86_64".to_string());
+        let json = keyword.to_json();
+
+        assert!(json.contains("CpuArchitecture"));
+        assert!(json.contains("x86_64"));
+    }
+
+    fn create_test_extension_status_event() -> ExtensionStatusEvent {
+        let extension = crate::telemetry::Extension {
+            name: "test_extension".to_string(),
+            version: "2.0.0".to_string(),
+            is_internal: true,
+            extension_type: "test_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: true,
+            operation: "install".to_string(),
+            task_name: "test_task".to_string(),
+            message: "Installation successful".to_string(),
+            duration: 500,
+        };
+        ExtensionStatusEvent::new(extension, operation_status)
+    }
+
+    /// Tests TelemetryExtensionEventsEvent creation and XML generation
+    #[test]
+    fn test_telemetry_extension_events_event() {
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+
+        // Verify field mappings
+        assert_eq!(telemetry_event.ga_version, "1.0.0");
+        assert_eq!(telemetry_event.execution_mode, "production");
+        assert_eq!(telemetry_event.extension_type, "test_type");
+        assert!(telemetry_event.is_internal);
+        assert_eq!(telemetry_event.name, "test_extension");
+        assert_eq!(telemetry_event.version, "2.0.0");
+        assert_eq!(telemetry_event.operation, "install");
+        assert_eq!(telemetry_event.task_name, "test_task");
+        assert!(telemetry_event.operation_success);
+        assert_eq!(telemetry_event.message, "Installation successful");
+        assert_eq!(telemetry_event.duration, 500);
+
+        // Verify provider ID
+        assert_eq!(
+            TelemetryExtensionEventsEvent::get_provider_id(),
+            STATUS_PROVIDER_ID
+        );
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = telemetry_event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"1\">"));
+        assert!(xml.contains("<![CDATA["));
+        assert!(xml.contains("]]></Event>"));
+        assert!(xml.contains("ExtensionType"));
+        assert!(xml.contains("test_type"));
+        assert!(xml.contains("IsInternal"));
+        assert!(xml.contains("True")); // is_internal = true
+        assert!(xml.contains("Name"));
+        assert!(xml.contains("test_extension"));
+        assert!(xml.contains("Version"));
+        assert!(xml.contains("2.0.0"));
+        assert!(xml.contains("Operation"));
+        assert!(xml.contains("install"));
+        assert!(xml.contains("OperationSuccess"));
+        assert!(xml.contains("Message"));
+        assert!(xml.contains("Installation successful"));
+        assert!(xml.contains("Duration"));
+        assert!(xml.contains("500"));
+    }
+
+    /// Tests TelemetryExtensionEventsEvent with operation failure
+    #[test]
+    fn test_telemetry_extension_events_event_failure() {
+        let extension = crate::telemetry::Extension {
+            name: "failed_extension".to_string(),
+            version: "1.0.0".to_string(),
+            is_internal: false,
+            extension_type: "external_type".to_string(),
+        };
+        let operation_status = crate::telemetry::OperationStatus {
+            operation_success: false,
+            operation: "enable".to_string(),
+            task_name: "enable_task".to_string(),
+            message: "Enable failed with error".to_string(),
+            duration: 100,
+        };
+        let extension_status_event = ExtensionStatusEvent::new(extension, operation_status);
+
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "test".to_string(),
+            "2.0.0".to_string(),
+        );
+
+        assert!(!telemetry_event.is_internal);
+        assert!(!telemetry_event.operation_success);
+        assert_eq!(telemetry_event.name, "failed_extension");
+        assert_eq!(telemetry_event.operation, "enable");
+
+        // Test XML with False values
+        let vm_data = create_test_vm_data();
+        let xml = telemetry_event.to_xml_event(&vm_data);
+        assert!(xml.contains("IsInternal"));
+        assert!(xml.contains("\"False\"")); // is_internal = false
+        assert!(xml.contains("OperationSuccess"));
+    }
+
+    /// Tests TelemetryEvent enum with ExtensionEvent variant
+    #[test]
+    fn test_telemetry_event_extension_variant() {
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let event = TelemetryEvent::ExtensionEvent(telemetry_event);
+
+        // Test provider ID through enum
+        assert_eq!(event.get_provider_id(), STATUS_PROVIDER_ID);
+
+        // Test XML generation through enum
+        let vm_data = create_test_vm_data();
+        let xml = event.to_xml_event(&vm_data);
+        assert!(xml.contains("<Event id=\"1\">"));
+        assert!(xml.contains("ExtensionType"));
+    }
+
+    /// Tests TelemetryData with mixed event types (GenericLogs and Extension events)
+    #[test]
+    fn test_telemetry_data_mixed_events() {
+        let vm_data = create_test_vm_data();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+
+        // Add generic logs event
+        let generic_event = create_test_telemetry_event("Generic log message");
+        telemetry_data.add_event(generic_event);
+        assert_eq!(telemetry_data.event_count(), 1);
+
+        // Add extension event
+        let extension_status_event = create_test_extension_status_event();
+        let extension_telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let extension_event = TelemetryEvent::ExtensionEvent(extension_telemetry_event);
+        telemetry_data.add_event(extension_event.clone());
+        assert_eq!(telemetry_data.event_count(), 2);
+
+        // Add another extension event
+        let extension_status_event2 = create_test_extension_status_event();
+        let extension_telemetry_event2 = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event2,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let extension_event2 = TelemetryEvent::ExtensionEvent(extension_telemetry_event2);
+        telemetry_data.add_event(extension_event2);
+        assert_eq!(telemetry_data.event_count(), 3);
+
+        // Verify XML contains both provider types
+        let xml = telemetry_data.to_xml();
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID)));
+        assert!(xml.contains(&format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID)));
+        assert!(xml.contains("<Event id=\"7\">")); // Generic logs event
+        assert!(xml.contains("<Event id=\"1\">")); // Extension event
+        println!("{xml}");
+
+        // Remove extension event
+        let removed = telemetry_data.remove_last_event(extension_event);
+        assert!(removed.is_some());
+        assert_eq!(telemetry_data.event_count(), 2);
+    }
+
+    /// Tests TelemetryProvider with extension events
+    #[test]
+    fn test_telemetry_provider_with_extension_events() {
+        let mut provider = TelemetryProvider::new(STATUS_PROVIDER_ID.to_string());
+        assert_eq!(provider.id, STATUS_PROVIDER_ID);
+        assert_eq!(provider.event_count(), 0);
+
+        // Add extension events
+        let extension_status_event = create_test_extension_status_event();
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let event = TelemetryEvent::ExtensionEvent(telemetry_event);
+        provider.add_event(event.clone());
+        assert_eq!(provider.event_count(), 1);
+
+        // Test XML generation
+        let vm_data = create_test_vm_data();
+        let xml = provider.to_xml(&vm_data);
+        assert!(xml.starts_with(&format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID)));
+        assert!(xml.ends_with("</Provider>"));
+        assert!(xml.contains("<Event id=\"1\">"));
+
+        // Remove event
+        let removed = provider.remove_event(event);
+        assert!(removed.is_some());
+        assert_eq!(provider.event_count(), 0);
     }
 }

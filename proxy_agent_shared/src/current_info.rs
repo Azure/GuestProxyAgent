@@ -45,6 +45,8 @@ static CURRENT_OS_INFO: Lazy<(String, String)> = Lazy::new(|| {
     (arch, os)
 });
 
+static CURRENT_EXE_VERSION: Lazy<String> = Lazy::new(misc_helpers::get_current_exe_version);
+
 pub fn get_ram_in_mb() -> u64 {
     CURRENT_SYS_INFO.0
 }
@@ -59,6 +61,10 @@ pub fn get_cpu_arch() -> String {
 
 pub fn get_long_os_version() -> String {
     CURRENT_OS_INFO.1.to_string()
+}
+
+pub fn get_current_exe_version() -> String {
+    CURRENT_EXE_VERSION.clone()
 }
 
 #[cfg(test)]

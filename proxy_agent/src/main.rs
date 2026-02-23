@@ -15,7 +15,7 @@ use common::cli::{Commands, CLI};
 use common::constants;
 use common::helpers;
 use provision::provision_query::ProvisionQuery;
-use proxy_agent_shared::misc_helpers;
+use proxy_agent_shared::current_info;
 use shared_state::SharedState;
 use std::{process, time::Duration};
 
@@ -48,7 +48,7 @@ async fn main() {
     let _time = helpers::get_elapsed_time_in_millisec();
 
     if CLI.version {
-        println!("{}", misc_helpers::get_current_version());
+        println!("{}", current_info::get_current_exe_version());
         return;
     }
 

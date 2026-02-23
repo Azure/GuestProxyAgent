@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use crate::misc_helpers;
+use crate::{misc_helpers, time_buckets::Countable};
 use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use time::OffsetDateTime;
@@ -12,8 +12,7 @@ const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
 pub const PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME: &str = "status.json";
 
 pub fn get_proxy_agent_aggregate_status_folder() -> std::path::PathBuf {
-    let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER)
-        .unwrap_or(PROXY_AGENT_AGGREGATE_STATUS_FOLDER.to_string());
+    let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER);
     PathBuf::from(path)
 }
 
@@ -78,6 +77,12 @@ impl Clone for ProxyConnectionSummary {
             responseStatus: self.responseStatus.clone(),
             count: self.count,
         }
+    }
+}
+
+impl Countable for ProxyConnectionSummary {
+    fn set_count(&mut self, count: u64) {
+        self.count = count;
     }
 }
 

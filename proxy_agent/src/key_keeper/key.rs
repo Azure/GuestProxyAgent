@@ -213,12 +213,20 @@ impl Clone for Privilege {
 }
 
 impl Privilege {
-    pub fn is_match(&self, logger: &mut ConnectionLogger, request_url: &Uri) -> bool {
+    /// Note: `self.path` and `self.queryParameters` keys/values are expected to be
+    /// pre-lowercased (done in `ComputedAuthorizationItem::from_authorization_item`).
+    /// `lowered_request_path` should be `request_url.path().to_lowercase()`, hoisted by the caller.
+    pub fn is_match(
+        &self,
+        logger: &mut ConnectionLogger,
+        request_url: &Uri,
+        lowered_request_path: &str,
+    ) -> bool {
         logger.write(
             LoggerLevel::Trace,
             format!("Start to match privilege '{}'", self.name),
         );
-        if request_url.path().to_lowercase().starts_with(&self.path) {
+        if lowered_request_path.starts_with(&self.path) {
             logger.write(
                 LoggerLevel::Trace,
                 format!("Matched privilege path '{}'", self.path),
@@ -234,12 +242,14 @@ impl Privilege {
                 );
 
                 for (key, value) in query_parameters {
+                    // We may need to optimize this like `lowered_request_path` if there are too many query parameters in the future,
+                    // but currently we expect only a few query parameters at most, so the performance impact should be minimal.
                     match hyper_client::query_pairs(request_url)
                         .into_iter()
-                        .find(|(k, _)| k.to_lowercase() == key.to_lowercase())
+                        .find(|(k, _)| k.to_lowercase() == *key)
                     {
                         Some((_, v)) => {
-                            if v.to_lowercase() == value.to_lowercase() {
+                            if v.to_lowercase() == *value {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
@@ -720,40 +730,22 @@ impl Display for KeyAction {
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 
-pub async fn get_status(base_url: &Uri) -> Result<KeyStatus> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
-    let url = format!("http://{host}:{port}{STATUS_URL}");
-    let url: Uri = url.parse().map_err(|e| {
-        Error::Key(KeyErrorType::ParseKeyUrl(
-            base_url.to_string(),
-            STATUS_URL.to_string(),
-            e,
-        ))
-    })?;
+pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
+    let endpoint = hyper_client::HostEndpoint::new(host, port, STATUS_URL);
     let mut headers = HashMap::new();
     headers.insert(
         hyper_client::METADATA_HEADER.to_string(),
         "True ".to_string(),
     );
     let status: KeyStatus =
-        hyper_client::get(&url, &headers, None, None, logger::write_warning).await?;
+        hyper_client::get(&endpoint, &headers, None, None, logger::write_warning).await?;
     status.validate()?;
 
     Ok(status)
 }
 
-pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
-    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
-    let url = format!("http://{host}:{port}{KEY_URL}");
-    let url: Uri = url.parse().map_err(|e| {
-        Error::Key(KeyErrorType::ParseKeyUrl(
-            base_url.to_string(),
-            KEY_URL.to_string(),
-            e,
-        ))
-    })?;
-
-    let (host, port) = hyper_client::host_port_from_uri(&url)?;
+pub async fn acquire_key(host: &str, port: u16) -> Result<Key> {
+    let endpoint = hyper_client::HostEndpoint::new(host, port, KEY_URL);
     let mut headers = HashMap::new();
     headers.insert(
         hyper_client::METADATA_HEADER.to_string(),
@@ -763,21 +755,26 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
     let body = r#"{"authorizationScheme": "Azure-HMAC-SHA256"}"#.to_string();
     let request = hyper_client::build_request(
         hyper::Method::POST,
-        &url,
+        &endpoint,
         &headers,
         Some(body.as_bytes()),
         None,
         None,
     )?;
 
-    let response = hyper_client::send_request(&host, port, request, logger::write_warning)
-        .await
-        .map_err(|e| {
-            Error::Key(KeyErrorType::SendKeyRequest(
-                format!("{}", KeyAction::Acquire),
-                e.to_string(),
-            ))
-        })?;
+    let response = hyper_client::send_request(
+        &endpoint.host,
+        endpoint.port,
+        request,
+        logger::write_warning,
+    )
+    .await
+    .map_err(|e| {
+        Error::Key(KeyErrorType::SendKeyRequest(
+            format!("{}", KeyAction::Acquire),
+            e.to_string(),
+        ))
+    })?;
 
     if response.status() != StatusCode::OK {
         return Err(Error::Key(KeyErrorType::KeyResponse(
@@ -790,17 +787,10 @@ pub async fn acquire_key(base_url: &Uri) -> Result<Key> {
         .map_err(Error::ProxyAgentSharedError)
 }
 
-pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
+pub async fn attest_key(host: &str, port: u16, key: &Key) -> Result<()> {
     // secure-channel/key/{key_guid}/key-attestation
-    let (host, port) = hyper_client::host_port_from_uri(base_url)?;
-    let url = format!(
-        "http://{}:{}{}/{}/key-attestation",
-        host, port, KEY_URL, key.guid
-    );
-    let url: Uri = url
-        .parse()
-        .map_err(|e| Error::Key(KeyErrorType::ParseKeyUrl(base_url.to_string(), url, e)))?;
-
+    let path = format!("{}/{}/key-attestation", KEY_URL, key.guid);
+    let endpoint = hyper_client::HostEndpoint::new(host, port, &path);
     let mut headers = HashMap::new();
     headers.insert(
         hyper_client::METADATA_HEADER.to_string(),
@@ -808,21 +798,26 @@ pub async fn attest_key(base_url: &Uri, key: &Key) -> Result<()> {
     );
     let request = hyper_client::build_request(
         Method::POST,
-        &url,
+        &endpoint,
         &headers,
         None,
         Some(key.guid.to_string()),
         Some(key.key.to_string()),
     )?;
 
-    let response = hyper_client::send_request(&host, port, request, logger::write_warning)
-        .await
-        .map_err(|e| {
-            Error::Key(KeyErrorType::SendKeyRequest(
-                format!("{}", KeyAction::Attest),
-                e.to_string(),
-            ))
-        })?;
+    let response = hyper_client::send_request(
+        &endpoint.host,
+        endpoint.port,
+        request,
+        logger::write_warning,
+    )
+    .await
+    .map_err(|e| {
+        Error::Key(KeyErrorType::SendKeyRequest(
+            format!("{}", KeyAction::Attest),
+            e.to_string(),
+        ))
+    })?;
 
     if response.status() != StatusCode::OK {
         return Err(Error::Key(KeyErrorType::KeyResponse(
@@ -1415,7 +1410,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            privilege.is_match(&mut logger, &url),
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should be matched"
         );
 
@@ -1423,13 +1418,13 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege.is_match(&mut logger, &url),
+            !privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should not be matched"
         );
 
         let url = "http://localhost/test?key1=value1".parse().unwrap();
         assert!(
-            !privilege.is_match(&mut logger, &url),
+            !privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should not be matched"
         );
 
@@ -1442,7 +1437,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            privilege1.is_match(&mut logger, &url),
+            privilege1.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should be matched"
         );
 
@@ -1459,7 +1454,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(
-            !privilege2.is_match(&mut logger, &url),
+            !privilege2.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should not be matched"
         );
     }

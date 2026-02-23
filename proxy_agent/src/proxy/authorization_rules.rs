@@ -111,7 +111,21 @@ impl ComputedAuthorizationItem {
                     .collect::<HashMap<String, Identity>>();
                 privilege_dict = privileges
                     .into_iter()
-                    .map(|privilege| (privilege.name.clone(), privilege))
+                    .map(|privilege| {
+                        // case insensitive for path and query parameters key/values,
+                        // to make it easier for users to write the rules without worrying about the case sensitivity.
+                        // The name of the privilege is case sensitive, as it is used as the key in the privilege_dict and privilege_assignments.
+                        let normalized = Privilege {
+                            name: privilege.name,
+                            path: privilege.path.to_lowercase(),
+                            queryParameters: privilege.queryParameters.map(|qp| {
+                                qp.into_iter()
+                                    .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                                    .collect()
+                            }),
+                        };
+                        (normalized.name.clone(), normalized)
+                    })
                     .collect::<HashMap<String, Privilege>>();
 
                 for role_assignment in role_assignments {
@@ -177,10 +191,11 @@ impl ComputedAuthorizationItem {
             return true;
         }
 
+        let lowered_request_path = request_url.path().to_lowercase();
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
-            if privilege.is_match(logger, &request_url) {
+            if privilege.is_match(logger, &request_url, &lowered_request_path) {
                 any_privilege_matched = true;
                 logger.write(
                     LoggerLevel::Trace,
@@ -263,6 +278,10 @@ pub struct AuthorizationRulesForLogging {
     pub computedRules: ComputedAuthorizationRules,
 }
 
+/// Remark: Regex::new is performance-sensitive, so we use LazyLock to compile it only once and reuse it for subsequent calls
+static AUTHORIZATION_RULES_FILE_SEARCH_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"^AuthorizationRules_.*\.json$").unwrap());
+
 impl AuthorizationRulesForLogging {
     pub fn new(
         input_rules: Option<AuthorizationRules>,
@@ -280,7 +299,10 @@ impl AuthorizationRulesForLogging {
     /// The file is written to the path_dir specified by the input parameter
     pub fn write_all(&self, path_dir: &Path, max_file_count: usize) {
         // remove the old files
-        let files = match misc_helpers::search_files(path_dir, r"^AuthorizationRules_.*\.json$") {
+        let files = match misc_helpers::search_files(
+            path_dir,
+            &AUTHORIZATION_RULES_FILE_SEARCH_REGEX,
+        ) {
             Ok(files) => files,
             Err(e) => {
                 // This should not happen, log the error and skip write the file
@@ -343,7 +365,9 @@ mod tests {
         AccessControlRules, AuthorizationItem, AuthorizationRules, Identity, Privilege, Role,
         RoleAssignment,
     };
-    use crate::proxy::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
+    use crate::proxy::authorization_rules::{
+        AuthorizationMode, ComputedAuthorizationItem, AUTHORIZATION_RULES_FILE_SEARCH_REGEX,
+    };
     use crate::proxy::{proxy_connection::ConnectionLogger, Claims};
     use proxy_agent_shared::misc_helpers;
     use std::ffi::OsString;
@@ -365,7 +389,7 @@ mod tests {
             }]),
             privileges: Some(vec![Privilege {
                 name: "test".to_string(),
-                path: "/test".to_string(),
+                path: "/TEST".to_string(), // test the case insensitivity of the path
                 queryParameters: None,
             }]),
             identities: Some(vec![Identity {
@@ -407,8 +431,12 @@ mod tests {
             runAsElevated: true,
         };
         // assert the claim is allowed given the rules above
-        let url = hyper::Uri::from_str("http://localhost/test/test").unwrap();
+
+        // test the case insensitivity of the path
+        let url = hyper::Uri::from_str("http://localhost/tESt/test").unwrap();
         assert!(rules.is_allowed(&mut test_logger, url, claims.clone()));
+
+        // test the case insensitivity of the path and the relative url
         let relative_url = hyper::Uri::from_str("/test/test").unwrap();
         assert!(rules.is_allowed(&mut test_logger, relative_url.clone(), claims.clone()));
         claims.userName = "test1".to_string();
@@ -544,7 +572,7 @@ mod tests {
         match std::fs::remove_dir_all(&temp_test_path) {
             Ok(_) => {}
             Err(e) => {
-                print!("Failed to remove_dir_all with error {}.", e);
+                eprintln!("Failed to remove_dir_all with error {}.", e);
             }
         }
         misc_helpers::try_create_folder(&temp_test_path).unwrap();
@@ -600,7 +628,8 @@ mod tests {
         }
 
         let files =
-            misc_helpers::search_files(&temp_test_path, r"^AuthorizationRules_.*\.json$").unwrap();
+            misc_helpers::search_files(&temp_test_path, &AUTHORIZATION_RULES_FILE_SEARCH_REGEX)
+                .unwrap();
         assert_eq!(files.len(), max_file_count);
 
         // clean up and ignore the clean up errors

@@ -32,21 +32,25 @@ pub struct System {
     pub provider: Provider,
     #[serde(rename = "EventID")]
     pub event_id: u32,
-    #[serde(rename = "Version")]
+    /// Version is only present in ETW events, not classic event log entries
+    #[serde(rename = "Version", default)]
     pub version: u8,
     #[serde(rename = "Level")]
     pub level: u8,
-    #[serde(rename = "Task")]
+    /// Task is only present in ETW events, not classic event log entries
+    #[serde(rename = "Task", default)]
     pub task: u8,
-    #[serde(rename = "Opcode")]
+    /// Opcode is only present in ETW events, not classic event log entries
+    #[serde(rename = "Opcode", default)]
     pub opcode: u8,
-    #[serde(rename = "Keywords")]
+    #[serde(rename = "Keywords", default)]
     pub keywords: String,
     #[serde(rename = "TimeCreated")]
     pub time_created: TimeCreated,
     #[serde(rename = "EventRecordID")]
     pub event_record_id: u64,
-    #[serde(rename = "Execution")]
+    /// Execution may not be present in some classic event log entries
+    #[serde(rename = "Execution", default)]
     pub execution: Execution,
     #[serde(rename = "Channel")]
     pub channel: String,
@@ -68,11 +72,11 @@ pub struct TimeCreated {
     pub system_time: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Execution {
-    #[serde(rename = "@ProcessID")]
+    #[serde(rename = "@ProcessID", default)]
     pub process_id: u32,
-    #[serde(rename = "@ThreadID")]
+    #[serde(rename = "@ThreadID", default)]
     pub thread_id: u32,
 }
 
