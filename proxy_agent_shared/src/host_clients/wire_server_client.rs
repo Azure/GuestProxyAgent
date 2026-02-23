@@ -4,14 +4,13 @@
 //! This module contains the logic to interact with the wire server for sending telemetry data and getting goal state.
 
 use crate::host_clients::goal_state::{GoalState, SharedConfig};
-use crate::hyper_client;
+use crate::hyper_client::{self, HostEndpoint};
 use crate::{
     error::{Error, WireServerErrorType},
     logger::logger_manager,
     result::Result,
 };
 use http::Method;
-use hyper::Uri;
 use std::collections::HashMap;
 
 pub struct WireServerClient {
@@ -19,8 +18,8 @@ pub struct WireServerClient {
     port: u16,
 }
 
-const TELEMETRY_DATA_URI: &str = "machine/?comp=telemetrydata";
-const GOALSTATE_URI: &str = "machine?comp=goalstate";
+const TELEMETRY_DATA_URI: &str = "/machine/?comp=telemetrydata";
+const GOALSTATE_URI: &str = "/machine?comp=goalstate";
 
 impl WireServerClient {
     pub fn new(ip: &str, port: u16) -> Self {
@@ -30,15 +29,16 @@ impl WireServerClient {
         }
     }
 
+    fn endpoint(&self, path: &str) -> HostEndpoint {
+        HostEndpoint::new(&self.ip, self.port, path)
+    }
+
     pub async fn send_telemetry_data(&self, xml_data: String) -> Result<()> {
         if xml_data.is_empty() {
             return Ok(());
         }
 
-        let url = format!("http://{}:{}/{}", self.ip, self.port, TELEMETRY_DATA_URI);
-        let url: Uri = url
-            .parse::<hyper::Uri>()
-            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
+        let endpoint = self.endpoint(TELEMETRY_DATA_URI);
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
         headers.insert(
@@ -48,15 +48,15 @@ impl WireServerClient {
 
         let request = hyper_client::build_request(
             Method::POST,
-            &url,
+            &endpoint,
             &headers,
             Some(xml_data.as_bytes()),
             None, // post telemetry data does not require signing
             None,
         )?;
         let response = match hyper_client::send_request(
-            &self.ip,
-            self.port,
+            &endpoint.host,
+            endpoint.port,
             request,
             logger_manager::write_warn,
         )
@@ -75,7 +75,7 @@ impl WireServerClient {
         if !status.is_success() {
             return Err(Error::WireServer(
                 WireServerErrorType::Telemetry,
-                format!("Failed to get response from {url}, status code: {status}"),
+                format!("Failed to get response from {endpoint}, status code: {status}"),
             ));
         }
 
@@ -87,16 +87,19 @@ impl WireServerClient {
         key_guid: Option<String>,
         key: Option<String>,
     ) -> Result<GoalState> {
-        let url = format!("http://{}:{}/{}", self.ip, self.port, GOALSTATE_URI);
-        let url = url
-            .parse::<hyper::Uri>()
-            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
+        let endpoint = self.endpoint(GOALSTATE_URI);
         let mut headers = HashMap::new();
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn)
-            .await
-            .map_err(|e| Error::WireServer(WireServerErrorType::GoalState, e.to_string()))
+        hyper_client::get(
+            &endpoint,
+            &headers,
+            key_guid,
+            key,
+            logger_manager::write_warn,
+        )
+        .await
+        .map_err(|e| Error::WireServer(WireServerErrorType::GoalState, e.to_string()))
     }
 
     pub async fn get_shared_config(
@@ -106,13 +109,20 @@ impl WireServerClient {
         key: Option<String>,
     ) -> Result<SharedConfig> {
         let mut headers = HashMap::new();
-        let url = url
-            .parse::<hyper::Uri>()
-            .map_err(|e| Error::ParseUrl(url, e.to_string()))?;
         headers.insert("x-ms-version".to_string(), "2012-11-30".to_string());
 
-        hyper_client::get(&url, &headers, key_guid, key, logger_manager::write_warn)
-            .await
-            .map_err(|e| Error::WireServer(WireServerErrorType::SharedConfig, e.to_string()))
+        let uri = url
+            .parse::<hyper::Uri>()
+            .map_err(|e| Error::ParseUrl(url.clone(), e.to_string()))?;
+        let endpoint = HostEndpoint::from_full_uri(uri)?;
+        hyper_client::get(
+            &endpoint,
+            &headers,
+            key_guid,
+            key,
+            logger_manager::write_warn,
+        )
+        .await
+        .map_err(|e| Error::WireServer(WireServerErrorType::SharedConfig, e.to_string()))
     }
 }

@@ -31,8 +31,94 @@ pub const CLAIMS_IS_ROOT: &str = "isRoot";
 
 const LF: &str = "\n";
 
+/// Pre-parsed HTTP endpoint containing host, port, and path/query.
+/// Use this to avoid re-parsing URIs multiple times which is performance-sensitive.
+#[derive(Debug, Clone)]
+pub struct HostEndpoint {
+    pub host: String,
+    pub port: u16,
+    /// The path and query portion of the URI (e.g., "/api/status?version=1")
+    pub path_and_query: String,
+}
+
+impl HostEndpoint {
+    pub const DEFAULT_HTTP_PORT: u16 = 80;
+    pub const DEFAULT_HTTPS_PORT: u16 = 443;
+
+    /// Create a new HostEndpoint with explicit components
+    pub fn new(host: impl Into<String>, port: u16, path_and_query: impl Into<String>) -> Self {
+        Self {
+            host: host.into(),
+            port,
+            path_and_query: path_and_query.into(),
+        }
+    }
+
+    /// Create a HostEndpoint from a full URI string (e.g., "http://host:port/path?query")
+    /// This will parse the URI and extract the host, port, and path/query components.
+    /// Remark: Do not use this function in performance-sensitive code paths, as URI parsing can be relatively expensive.
+    ///     Instead, use the `new` constructor with pre-parsed components when possible.
+    /// Remark: This function assumes the URI is well-formed and contains a host. It will return an error if the URI is invalid or missing required components.
+    pub fn from_full_uri(uri: Uri) -> Result<Self> {
+        let host = match uri.host() {
+            Some(h) => h.to_string(),
+            None => {
+                return Err(Error::Hyper(HyperErrorType::RequestBuilder(
+                    "URI must have a host".to_string(),
+                )));
+            }
+        };
+        let default_port = if uri.scheme_str() == Some("https") {
+            Self::DEFAULT_HTTPS_PORT
+        } else {
+            Self::DEFAULT_HTTP_PORT
+        };
+        let port = uri.port_u16().unwrap_or(default_port);
+        let path_and_query = match uri.path_and_query() {
+            Some(pq) => pq.as_str().to_string(),
+            None => "/".to_string(), // default to root path
+        };
+
+        Ok(Self {
+            host,
+            port,
+            path_and_query,
+        })
+    }
+
+    /// Create a HostEndpoint from a URI string (e.g., "http://host:port/path?query")
+    /// This will parse the URI and extract the host, port, and path/query components.
+    /// Remark: Do not use this function in performance-sensitive code paths, as URI parsing can be relatively expensive.
+    ///     Instead, use the `new` constructor with pre-parsed components when possible.
+    pub fn from_uri_str(uri_str: &str) -> Result<Self> {
+        let uri = uri_str.parse::<Uri>().map_err(|e| {
+            Error::Hyper(HyperErrorType::RequestBuilder(format!(
+                "Failed to parse URI string: {uri_str} with error: {e}"
+            )))
+        })?;
+        Self::from_full_uri(uri)
+    }
+
+    /// Get the address string for TCP connection (host:port)
+    #[inline]
+    pub fn addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+impl std::fmt::Display for HostEndpoint {
+    /// Format as full URI string (e.g., "http://host:port/path?query")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "http://{}:{}{}",
+            self.host, self.port, self.path_and_query
+        )
+    }
+}
+
 pub async fn get<T, F>(
-    full_url: &Uri,
+    endpoint: &HostEndpoint,
     headers: &HashMap<String, String>,
     key_guid: Option<String>,
     key: Option<String>,
@@ -42,14 +128,13 @@ where
     T: DeserializeOwned,
     F: Fn(String) + Send + 'static,
 {
-    let request = build_request(Method::GET, full_url, headers, None, key_guid, key)?;
+    let request = build_request(Method::GET, endpoint, headers, None, key_guid, key)?;
 
-    let (host, port) = host_port_from_uri(full_url)?;
-    let response = send_request(&host, port, request, log_fun).await?;
+    let response = send_request(&endpoint.host, endpoint.port, request, log_fun).await?;
     let status = response.status();
     if !status.is_success() {
         return Err(Error::Hyper(HyperErrorType::ServerError(
-            full_url.to_string(),
+            endpoint.to_string(),
             status,
         )));
     }
@@ -162,22 +247,20 @@ where
 
 pub fn build_request(
     method: http::Method,
-    full_url: &Uri,
+    endpoint: &HostEndpoint,
     headers: &HashMap<String, String>,
     body: Option<&[u8]>,
     key_guid: Option<String>,
     key: Option<String>,
 ) -> Result<Request<BoxBody<Bytes, hyper::Error>>> {
-    let (host, _) = host_port_from_uri(full_url)?;
-
     let mut request_builder = Request::builder()
         .method(method)
-        .uri(match full_url.path_and_query() {
-            Some(pq) => pq.as_str(),
-            None => full_url.path(),
-        })
+        .uri(&endpoint.path_and_query)
         .header(DATE_HEADER, misc_helpers::get_date_time_rfc1123_string())
-        .header(hyper::header::HOST, host)
+        // The header() method accepts types that implement Into<HeaderValue>, and &str implements this trait.
+        // The HeaderValue will internally copy the bytes (which is unavoidable since it needs to own the data),
+        // So you're not creating any intermediate String allocations.
+        .header(hyper::header::HOST, &endpoint.host)
         .header(
             CLAIMS_HEADER,
             format!("{{ \"{}\": \"{}\"}}", CLAIMS_IS_ROOT, true,),
@@ -276,21 +359,6 @@ where
     });
 
     Ok(sender)
-}
-
-pub fn host_port_from_uri(full_url: &Uri) -> Result<(String, u16)> {
-    let host = match full_url.host() {
-        Some(h) => h.to_string(),
-        None => {
-            return Err(Error::ParseUrl(
-                full_url.to_string(),
-                "Failed to get host from uri".to_string(),
-            ))
-        }
-    };
-    let port = full_url.port_u16().unwrap_or(80);
-
-    Ok((host, port))
 }
 
 /*
@@ -471,6 +539,7 @@ mod tests {
     use crate::{
         host_clients::{imds_client::ImdsClient, wire_server_client::WireServerClient},
         logger::logger_manager,
+        server_mock,
     };
     use tokio_util::sync::CancellationToken;
 
@@ -510,13 +579,11 @@ mod tests {
     async fn http_request_tests() {
         // start mock server
         let ip = "127.0.0.1";
-        let port = 7072u16;
+        let port = 9072u16;
         let cancellation_token = CancellationToken::new();
-        tokio::spawn(crate::server_mock::start(
-            ip.to_string(),
-            port,
-            cancellation_token.clone(),
-        ));
+        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         logger_manager::write_info("server_mock started.".to_string());
 

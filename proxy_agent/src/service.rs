@@ -10,6 +10,7 @@ use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::current_info;
+use proxy_agent_shared::hyper_client::HostEndpoint;
 use proxy_agent_shared::logger::rolling_logger::RollingLogger;
 use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
 use proxy_agent_shared::proxy_agent_aggregate_status;
@@ -46,7 +47,7 @@ pub async fn start_service(shared_state: SharedState) {
 
     let start_message = format!(
         "============== GuestProxyAgent ({}) is starting on {}({}), elapsed: {}",
-        proxy_agent_shared::misc_helpers::get_current_version(),
+        current_info::get_current_exe_version(),
         current_info::get_long_os_version(),
         current_info::get_cpu_arch(),
         helpers::get_elapsed_time_in_millisec()
@@ -57,9 +58,8 @@ pub async fn start_service(shared_state: SharedState) {
 
     tokio::spawn({
         let key_keeper = KeyKeeper::new(
-            (format!("http://{}/", constants::WIRE_SERVER_IP))
-                .parse()
-                .unwrap(),
+            constants::WIRE_SERVER_IP.to_string(),
+            HostEndpoint::DEFAULT_HTTP_PORT,
             config::get_keys_dir(),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
             config::get_poll_key_status_duration(),
@@ -157,32 +157,4 @@ pub fn stop_service(shared_state: SharedState) {
     });
 
     event_logger::stop();
-}
-
-#[cfg(test)]
-mod tests {
-    use ctor::{ctor, dtor};
-    use proxy_agent_shared::logger::LoggerLevel;
-    use std::env;
-    use std::fs;
-
-    const TEST_LOGGER_KEY: &str = "proxy_agent_test";
-
-    fn get_temp_test_dir() -> std::path::PathBuf {
-        let mut temp_test_path = env::temp_dir();
-        temp_test_path.push(TEST_LOGGER_KEY);
-        temp_test_path
-    }
-
-    #[ctor]
-    fn setup() {
-        // Setup logger_manager for unit tests
-        super::setup_loggers(get_temp_test_dir(), LoggerLevel::Trace);
-    }
-
-    #[dtor]
-    fn cleanup() {
-        // clean up and ignore the clean up errors
-        _ = fs::remove_dir_all(&get_temp_test_dir());
-    }
 }

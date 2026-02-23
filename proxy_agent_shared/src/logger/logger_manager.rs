@@ -195,11 +195,12 @@ fn get_max_system_logger_level() -> LoggerLevel {
 mod tests {
     use crate::logger::LoggerLevel;
     use crate::misc_helpers;
-    use ctor::{ctor, dtor};
     use std::env;
     use std::fs;
+    use std::sync::Once;
 
     const TEST_LOGGER_KEY: &str = "logger_manager_test";
+    static TEST_INIT: Once = Once::new();
 
     fn get_temp_test_dir() -> std::path::PathBuf {
         let mut temp_test_path = env::temp_dir();
@@ -207,32 +208,38 @@ mod tests {
         temp_test_path
     }
 
-    #[ctor]
     fn setup() {
-        // Setup logger_manager for unit tests
-        let logger = crate::logger::rolling_logger::RollingLogger::create_new(
-            get_temp_test_dir(),
-            "test.log".to_string(),
-            200,
-            6,
-        );
-        let mut loggers = std::collections::HashMap::new();
-        loggers.insert(TEST_LOGGER_KEY.to_string(), logger);
-        crate::logger::logger_manager::set_loggers(
-            loggers,
-            TEST_LOGGER_KEY.to_string(),
-            LoggerLevel::Trace,
-        );
+        TEST_INIT.call_once(|| {
+            // Setup logger_manager for unit tests
+            let logger = crate::logger::rolling_logger::RollingLogger::create_new(
+                get_temp_test_dir(),
+                "test.log".to_string(),
+                200,
+                6,
+            );
+            let mut loggers = std::collections::HashMap::new();
+            loggers.insert(TEST_LOGGER_KEY.to_string(), logger);
+            crate::logger::logger_manager::set_loggers(
+                loggers,
+                TEST_LOGGER_KEY.to_string(),
+                LoggerLevel::Trace,
+            );
+
+            unsafe {
+                libc::atexit(cleanup);
+            }
+        });
     }
 
-    #[dtor]
-    fn cleanup() {
+    extern "C" fn cleanup() {
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&get_temp_test_dir());
     }
 
     #[test]
     fn logger_manager_test() {
+        setup();
+
         for _ in [0; 20] {
             super::write_log(
                 LoggerLevel::Trace,

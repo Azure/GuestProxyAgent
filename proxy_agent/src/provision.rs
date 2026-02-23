@@ -19,6 +19,7 @@ use crate::{proxy_agent_status, redirector};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::telemetry::event_reader::EventReader;
+use proxy_agent_shared::telemetry::event_sender::EventSender;
 use proxy_agent_shared::{misc_helpers, proxy_agent_aggregate_status};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -370,18 +371,36 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
     tokio::spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
-            true,
-            event_threads_shared_state.cancellation_token.clone(),
             event_threads_shared_state.common_state.clone(),
             "ProxyAgent".to_string(),
             "MicrosoftAzureGuestProxyAgent".to_string(),
         );
         async move {
             event_reader
-                .start(Some(Duration::from_secs(300)), None, None)
+                .start(true, Some(Duration::from_secs(300)))
                 .await;
         }
     });
+    tokio::spawn({
+        let event_reader = EventReader::new(
+            config::get_events_dir(),
+            event_threads_shared_state.common_state.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
+        );
+        async move {
+            event_reader
+                .start_extension_status_event_processor(true, Some(Duration::from_secs(60)))
+                .await;
+        }
+    });
+    tokio::spawn({
+        let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
+        async move {
+            event_sender.start(None, None).await;
+        }
+    });
+
     if let Err(e) = event_threads_shared_state
         .provision_shared_state
         .set_event_log_threads_initialized()
@@ -642,16 +661,11 @@ pub mod provision_query {
         //  bool - true provision finished; false provision not finished
         //  String - provision error message, empty means provision success or provision failed.
         async fn get_current_provision_status(&self, notify: bool) -> Result<ProvisionState> {
-            let provision_url: String = format!(
-                "http://{}:{}{}",
-                Ipv4Addr::LOCALHOST,
+            let endpoint = hyper_client::HostEndpoint::new(
+                Ipv4Addr::LOCALHOST.to_string(),
                 self.port,
-                PROVISION_URL_PATH
+                PROVISION_URL_PATH,
             );
-
-            let provision_url: hyper::Uri = provision_url
-                .parse::<hyper::Uri>()
-                .map_err(|e| Error::ParseUrl(provision_url, e.to_string()))?;
 
             let mut headers = HashMap::new();
             headers.insert(
@@ -665,7 +679,7 @@ pub mod provision_query {
             if notify {
                 headers.insert(constants::NOTIFY_HEADER.to_string(), "true".to_string());
             }
-            hyper_client::get(&provision_url, &headers, None, None, logger::write_warning)
+            hyper_client::get(&endpoint, &headers, None, None, logger::write_warning)
                 .await
                 .map_err(Error::ProxyAgentSharedError)
         }

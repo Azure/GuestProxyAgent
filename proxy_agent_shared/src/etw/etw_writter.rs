@@ -45,7 +45,7 @@ impl WindowsEventWritter {
         );
         let value = crate::misc_helpers::resolve_env_variables(
             r"%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll",
-        )?;
+        );
         crate::windows::set_reg_string(&key_name, "EventMessageFile", value)?;
 
         let source_name_wide = super::to_wide(source_name);

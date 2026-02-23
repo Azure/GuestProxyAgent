@@ -32,5 +32,8 @@
     ],
     "vscode-nmake-tools.workspaceBuildDirectories": [
         "."
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "./build-linux.sh": true
+    }
 }
