@@ -125,7 +125,7 @@ if ($guestProxyAgentExtensionVersion) {
     if ($expectedProxyAgentVersion -ne "0") {
         $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
         # Compare only the major, minor, and patch versions, ignoring any additional labels
-        # as the inputed expectedProxyAgentVersion only contains 3 parts, but the extractedVersion, it is file version, starts to have 4 parts in windows
+        # as the inputted expectedProxyAgentVersion only contains 3 parts, but the extractedVersion, it is file version, starts to have 4 parts in windows
         if (([System.Version]$extractedVersion).ToString(3) -eq ([System.Version]$cleanExpectedProxyAgentVersion).ToString(3)){ 
             Write-Output "$((Get-Date).ToUniversalTime()) - After Update Version check: The proxy agent version matches the expected and extracted version"
         } else {
