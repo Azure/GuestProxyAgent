@@ -117,13 +117,16 @@ if ($guestProxyAgentExtensionVersion) {
     $proxyAgentStatus = $json.status.substatus[1].formattedMessage.message
     $jsonObject = $proxyAgentStatus | ConvertFrom-json
     $extractedVersion = $jsonObject.version
+    # Compare the extracted version with the version obtained from the executable
     if ($extractedVersion -ne $proxyAgentVersion) {
-        Write-Output "$((Get-Date).ToUniversalTime()) - Error, the proxy agent version [ $extractedVersions ] does not match the version [ $proxyAgentVersion ]"
+        Write-Output "$((Get-Date).ToUniversalTime()) - Error, the proxy agent version [ $extractedVersion ] does not match the version [ $proxyAgentVersion ]"
         $guestProxyAgentExtensionVersion = $false
     }
     if ($expectedProxyAgentVersion -ne "0") {
         $cleanExpectedProxyAgentVersion = $expectedProxyAgentVersion.Trim()
-        if ($extractedVersion -eq $cleanExpectedProxyAgentVersion){ 
+        # Compare only the major, minor, and patch versions, ignoring any additional labels
+        # as the inputted expectedProxyAgentVersion only contains 3 parts, but the extractedVersion, it is file version, starts to have 4 parts in windows
+        if (([System.Version]$extractedVersion).ToString(3) -eq ([System.Version]$cleanExpectedProxyAgentVersion).ToString(3)){ 
             Write-Output "$((Get-Date).ToUniversalTime()) - After Update Version check: The proxy agent version matches the expected and extracted version"
         } else {
             Write-Output "$((Get-Date).ToUniversalTime()) - After Update Version check: Error, the proxy agent version [ $extractedVersion ] does not match expected version [ $cleanExpectedProxyAgentVersion ]"
