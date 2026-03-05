@@ -214,6 +214,14 @@ namespace GuestProxyAgentTest.TestScenarios
                                 }
                             }
                         }
+                        else
+                        {
+                            ConsoleLog("AllocationFailed but no alternative VM sizes found in the error message, last retry with available VM size.");
+                            var availableVMSize = await _vmBuilder.GetAvailableVmSizeAsync();
+                            vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, availableVMSize, false, cancellationToken);
+                            ConsoleLog($"VM Create succeed with available VM size {availableVMSize}.");
+                            retrySucceeded = true;
+                        }
 
                         if (!retrySucceeded)
                         {

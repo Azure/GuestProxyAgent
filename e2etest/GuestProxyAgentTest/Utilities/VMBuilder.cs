@@ -91,7 +91,7 @@ namespace GuestProxyAgentTest.Utilities
             if (vmSizeOverride == null)
             {
                 // Resolve an available VM size before creating resources
-                var resolvedVmSize = await GetAvailableVmSizeAsync(sub);
+                var resolvedVmSize = await GetAvailableVmSizeAsync();
                 Console.WriteLine($"Resolved VM size: {resolvedVmSize}");
                 vmSizeToUse = resolvedVmSize;
             }
@@ -118,8 +118,11 @@ namespace GuestProxyAgentTest.Utilities
         /// Check if the configured VM size is available in the target location.
         /// If not, try fallback sizes. Returns the first available VM size.
         /// </summary>
-        private async Task<string> GetAvailableVmSizeAsync(SubscriptionResource sub)
+        internal async Task<string> GetAvailableVmSizeAsync()
         {
+            ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
+            var sub = await client.GetDefaultSubscriptionAsync();
+
             // Collect available VM SKUs with their vCPU count and architecture
             var availableSkus = new List<(string Name, int VCpus, string Architecture)>();
             await foreach (var sku in sub.GetComputeResourceSkusAsync(filter: $"location eq '{TestSetting.Instance.location}'"))
