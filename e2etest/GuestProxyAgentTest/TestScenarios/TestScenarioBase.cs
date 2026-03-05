@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+using Azure;
 using Azure.ResourceManager.Compute;
 using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.Models;
@@ -7,6 +8,7 @@ using GuestProxyAgentTest.Settings;
 using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Utilities;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace GuestProxyAgentTest.TestScenarios
 {
@@ -142,6 +144,22 @@ namespace GuestProxyAgentTest.TestScenarios
             }
         }
 
+        /// <summary>
+        /// Try to parse alternative VM sizes from the AllocationFailed error message.
+        /// Expected pattern: "Alternative VM sizes for the same region: Standard_D2as_v5, Standard_D4as_v5."
+        /// </summary>
+        private static List<string> ParseAlternativeVmSizes(string errorMessage)
+        {
+            var alternativeSizes = new List<string>();
+            var match = Regex.Match(errorMessage, @"Alternative VM sizes for the same region:\s*(.+?)\.?\s*$", RegexOptions.Multiline);
+            if (match.Success)
+            {
+                var sizes = match.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                alternativeSizes.AddRange(sizes.Where(s => !string.IsNullOrWhiteSpace(s)));
+            }
+            return alternativeSizes;
+        }
+
         private async Task DoStartAsync(TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)
         {
             try
@@ -162,6 +180,50 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 catch (Exception ex)
                 {
+                    // catch ErrorCode: AllocationFailed and retry with different VMSize if possible,
+                    // as sometimes the allocation failure is caused by the specific VM size is not available in the region,
+                    // but other VM sizes are still available.
+                    if (ex is RequestFailedException rfEx && rfEx.ErrorCode == "AllocationFailed")
+                    {
+                        var alternativeSizes = ParseAlternativeVmSizes(rfEx.Message);
+                        bool retrySucceeded = false;
+                        if (alternativeSizes.Count > 0)
+                        {
+                            ConsoleLog($"AllocationFailed for VM size '{TestSetting.Instance.vmSize}'. Retrying with alternative VM sizes: {string.Join(", ", alternativeSizes)}");
+                            foreach (var altSize in alternativeSizes)
+                            {
+                                try
+                                {
+                                    ConsoleLog($"Retrying VM creation with VM size: {altSize}");
+                                    vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, altSize, false, cancellationToken);
+                                    ConsoleLog($"VM Create succeed with alternative VM size: {altSize}");
+                                    retrySucceeded = true;
+                                    break;
+                                }
+                                catch (RequestFailedException retryRfEx) when (retryRfEx.ErrorCode == "AllocationFailed")
+                                {
+                                    ConsoleLog($"AllocationFailed for alternative VM size '{altSize}', trying next alternative if available.");
+                                    continue;
+                                }
+                                catch (Exception retryEx)
+                                {
+                                    // NOT AllocationFailed exception, assume retry succeeded but with other exception, break the loop to avoid retrying other sizes
+                                    retrySucceeded = true;
+                                    ConsoleLog($"VM creation failed with alternative VM size '{altSize}' with exception: {retryEx.Message}. Not retrying other sizes.");
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!retrySucceeded)
+                        {
+                            // All alternative sizes also failed, rethrow the original exception
+                            sw.Stop();
+                            _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, vmCreateTestName, "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
+                            throw;
+                        }
+                    }
+
                     // if the VM Creation operation failed, try check the VM instance view for 5 minutes
                     var startTime = DateTime.UtcNow;
                     while (true)

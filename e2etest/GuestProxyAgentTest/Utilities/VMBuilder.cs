@@ -69,17 +69,35 @@ namespace GuestProxyAgentTest.Utilities
 
         public async Task<VirtualMachineResource> Build(bool enableProxyAgent, CancellationToken cancellationToken)
         {
+            return await Build(enableProxyAgent, null, true, cancellationToken);
+        }
+
+        /// <summary>
+        /// Build and return the VirtualMachine based on the setting, with an optional VM size override
+        /// </summary>
+        /// <param name="enableProxyAgent"></param>
+        /// <param name="vmSizeOverride">If not null, overrides the default VM size from TestSetting</param>
+        /// <param name="deleteExistingResourceGroup">true to delete RG if already exists</param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<VirtualMachineResource> Build(bool enableProxyAgent, string vmSizeOverride, bool deleteExistingResourceGroup, CancellationToken cancellationToken)
+        {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
 
             var sub = await client.GetDefaultSubscriptionAsync();
 
-            // Resolve an available VM size before creating resources
-            var resolvedVmSize = await GetAvailableVmSizeAsync(sub);
-            Console.WriteLine($"Resolved VM size: {resolvedVmSize}");
+            string vmSizeToUse = vmSizeOverride ?? TestSetting.Instance.vmSize;
+            if (vmSizeOverride == null)
+            {
+                // Resolve an available VM size before creating resources
+                var resolvedVmSize = await GetAvailableVmSizeAsync(sub);
+                Console.WriteLine($"Resolved VM size: {resolvedVmSize}");
+                vmSizeToUse = resolvedVmSize;
+            }
 
             var rgs = sub.GetResourceGroups();
-            if (await rgs.ExistsAsync(rgName))
+            if (deleteExistingResourceGroup && await rgs.ExistsAsync(rgName))
             {
                 Console.WriteLine($"Resource group: {rgName} already exists, cleaning it up.");
                 await (await rgs.GetAsync(rgName)).Value.DeleteAsync(WaitUntil.Completed);
@@ -91,7 +109,7 @@ namespace GuestProxyAgentTest.Utilities
 
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             Console.WriteLine("Creating virtual machine...");
-            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent, resolvedVmSize), cancellationToken: cancellationToken)).Value;
+            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent, vmSizeToUse), cancellationToken: cancellationToken)).Value;
             Console.WriteLine("Virtual machine created, with id: " + vmr.Id);
             return vmr;
         }
