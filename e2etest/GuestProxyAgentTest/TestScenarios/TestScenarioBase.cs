@@ -257,6 +257,7 @@ namespace GuestProxyAgentTest.TestScenarios
             }
             catch (Exception ex)
             {
+                ConsoleLog("ExceptionType: " + ex.GetType().FullName);
                 testScenarioStatusDetails.ErrorMessage = ex.Message;
                 testScenarioStatusDetails.Result = ScenarioTestResult.Failed;
                 ConsoleLog("Exception occurs: " + ex.Message);
