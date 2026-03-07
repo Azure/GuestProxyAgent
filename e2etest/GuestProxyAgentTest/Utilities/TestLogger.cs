@@ -11,7 +11,7 @@
 
         public void Log(string message)
         {
-            Console.WriteLine($"[{this.Prefix}] - {DateTime.Now:HH:mm:ss.fff} - {message}");
+            Console.WriteLine($"[{this.Prefix}] - {DateTime.Now:yyyy-MM-ddTHH:mm:ss.fff} - {message}");
         }
     }
 }

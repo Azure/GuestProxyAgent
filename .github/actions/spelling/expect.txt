@@ -100,7 +100,7 @@ exampleosdiskname
 examplevmname
 exthandlers
 fde
-FFF
+fff
 FFFF
 FFFFFFFF
 fffi

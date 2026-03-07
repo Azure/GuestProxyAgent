@@ -31,8 +31,8 @@ namespace GuestProxyAgentTest.TestScenarios
 
         public TestScenarioBase()
         {
-            TestScenarioSetup();
             Logger = new TestLogger(this.LogPrefix);
+            TestScenarioSetup();
         }
 
         public TestScenarioBase TestScenarioSetting(TestScenarioSetting testScenarioSetting)
@@ -69,7 +69,14 @@ namespace GuestProxyAgentTest.TestScenarios
             get
             {
                 // _testScenarioSetting may still null in constructor functions
-                return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName + ": ";
+                if (_testScenarioSetting == null)
+                {
+                    return "Test Scenario: "+this.GetType().Name;
+                }
+                else
+                {
+                    return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName;
+                }
             }
         }
 
