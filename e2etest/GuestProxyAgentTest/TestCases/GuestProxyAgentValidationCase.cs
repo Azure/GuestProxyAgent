@@ -38,10 +38,10 @@ namespace GuestProxyAgentTest.TestCases
         {
             List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("expectedSecureChannelState", expectedSecureChannelState));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(context.Logger);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
-                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentValidationDetails>();
+                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentValidationDetails>(context.Logger);
                 // check the validation json output, if the guest proxy agent service was installed and runing and guest proxy agent process exists and log was generate,
                 // then consider it as succeed, otherwise fail the case.
                 if (validationDetails != null

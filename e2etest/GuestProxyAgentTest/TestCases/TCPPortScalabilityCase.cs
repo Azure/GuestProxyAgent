@@ -16,7 +16,7 @@ namespace GuestProxyAgentTest.TestCases
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "ConfigTCPPortScalability.ps1", null!, false)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "ConfigTCPPortScalability.ps1", null!, false)).ToTestResultDetails(context.Logger);
             if(!context.TestResultDetails.Succeed)
             {
                 return;
@@ -26,7 +26,7 @@ namespace GuestProxyAgentTest.TestCases
             await vmr.RestartAsync(Azure.WaitUntil.Completed);
             List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "IMDSPingTest.ps1", parameterList, false)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "IMDSPingTest.ps1", parameterList, false)).ToTestResultDetails(context.Logger);
         }
     }
 }

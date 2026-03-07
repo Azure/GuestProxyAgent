@@ -67,9 +67,9 @@ namespace GuestProxyAgentTest.Utilities
             "Standard_B2pls_v5",
         };
 
-        public async Task<VirtualMachineResource> Build(bool enableProxyAgent, CancellationToken cancellationToken)
+        public async Task<VirtualMachineResource> Build(TestLogger logger, bool enableProxyAgent, CancellationToken cancellationToken)
         {
-            return await Build(enableProxyAgent, null, true, cancellationToken);
+            return await Build(logger, enableProxyAgent, null, true, cancellationToken);
         }
 
         /// <summary>
@@ -80,7 +80,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="deleteExistingResourceGroup">true to delete RG if already exists</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(bool enableProxyAgent, string vmSizeOverride, bool deleteExistingResourceGroup, CancellationToken cancellationToken)
+        public async Task<VirtualMachineResource> Build(TestLogger logger, bool enableProxyAgent, string vmSizeOverride, bool deleteExistingResourceGroup, CancellationToken cancellationToken)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -91,26 +91,27 @@ namespace GuestProxyAgentTest.Utilities
             if (vmSizeOverride == null)
             {
                 // Resolve an available VM size before creating resources
-                var resolvedVmSize = await GetAvailableVmSizeAsync();
-                Console.WriteLine($"Resolved VM size: {resolvedVmSize}");
+                var resolvedVmSize = await GetAvailableVmSizeAsync(logger);
+                logger.Log($"Resolved VM size: {resolvedVmSize}");
                 vmSizeToUse = resolvedVmSize;
             }
 
             var rgs = sub.GetResourceGroups();
             if (deleteExistingResourceGroup && await rgs.ExistsAsync(rgName))
             {
-                Console.WriteLine($"Resource group: {rgName} already exists, cleaning it up.");
+                logger.Log($"Resource group: {rgName} already exists, cleaning it up.");
                 await (await rgs.GetAsync(rgName)).Value.DeleteAsync(WaitUntil.Completed);
             }
-            Console.WriteLine("Creating resource group: " + rgName);
+            logger.Log("Creating resource group: " + rgName);
             var rgData = new ResourceGroupData(TestSetting.Instance.location);
             rgData.Tags.Add(Constants.COULD_CLEANUP_TAG_NAME, "true");
             var rgr = rgs.CreateOrUpdate(WaitUntil.Completed, rgName, rgData).Value;
 
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
-            Console.WriteLine("Creating virtual machine...");
-            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName, await DoCreateVMData(rgr, enableProxyAgent, vmSizeToUse), cancellationToken: cancellationToken)).Value;
-            Console.WriteLine("Virtual machine created, with id: " + vmr.Id);
+            logger.Log("Creating virtual machine...");
+            var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName,
+                await DoCreateVMData(logger, rgr, enableProxyAgent, vmSizeToUse), cancellationToken: cancellationToken)).Value;
+            logger.Log("Virtual machine created, with id: " + vmr.Id);
             return vmr;
         }
 
@@ -118,7 +119,7 @@ namespace GuestProxyAgentTest.Utilities
         /// Check if the configured VM size is available in the target location.
         /// If not, try fallback sizes. Returns the first available VM size.
         /// </summary>
-        internal async Task<string> GetAvailableVmSizeAsync()
+        internal async Task<string> GetAvailableVmSizeAsync(TestLogger logger)
         {
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
             var sub = await client.GetDefaultSubscriptionAsync();
@@ -148,11 +149,11 @@ namespace GuestProxyAgentTest.Utilities
             var configuredSize = TestSetting.Instance.vmSize;
             if (availableNames.Contains(configuredSize))
             {
-                Console.WriteLine($"Configured VM size '{configuredSize}' is available.");
+                logger.Log($"Configured VM size '{configuredSize}' is available.");
                 return configuredSize;
             }
 
-            Console.WriteLine($"WARNING: Configured VM size '{configuredSize}' is not available in '{TestSetting.Instance.location}'. Searching for a fallback...");
+            logger.Log($"WARNING: Configured VM size '{configuredSize}' is not available in '{TestSetting.Instance.location}'. Searching for a fallback...");
 
             // First try the explicit fallback list
             var fallbacks = isArm64 ? FALLBACK_VM_SIZES_ARM64 : FALLBACK_VM_SIZES_X64;
@@ -160,7 +161,7 @@ namespace GuestProxyAgentTest.Utilities
             {
                 if (availableNames.Contains(fallback))
                 {
-                    Console.WriteLine($"Using fallback VM size: '{fallback}'");
+                    logger.Log($"Using fallback VM size: '{fallback}'");
                     return fallback;
                 }
             }
@@ -172,12 +173,12 @@ namespace GuestProxyAgentTest.Utilities
                 .FirstOrDefault();
             if (autoSelected != null)
             {
-                Console.WriteLine($"Using auto-selected 2 vCPU {requiredArch} VM size: '{autoSelected}'");
+                logger.Log($"Using auto-selected 2 vCPU {requiredArch} VM size: '{autoSelected}'");
                 return autoSelected;
             }
 
             // If none of the preferred fallbacks are available, return the configured size and let Azure report the error.
-            Console.WriteLine($"WARNING: No fallback VM size is available either. Proceeding with configured size '{configuredSize}'.");
+            logger.Log($"WARNING: No fallback VM size is available either. Proceeding with configured size '{configuredSize}'.");
             return configuredSize;
         }
 
@@ -189,7 +190,7 @@ namespace GuestProxyAgentTest.Utilities
             return sub.GetResourceGroups().Get(this.rgName).Value.GetVirtualMachine(this.vmName);
         }
 
-        private async Task<VirtualMachineData> DoCreateVMData(ResourceGroupResource rgr, bool enableProxyAgent, string vmSize)
+        private async Task<VirtualMachineData> DoCreateVMData(TestLogger logger, ResourceGroupResource rgr, bool enableProxyAgent, string vmSize)
         {
             var vmData = new VirtualMachineData(TestSetting.Instance.location)
             {
@@ -222,7 +223,7 @@ namespace GuestProxyAgentTest.Utilities
                     AdminUsername = this.adminUsername,
                     AdminPassword = this.adminPassword,
                 },
-                NetworkProfile = await DoCreateVMNetWorkProfile(rgr),
+                NetworkProfile = await DoCreateVMNetWorkProfile(logger, rgr),
             };
 
             if (enableProxyAgent)
@@ -291,9 +292,9 @@ namespace GuestProxyAgentTest.Utilities
             return vmData;
         }
 
-        private async Task<VirtualMachineNetworkProfile> DoCreateVMNetWorkProfile(ResourceGroupResource rgr)
+        private async Task<VirtualMachineNetworkProfile> DoCreateVMNetWorkProfile(TestLogger logger, ResourceGroupResource rgr)
         {
-            Console.WriteLine("Creating network profile");
+            logger.Log("Creating network profile");
             var vns = rgr.GetVirtualNetworks();
             await vns.CreateOrUpdateAsync(WaitUntil.Completed, this.vNetName, new VirtualNetworkData
             {
@@ -316,7 +317,7 @@ namespace GuestProxyAgentTest.Utilities
 
             var pips = rgr.GetPublicIPAddresses();
 
-            Console.WriteLine("Creating public ip address.");
+            logger.Log("Creating public ip address.");
             await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
             {
                 Location = TestSetting.Instance.location
@@ -324,7 +325,7 @@ namespace GuestProxyAgentTest.Utilities
 
             var nifs = rgr.GetNetworkInterfaces();
 
-            Console.WriteLine("Creating network interface.");
+            logger.Log("Creating network interface.");
             await nifs.CreateOrUpdateAsync(WaitUntil.Completed, this.netInfName, new NetworkInterfaceData()
             {
                 IPConfigurations =
