@@ -19,7 +19,7 @@ namespace GuestProxyAgentTest.TestCases
         {
             List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.IMDS_PING_TEST_SCRIPT_NAME, parameterList, false)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.IMDS_PING_TEST_SCRIPT_NAME, parameterList, false)).ToTestResultDetails(context.Logger);
         }
     }
 }

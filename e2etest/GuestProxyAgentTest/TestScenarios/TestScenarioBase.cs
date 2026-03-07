@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+using Azure;
 using Azure.ResourceManager.Compute;
 using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.Models;
@@ -7,6 +8,7 @@ using GuestProxyAgentTest.Settings;
 using GuestProxyAgentTest.TestCases;
 using GuestProxyAgentTest.Utilities;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace GuestProxyAgentTest.TestScenarios
 {
@@ -19,17 +21,25 @@ namespace GuestProxyAgentTest.TestScenarios
         private VMBuilder _vmBuilder = null!;
         private JunitTestResultBuilder _junitTestResultBuilder = null!;
         private List<TestCaseBase> _testCases = new List<TestCaseBase>();
+        protected TestLogger Logger
+        {
+            get; private set;
+        }
+
         protected bool EnableProxyAgentForNewVM { get; set; }
 
 
         public TestScenarioBase()
         {
+            Logger = new TestLogger(this.LogPrefix);
             TestScenarioSetup();
         }
 
         public TestScenarioBase TestScenarioSetting(TestScenarioSetting testScenarioSetting)
         {
             this._testScenarioSetting = testScenarioSetting;
+            // refresh the Logger with new LogPrefix which is based on the test scenario setting
+            Logger = new TestLogger(this.LogPrefix);
             this._vmBuilder = new VMBuilder().LoadTestCaseSetting(testScenarioSetting);
             return this;
         }
@@ -59,13 +69,20 @@ namespace GuestProxyAgentTest.TestScenarios
             get
             {
                 // _testScenarioSetting may still null in constructor functions
-                return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName + ": ";
+                if (_testScenarioSetting == null)
+                {
+                    return "Test Scenario: "+this.GetType().Name;
+                }
+                else
+                {
+                    return "Test Group: " + _testScenarioSetting?.testGroupName + ", Test Scenario: " + _testScenarioSetting?.testScenarioName;
+                }
             }
         }
 
         protected void ConsoleLog(string msg)
         {
-            Console.WriteLine(LogPrefix + msg);
+            Logger.Log(msg);
         }
 
         protected void PreCheck()
@@ -127,7 +144,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Collect GA Logs error: " + ex.Message);
+                    ConsoleLog("Collect GA Logs error: " + ex.Message);
                 }
 
                 try
@@ -137,9 +154,25 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Cleanup azure resources exception: " + ex.Message);
+                    ConsoleLog("Cleanup azure resources exception: " + ex.Message);
                 }
             }
+        }
+
+        /// <summary>
+        /// Try to parse alternative VM sizes from the AllocationFailed error message.
+        /// Expected pattern: "Alternative VM sizes for the same region: Standard_D2as_v5, Standard_D4as_v5."
+        /// </summary>
+        private static List<string> ParseAlternativeVmSizes(string errorMessage)
+        {
+            var alternativeSizes = new List<string>();
+            var match = Regex.Match(errorMessage, @"Alternative VM sizes for the same region:\s*(.+?)\.?\s*$", RegexOptions.Multiline);
+            if (match.Success)
+            {
+                var sizes = match.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                alternativeSizes.AddRange(sizes.Where(s => !string.IsNullOrWhiteSpace(s)));
+            }
+            return alternativeSizes;
         }
 
         private async Task DoStartAsync(TestScenarioStatusDetails testScenarioStatusDetails, CancellationToken cancellationToken)
@@ -155,13 +188,65 @@ namespace GuestProxyAgentTest.TestScenarios
                 try
                 {
                     ConsoleLog(string.Format("Creating {0} VM...", _testScenarioSetting.VMImageDetails.IsArm64 ? "ARM64" : "AMD64"));
-                    vmr = await _vmBuilder.Build(this.EnableProxyAgentForNewVM, cancellationToken);
+                    vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, cancellationToken);
                     ConsoleLog("VM Create succeed");
                     sw.Stop();
                     _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
                 }
                 catch (Exception ex)
                 {
+                    // catch ErrorCode: AllocationFailed and retry with different VMSize if possible,
+                    // as sometimes the allocation failure is caused by the specific VM size is not available in the region,
+                    // but other VM sizes are still available.
+                    if (ex is RequestFailedException rfEx && rfEx.ErrorCode == "AllocationFailed")
+                    {
+                        var alternativeSizes = ParseAlternativeVmSizes(rfEx.Message);
+                        bool retrySucceeded = false;
+                        if (alternativeSizes.Count > 0)
+                        {
+                            ConsoleLog($"AllocationFailed for VM size '{TestSetting.Instance.vmSize}'. Retrying with alternative VM sizes: {string.Join(", ", alternativeSizes)}");
+                            foreach (var altSize in alternativeSizes)
+                            {
+                                try
+                                {
+                                    ConsoleLog($"Retrying VM creation with VM size: {altSize}");
+                                    vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, altSize, false, cancellationToken);
+                                    ConsoleLog($"VM Create succeed with alternative VM size: {altSize}");
+                                    retrySucceeded = true;
+                                    break;
+                                }
+                                catch (RequestFailedException retryRfEx) when (retryRfEx.ErrorCode == "AllocationFailed")
+                                {
+                                    ConsoleLog($"AllocationFailed for alternative VM size '{altSize}', trying next alternative if available.");
+                                    continue;
+                                }
+                                catch (Exception retryEx)
+                                {
+                                    // NOT AllocationFailed exception, assume retry succeeded but with other exception, break the loop to avoid retrying other sizes
+                                    retrySucceeded = true;
+                                    ConsoleLog($"VM creation failed with alternative VM size '{altSize}' with exception: {retryEx.Message}. Not retrying other sizes.");
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var availableVMSize = await _vmBuilder.GetAvailableVmSizeAsync(this.Logger);
+                            ConsoleLog($"AllocationFailed but no alternative VM sizes found in the error message, last retry with available VM size `{availableVMSize}`.");
+                            vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, availableVMSize, false, cancellationToken);
+                            ConsoleLog($"VM Create succeed with available VM size {availableVMSize}.");
+                            retrySucceeded = true;
+                        }
+
+                        if (!retrySucceeded)
+                        {
+                            // All alternative sizes also failed, rethrow the original exception
+                            sw.Stop();
+                            _junitTestResultBuilder.AddFailureTestResult(testScenarioStatusDetails.ScenarioName, vmCreateTestName, "", ex.Message + ex.StackTrace ?? "", "", sw.ElapsedMilliseconds);
+                            throw;
+                        }
+                    }
+
                     // if the VM Creation operation failed, try check the VM instance view for 5 minutes
                     var startTime = DateTime.UtcNow;
                     while (true)
@@ -195,6 +280,7 @@ namespace GuestProxyAgentTest.TestScenarios
             }
             catch (Exception ex)
             {
+                ConsoleLog("ExceptionType: " + ex.GetType().FullName);
                 testScenarioStatusDetails.ErrorMessage = ex.Message;
                 testScenarioStatusDetails.Result = ScenarioTestResult.Failed;
                 ConsoleLog("Exception occurs: " + ex.Message);
@@ -217,11 +303,12 @@ namespace GuestProxyAgentTest.TestScenarios
                     break;
                 }
 
-                TestCaseExecutionContext context = new TestCaseExecutionContext(vmr, _testScenarioSetting, cancellationToken);
+                TestCaseExecutionContext context = new TestCaseExecutionContext(this.Logger, vmr, _testScenarioSetting, cancellationToken);
                 Stopwatch sw = Stopwatch.StartNew();
 
                 try
                 {
+                    ConsoleLog($"Starting test case: {testCase.TestCaseName}");
                     testCase.Result = TestCaseResult.Running;
                     await testCase.StartAsync(context);
                     sw.Stop();
@@ -250,7 +337,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 finally
                 {
                     testCase.Result = context.TestResultDetails.Succeed ? TestCaseResult.Succeed : TestCaseResult.Failed;
-                    ConsoleLog($"Scenario case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed ? "Succeed" : "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
+                    ConsoleLog($"Test case {testCase.TestCaseName} finished with result: {(context.TestResultDetails.Succeed ? "Succeed" : "Failed")} and duration: " + sw.ElapsedMilliseconds + "ms");
                     SaveResultFile(context.TestResultDetails.CustomOut, $"TestCases/{testCase.TestCaseName}", "customOut.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdErr, $"TestCases/{testCase.TestCaseName}", "stdErr.txt", context.TestResultDetails.FromBlob);
                     SaveResultFile(context.TestResultDetails.StdOut, $"TestCases/{testCase.TestCaseName}", "stdOut.txt", context.TestResultDetails.FromBlob);
@@ -269,7 +356,7 @@ namespace GuestProxyAgentTest.TestScenarios
             }
             var logZipSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, logZipPath, _testScenarioSetting.TestScenarioStorageFolderPrefix);
 
-            var collectGALogOutput = await RunCommandRunner.ExecuteRunCommandOnVM(vmr, new RunCommandSettingBuilder()
+            var collectGALogOutput = await RunCommandRunner.ExecuteRunCommandOnVM(this.Logger, vmr, new RunCommandSettingBuilder()
                     .TestScenarioSetting(_testScenarioSetting)
                     .RunCommandName("CollectInVMGALog")
                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.COLLECT_INVM_GA_LOG_SCRIPT_NAME))
@@ -296,7 +383,7 @@ namespace GuestProxyAgentTest.TestScenarios
 
             if (isFromSas)
             {
-                TestCommonUtilities.DownloadFile(fileContentOrSas, filePath, ConsoleLog);
+                TestCommonUtilities.DownloadFile(fileContentOrSas, filePath, this.Logger);
             }
             else
             {
@@ -315,11 +402,20 @@ namespace GuestProxyAgentTest.TestScenarios
         private VirtualMachineResource _vmr = null!;
         private TestScenarioSetting _testScenarioSetting = null!;
         private CancellationToken _cancellationToken;
+        private TestLogger _logger = null!;
 
         /// <summary>
         /// TestResultDetails for a particular test case
         /// </summary>
         public TestCaseResultDetails TestResultDetails { get; set; } = new TestCaseResultDetails();
+
+        public TestLogger Logger
+        {
+            get
+            {
+                return _logger;
+            }
+        }
 
         public TestScenarioSetting ScenarioSetting
         {
@@ -348,8 +444,9 @@ namespace GuestProxyAgentTest.TestScenarios
             }
         }
 
-        public TestCaseExecutionContext(VirtualMachineResource vmr, TestScenarioSetting testScenarioSetting, CancellationToken cancellationToken)
+        public TestCaseExecutionContext(TestLogger logger, VirtualMachineResource vmr, TestScenarioSetting testScenarioSetting, CancellationToken cancellationToken)
         {
+            _logger = logger;
             _vmr = vmr;
             _testScenarioSetting = testScenarioSetting;
             _cancellationToken = cancellationToken;

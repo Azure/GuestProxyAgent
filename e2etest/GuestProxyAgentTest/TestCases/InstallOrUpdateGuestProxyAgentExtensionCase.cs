@@ -18,7 +18,7 @@ namespace GuestProxyAgentTest.TestCases
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
-            var runCommandRes = await RunCommandRunner.ExecuteRunCommandOnVM(context.VirtualMachineResource, new RunCommandSettingBuilder()
+            var runCommandRes = await RunCommandRunner.ExecuteRunCommandOnVM(context.Logger, context.VirtualMachineResource, new RunCommandSettingBuilder()
                     .TestScenarioSetting(context.ScenarioSetting)
                     .RunCommandName("InstallGuestProxyAgentExtension")
                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME))
