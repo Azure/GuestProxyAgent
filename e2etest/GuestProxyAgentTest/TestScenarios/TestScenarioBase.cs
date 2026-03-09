@@ -195,6 +195,8 @@ namespace GuestProxyAgentTest.TestScenarios
                 }
                 catch (Exception ex)
                 {
+                    ConsoleLog($"VM first create failed with exception: {ex.GetType().Name} - {ex.Message}");
+
                     // catch ErrorCode: AllocationFailed and retry with different VMSize if possible,
                     // as sometimes the allocation failure is caused by the specific VM size is not available in the region,
                     // but other VM sizes are still available.
