@@ -71,6 +71,111 @@ async fn heartbeat_thread() {
     }
 }
 
+/// Describes the reason for running the setup tool install command.
+enum UpdateAction {
+    /// Service file version differs from extension — a fresh update.
+    VersionMismatch,
+    /// Service files already match but the running process reports an older version —
+    /// an interrupted update (e.g., VM force-restarted mid-eBPF-update).
+    ResumeInterruptedUpdate,
+}
+
+/// Resolves the file version of the proxy agent bundled with the extension.
+/// Returns `None` (and reports an error status) if the version cannot be read yet.
+fn resolve_proxyagent_file_version_in_extension(
+    cached: &str,
+    status: &mut StatusObj,
+    status_state_obj: &mut common::StatusState,
+) -> Option<String> {
+    if !cached.is_empty() {
+        return Some(cached.to_string());
+    }
+    let path = common::get_proxy_agent_exe_path();
+    match misc_helpers::get_proxy_agent_version(&path) {
+        Ok(version) => Some(version),
+        Err(e) => {
+            let error_message = format!(
+                "Failed to get GuestProxyAgent version from file {} with error: {}",
+                misc_helpers::path_to_string(&path),
+                e
+            );
+            logger::write(error_message.clone());
+            status.formattedMessage.message = error_message;
+            status.code = constants::STATUS_CODE_NOT_OK;
+            status.status = status_state_obj.update_state(false);
+            None
+        }
+    }
+}
+
+/// Gets the file version of the currently installed GPA service executable.
+fn get_proxy_agent_service_file_version() -> String {
+    let path = common::get_proxy_agent_service_path();
+    match misc_helpers::get_proxy_agent_version(&path) {
+        Ok(version) => version,
+        Err(e) => {
+            logger::write(format!(
+                "Failed to get GuestProxyAgent version from file {} with error: {}",
+                misc_helpers::path_to_string(&path),
+                e
+            ));
+            String::new()
+        }
+    }
+}
+
+/// Determines what update action (if any) is needed for the proxy agent service.
+fn determine_update_action(extension_version: &str, logger_key: &str) -> Option<UpdateAction> {
+    let service_file_version = get_proxy_agent_service_file_version();
+
+    if extension_version != service_file_version {
+        telemetry::event_logger::write_event(
+            LoggerLevel::Info,
+            format!(
+                "Version mismatch between file versions. \
+                 ProxyAgentService File Version: {service_file_version}, \
+                 ProxyAgent in Extension File Version: {extension_version}"
+            ),
+            "monitor_thread",
+            "service_main",
+            logger_key,
+        );
+        Some(UpdateAction::VersionMismatch)
+    } else if !check_version_in_proxy_agent_status_file(extension_version) {
+        telemetry::event_logger::write_event(
+            LoggerLevel::Info,
+            format!(
+                "Service file version matches extension version {extension_version} but \
+                 running service reports a different version. \
+                 Re-running install to complete the interrupted update."
+            ),
+            "monitor_thread",
+            "service_main",
+            logger_key,
+        );
+        Some(UpdateAction::ResumeInterruptedUpdate)
+    } else {
+        None
+    }
+}
+
+/// Runs the setup tool install command and reports the result.
+fn run_setup_tool_install(
+    status_folder: PathBuf,
+    seq_no: &str,
+    status: &mut StatusObj,
+    status_state_obj: &mut common::StatusState,
+) {
+    let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
+    let mut install_command = Command::new(&setup_tool);
+    // Set the current directory to the directory of the current executable
+    // for the setup tool to work properly
+    install_command.current_dir(misc_helpers::get_current_exe_dir());
+    install_command.arg("install");
+    let output = install_command.output();
+    report_proxy_agent_service_status(output, status_folder, seq_no, status, status_state_obj);
+}
+
 async fn monitor_thread() {
     let exe_path = misc_helpers::get_current_exe_dir();
     let handler_environment = common::get_handler_environment(&exe_path);
@@ -94,34 +199,26 @@ async fn monitor_thread() {
     let logger_key: &String = &logger::get_logger_key();
     let mut restored_in_error = false;
     let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
+    let loop_interval = Duration::from_secs(15);
     loop {
         let current_seq_no: String = common::get_current_seq_no(&exe_path);
-        if proxyagent_file_version_in_extension.is_empty() {
-            // File version of proxy agent service already downloaded by VM Agent
-            let path = common::get_proxy_agent_exe_path();
-            proxyagent_file_version_in_extension =
-                match misc_helpers::get_proxy_agent_version(&path) {
-                    Ok(version) => version,
-                    Err(e) => {
-                        let error_message = format!(
-                            "Failed to get GuestProxyAgent version from file {} with error: {}",
-                            misc_helpers::path_to_string(&path),
-                            e
-                        );
-                        logger::write(error_message.clone());
-                        status.formattedMessage.message = error_message;
-                        status.code = constants::STATUS_CODE_NOT_OK;
-                        status.status = status_state_obj.update_state(false);
-                        common::report_status(
-                            status_folder_path.to_path_buf(),
-                            &current_seq_no,
-                            &status,
-                        );
-                        tokio::time::sleep(Duration::from_secs(15)).await;
-                        continue;
-                    }
-                };
+
+        // Step 1: Resolve the extension-bundled proxy agent version (retry each iteration until available)
+        match resolve_proxyagent_file_version_in_extension(
+            &proxyagent_file_version_in_extension,
+            &mut status,
+            &mut status_state_obj,
+        ) {
+            Some(version) => proxyagent_file_version_in_extension = version,
+            None => {
+                common::report_status(status_folder_path.to_path_buf(), &current_seq_no, &status);
+                tokio::time::sleep(loop_interval).await;
+                continue;
+            }
         }
+
+        // Step 2: On seq_no change, check whether the proxy agent service needs an update or
+        //         whether a previous update was interrupted and needs to be resumed.
         if cache_seq_no != current_seq_no {
             telemetry::event_logger::write_event(
                 LoggerLevel::Info,
@@ -133,68 +230,54 @@ async fn monitor_thread() {
                 logger_key,
             );
             cache_seq_no = current_seq_no.to_string();
-            let proxy_service_exe_file_path = common::get_proxy_agent_service_path();
-            let proxyagent_service_file_version =
-                match misc_helpers::get_proxy_agent_version(&proxy_service_exe_file_path) {
-                    Ok(version) => version,
-                    Err(e) => {
-                        logger::write(format!(
-                            "Failed to get GuestProxyAgent version from file {} with error: {}",
-                            misc_helpers::path_to_string(&proxy_service_exe_file_path),
-                            e
-                        ));
-                        // return empty string if failed to get version
-                        "".to_string()
-                    }
-                };
-            if proxyagent_file_version_in_extension != proxyagent_service_file_version {
-                // Call setup tool to install or update proxy agent service
-                telemetry::event_logger::write_event(
-                    LoggerLevel::Info,
-                    format!("Version mismatch between file versions. ProxyAgentService File Version: {proxyagent_service_file_version}, ProxyAgent in Extension File Version: {proxyagent_file_version_in_extension}"
-                        ),
-                    "monitor_thread",
-                    "service_main",
-                    logger_key,
-                );
-                let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
-                backup_proxyagent(&setup_tool);
-                let mut install_command = Command::new(&setup_tool);
-                // Set the current directory to the directory of the current executable for the setup tool to work properly
-                install_command.current_dir(misc_helpers::get_current_exe_dir());
-                let proxy_agent_update_command = telemetry::span::SimpleSpan::new();
+
+            if let Some(action) =
+                determine_update_action(&proxyagent_file_version_in_extension, logger_key)
+            {
+                if matches!(action, UpdateAction::VersionMismatch) {
+                    backup_proxyagent(
+                        &misc_helpers::path_to_string(&common::setup_tool_exe_path()),
+                    );
+
+                    // reset this flag in case the previous restore was done due to an error,
+                    // but now the version mismatch indicates a new update attempt rather than a resume of a previous interrupted update
+                    restored_in_error = false;
+                }
+                let update_span = telemetry::span::SimpleSpan::new();
                 proxy_agent_update_reported = Some(telemetry::span::SimpleSpan::new());
-                install_command.arg("install");
-                let output = install_command.output();
-                report_proxy_agent_service_status(
-                    output,
+                run_setup_tool_install(
                     exe_path.join("status"),
                     &cache_seq_no,
                     &mut status,
                     &mut status_state_obj,
                 );
-                // Time taken to update proxy agent service
-                proxy_agent_update_command.write_event(
-                    "Update Proxy Agent command completed",
-                    "monitor_thread",
-                    "service_main",
-                    logger_key,
-                );
+                let span_message = match &action {
+                    UpdateAction::VersionMismatch => "Update Proxy Agent command completed",
+                    UpdateAction::ResumeInterruptedUpdate => {
+                        "Retry install for interrupted update completed"
+                    }
+                };
+                update_span.write_event(span_message, "monitor_thread", "service_main", logger_key);
             }
         }
-        // Read proxy agent aggregate status file and get ProxyAgentAggregateStatus object
+
+        // Step 3: Read and evaluate the proxy agent aggregate status
         report_proxy_agent_aggregate_status(
             &proxyagent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
-            &mut restored_in_error,
             &mut service_state,
         );
 
-        // Time taken to report success for proxy agent service after update
+        // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
+        if !restored_in_error {
+            restored_in_error = restore_purge_proxyagent(&mut status);
+        }
+
+        // Step 5: Track time-to-success after an update
         if status.status == *constants::SUCCESS_STATUS {
-            if let Some(proxy_agent_update_reported) = proxy_agent_update_reported.as_ref() {
-                proxy_agent_update_reported.write_event(
+            if let Some(span) = proxy_agent_update_reported.as_ref() {
+                span.write_event(
                     "Proxy Agent Service is updated and reporting successful status",
                     "monitor_thread",
                     "service_main",
@@ -203,18 +286,21 @@ async fn monitor_thread() {
             }
             proxy_agent_update_reported = None;
         }
+
+        // Step 6: Report eBPF driver status (Windows only)
         #[cfg(windows)]
         {
             report_ebpf_status(&mut status);
         }
 
+        // Step 7: Write the final status file and sleep
         common::report_status(
             status_folder_path.to_path_buf(),
             &cache_seq_no.to_string(),
             &status,
         );
 
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        tokio::time::sleep(loop_interval).await;
     }
 }
 
@@ -337,11 +423,42 @@ fn backup_proxyagent(setup_tool: &String) {
     }
 }
 
+/// Checks if the proxy agent service is running a different version than the files present in the extension,
+/// This can happen when a VM is force-restarted during a proxy agent service update, causing the new service to not start properly.
+/// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
+fn check_version_in_proxy_agent_status_file(proxyagent_file_version_in_extension: &str) -> bool {
+    let aggregate_status_file_path =
+        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
+            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
+    match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
+        &aggregate_status_file_path,
+    ) {
+        Ok(aggregate_status) => {
+            let running_version = &aggregate_status.proxyAgentStatus.version;
+            if running_version != proxyagent_file_version_in_extension {
+                logger::write(format!(
+                    "Reported GPA service version {running_version} differs from installed file version {proxyagent_file_version_in_extension}."
+                ));
+                false
+            } else {
+                true
+            }
+        }
+        Err(e) => {
+            // Cannot read aggregate status — service may not be running at all.
+            // Treat this as an incomplete update so install is retried.
+            logger::write(format!(
+                "Cannot read aggregate status file to verify running version: {e}.",
+            ));
+            false
+        }
+    }
+}
+
 fn report_proxy_agent_aggregate_status(
     proxyagent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
-    restored_in_error: &mut bool,
     service_state: &mut ServiceState,
 ) {
     let aggregate_status_file_path =
@@ -416,9 +533,6 @@ fn report_proxy_agent_aggregate_status(
                 ]
             };
         }
-    }
-    if !(*restored_in_error) {
-        *restored_in_error = restore_purge_proxyagent(status);
     }
 }
 
