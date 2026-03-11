@@ -257,7 +257,12 @@ async fn monitor_thread() {
                         "Retry install for interrupted update completed"
                     }
                 };
-                update_span.write_event(span_message, "install_proxy_agent", "service_main", logger_key);
+                update_span.write_event(
+                    span_message,
+                    "install_proxy_agent",
+                    "service_main",
+                    logger_key,
+                );
             }
         }
 
