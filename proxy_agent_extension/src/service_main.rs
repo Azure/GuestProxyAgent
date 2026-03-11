@@ -257,7 +257,7 @@ async fn monitor_thread() {
                         "Retry install for interrupted update completed"
                     }
                 };
-                update_span.write_event(span_message, "monitor_thread", "service_main", logger_key);
+                update_span.write_event(span_message, "install_proxy_agent", "service_main", logger_key);
             }
         }
 
@@ -279,7 +279,7 @@ async fn monitor_thread() {
             if let Some(span) = proxy_agent_update_reported.as_ref() {
                 span.write_event(
                     "Proxy Agent Service is updated and reporting successful status",
-                    "monitor_thread",
+                    "updated_proxy_agent",
                     "service_main",
                     logger_key,
                 );
