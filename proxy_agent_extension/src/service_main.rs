@@ -72,6 +72,7 @@ async fn heartbeat_thread() {
 }
 
 /// Describes the reason for running the setup tool install command.
+#[derive(Debug, PartialEq)]
 enum UpdateAction {
     /// Service file version differs from extension — a fresh update.
     VersionMismatch,
@@ -125,27 +126,33 @@ fn get_proxy_agent_service_file_version() -> String {
 }
 
 /// Determines what update action (if any) is needed for the proxy agent service.
-fn determine_update_action(extension_version: &str, logger_key: &str) -> Option<UpdateAction> {
-    let service_file_version = get_proxy_agent_service_file_version();
-
-    if extension_version != service_file_version {
+fn determine_update_action(
+    proxy_agent_in_extension_version: &str,
+    proxy_agent_service_version: &str,
+    status_file_path: Option<PathBuf>,
+    logger_key: &str,
+) -> Option<UpdateAction> {
+    if proxy_agent_in_extension_version != proxy_agent_service_version {
         telemetry::event_logger::write_event(
             LoggerLevel::Info,
             format!(
                 "Version mismatch between file versions. \
-                 ProxyAgentService File Version: {service_file_version}, \
-                 ProxyAgent in Extension File Version: {extension_version}"
+                 ProxyAgentService File Version: {proxy_agent_service_version}, \
+                 ProxyAgent in Extension File Version: {proxy_agent_in_extension_version}"
             ),
             "monitor_thread",
             "service_main",
             logger_key,
         );
         Some(UpdateAction::VersionMismatch)
-    } else if !check_version_in_proxy_agent_status_file(extension_version) {
+    } else if !check_version_in_proxy_agent_status_file(
+        proxy_agent_in_extension_version,
+        status_file_path,
+    ) {
         telemetry::event_logger::write_event(
             LoggerLevel::Info,
             format!(
-                "Service file version matches extension version {extension_version} but \
+                "Service file version matches extension version {proxy_agent_in_extension_version} but \
                  running service reports a different version. \
                  Re-running install to complete the interrupted update."
             ),
@@ -231,9 +238,13 @@ async fn monitor_thread() {
             );
             cache_seq_no = current_seq_no.to_string();
 
-            if let Some(action) =
-                determine_update_action(&proxyagent_file_version_in_extension, logger_key)
-            {
+            let proxy_agent_service_version = get_proxy_agent_service_file_version();
+            if let Some(action) = determine_update_action(
+                &proxyagent_file_version_in_extension,
+                &proxy_agent_service_version,
+                None,
+                logger_key,
+            ) {
                 if matches!(action, UpdateAction::VersionMismatch) {
                     backup_proxyagent(
                         &misc_helpers::path_to_string(&common::setup_tool_exe_path()),
@@ -431,10 +442,15 @@ fn backup_proxyagent(setup_tool: &String) {
 /// Checks if the proxy agent service is running a different version than the files present in the extension,
 /// This can happen when a VM is force-restarted during a proxy agent service update, causing the new service to not start properly.
 /// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
-fn check_version_in_proxy_agent_status_file(proxyagent_file_version_in_extension: &str) -> bool {
-    let aggregate_status_file_path =
-        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
-            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
+fn check_version_in_proxy_agent_status_file(
+    proxyagent_file_version_in_extension: &str,
+    status_file_path: Option<PathBuf>,
+) -> bool {
+    let aggregate_status_file_path = match status_file_path {
+        Some(path) => path,
+        None => proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
+            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
+    };
     match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
         &aggregate_status_file_path,
     ) {
@@ -940,6 +956,70 @@ mod tests {
     use crate::structs::*;
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::proxy_agent_aggregate_status::*;
+    use std::path::PathBuf;
+
+    /// Build a StatusObj with default plugin name, enable operation, and current timestamp.
+    fn make_test_status_obj(status: &str, code: i32, message: &str) -> StatusObj {
+        StatusObj {
+            name: constants::PLUGIN_NAME.to_string(),
+            operation: constants::ENABLE_OPERATION.to_string(),
+            configurationAppliedTime: misc_helpers::get_date_time_string(),
+            code,
+            status: status.to_string(),
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: message.to_string(),
+            },
+            substatus: Default::default(),
+        }
+    }
+
+    fn make_detail_status() -> ProxyAgentDetailStatus {
+        ProxyAgentDetailStatus {
+            status: ModuleState::RUNNING,
+            message: "test".to_string(),
+            states: None,
+        }
+    }
+
+    fn make_test_proxy_agent_status(version: &str) -> ProxyAgentStatus {
+        ProxyAgentStatus {
+            version: version.to_string(),
+            status: OverallState::SUCCESS,
+            monitorStatus: make_detail_status(),
+            keyLatchStatus: make_detail_status(),
+            ebpfProgramStatus: make_detail_status(),
+            proxyListenerStatus: make_detail_status(),
+            telemetryLoggerStatus: make_detail_status(),
+            proxyConnectionsCount: 1,
+        }
+    }
+
+    fn make_test_connection_summary() -> ProxyConnectionSummary {
+        ProxyConnectionSummary {
+            userName: "test".to_string(),
+            ip: "test".to_string(),
+            port: 1,
+            processCmdLine: "test".to_string(),
+            responseStatus: "test".to_string(),
+            count: 1,
+            processFullPath: Some("test".to_string()),
+            userGroups: Some(vec!["test".to_string()]),
+        }
+    }
+
+    fn make_test_aggregate_status(
+        timestamp: String,
+        version: &str,
+    ) -> GuestProxyAgentAggregateStatus {
+        let summary = make_test_connection_summary();
+        GuestProxyAgentAggregateStatus {
+            timestamp,
+            proxyAgentStatus: make_test_proxy_agent_status(version),
+            proxyConnectionSummary: vec![summary.clone()],
+            failedAuthenticateSummary: vec![summary],
+        }
+    }
 
     #[test]
     #[cfg(windows)]
@@ -970,18 +1050,11 @@ mod tests {
         let seq_no = "0";
         let expected_status_file: &PathBuf = &temp_test_path.join("status").join("0.status");
 
-        let mut status = StatusObj {
-            name: constants::PLUGIN_NAME.to_string(),
-            operation: constants::ENABLE_OPERATION.to_string(),
-            configurationAppliedTime: misc_helpers::get_date_time_string(),
-            code: constants::STATUS_CODE_OK,
-            status: constants::SUCCESS_STATUS.to_string(),
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: "Update Proxy Agent command output successfully".to_string(),
-            },
-            substatus: Default::default(),
-        };
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Update Proxy Agent command output successfully",
+        );
         let mut status_state_obj = super::common::StatusState::new();
 
         super::report_proxy_agent_service_status(
@@ -1026,65 +1099,8 @@ mod tests {
 
     #[test]
     fn test_proxyagent_service_success_status() {
-        let proxy_agent_status_obj = ProxyAgentStatus {
-            version: "1.0.0".to_string(),
-            status: OverallState::SUCCESS,
-            monitorStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            keyLatchStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            ebpfProgramStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyListenerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            telemetryLoggerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyConnectionsCount: 1,
-        };
-
-        let proxy_connection_summary_obj = ProxyConnectionSummary {
-            userName: "test".to_string(),
-            ip: "test".to_string(),
-            port: 1,
-            processCmdLine: "test".to_string(),
-            responseStatus: "test".to_string(),
-            count: 1,
-            processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()]),
-        };
-
-        let proxy_failedAuthenticateSummary_obj = ProxyConnectionSummary {
-            userName: "test".to_string(),
-            ip: "test".to_string(),
-            port: 1,
-            processCmdLine: "test".to_string(),
-            responseStatus: "test".to_string(),
-            count: 1,
-            processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()]),
-        };
-
-        let toplevel_status = GuestProxyAgentAggregateStatus {
-            timestamp: misc_helpers::get_date_time_string(),
-            proxyAgentStatus: proxy_agent_status_obj,
-            proxyConnectionSummary: vec![proxy_connection_summary_obj],
-            failedAuthenticateSummary: vec![proxy_failedAuthenticateSummary_obj],
-        };
+        let toplevel_status =
+            make_test_aggregate_status(misc_helpers::get_date_time_string(), "1.0.0");
         let result = toplevel_status.get_status_timestamp();
         assert!(
             result.is_ok(),
@@ -1092,18 +1108,11 @@ mod tests {
             result.err()
         );
 
-        let mut status = StatusObj {
-            name: constants::PLUGIN_NAME.to_string(),
-            operation: constants::ENABLE_OPERATION.to_string(),
-            configurationAppliedTime: misc_helpers::get_date_time_string(),
-            code: constants::STATUS_CODE_OK,
-            status: constants::SUCCESS_STATUS.to_string(),
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: "Update Proxy Agent command output successfully".to_string(),
-            },
-            substatus: Default::default(),
-        };
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Update Proxy Agent command output successfully",
+        );
 
         let mut status_state_obj = super::common::StatusState::new();
 
@@ -1123,48 +1132,40 @@ mod tests {
     #[tokio::test]
     #[cfg(windows)]
     async fn test_report_ebpf_status() {
-        let mut status = StatusObj {
-            name: constants::PLUGIN_NAME.to_string(),
-            operation: constants::ENABLE_OPERATION.to_string(),
-            configurationAppliedTime: misc_helpers::get_date_time_string(),
-            code: constants::STATUS_CODE_OK,
-            status: constants::SUCCESS_STATUS.to_string(),
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: "Update Proxy Agent command output successfully".to_string(),
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Update Proxy Agent command output successfully",
+        );
+        status.substatus = vec![
+            SubStatus {
+                name: constants::PLUGIN_CONNECTION_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: "test".to_string(),
+                },
             },
-            substatus: {
-                vec![
-                    SubStatus {
-                        name: constants::PLUGIN_CONNECTION_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
-                        },
-                    },
-                    SubStatus {
-                        name: constants::PLUGIN_STATUS_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
-                        },
-                    },
-                    SubStatus {
-                        name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
-                        status: constants::SUCCESS_STATUS.to_string(),
-                        code: constants::STATUS_CODE_OK,
-                        formattedMessage: FormattedMessage {
-                            lang: constants::LANG_EN_US.to_string(),
-                            message: "test".to_string(),
-                        },
-                    },
-                ]
+            SubStatus {
+                name: constants::PLUGIN_STATUS_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: "test".to_string(),
+                },
             },
-        };
+            SubStatus {
+                name: constants::PLUGIN_FAILED_AUTH_NAME.to_string(),
+                status: constants::SUCCESS_STATUS.to_string(),
+                code: constants::STATUS_CODE_OK,
+                formattedMessage: FormattedMessage {
+                    lang: constants::LANG_EN_US.to_string(),
+                    message: "test".to_string(),
+                },
+            },
+        ];
 
         super::report_ebpf_status(&mut status);
         assert_eq!(
@@ -1188,16 +1189,7 @@ mod tests {
     #[tokio::test]
     async fn get_top_proxy_connection_summary_tests() {
         let mut summary = Vec::new();
-        let mut proxy_connection_summary_obj = ProxyConnectionSummary {
-            userName: "test".to_string(),
-            ip: "test".to_string(),
-            port: 1,
-            processCmdLine: "test".to_string(),
-            responseStatus: "test".to_string(),
-            count: 1,
-            processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()]),
-        };
+        let mut proxy_connection_summary_obj = make_test_connection_summary();
         summary.push(proxy_connection_summary_obj.clone());
         proxy_connection_summary_obj.count = 5;
         summary.push(proxy_connection_summary_obj.clone());
@@ -1272,71 +1264,16 @@ mod tests {
 
     #[test]
     fn test_stale_status_timestamp_greater_than_5_minutes() {
-        let proxy_agent_status_obj = ProxyAgentStatus {
-            version: "1.0.0".to_string(),
-            status: OverallState::SUCCESS,
-            monitorStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            keyLatchStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            ebpfProgramStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyListenerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            telemetryLoggerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyConnectionsCount: 1,
-        };
-
-        let proxy_connection_summary_obj = ProxyConnectionSummary {
-            userName: "test".to_string(),
-            ip: "test".to_string(),
-            port: 1,
-            processCmdLine: "test".to_string(),
-            responseStatus: "test".to_string(),
-            count: 1,
-            processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()]),
-        };
-
         // Create a timestamp that is 10 minutes old (greater than 5 minutes)
         // Use a fixed old timestamp format to simulate staleness
         let stale_timestamp = "2024-01-01T00:00:00Z".to_string();
+        let toplevel_status = make_test_aggregate_status(stale_timestamp, "1.0.0");
 
-        let toplevel_status = GuestProxyAgentAggregateStatus {
-            timestamp: stale_timestamp,
-            proxyAgentStatus: proxy_agent_status_obj,
-            proxyConnectionSummary: vec![proxy_connection_summary_obj.clone()],
-            failedAuthenticateSummary: vec![proxy_connection_summary_obj],
-        };
-
-        let mut status = StatusObj {
-            name: constants::PLUGIN_NAME.to_string(),
-            operation: constants::ENABLE_OPERATION.to_string(),
-            configurationAppliedTime: misc_helpers::get_date_time_string(),
-            code: constants::STATUS_CODE_OK,
-            status: constants::SUCCESS_STATUS.to_string(),
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: "Update Proxy Agent command output successfully".to_string(),
-            },
-            substatus: Default::default(),
-        };
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Update Proxy Agent command output successfully",
+        );
 
         let mut status_state_obj = super::common::StatusState::new();
         let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
@@ -1366,70 +1303,15 @@ mod tests {
 
     #[test]
     fn test_fresh_status_timestamp_within_5_minutes() {
-        let proxy_agent_status_obj = ProxyAgentStatus {
-            version: "1.0.0".to_string(),
-            status: OverallState::SUCCESS,
-            monitorStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            keyLatchStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            ebpfProgramStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyListenerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            telemetryLoggerStatus: ProxyAgentDetailStatus {
-                status: ModuleState::RUNNING,
-                message: "test".to_string(),
-                states: None,
-            },
-            proxyConnectionsCount: 1,
-        };
-
-        let proxy_connection_summary_obj = ProxyConnectionSummary {
-            userName: "test".to_string(),
-            ip: "test".to_string(),
-            port: 1,
-            processCmdLine: "test".to_string(),
-            responseStatus: "test".to_string(),
-            count: 1,
-            processFullPath: Some("test".to_string()),
-            userGroups: Some(vec!["test".to_string()]),
-        };
-
         // Create a fresh timestamp (current time)
-        let fresh_timestamp = misc_helpers::get_date_time_string();
+        let toplevel_status =
+            make_test_aggregate_status(misc_helpers::get_date_time_string(), "1.0.0");
 
-        let toplevel_status = GuestProxyAgentAggregateStatus {
-            timestamp: fresh_timestamp,
-            proxyAgentStatus: proxy_agent_status_obj,
-            proxyConnectionSummary: vec![proxy_connection_summary_obj.clone()],
-            failedAuthenticateSummary: vec![proxy_connection_summary_obj],
-        };
-
-        let mut status = StatusObj {
-            name: constants::PLUGIN_NAME.to_string(),
-            operation: constants::ENABLE_OPERATION.to_string(),
-            configurationAppliedTime: misc_helpers::get_date_time_string(),
-            code: constants::STATUS_CODE_OK,
-            status: constants::SUCCESS_STATUS.to_string(),
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: "Update Proxy Agent command output successfully".to_string(),
-            },
-            substatus: Default::default(),
-        };
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Update Proxy Agent command output successfully",
+        );
 
         let mut status_state_obj = super::common::StatusState::new();
         let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
@@ -1451,5 +1333,160 @@ mod tests {
             constants::SUCCESS_STATUS.to_string()
         );
         assert_eq!(status.substatus[0].code, constants::STATUS_CODE_OK);
+    }
+
+    #[test]
+    fn test_resolve_version_returns_cached_when_non_empty() {
+        let mut status =
+            make_test_status_obj(constants::SUCCESS_STATUS, constants::STATUS_CODE_OK, "test");
+        let mut status_state_obj = super::common::StatusState::new();
+
+        let result = super::resolve_proxyagent_file_version_in_extension(
+            "1.0.39",
+            &mut status,
+            &mut status_state_obj,
+        );
+
+        assert_eq!(result, Some("1.0.39".to_string()));
+        // Status should remain unchanged when cached version is returned
+        assert_eq!(status.status, constants::SUCCESS_STATUS.to_string());
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+        assert_eq!(status.formattedMessage.message, "test");
+    }
+
+    #[test]
+    fn test_resolve_version_returns_none_when_file_not_found() {
+        let mut status =
+            make_test_status_obj(constants::SUCCESS_STATUS, constants::STATUS_CODE_OK, "test");
+        let mut status_state_obj = super::common::StatusState::new();
+
+        // Empty cache forces file read; the proxy agent exe doesn't exist in test env
+        let result = super::resolve_proxyagent_file_version_in_extension(
+            "",
+            &mut status,
+            &mut status_state_obj,
+        );
+
+        assert_eq!(result, None);
+        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("Failed to get GuestProxyAgent version"));
+        // StatusState starts at Transitioning; one failure keeps it there
+        assert_eq!(status.status, constants::TRANSITIONING_STATUS.to_string());
+    }
+
+    #[test]
+    fn test_determine_update_action() {
+        use std::env;
+        use std::fs;
+
+        let temp_dir = env::temp_dir().join("test_check_version_status");
+        _ = fs::remove_dir_all(&temp_dir);
+        _ = misc_helpers::try_create_folder(&temp_dir);
+        let status_file = temp_dir.join("status.json");
+
+        let version_39 = "1.0.39";
+        let version_30 = "1.0.30";
+
+        // Matching versions should return VersionMismatch
+        let result =
+            super::determine_update_action(version_39, version_30, None, "test_logger_key");
+        assert_eq!(
+            result,
+            Some(super::UpdateAction::VersionMismatch),
+            "Expected VersionMismatch when versions differ"
+        );
+
+        // Matching versions should return ResumeInterruptedUpdate when the aggregate status file doesn't exist
+        let result = super::determine_update_action(
+            version_39,
+            version_39,
+            Some(PathBuf::from("nonexistent_path")),
+            "test_logger_key",
+        );
+        assert_eq!(
+            result,
+            Some(super::UpdateAction::ResumeInterruptedUpdate),
+            "Expected ResumeInterruptedUpdate when status file does not exist"
+        );
+
+        // Matching versions should return ResumeInterruptedUpdate when the aggregate status file does exist but with different version
+        // Write a valid aggregate status file with version "1.0.30"
+        let aggregate_status =
+            make_test_aggregate_status(misc_helpers::get_date_time_string(), version_30);
+        misc_helpers::json_write_to_file(&aggregate_status, &status_file).unwrap();
+        let result = super::determine_update_action(
+            version_39,
+            version_39,
+            Some(status_file.clone()),
+            "test_logger_key",
+        );
+        assert_eq!(
+            result,
+            Some(super::UpdateAction::ResumeInterruptedUpdate),
+            "Expected ResumeInterruptedUpdate when status file exists but version differs"
+        );
+
+        // Matching versions should return None when the aggregate status file does exist and version matches
+        // Write a valid aggregate status file with version "1.0.39"
+        let aggregate_status =
+            make_test_aggregate_status(misc_helpers::get_date_time_string(), version_39);
+        misc_helpers::json_write_to_file(&aggregate_status, &status_file).unwrap();
+        let result = super::determine_update_action(
+            version_39,
+            version_39,
+            Some(status_file.clone()),
+            "test_logger_key",
+        );
+        assert_eq!(
+            result, None,
+            "Expected None when status file exists and version matches"
+        );
+
+        // Clean up
+        _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_restore_purge_returns_true_for_error_status() {
+        let mut status = make_test_status_obj(
+            constants::ERROR_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "test error",
+        );
+
+        // restore_purge_proxyagent should return true when status is ERROR
+        // (the restore command will fail since setup tool doesn't exist, but that's OK in unit test)
+        let result = super::restore_purge_proxyagent(&mut status);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_restore_purge_returns_true_for_success_status() {
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "test success",
+        );
+
+        // restore_purge_proxyagent should return true when status is SUCCESS
+        // (the purge command will fail since setup tool doesn't exist, but that's OK in unit test)
+        let result = super::restore_purge_proxyagent(&mut status);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_restore_purge_returns_false_for_transitioning_status() {
+        let mut status = make_test_status_obj(
+            constants::TRANSITIONING_STATUS,
+            constants::STATUS_CODE_OK,
+            "test transitioning",
+        );
+
+        // restore_purge_proxyagent should return false when status is TRANSITIONING
+        let result = super::restore_purge_proxyagent(&mut status);
+        assert!(!result);
     }
 }
