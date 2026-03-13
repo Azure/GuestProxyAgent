@@ -65,10 +65,10 @@ namespace GuestProxyAgentTest.TestCases
             if (includeCustomJsonOutputSasParam)
             {
                 var custJsonPath = Path.Combine(Path.GetTempPath(), $"{testScenarioSetting.testGroupName}_{testScenarioSetting.testScenarioName}_{TestCaseName}.json");
-                using (File.CreateText(custJsonPath)) ConsoleLog("Created empty test file for customized json output file.");
+                using (File.CreateText(custJsonPath)) context.Logger.Log("Created empty test file for customized json output file.");
                 custJsonSas = StorageHelper.Instance.Upload2SharedBlob(Constants.SHARED_E2E_TEST_OUTPUT_CONTAINER_NAME, custJsonPath, "customOutputJson.json", testScenarioSetting.TestScenarioStorageFolderPrefix);
             }
-            return await RunCommandRunner.ExecuteRunCommandOnVM(context.VirtualMachineResource, new RunCommandSettingBuilder()
+            return await RunCommandRunner.ExecuteRunCommandOnVM(context.Logger, context.VirtualMachineResource, new RunCommandSettingBuilder()
                                                                                                     .TestScenarioSetting(testScenarioSetting)
                                                                                                     .RunCommandName(TestCaseName)
                                                                                                     .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, scriptFileName))
@@ -77,8 +77,6 @@ namespace GuestProxyAgentTest.TestCases
                         .CustomOutputSas(custJsonSas)
                         .AddParameters(parameterList));
         }
-
-        protected void ConsoleLog(string message) { Console.WriteLine($"[{TestCaseName}]: " + message); }
 
         protected string FormatVMExtensionData(VirtualMachineExtensionData data)
         {

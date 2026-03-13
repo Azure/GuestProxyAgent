@@ -22,11 +22,11 @@ namespace GuestProxyAgentTest.TestCases
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "GuestProxyAgentLoadedModulesValidation.ps1", new List<(string, string)> 
             {
                 ("loadedModulesBaseLineSAS", System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(baseLineModulesSas)))
-            })).ToTestResultDetails(ConsoleLog);
+            })).ToTestResultDetails(context.Logger);
 
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
-                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<LoadedModulesValidationDetails>();
+                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<LoadedModulesValidationDetails>(context.Logger);
                 // if the validation result is match or no new added modules, then consider the case as succeed.
                 if (validationDetails != null
                     && (validationDetails.IsMatch || validationDetails.NewAddedModules == null || validationDetails.NewAddedModules.Count == 0))

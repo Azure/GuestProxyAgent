@@ -100,7 +100,7 @@ exampleosdiskname
 examplevmname
 exthandlers
 fde
-FFF
+fff
 FFFF
 FFFFFFFF
 fffi
@@ -211,6 +211,7 @@ pgpkey
 pgrep
 pidof
 pkgversion
+pls
 portaddr
 portpair
 postinst
@@ -319,6 +320,7 @@ Unregistering
 unregisters
 unspec
 uzers
+VCpus
 vcruntime
 vendored
 vflji

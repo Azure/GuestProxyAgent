@@ -12,7 +12,7 @@ namespace GuestProxyAgentTest.Extensions
     /// </summary>
     public static class ModelExtensions
     {
-        public static TestCaseResultDetails ToTestResultDetails(this RunCommandOutputDetails runCommandOutputDetails, Action<string> logger = null!, bool downloadContentFromBlob = true)
+        public static TestCaseResultDetails ToTestResultDetails(this RunCommandOutputDetails runCommandOutputDetails, TestLogger logger = null!, bool downloadContentFromBlob = true)
         {
             return new TestCaseResultDetails
             {
@@ -24,7 +24,7 @@ namespace GuestProxyAgentTest.Extensions
             }.DownloadContentIfFromBlob(logger);
         }
 
-        public static TestCaseResultDetails DownloadContentIfFromBlob(this TestCaseResultDetails testCaseResultDetails, Action<string> logger = null!)
+        public static TestCaseResultDetails DownloadContentIfFromBlob(this TestCaseResultDetails testCaseResultDetails, TestLogger logger = null!)
         {
             if(!testCaseResultDetails.FromBlob)
             {
@@ -96,7 +96,7 @@ namespace GuestProxyAgentTest.Extensions
         /// <typeparam name="T"></typeparam>
         /// <param name="testCaseResultDetails"></param>
         /// <returns></returns>
-        public static T SafeDeserializedCustomOutAs<T>(this TestCaseResultDetails testCaseResultDetails) where T: class
+        public static T SafeDeserializedCustomOutAs<T>(this TestCaseResultDetails testCaseResultDetails, TestLogger logger) where T: class
         {
             try
             {
@@ -104,7 +104,7 @@ namespace GuestProxyAgentTest.Extensions
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Deserialized custom out json string failed with exception: " + ex.ToString());
+                logger.Log("Deserialized custom out json string failed with exception: " + ex.ToString());
             }
             return null;
         }

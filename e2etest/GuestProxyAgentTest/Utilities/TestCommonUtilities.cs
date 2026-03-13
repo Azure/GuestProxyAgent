@@ -32,7 +32,7 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="url">download url</param>
         /// <param name="retryCnt">retry count, default value is 5</param>
         /// <returns></returns>
-        public static (bool, string) DownloadContentAsString(string url, Action<string> logger = null!, int retryCnt = 5)
+        public static (bool, string) DownloadContentAsString(string url, TestLogger logger = null!, int retryCnt = 5)
         {
             if (url == null || url.Length == 0)
             {
@@ -58,14 +58,14 @@ namespace GuestProxyAgentTest.Utilities
                 catch (Exception ex)
                 {
                     errMessage = string.Format("Download content failed, attempted: {0} times, exception: {1}", cnt, ex.ToString());
-                    logger?.Invoke(errMessage);
+                    logger?.Log(errMessage);
                 }
                 Thread.Sleep(1000);
             }
             return (false, errMessage);
         }
 
-        public static bool DownloadFile(string url, string filePath, Action<string> logger = null!, int retryCnt = 5)
+        public static bool DownloadFile(string url, string filePath, TestLogger logger = null!, int retryCnt = 5)
         {
             if (null == url || url.Length == 0)
             {
@@ -93,7 +93,7 @@ namespace GuestProxyAgentTest.Utilities
                 catch (Exception ex)
                 {
                     var errMessage = string.Format("Download file failed, attempted: {0} times, exception: {1}", cnt, ex.ToString());
-                    logger?.Invoke(errMessage);
+                    logger.Log(errMessage);
                 }
             }
             return false;

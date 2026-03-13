@@ -21,13 +21,14 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="cancellationToken">cancellation token</param>
         /// <param name="runCommandParameterSetter">parameter setter for the run command script</param>
         /// <returns></returns>
-        public static async Task<RunCommandOutputDetails> ExecuteRunCommandOnVM(VirtualMachineResource vmr
+        public static async Task<RunCommandOutputDetails> ExecuteRunCommandOnVM(TestLogger logger,
+            VirtualMachineResource vmr
             , RunCommandSettingBuilder runCommandSettingBuilder
             , CancellationToken cancellationToken
             , Func<RunCommandSettingBuilder, RunCommandSettingBuilder> runCommandParameterSetter = null!)
         {
             var vmrcs = vmr.GetVirtualMachineRunCommands();
-            Console.WriteLine("Creating runcommand on vm.");
+            logger.Log("Creating runcommand on vm.");
 
             if (null != runCommandParameterSetter)
             {
