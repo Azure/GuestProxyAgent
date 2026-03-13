@@ -21,10 +21,10 @@ namespace GuestProxyAgentTest.TestCases
         {
             List<(string, string)> parameterList = new List<(string, string)>();
             parameterList.Add(("expectedProxyAgentVersion", expectedProxyAgentVersion));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(ConsoleLog);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME, parameterList)).ToTestResultDetails(context.Logger);
             if (context.TestResultDetails.Succeed && context.TestResultDetails.CustomOut != null)
             {
-                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentExtensionValidationDetails>();
+                var validationDetails = context.TestResultDetails.SafeDeserializedCustomOutAs<GuestProxyAgentExtensionValidationDetails>(context.Logger);
                 if (validationDetails != null
                     && validationDetails.guestProxyAgentExtensionServiceExist
                     && validationDetails.guestProxyAgentExtensionProcessExist

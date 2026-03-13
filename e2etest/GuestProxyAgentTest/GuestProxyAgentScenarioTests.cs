@@ -13,6 +13,12 @@ namespace GuestProxyAgentTest
     /// </summary>
     public class GuestProxyAgentScenarioTests
     {
+        private readonly TestLogger logger;
+        public GuestProxyAgentScenarioTests(TestLogger logger)
+        {
+            this.logger = logger;
+        }
+
         /// <summary>
         /// Main function to start each scenario test
         /// </summary>
@@ -74,7 +80,7 @@ namespace GuestProxyAgentTest
                     var message = string.Format("Test Group: {0}, Test Scenario: {1}: {2} ({3})"
                         , testScenario.testGroupName, testScenario.testScenarioName
                         , testScenarioStatusDetails.Result, testScenarioStatusDetails.ErrorMessage);
-                    Console.WriteLine(message);
+                    logger.Log(message);
                 }
             }
             var stopMonitor = new ManualResetEvent(false);
@@ -92,14 +98,14 @@ namespace GuestProxyAgentTest
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Test execution exception: {ex.Message}");
+                logger.Log($"Test execution exception: {ex.Message}");
             }
 
             stopMonitor.Set();
 
             foreach (var groupName in groupTestResultBuilderMap.Keys)
             {
-                Console.WriteLine("building test result report for test group: " + groupName);
+                logger.Log("building test result report for test group: " + groupName);
                 groupTestResultBuilderMap[groupName].Build();
             }
 
@@ -114,7 +120,7 @@ namespace GuestProxyAgentTest
                 $", running {testScenarioStatusDetailsList.Where(x => x.Status == ScenarioTestStatus.Running).Count()}" +
                 $", failed {testScenarioStatusDetailsList.Where(x => x.Status == ScenarioTestStatus.Completed && x.Result == ScenarioTestResult.Failed).Count()}" +
                 $", success {testScenarioStatusDetailsList.Where(x => x.Status == ScenarioTestStatus.Completed && x.Result == ScenarioTestResult.Succeed).Count()}. ";
-            Console.WriteLine(message);
+            logger.Log(message);
         }
 
         private void ConsolePrintTestScenariosDetailsSummary(IEnumerable<TestScenarioStatusDetails> testScenariosStatusDetailsList)
@@ -130,7 +136,7 @@ namespace GuestProxyAgentTest
                     + $"Failed Test Cases Summary: {fc.TestCasesErrorMessage}" + Environment.NewLine;
                 i++;
             }
-            Console.WriteLine(message);
+            logger.Log(message);
         }
     }
 }

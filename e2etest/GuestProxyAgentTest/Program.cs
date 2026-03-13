@@ -20,6 +20,7 @@ namespace GuestProxyAgentTest
         /// </param>
         static async Task Main(string[] args)
         {
+            TestLogger logger = new TestLogger("GuestProxyAgentTests");
             var testConfigFilePath = args[0];
             var testResultFolder = args[1];
             var guestProxyAgentZipFilePath = args[2];
@@ -29,14 +30,14 @@ namespace GuestProxyAgentTest
             {
                 test_arm64 = true;
             }
-          
+
 
             TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder, proxyAgentVersion);
 
             VMHelper.Instance.CleanupOldTestResourcesAndForget();
 
-            await new GuestProxyAgentScenarioTests().StartAsync(TestMapReader.ReadFlattenTestScenarioSettingFromTestMap(test_arm64));
-            Console.WriteLine("E2E Test run completed.");
+            await new GuestProxyAgentScenarioTests(logger).StartAsync(TestMapReader.ReadFlattenTestScenarioSettingFromTestMap(test_arm64));
+            logger.Log("E2E Test run completed.");
         }
     }
 }
