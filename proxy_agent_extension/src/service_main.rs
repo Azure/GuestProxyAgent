@@ -83,7 +83,7 @@ enum UpdateAction {
 
 /// Resolves the file version of the proxy agent bundled with the extension.
 /// Returns `None` (and reports an error status) if the version cannot be read yet.
-fn resolve_proxyagent_file_version_in_extension(
+fn resolve_proxy_agent_file_version_in_extension(
     cached: &str,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
@@ -188,7 +188,7 @@ async fn monitor_thread() {
     let handler_environment = common::get_handler_environment(&exe_path);
     let status_folder_path: PathBuf = handler_environment.statusFolder.to_string().into();
     let mut cache_seq_no = String::new();
-    let mut proxyagent_file_version_in_extension = String::new();
+    let mut proxy_agent_file_version_in_extension = String::new();
     let mut service_state = ServiceState::default();
     let mut status = StatusObj {
         name: constants::PLUGIN_NAME.to_string(),
@@ -211,12 +211,12 @@ async fn monitor_thread() {
         let current_seq_no: String = common::get_current_seq_no(&exe_path);
 
         // Step 1: Resolve the extension-bundled proxy agent version (retry each iteration until available)
-        match resolve_proxyagent_file_version_in_extension(
-            &proxyagent_file_version_in_extension,
+        match resolve_proxy_agent_file_version_in_extension(
+            &proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
         ) {
-            Some(version) => proxyagent_file_version_in_extension = version,
+            Some(version) => proxy_agent_file_version_in_extension = version,
             None => {
                 common::report_status(status_folder_path.to_path_buf(), &current_seq_no, &status);
                 tokio::time::sleep(loop_interval).await;
@@ -240,15 +240,15 @@ async fn monitor_thread() {
 
             let proxy_agent_service_version = get_proxy_agent_service_file_version();
             if let Some(action) = determine_update_action(
-                &proxyagent_file_version_in_extension,
+                &proxy_agent_file_version_in_extension,
                 &proxy_agent_service_version,
                 None,
                 logger_key,
             ) {
                 if matches!(action, UpdateAction::VersionMismatch) {
-                    backup_proxyagent(
-                        &misc_helpers::path_to_string(&common::setup_tool_exe_path()),
-                    );
+                    backup_proxy_agent(&misc_helpers::path_to_string(
+                        &common::setup_tool_exe_path(),
+                    ));
 
                     // reset this flag in case the previous restore was done due to an error,
                     // but now the version mismatch indicates a new update attempt rather than a resume of a previous interrupted update
@@ -279,7 +279,7 @@ async fn monitor_thread() {
 
         // Step 3: Read and evaluate the proxy agent aggregate status
         report_proxy_agent_aggregate_status(
-            &proxyagent_file_version_in_extension,
+            &proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
             &mut service_state,
@@ -287,7 +287,7 @@ async fn monitor_thread() {
 
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
-            restored_in_error = restore_purge_proxyagent(&mut status);
+            restored_in_error = restore_purge_proxy_agent(&mut status);
         }
 
         // Step 5: Track time-to-success after an update
@@ -405,7 +405,7 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
     }
 }
 
-fn backup_proxyagent(setup_tool: &String) {
+fn backup_proxy_agent(setup_tool: &String) {
     match Command::new(setup_tool).arg("backup").output() {
         Ok(output) => {
             let event_level = if output.status.success() {
@@ -421,7 +421,7 @@ fn backup_proxyagent(setup_tool: &String) {
             telemetry::event_logger::write_event(
                 event_level,
                 message.clone(),
-                "backup_proxyagent",
+                "backup_proxy_agent",
                 "service_main",
                 &logger::get_logger_key(),
             );
@@ -431,7 +431,7 @@ fn backup_proxyagent(setup_tool: &String) {
             telemetry::event_logger::write_event(
                 LoggerLevel::Warn,
                 message.clone(),
-                "backup_proxyagent",
+                "backup_proxy_agent",
                 "service_main",
                 &logger::get_logger_key(),
             );
@@ -443,7 +443,7 @@ fn backup_proxyagent(setup_tool: &String) {
 /// This can happen when a VM is force-restarted during a proxy agent service update, causing the new service to not start properly.
 /// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
 fn check_version_in_proxy_agent_status_file(
-    proxyagent_file_version_in_extension: &str,
+    proxy_agent_file_version_in_extension: &str,
     status_file_path: Option<PathBuf>,
 ) -> bool {
     let aggregate_status_file_path = match status_file_path {
@@ -456,9 +456,9 @@ fn check_version_in_proxy_agent_status_file(
     ) {
         Ok(aggregate_status) => {
             let running_version = &aggregate_status.proxyAgentStatus.version;
-            if running_version != proxyagent_file_version_in_extension {
+            if running_version != proxy_agent_file_version_in_extension {
                 logger::write(format!(
-                    "Reported GPA service version {running_version} differs from installed file version {proxyagent_file_version_in_extension}."
+                    "Reported GPA service version {running_version} differs from installed file version {proxy_agent_file_version_in_extension}."
                 ));
                 false
             } else {
@@ -477,7 +477,7 @@ fn check_version_in_proxy_agent_status_file(
 }
 
 fn report_proxy_agent_aggregate_status(
-    proxyagent_file_version_in_extension: &String,
+    proxy_agent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
@@ -503,7 +503,7 @@ fn report_proxy_agent_aggregate_status(
             proxy_agent_aggregate_status_top_level = ok;
             extension_substatus(
                 proxy_agent_aggregate_status_top_level,
-                proxyagent_file_version_in_extension,
+                proxy_agent_file_version_in_extension,
                 status,
                 status_state_obj,
                 service_state,
@@ -614,7 +614,7 @@ fn report_error_status(
 
 fn extension_substatus(
     proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus,
-    proxyagent_file_version_in_extension: &String,
+    proxy_agent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
@@ -652,8 +652,8 @@ fn extension_substatus(
             error_message,
         );
         return;
-    } else if proxy_agent_aggregate_status_file_version != *proxyagent_file_version_in_extension {
-        let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxyagent_file_version_in_extension}");
+    } else if proxy_agent_aggregate_status_file_version != *proxy_agent_file_version_in_extension {
+        let version_mismatch_message = format!("Proxy agent aggregate status file version {proxy_agent_aggregate_status_file_version} does not match proxy agent file version in extension {proxy_agent_file_version_in_extension}");
         report_error_status(
             status,
             status_state_obj,
@@ -808,7 +808,7 @@ fn get_top_proxy_connection_summary(
     summary
 }
 
-fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
+fn restore_purge_proxy_agent(status: &mut StatusObj) -> bool {
     let setup_tool = misc_helpers::path_to_string(&common::setup_tool_exe_path());
     if status.status == *constants::ERROR_STATUS {
         let output = Command::new(&setup_tool).arg("restore").output();
@@ -826,7 +826,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                         String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     ),
-                    "restore_purge_proxyagent",
+                    "restore_purge_proxy_agent",
                     "service_main",
                     &logger::get_logger_key(),
                 );
@@ -835,7 +835,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
                     format!("Error in running Restore Proxy Agent command: {e}"),
-                    "restore_purge_proxyagent",
+                    "restore_purge_proxy_agent",
                     "service_main",
                     &logger::get_logger_key(),
                 );
@@ -858,7 +858,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                         String::from_utf8_lossy(&output.stdout),
                         String::from_utf8_lossy(&output.stderr)
                     ),
-                    "restore_purge_proxyagent",
+                    "restore_purge_proxy_agent",
                     "service_main",
                     &logger::get_logger_key(),
                 );
@@ -867,7 +867,7 @@ fn restore_purge_proxyagent(status: &mut StatusObj) -> bool {
                 telemetry::event_logger::write_event(
                     LoggerLevel::Info,
                     format!("Error in running Purge Proxy Agent command: {e}"),
-                    "restore_purge_proxyagent",
+                    "restore_purge_proxy_agent",
                     "service_main",
                     &logger::get_logger_key(),
                 );
@@ -1098,7 +1098,7 @@ mod tests {
     }
 
     #[test]
-    fn test_proxyagent_service_success_status() {
+    fn test_proxy_agent_service_success_status() {
         let toplevel_status =
             make_test_aggregate_status(misc_helpers::get_date_time_string(), "1.0.0");
         let result = toplevel_status.get_status_timestamp();
@@ -1116,12 +1116,12 @@ mod tests {
 
         let mut status_state_obj = super::common::StatusState::new();
 
-        let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let proxy_agent_file_version_in_extension: &String = &"1.0.0".to_string();
         let mut service_state = super::service_state::ServiceState::default();
 
         super::extension_substatus(
             toplevel_status,
-            proxyagent_file_version_in_extension,
+            proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
             &mut service_state,
@@ -1276,12 +1276,12 @@ mod tests {
         );
 
         let mut status_state_obj = super::common::StatusState::new();
-        let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let proxy_agent_file_version_in_extension: &String = &"1.0.0".to_string();
         let mut service_state = super::service_state::ServiceState::default();
 
         super::extension_substatus(
             toplevel_status,
-            proxyagent_file_version_in_extension,
+            proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
             &mut service_state,
@@ -1314,12 +1314,12 @@ mod tests {
         );
 
         let mut status_state_obj = super::common::StatusState::new();
-        let proxyagent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let proxy_agent_file_version_in_extension: &String = &"1.0.0".to_string();
         let mut service_state = super::service_state::ServiceState::default();
 
         super::extension_substatus(
             toplevel_status,
-            proxyagent_file_version_in_extension,
+            proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
             &mut service_state,
@@ -1341,7 +1341,7 @@ mod tests {
             make_test_status_obj(constants::SUCCESS_STATUS, constants::STATUS_CODE_OK, "test");
         let mut status_state_obj = super::common::StatusState::new();
 
-        let result = super::resolve_proxyagent_file_version_in_extension(
+        let result = super::resolve_proxy_agent_file_version_in_extension(
             "1.0.39",
             &mut status,
             &mut status_state_obj,
@@ -1361,7 +1361,7 @@ mod tests {
         let mut status_state_obj = super::common::StatusState::new();
 
         // Empty cache forces file read; the proxy agent exe doesn't exist in test env
-        let result = super::resolve_proxyagent_file_version_in_extension(
+        let result = super::resolve_proxy_agent_file_version_in_extension(
             "",
             &mut status,
             &mut status_state_obj,
@@ -1457,9 +1457,9 @@ mod tests {
             "test error",
         );
 
-        // restore_purge_proxyagent should return true when status is ERROR
+        // restore_purge_proxy_agent should return true when status is ERROR
         // (the restore command will fail since setup tool doesn't exist, but that's OK in unit test)
-        let result = super::restore_purge_proxyagent(&mut status);
+        let result = super::restore_purge_proxy_agent(&mut status);
         assert!(result);
     }
 
@@ -1471,9 +1471,9 @@ mod tests {
             "test success",
         );
 
-        // restore_purge_proxyagent should return true when status is SUCCESS
+        // restore_purge_proxy_agent should return true when status is SUCCESS
         // (the purge command will fail since setup tool doesn't exist, but that's OK in unit test)
-        let result = super::restore_purge_proxyagent(&mut status);
+        let result = super::restore_purge_proxy_agent(&mut status);
         assert!(result);
     }
 
@@ -1485,8 +1485,8 @@ mod tests {
             "test transitioning",
         );
 
-        // restore_purge_proxyagent should return false when status is TRANSITIONING
-        let result = super::restore_purge_proxyagent(&mut status);
+        // restore_purge_proxy_agent should return false when status is TRANSITIONING
+        let result = super::restore_purge_proxy_agent(&mut status);
         assert!(!result);
     }
 }
