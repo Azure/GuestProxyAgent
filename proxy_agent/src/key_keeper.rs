@@ -29,8 +29,7 @@ pub mod local_rules;
 
 use self::key::Key;
 use self::local_rules::{
-    get_rules_dir_from_key_dir, resolve_effective_rules, LocalRuleStateTracker,
-    LocalRuleTarget,
+    get_rules_dir_from_key_dir, resolve_effective_rules, LocalRuleStateTracker, LocalRuleTarget,
 };
 use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
@@ -579,7 +578,11 @@ impl KeyKeeper {
                 imds: imds_rules.clone(),
                 hostga: hostga_rules.clone(),
             });
-            if let (Ok(computed_wireserver_rules), Ok(computed_imds_rules), Ok(computed_hostga_rules)) = (
+            if let (
+                Ok(computed_wireserver_rules),
+                Ok(computed_imds_rules),
+                Ok(computed_hostga_rules),
+            ) = (
                 self.access_control_shared_state
                     .get_wireserver_rules()
                     .await,
@@ -601,7 +604,7 @@ impl KeyKeeper {
         access_control_rules_changed
     }
 
-    /// Ensure the directory exists and has secure ACLs. 
+    /// Ensure the directory exists and has secure ACLs.
     /// If the directory does not exist, it will be created.
     fn ensure_secure_directory(&self, dir: &Path, dir_kind: &str) {
         if let Err(e) = misc_helpers::try_create_folder(dir) {
