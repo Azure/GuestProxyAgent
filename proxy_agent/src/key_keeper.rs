@@ -536,7 +536,6 @@ impl KeyKeeper {
             imds_rule_id_changed,
         )
         .await;
-        let hostga_rules = wireserver_rules.clone();
 
         if wireserver_rule_id_changed || wireserver_local_state_changed {
             if let Err(e) = self
@@ -560,7 +559,9 @@ impl KeyKeeper {
             access_control_rules_changed = true;
         }
 
-        if hostga_rule_id_changed || wireserver_rule_id_changed || wireserver_local_state_changed {
+        // HostGA rules only come from server and do not have local rules, so only update when rule id changed
+        let hostga_rules = status.get_hostga_rules();
+        if hostga_rule_id_changed {
             if let Err(e) = self
                 .access_control_shared_state
                 .set_hostga_rules(hostga_rules.clone())
