@@ -261,11 +261,7 @@ fn validate_access_control_rules(rules: &AccessControlRules) -> Result<()> {
     let privilege_names = validate_privileges(rules.privileges.as_ref())?;
     let role_names = validate_roles(rules.roles.as_ref(), &privilege_names)?;
     let identity_names = validate_identities(rules.identities.as_ref())?;
-    validate_role_assignments(
-        rules.roleAssignments.as_ref(),
-        &role_names,
-        &identity_names,
-    )?;
+    validate_role_assignments(rules.roleAssignments.as_ref(), &role_names, &identity_names)?;
     Ok(())
 }
 
@@ -274,9 +270,7 @@ fn validate_privileges(privileges: Option<&Vec<Privilege>>) -> Result<HashSet<St
     if let Some(privileges) = privileges {
         for privilege in privileges {
             if privilege.name.trim().is_empty() {
-                return Err(Error::Invalid(
-                    "privilege name cannot be empty".to_string(),
-                ));
+                return Err(Error::Invalid("privilege name cannot be empty".to_string()));
             }
             if privilege.path.trim().is_empty() {
                 return Err(Error::Invalid(format!(
@@ -305,7 +299,10 @@ fn validate_privileges(privileges: Option<&Vec<Privilege>>) -> Result<HashSet<St
     Ok(names)
 }
 
-fn validate_roles(roles: Option<&Vec<Role>>, privilege_names: &HashSet<String>) -> Result<HashSet<String>> {
+fn validate_roles(
+    roles: Option<&Vec<Role>>,
+    privilege_names: &HashSet<String>,
+) -> Result<HashSet<String>> {
     let mut names = HashSet::new();
     if let Some(roles) = roles {
         for role in roles {
@@ -319,7 +316,10 @@ fn validate_roles(roles: Option<&Vec<Role>>, privilege_names: &HashSet<String>) 
                 )));
             }
             if !names.insert(role.name.clone()) {
-                return Err(Error::Invalid(format!("duplicate role name '{}'", role.name)));
+                return Err(Error::Invalid(format!(
+                    "duplicate role name '{}'",
+                    role.name
+                )));
             }
 
             let mut referenced_privileges = HashSet::new();
@@ -458,7 +458,6 @@ pub(crate) async fn read_local_rules_file(
                     message,
                 );
 
-                
                 return Ok(local_rules);
             }
             Err(e) => {
@@ -690,9 +689,9 @@ mod tests {
     use crate::key_keeper::key::{
         AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
     };
-    use std::collections::HashSet;
     use base64::{engine::general_purpose, Engine as _};
     use proxy_agent_shared::misc_helpers;
+    use std::collections::HashSet;
     use std::env;
     use std::fs;
     use std::path::{Path, PathBuf};
