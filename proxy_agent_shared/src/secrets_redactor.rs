@@ -100,10 +100,8 @@ fn redact_secrets(text: &str) -> Cow<'_, str> {
     // X.509 Certificate Private Key  (indicator: "PRIVATE KEY", case-sensitive)
     if out.contains("PRIVATE KEY") {
         static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-            regex::Regex::new(
-                r"BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY",
-            )
-            .unwrap()
+            regex::Regex::new(r"BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY")
+                .unwrap()
         });
         out = apply_re(out, &RE);
     }
