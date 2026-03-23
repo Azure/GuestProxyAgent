@@ -4,99 +4,230 @@
 use std::borrow::Cow;
 
 const REDACTED_TEXT: &str = "[REDACTED]";
-/// Common substrings that indicate a secret might be present - for quick pre-filtering
-/// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
-const SECRET_INDICATORS: [&str; 15] = [
-    "pwd=",
-    "password=",
-    "AccountKey=",
-    "PrimaryKey=",
-    "SecondaryKey=",
-    "sig=",
-    "AzCa",
-    "PRIVATE KEY",
-    "token",
-    "ado",
-    "vsts",
-    "key",
-    "secret",
-    "authorization",
-    "eyJ",
-];
-/// Regular expression patterns to identify secrets. These are more expensive to run, so we first check for indicators.
-/// Remarks: when add more patterns, please also add corresponding indicators in SECRET_INDICATORS for better performance.
-///     And try to make the pattern as specific as possible to avoid false positives and unnecessary redaction.
-const CRED_PATTERNS: [&str; 17] = [
-            // SQL Connection String Password
-            "pwd=[^;]*", 
-            "password=[^;]*",
-            // Azure Storage Connection String Keys
-            "AccountKey=[^;]*", 
-            "PrimaryKey=[^;]*", 
-            "SecondaryKey=[^;]*", 
-            // SAS Key
-            "sig=[^&]*",
-            // Azure Redis Cache Secret (Identifiable)
-            r"(?-i)([0-9a-zA-Z]{33}AzCa[A-P][0-9a-zA-Z]{5}=)|([0-9a-zA-Z]{44}AzCa[0-9a-zA-Z]{5}[AQgw])",
-            // X.509 Certificate Private Key
-            r"BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY",
-            // Azure DevOps Personal Access Token
-            r"(?i)(pat[\\s\\W]|token|ado|vsts|azuredevops|visualstudio\\.com|dev\\.azure\\.com).([a-z2-7]{52}|[A-Z2-7]{52})",
-            // Azure Storage Account Access Key
-            "(?i)(key|access|sas|shared|secret|password|pwd|pswd|credential)[\\s\\S]{0,200}[^a-z0-9/+]([a-z0-9/+]{43}=)",
-            "(?i)(azurecr[\\s\\S]{0,50}|pwd|pswd|password)[:\\s=]+([a-z0-9/{\\}{\\+}=\\-!#$%&()*,./:;?@[\\]^_`{|}~+<=>\\s]+){0,50}",
-            "(?i)(key|access|sas|shared|secret|password|pswd|pwd|credential)[\\s\\S]{0,200}[^a-z0-9/+]([a-z0-9/+]{86}=)",
-            // Microsoft Entra Client Secret/Identifiable/Access Token
-            "(?i)(\\Waws|amazon)?.{0,5}(secret|access.?(key|token)).{0,10}[^/,\\w\\+\\$\\-][a-z0-9/\\+]{40}\\W",
-            "(?i)((app(lication)?|client|api)[_ \\-]?(se?cre?t|key(url)?)|(refresh|twilio(account|auth))[_ \\-]?(Sid|Token))([\\s=:>]{1,10}|[\\s\"':=|>,\\]\\\\]{3,15}|[\"'=:\\(]{2})(ConvertTo-SecureString[^\"']+[\"'])?(\"data:text/plain,.+\"|[a-z0-9/+=_.\\?\\-]{8,200}[^\\(\\[\\{;,\\r\\n]|[^\\s\"';<,\\)]{5,200})",
-            "(?-i)eyJ(?i)[a-z0-9\\-_%]+\\.(?-i)eyJ",
-            // General Password
-            "(?i)((amqp|ssh|(ht|f)tps?)://[^%:\\s\"'/][^:\\s\"'/\\$]+[^:\\s\"'/\\$%]:([^%\\s\"'/][^@\\s\"'/]{0,100}[^%\\s\"'/])@[\\$a-z0-9:\\._%\\?=/]+|[a-z0-9]{3,5}://[^%:\\s\"'/][^:\\s\"'/\\$]+[^:\\s\"'/\\$%]:([^%\\s\"'/][^@\\s\"'/]{0,100}[^%\\s\"'/])@[\\$a-z0-9:\\._%\\?=/\\-]+)",
-            // Http Authorization Header
-            "(?i)authorization[,\\[:= \"'\\s]+(value[,\\[:= \"'\\s]+)?(basic|digest|hoba|mutual|negotiate|oauth( oauth_token=)?|(http[^ ]+/saml\\d\\-)?bearer [^e\"'&]|scram\\-sha\\-1|scram\\-sha\\-256|vapid|aws4\\-hmac\\-sha256).*",
-        ];
 
-static REGEX_PATTERNS: once_cell::sync::Lazy<Vec<regex::Regex>> =
-    once_cell::sync::Lazy::new(init_regex_patterns);
-
-fn init_regex_patterns() -> Vec<regex::Regex> {
-    let mut patterns = Vec::new();
-    for pattern in CRED_PATTERNS.iter() {
-        if let Ok(re) = regex::Regex::new(pattern) {
-            patterns.push(re);
-        }
+/// Replaces every occurrence of `prefix + <chars up to stop_char>` with REDACTED_TEXT.
+/// Case-sensitive. Returns `None` when the prefix is absent (no allocation).
+fn redact_prefixed(text: &str, prefix: &str, stop_char: char) -> Option<String> {
+    if !text.contains(prefix) {
+        return None;
     }
-    patterns
+    let mut result = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(pos) = remaining.find(prefix) {
+        result.push_str(&remaining[..pos]);
+        result.push_str(REDACTED_TEXT);
+        let after = &remaining[pos + prefix.len()..];
+        let skip = after.find(stop_char).unwrap_or(after.len());
+        remaining = &after[skip..];
+    }
+    result.push_str(remaining);
+    Some(result)
 }
 
-/// Quick check if text might contain secrets (case-insensitive for most indicators)
+/// Applies a compiled regex to the current Cow, returning the (possibly modified) Cow.
 #[inline]
-fn might_contain_secrets(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    SECRET_INDICATORS.iter().any(|indicator| {
-        if *indicator == "AzCa" || *indicator == "PRIVATE KEY" || *indicator == "eyJ" {
-            // Case-sensitive check for these
-            text.contains(indicator)
-        } else {
-            lower.contains(&indicator.to_ascii_lowercase())
-        }
-    })
+fn apply_re<'a>(text: Cow<'a, str>, re: &regex::Regex) -> Cow<'a, str> {
+    match re.replace_all(&text, REDACTED_TEXT) {
+        Cow::Borrowed(_) => text, // no match – preserve the existing Cow as-is
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
-/// Redacts secrets from text. Returns the original text unchanged if no secrets found.
-/// Takes `&str` to avoid unnecessary ownership transfer.
+/// Redacts secrets from text.
+///
+/// Design: two-pass approach to minimise both memory and CPU:
+///
+/// **Part 1** – Six simple `prefix=[^delimiter]*` patterns are handled with plain
+/// string scanning (`redact_prefixed`), removing the need for six compiled `Regex`
+/// objects entirely.
+///
+/// **Part 2** – Each remaining complex pattern is stored in its own `LazyLock<Regex>`
+/// static and is only compiled (once, on first use) when its specific indicator is
+/// actually present in the text.  This means patterns for rare indicators such as
+/// `"AzCa"`, `"PRIVATE KEY"`, and `"eyJ"` will never consume heap in environments
+/// where those strings never appear in log output.
+///
+/// Returns the original text as `Cow::Borrowed` when nothing is redacted.
 fn redact_secrets(text: &str) -> Cow<'_, str> {
-    if text.is_empty() || !might_contain_secrets(text) {
+    if text.is_empty() {
         return Cow::Borrowed(text);
     }
+    // Compute the lowercased version once for all case-insensitive indicator checks.
+    let lower = text.to_ascii_lowercase();
+    let mut out: Cow<str> = Cow::Borrowed(text);
 
-    let mut redacted_text = Cow::Borrowed(text);
-    for pattern in REGEX_PATTERNS.iter() {
-        if let Cow::Owned(s) = pattern.replace_all(&redacted_text, REDACTED_TEXT) {
-            redacted_text = Cow::Owned(s);
-        }
+    // ── Part 1: simple literal-prefix patterns (no regex required) ───────────
+    // Pattern: `pwd=[^;]*`
+    if let Some(s) = redact_prefixed(&out, "pwd=", ';') {
+        out = Cow::Owned(s);
     }
-    redacted_text
+    // Pattern: `password=[^;]*`
+    if let Some(s) = redact_prefixed(&out, "password=", ';') {
+        out = Cow::Owned(s);
+    }
+    // Pattern: `AccountKey=[^;]*`
+    if let Some(s) = redact_prefixed(&out, "AccountKey=", ';') {
+        out = Cow::Owned(s);
+    }
+    // Pattern: `PrimaryKey=[^;]*`
+    if let Some(s) = redact_prefixed(&out, "PrimaryKey=", ';') {
+        out = Cow::Owned(s);
+    }
+    // Pattern: `SecondaryKey=[^;]*`
+    if let Some(s) = redact_prefixed(&out, "SecondaryKey=", ';') {
+        out = Cow::Owned(s);
+    }
+    // Pattern: `sig=[^&]*`
+    if let Some(s) = redact_prefixed(&out, "sig=", '&') {
+        out = Cow::Owned(s);
+    }
+
+    // ── Part 2: complex patterns – per-indicator dispatch ────────────────────
+    // Each static is compiled lazily the first time its indicator fires; patterns
+    // whose indicators never appear in a deployment are never compiled at all.
+
+    // Azure Redis Cache Secret  (indicator: "AzCa", case-sensitive)
+    if out.contains("AzCa") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                r"(?-i)([0-9a-zA-Z]{33}AzCa[A-P][0-9a-zA-Z]{5}=)|([0-9a-zA-Z]{44}AzCa[0-9a-zA-Z]{5}[AQgw])",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // X.509 Certificate Private Key  (indicator: "PRIVATE KEY", case-sensitive)
+    if out.contains("PRIVATE KEY") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                r"BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Azure DevOps Personal Access Token  (indicators: token, ado, vsts)
+    if lower.contains("token") || lower.contains("ado") || lower.contains("vsts") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                r"(?i)(pat[\\s\\W]|token|ado|vsts|azuredevops|visualstudio\\.com|dev\\.azure\\.com).([a-z2-7]{52}|[A-Z2-7]{52})",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Azure Storage Account Access Key – 43 chars
+    // (indicators: key, access, sas, secret, password, pwd, credential)
+    if lower.contains("key")
+        || lower.contains("access")
+        || lower.contains("sas")
+        || lower.contains("secret")
+        || lower.contains("password")
+        || lower.contains("pwd")
+        || lower.contains("credential")
+    {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)(key|access|sas|shared|secret|password|pwd|pswd|credential)[\\s\\S]{0,200}[^a-z0-9/+]([a-z0-9/+]{43}=)",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Azure Container Registry credential  (indicators: pwd, password, azurecr)
+    // Note: the original pattern had an unescaped `[` inside the character class which
+    // caused a silent compile failure in the previous implementation; `\[` fixes it.
+    if lower.contains("pwd") || lower.contains("password") || lower.contains("azurecr") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)(azurecr[\\s\\S]{0,50}|pwd|pswd|password)[:\\s=]+([a-z0-9/{\\}{\\+}=\\-!#$%&()*,./:;?@\\[\\]^_`{|}~+<=>\\s]+){0,50}",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Azure Storage Account Access Key – 86 chars  (same indicators as 43-char variant)
+    if lower.contains("key")
+        || lower.contains("access")
+        || lower.contains("sas")
+        || lower.contains("secret")
+        || lower.contains("password")
+        || lower.contains("pwd")
+        || lower.contains("credential")
+    {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)(key|access|sas|shared|secret|password|pswd|pwd|credential)[\\s\\S]{0,200}[^a-z0-9/+]([a-z0-9/+]{86}=)",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Microsoft Entra / AWS access token  (indicators: secret, access, key, token)
+    if lower.contains("secret")
+        || lower.contains("access")
+        || lower.contains("key")
+        || lower.contains("token")
+    {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)(\\Waws|amazon)?.{0,5}(secret|access.?(key|token)).{0,10}[^/,\\w\\+\\$\\-][a-z0-9/\\+]{40}\\W",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // Application / client secret  (indicators: secret, key, token)
+    if lower.contains("secret") || lower.contains("key") || lower.contains("token") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)((app(lication)?|client|api)[_ \\-]?(se?cre?t|key(url)?)|(refresh|twilio(account|auth))[_ \\-]?(Sid|Token))([\\s=:>]{1,10}|[\\s\"':=|>,\\]\\\\]{3,15}|[\"'=:\\(]{2})(ConvertTo-SecureString[^\"']+[\"'])?(\"data:text/plain,.+\"|[a-z0-9/+=_.\\?\\-]{8,200}[^\\(\\[\\{;,\\r\\n]|[^\\s\"';<,\\)]{5,200})",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // JWT / Entra access token  (indicator: "eyJ", case-sensitive)
+    if out.contains("eyJ") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"(?-i)eyJ(?i)[a-z0-9\-_%]+\.(?-i)eyJ").unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // General URL credential – amqp/ssh/https URL with embedded user:password@host
+    // Using structural indicators ("://" and "@") avoids triggering on the broad
+    // "key"/"secret" indicators that appear in almost every log line.
+    if text.contains("://") && text.contains('@') {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)((amqp|ssh|(ht|f)tps?)://[^%:\\s\"'/][^:\\s\"'/\\$]+[^:\\s\"'/\\$%]:([^%\\s\"'/][^@\\s\"'/]{0,100}[^%\\s\"'/])@[\\$a-z0-9:\\._%\\?=/]+|[a-z0-9]{3,5}://[^%:\\s\"'/][^:\\s\"'/\\$]+[^:\\s\"'/\\$%]:([^%\\s\"'/][^@\\s\"'/]{0,100}[^%\\s\"'/])@[\\$a-z0-9:\\._%\\?=/\\-]+)",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    // HTTP Authorization header  (indicator: "authorization")
+    if lower.contains("authorization") {
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(
+                "(?i)authorization[,\\[:= \"'\\s]+(value[,\\[:= \"'\\s]+)?(basic|digest|hoba|mutual|negotiate|oauth( oauth_token=)?|(http[^ ]+/saml\\d\\-)?bearer [^e\"'&]|scram\\-sha\\-1|scram\\-sha\\-256|vapid|aws4\\-hmac\\-sha256).*",
+            )
+            .unwrap()
+        });
+        out = apply_re(out, &RE);
+    }
+
+    out
 }
 
 /// Convenience function that takes ownership and returns String
