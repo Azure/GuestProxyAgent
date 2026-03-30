@@ -342,27 +342,42 @@ fn write_state_event(
 
 #[cfg(windows)]
 fn report_ebpf_status(status_obj: &mut StatusObj) {
-    match service::check_service_installed(constants::EBPF_CORE) {
-        (true, message) => {
+    use proxy_agent_shared::service::ServiceState;
+
+    match service::check_service_status(constants::EBPF_CORE) {
+        (true, message, core_state, core_summary) => {
             logger::write(message.to_string());
-            match service::check_service_installed(constants::EBPF_EXT) {
-                (true, message) => {
+            match service::check_service_status(constants::EBPF_EXT) {
+                (true, message, ext_state, ext_summary) => {
                     logger::write(message.to_string());
+                    let both_running = core_state == Some(ServiceState::Running)
+                        && ext_state == Some(ServiceState::Running);
                     status_obj.substatus = {
                         let mut substatus = status_obj.substatus.clone();
                         substatus.push(SubStatus {
                             name: constants::EBPF_SUBSTATUS_NAME.to_string(),
-                            status: constants::SUCCESS_STATUS.to_string(),
-                            code: constants::STATUS_CODE_OK,
+                            status: if both_running {
+                                constants::SUCCESS_STATUS.to_string()
+                            } else {
+                                constants::ERROR_STATUS.to_string()
+                            },
+                            code: if both_running {
+                                constants::STATUS_CODE_OK
+                            } else {
+                                constants::STATUS_CODE_NOT_OK
+                            },
                             formattedMessage: FormattedMessage {
                                 lang: constants::LANG_EN_US.to_string(),
-                                message: "Ebpf Drivers successfully queried.".to_string(),
+                                message: format!(
+                                    "EbpfCore: {}, NetEbpfExt: {}",
+                                    core_summary, ext_summary
+                                ),
                             },
                         });
                         substatus
                     };
                 }
-                (false, message) => {
+                (false, message, _, _) => {
                     logger::write(message.to_string());
                     status_obj.substatus = {
                         let mut substatus = status_obj.substatus.clone();
@@ -383,7 +398,7 @@ fn report_ebpf_status(status_obj: &mut StatusObj) {
                 }
             }
         }
-        (false, message) => {
+        (false, message, _, _) => {
             logger::write(message.to_string());
             status_obj.substatus = {
                 let mut substatus = status_obj.substatus.clone();
@@ -1184,6 +1199,44 @@ mod tests {
             status.substatus[3].name,
             constants::EBPF_SUBSTATUS_NAME.to_string()
         );
+
+        // Verify the eBPF substatus message includes service status info
+        let ebpf_substatus = &status.substatus[3];
+        let ebpf_message = &ebpf_substatus.formattedMessage.message;
+        if ebpf_message.contains("unsuccessfully queried") {
+            // At least one service not installed — status should be Error
+            assert_eq!(
+                ebpf_substatus.status,
+                constants::ERROR_STATUS,
+                "Expected Error status when a service is not installed"
+            );
+        } else {
+            // Both services found — message should contain status details for each driver
+            assert!(
+                ebpf_message.contains("EbpfCore:"),
+                "Expected message to contain 'EbpfCore:', got: {ebpf_message}"
+            );
+            assert!(
+                ebpf_message.contains("NetEbpfExt:"),
+                "Expected message to contain 'NetEbpfExt:', got: {ebpf_message}"
+            );
+            // Status depends on whether both services are running
+            if ebpf_message.contains("Running") && !ebpf_message.contains("Stopped") {
+                assert_eq!(
+                    ebpf_substatus.status,
+                    constants::SUCCESS_STATUS,
+                    "Expected Success when both services are running"
+                );
+                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
+            } else {
+                assert_eq!(
+                    ebpf_substatus.status,
+                    constants::ERROR_STATUS,
+                    "Expected Error when at least one service is not running"
+                );
+                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_NOT_OK);
+            }
+        }
     }
 
     #[tokio::test]

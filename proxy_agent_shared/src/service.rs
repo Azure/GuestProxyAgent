@@ -145,8 +145,44 @@ pub fn check_service_installed(service_name: &str) -> (bool, String) {
     }
 }
 
+/// Checks whether a Windows service is installed and queries its runtime state and start type.
+/// Returns (is_installed, log_message, current_state, status_summary).
+/// `current_state` is `Some(ServiceState)` when the service exists (e.g., `Some(ServiceState::Running)`),
+/// or `None` when the service is not installed.
+/// `status_summary` is a human-readable string combining the runtime state and start type
+/// (e.g., "Running, AutoStart") or "NotInstalled" if the service does not exist.
+#[cfg(windows)]
+pub fn check_service_status(
+    service_name: &str,
+) -> (bool, String, Option<windows_service::ServiceState>, String) {
+    let state = match windows_service::query_service_status(service_name) {
+        Ok(status) => status.current_state,
+        Err(_) => {
+            return (
+                false,
+                format!(
+                    "check_service_status: service: {service_name} status query failed, service may not be installed"
+                ),
+                None,
+                "NotInstalled".to_string(),
+            );
+        }
+    };
+
+    let start_type_str = match windows_service::query_service_config(service_name) {
+        Ok(config) => format!("{:?}", config.start_type),
+        Err(_) => "Unknown".to_string(),
+    };
+
+    let summary = format!("{:?}, {start_type_str}", state);
+    let message = format!("check_service_status: service: {service_name} status: {summary}");
+    (true, message, Some(state), summary)
+}
+
 #[cfg(windows)]
 pub use windows_service::set_default_failure_actions;
+#[cfg(windows)]
+pub use windows_service::ServiceState;
 
 #[cfg(test)]
 mod tests {
@@ -186,6 +222,46 @@ mod tests {
             let (is_installed, message) = super::check_service_installed(service_name);
             assert!(is_installed);
             assert!(message.contains("successfully queried"));
+
+            // clean up
+            _ = super::stop_and_delete_service(service_name).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_service_status() {
+        #[cfg(windows)]
+        {
+            let service_name = "test_check_service_status";
+            // try delete the service if it exists
+            _ = super::stop_and_delete_service(service_name).await;
+
+            // Verify non-existent service returns not installed
+            let (is_installed, message, state, summary) = super::check_service_status(service_name);
+            assert!(!is_installed);
+            assert!(message.contains("query failed"));
+            assert_eq!(state, None, "Expected None for non-existent service");
+            assert_eq!(summary, "NotInstalled");
+
+            // Install a test service and verify status is reported
+            let exe_path = std::env::current_exe().unwrap();
+            let result = super::install_service(service_name, service_name, vec![], exe_path);
+            assert!(result.is_ok());
+
+            let (is_installed, message, state, summary) = super::check_service_status(service_name);
+            assert!(is_installed);
+            assert!(message.contains("status:"));
+            // Service should be stopped (test exe can't actually run as a service)
+            assert_eq!(
+                state,
+                Some(super::ServiceState::Stopped),
+                "Expected Some(ServiceState::Stopped), got: {state:?}"
+            );
+            // Summary should also contain start type info
+            assert!(
+                summary.contains("AutoStart"),
+                "Expected summary to contain 'AutoStart', got: {summary}"
+            );
 
             // clean up
             _ = super::stop_and_delete_service(service_name).await.unwrap();

@@ -7,10 +7,10 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
+pub use windows_service::service::ServiceState;
 use windows_service::service::{
     ServiceAccess, ServiceAction, ServiceActionType, ServiceConfig, ServiceErrorControl,
-    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus,
-    ServiceType,
+    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceStatus, ServiceType,
 };
 use windows_service::service::{ServiceDependency, ServiceFailureActions};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
@@ -167,7 +167,7 @@ pub fn install_or_update_service(
     }
 }
 
-fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
+pub fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
             .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
