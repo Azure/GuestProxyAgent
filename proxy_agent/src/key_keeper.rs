@@ -215,6 +215,7 @@ impl KeyKeeper {
 
         let mut provision_start_time = Instant::now();
         let mut redirect_policy_updated = false;
+        let mut previous_key_status_message: Option<String> = None;
         loop {
             if !first_iteration {
                 let current_state = match self
@@ -260,8 +261,24 @@ impl KeyKeeper {
                     continue;
                 }
             };
-            self.update_status_message(format!("Got key status successfully: {status}."), true)
-                .await;
+            let key_status_message = format!("Got key status successfully: {status}.");
+            if !Self::should_emit_key_status_event(
+                previous_key_status_message.as_ref(),
+                &key_status_message,
+            ) {
+                // Keep unchanged key status as verbose log only to avoid event spam.
+                logger::write(key_status_message);
+            } else {
+                // Emit event only when the key status payload changes.
+                event_logger::write_event(
+                    LoggerLevel::Warn,
+                    key_status_message.clone(),
+                    "poll_secure_channel_status",
+                    "key_keeper",
+                    logger::AGENT_LOGGER_KEY,
+                );
+                previous_key_status_message = Some(key_status_message);
+            }
 
             self.update_access_control_rules(&status).await;
 
@@ -682,7 +699,9 @@ impl KeyKeeper {
                 true
             }
             Err(e) => {
-                logger::write_warning(format!("Failed to attest the key: {e:?}"));
+                // attest failed, update status message, and let it retry in next iteration
+                self.update_status_message(format!("Failed to attest the key: {e:?}"), true)
+                    .await;
                 false
             }
         }
@@ -812,6 +831,13 @@ impl KeyKeeper {
                 logger::write_warning(format!("Failed to set module status message: {e}"));
             }
         }
+    }
+
+    fn should_emit_key_status_event(
+        previous_message: Option<&String>,
+        current_message: &str,
+    ) -> bool {
+        previous_message.is_none_or(|previous| previous != current_message)
     }
 
     fn store_local_key(key_dir: &Path, key: &Key, encrypted: bool) -> Result<()> {
@@ -975,8 +1001,8 @@ impl KeyKeeper {
 #[cfg(test)]
 mod tests {
     use super::key::Key;
+    use super::KeyKeeper;
     use crate::key_keeper;
-    use crate::key_keeper::KeyKeeper;
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::server_mock;
     use std::env;
@@ -1107,5 +1133,27 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn should_emit_key_status_event_tests() {
+        let current_message = "Got key status successfully: status-a.";
+        assert!(
+            KeyKeeper::should_emit_key_status_event(None, current_message),
+            "Should emit event when previous message is None."
+        );
+
+        let previous_message = "Got key status successfully: status-a.".to_string();
+        assert!(
+            !KeyKeeper::should_emit_key_status_event(Some(&previous_message), &previous_message,),
+            "Should not emit event when previous message is the same as current message."
+        );
+
+        let previous_message = "Got key status successfully: status-a.".to_string();
+        let current_message = "Got key status successfully: status-b.";
+        assert!(
+            KeyKeeper::should_emit_key_status_event(Some(&previous_message), current_message,),
+            "Should emit event when previous message is different from current message."
+        );
     }
 }
