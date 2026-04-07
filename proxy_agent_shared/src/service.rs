@@ -150,17 +150,29 @@ pub fn check_service_installed(service_name: &str) -> (bool, String) {
 /// or `None` when the service is not installed.
 #[cfg(windows)]
 pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatusInfo {
-    let state = match windows_service::query_service_status(service_name) {
-        Ok(status) => Some(status.current_state),
-        Err(_) => None,
-    };
-
-    let start_type = match &state {
-        Some(_) => match windows_service::query_service_config(service_name) {
-            Ok(config) => format!("{:?}", config.start_type),
-            Err(_) => "Unknown".to_string(),
-        },
-        None => "NotInstalled".to_string(),
+    let (state, start_type) = match windows_service::query_service_status(service_name) {
+        Ok(status) => {
+            let start_type = match windows_service::query_service_config(service_name) {
+                Ok(config) => format!("{:?}", config.start_type),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to query config for service '{}': {}",
+                        service_name,
+                        e
+                    );
+                    "Unknown".to_string()
+                }
+            };
+            (Some(status.current_state), start_type)
+        }
+        Err(e) => {
+            log::debug!(
+                "Failed to query status for service '{}': {}. Treating as not installed.",
+                service_name,
+                e
+            );
+            (None, "NotInstalled".to_string())
+        }
     };
 
     windows_service::ServiceStatusInfo {
