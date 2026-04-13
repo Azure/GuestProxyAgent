@@ -376,18 +376,13 @@ fn build_ebpf_substatus(
         (None, None) => (
             constants::ERROR_STATUS.to_string(),
             constants::STATUS_CODE_NOT_OK,
-            format!(
-                "Ebpf Driver: {} unsuccessfully queried, Ebpf Driver: {} unsuccessfully queried.",
-                constants::EBPF_CORE,
-                constants::EBPF_EXT
-            ),
+            "EbpfCore: unsuccessfully queried, NetEbpfExt: unsuccessfully queried.".to_string(),
         ),
         (None, _) => (
             constants::ERROR_STATUS.to_string(),
             constants::STATUS_CODE_NOT_OK,
             format!(
-                "Ebpf Driver: {} unsuccessfully queried, NetEbpfExt: {}",
-                constants::EBPF_CORE,
+                "EbpfCore: unsuccessfully queried, NetEbpfExt: {}",
                 ext.summary()
             ),
         ),
@@ -395,9 +390,8 @@ fn build_ebpf_substatus(
             constants::ERROR_STATUS.to_string(),
             constants::STATUS_CODE_NOT_OK,
             format!(
-                "EbpfCore: {}, Ebpf Driver: {} unsuccessfully queried.",
-                core.summary(),
-                constants::EBPF_EXT
+                "EbpfCore: {}, NetEbpfExt: unsuccessfully queried.",
+                core.summary()
             ),
         ),
     };
