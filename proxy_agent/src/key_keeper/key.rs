@@ -36,9 +36,9 @@ use hyper::Uri;
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
-use std::ffi::OsString;
 use std::fmt::{Display, Formatter};
 use std::{collections::HashMap, path::PathBuf};
+use std::{ffi::OsString, time::Duration};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
@@ -729,7 +729,11 @@ impl Display for KeyAction {
 
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
+const HOST_DATE_TIME_SYNC_MAX_AGE: Duration = Duration::from_secs(60);
 
+/// Get the current status of the key from the secure channel.
+/// This function will perform a GET request to the secure channel status endpoint.
+/// If the host time sync is stale, it will use `get_and_sync_host_time` to update the host time.
 pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
     let endpoint = hyper_client::HostEndpoint::new(host, port, STATUS_URL);
     let mut headers = HashMap::new();
@@ -737,8 +741,22 @@ pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
         hyper_client::METADATA_HEADER.to_string(),
         "True ".to_string(),
     );
+
     let status: KeyStatus =
-        hyper_client::get(&endpoint, &headers, None, None, logger::write_warning).await?;
+        if proxy_agent_shared::misc_helpers::host_time_sync_is_stale(HOST_DATE_TIME_SYNC_MAX_AGE) {
+            hyper_client::get_and_sync_host_time(
+                &endpoint,
+                &headers,
+                None,
+                None,
+                logger::write_warning,
+            )
+            .await?
+            .0
+        } else {
+            hyper_client::get(&endpoint, &headers, None, None, logger::write_warning).await?
+        };
+
     status.validate()?;
 
     Ok(status)
