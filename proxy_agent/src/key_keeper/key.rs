@@ -729,7 +729,7 @@ impl Display for KeyAction {
 
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
-const HOST_DATE_TIME_SYNC_MAX_AGE: Duration = Duration::from_secs(60);
+const HOST_DATE_TIME_SYNC_MAX_AGE: Duration = Duration::from_secs(60 * 15);
 
 /// Get the current status of the key from the secure channel.
 /// This function will perform a GET request to the secure channel status endpoint.
@@ -744,15 +744,16 @@ pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
 
     let status: KeyStatus =
         if proxy_agent_shared::misc_helpers::host_time_sync_is_stale(HOST_DATE_TIME_SYNC_MAX_AGE) {
-            hyper_client::get_and_sync_host_time(
+            let (key_status, host_time_synced) = hyper_client::get_and_sync_host_time(
                 &endpoint,
                 &headers,
                 None,
                 None,
                 logger::write_warning,
             )
-            .await?
-            .0
+            .await?;
+            logger::write(format!("Host time synced: {host_time_synced}",));
+            key_status
         } else {
             hyper_client::get(&endpoint, &headers, None, None, logger::write_warning).await?
         };
