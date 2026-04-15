@@ -341,68 +341,83 @@ fn write_state_event(
 }
 
 #[cfg(windows)]
-fn report_ebpf_status(status_obj: &mut StatusObj) {
-    match service::check_service_installed(constants::EBPF_CORE) {
-        (true, message) => {
-            logger::write(message.to_string());
-            match service::check_service_installed(constants::EBPF_EXT) {
-                (true, message) => {
-                    logger::write(message.to_string());
-                    status_obj.substatus = {
-                        let mut substatus = status_obj.substatus.clone();
-                        substatus.push(SubStatus {
-                            name: constants::EBPF_SUBSTATUS_NAME.to_string(),
-                            status: constants::SUCCESS_STATUS.to_string(),
-                            code: constants::STATUS_CODE_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: "Ebpf Drivers successfully queried.".to_string(),
-                            },
-                        });
-                        substatus
-                    };
-                }
-                (false, message) => {
-                    logger::write(message.to_string());
-                    status_obj.substatus = {
-                        let mut substatus = status_obj.substatus.clone();
-                        substatus.push(SubStatus {
-                            name: constants::EBPF_SUBSTATUS_NAME.to_string(),
-                            status: constants::ERROR_STATUS.to_string(),
-                            code: constants::STATUS_CODE_NOT_OK,
-                            formattedMessage: FormattedMessage {
-                                lang: constants::LANG_EN_US.to_string(),
-                                message: format!(
-                                    "Ebpf Driver: {} unsuccessfully queried.",
-                                    constants::EBPF_EXT
-                                ),
-                            },
-                        });
-                        substatus
-                    };
-                }
+fn build_ebpf_substatus(
+    core: &proxy_agent_shared::service::ServiceStatusInfo,
+    ext: &proxy_agent_shared::service::ServiceStatusInfo,
+) -> SubStatus {
+    use proxy_agent_shared::service::ServiceState;
+
+    let (status, code, message) = match (&core.state, &ext.state) {
+        (Some(core_state), Some(ext_state)) => {
+            let both_running =
+                *core_state == ServiceState::Running && *ext_state == ServiceState::Running;
+            if both_running {
+                (
+                    constants::SUCCESS_STATUS.to_string(),
+                    constants::STATUS_CODE_OK,
+                    format!(
+                        "EbpfCore: {}, NetEbpfExt: {}",
+                        core.summary(),
+                        ext.summary()
+                    ),
+                )
+            } else {
+                (
+                    constants::ERROR_STATUS.to_string(),
+                    constants::STATUS_CODE_NOT_OK,
+                    format!(
+                        "EbpfCore: {}, NetEbpfExt: {}",
+                        core.summary(),
+                        ext.summary()
+                    ),
+                )
             }
         }
-        (false, message) => {
-            logger::write(message.to_string());
-            status_obj.substatus = {
-                let mut substatus = status_obj.substatus.clone();
-                substatus.push(SubStatus {
-                    name: constants::EBPF_SUBSTATUS_NAME.to_string(),
-                    status: constants::ERROR_STATUS.to_string(),
-                    code: constants::STATUS_CODE_NOT_OK,
-                    formattedMessage: FormattedMessage {
-                        lang: constants::LANG_EN_US.to_string(),
-                        message: format!(
-                            "Ebpf Driver: {} unsuccessfully queried.",
-                            constants::EBPF_CORE
-                        ),
-                    },
-                });
-                substatus
-            };
-        }
+        (None, None) => (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+            "EbpfCore: unsuccessfully queried, NetEbpfExt: unsuccessfully queried.".to_string(),
+        ),
+        (None, _) => (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+            format!(
+                "EbpfCore: unsuccessfully queried, NetEbpfExt: {}",
+                ext.summary()
+            ),
+        ),
+        (_, None) => (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+            format!(
+                "EbpfCore: {}, NetEbpfExt: unsuccessfully queried.",
+                core.summary()
+            ),
+        ),
+    };
+
+    SubStatus {
+        name: constants::EBPF_SUBSTATUS_NAME.to_string(),
+        status,
+        code,
+        formattedMessage: FormattedMessage {
+            lang: constants::LANG_EN_US.to_string(),
+            message,
+        },
     }
+}
+
+#[cfg(windows)]
+fn report_ebpf_status(status_obj: &mut StatusObj) {
+    let core_status = service::check_service_status(constants::EBPF_CORE);
+    logger::write(format!("check_service_status: {}", core_status.message()));
+
+    let ext_status = service::check_service_status(constants::EBPF_EXT);
+    logger::write(format!("check_service_status: {}", ext_status.message()));
+
+    let mut substatus = status_obj.substatus.clone();
+    substatus.push(build_ebpf_substatus(&core_status, &ext_status));
+    status_obj.substatus = substatus;
 }
 
 fn backup_proxy_agent(setup_tool: &String) {
@@ -1184,6 +1199,155 @@ mod tests {
             status.substatus[3].name,
             constants::EBPF_SUBSTATUS_NAME.to_string()
         );
+
+        // Verify the eBPF substatus message includes service status info
+        let ebpf_substatus = &status.substatus[3];
+        let ebpf_message = &ebpf_substatus.formattedMessage.message;
+        if ebpf_message.contains("unsuccessfully queried") {
+            // At least one service not installed — status should be Error
+            assert_eq!(
+                ebpf_substatus.status,
+                constants::ERROR_STATUS,
+                "Expected Error status when a service is not installed"
+            );
+        } else {
+            // Both services found — message should contain status details for each driver
+            assert!(
+                ebpf_message.contains("EbpfCore:"),
+                "Expected message to contain 'EbpfCore:', got: {ebpf_message}"
+            );
+            assert!(
+                ebpf_message.contains("NetEbpfExt:"),
+                "Expected message to contain 'NetEbpfExt:', got: {ebpf_message}"
+            );
+            // Status depends on whether both services are running
+            if ebpf_message.contains("Running") && !ebpf_message.contains("Stopped") {
+                assert_eq!(
+                    ebpf_substatus.status,
+                    constants::SUCCESS_STATUS,
+                    "Expected Success when both services are running"
+                );
+                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
+            } else {
+                assert_eq!(
+                    ebpf_substatus.status,
+                    constants::ERROR_STATUS,
+                    "Expected Error when at least one service is not running"
+                );
+                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_NOT_OK);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_build_ebpf_substatus() {
+        use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
+
+        fn make_info(name: &str, state: Option<ServiceState>) -> ServiceStatusInfo {
+            let start_type = if state.is_some() {
+                "AutoStart".to_string()
+            } else {
+                "NotInstalled".to_string()
+            };
+            ServiceStatusInfo {
+                service_name: name.to_string(),
+                state,
+                start_type,
+            }
+        }
+
+        // 1. Both not installed
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, None),
+            &make_info(constants::EBPF_EXT, None),
+        );
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Both not installed");
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        let msg = &sub.formattedMessage.message;
+        assert!(
+            msg.contains(constants::EBPF_CORE) && msg.contains(constants::EBPF_EXT),
+            "Expected both driver names in message, got: {msg}"
+        );
+
+        // 2. Core not installed, Ext running
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, None),
+            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+        );
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Core not installed");
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        let msg = &sub.formattedMessage.message;
+        assert!(
+            msg.contains(constants::EBPF_CORE),
+            "Expected EbpfCore in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("Running"),
+            "Expected Ext summary (Running) in message, got: {msg}"
+        );
+
+        // 3. Core running, Ext not installed
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_EXT, None),
+        );
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Ext not installed");
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        let msg = &sub.formattedMessage.message;
+        assert!(
+            msg.contains("Running"),
+            "Expected Core summary (Running) in message, got: {msg}"
+        );
+        assert!(
+            msg.contains(constants::EBPF_EXT),
+            "Expected NetEbpfExt in message, got: {msg}"
+        );
+
+        // 4. Both running → success
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+        );
+        assert_eq!(sub.status, constants::SUCCESS_STATUS, "Both running");
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+        let msg = &sub.formattedMessage.message;
+        assert!(
+            msg.contains("EbpfCore:") && msg.contains("NetEbpfExt:"),
+            "Expected both driver labels in message, got: {msg}"
+        );
+
+        // 5. Core stopped, Ext running → error
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::Stopped)),
+            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "Core stopped, Ext running"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // 6. Core running, Ext stopped → error
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_EXT, Some(ServiceState::Stopped)),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "Core running, Ext stopped"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // 7. Both stopped → error
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::Stopped)),
+            &make_info(constants::EBPF_EXT, Some(ServiceState::Stopped)),
+        );
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Both stopped");
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
     }
 
     #[tokio::test]
