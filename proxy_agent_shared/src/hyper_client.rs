@@ -142,6 +142,59 @@ where
     read_response_body(response).await
 }
 
+/// Performs a GET request and updates the shared host-time sync state from
+/// `x-ms-azure-host-date` response header if available and parseable.
+///
+/// Returns `Ok(true)` when sync state was updated, `Ok(false)` when header is
+/// missing/invalid, and `Err` on transport/server status failure.
+pub async fn get_and_sync_host_time<T, F>(
+    endpoint: &HostEndpoint,
+    headers: &HashMap<String, String>,
+    key_guid: Option<String>,
+    key: Option<String>,
+    log_fun: F,
+) -> Result<(T, bool)>
+where
+    T: DeserializeOwned,
+    F: Fn(String) + Send + 'static,
+{
+    let request = build_request(Method::GET, endpoint, headers, None, key_guid, key)?;
+    let response = send_request(&endpoint.host, endpoint.port, request, log_fun).await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Error::Hyper(HyperErrorType::ServerError(
+            endpoint.to_string(),
+            status,
+        )));
+    }
+
+    let host_time_synced = sync_host_time_from_headers(response.headers());
+    let body = read_response_body(response).await?;
+    Ok((body, host_time_synced))
+}
+
+/// Try to sync host time from a response header map.
+/// Returns true when sync is updated successfully.
+pub fn sync_host_time_from_headers(headers: &hyper::HeaderMap) -> bool {
+    // first try custom date header
+    if let Some(host_date) = headers.get(DATE_HEADER) {
+        if let Ok(host_date_rfc1123) = host_date.to_str() {
+            return misc_helpers::sync_host_utc_time_from_rfc1123_string(host_date_rfc1123);
+        }
+    }
+
+    // fallback to standard HTTP date header
+    if let Some(host_date) = headers.get(hyper::header::DATE) {
+        if let Ok(host_date_rfc1123) = host_date.to_str() {
+            return misc_helpers::sync_host_utc_time_from_rfc1123_string(host_date_rfc1123);
+        }
+    }
+
+    // return false if no valid date header found
+    false
+}
+
 pub async fn read_response_body<T>(
     mut response: hyper::Response<hyper::body::Incoming>,
 ) -> Result<T>

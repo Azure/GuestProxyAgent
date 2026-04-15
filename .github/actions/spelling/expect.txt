@@ -206,6 +206,7 @@ openprocess
 oneshot
 opencode
 opensource
+parseable
 PERCPU
 pgpkey
 pgrep

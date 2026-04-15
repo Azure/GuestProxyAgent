@@ -11,6 +11,8 @@ use std::{
     fs::{self, File},
     path::{Path, PathBuf},
     process::Command,
+    sync::RwLock,
+    time::Instant,
 };
 use thread_id;
 use time::{format_description, OffsetDateTime, PrimitiveDateTime};
@@ -48,6 +50,14 @@ static RFC1123_FORMAT: std::sync::LazyLock<Vec<time::format_description::FormatI
         .expect("Invalid RFC1123 date format")
     });
 
+struct HostTimeSyncState {
+    synced_host_utc: OffsetDateTime,
+    synced_instant: Instant,
+}
+
+static HOST_TIME_SYNC_STATE: std::sync::LazyLock<RwLock<Option<HostTimeSyncState>>> =
+    std::sync::LazyLock::new(|| RwLock::new(None));
+
 pub fn get_date_time_string_with_milliseconds() -> String {
     let time_str = OffsetDateTime::now_utc()
         .format(&*ISO8601_MILLIS_FORMAT)
@@ -63,9 +73,54 @@ pub fn get_date_time_string() -> String {
 }
 
 pub fn get_date_time_rfc1123_string() -> String {
-    OffsetDateTime::now_utc()
+    get_current_utc_time_synced()
         .format(&*RFC1123_FORMAT)
         .expect("Failed to format RFC1123 date")
+}
+
+/// Update host-time sync state from a RFC1123 datetime string.
+/// Returns true when sync state is updated successfully, false otherwise.
+pub fn sync_host_utc_time_from_rfc1123_string(host_utc_rfc1123: &str) -> bool {
+    let Ok(parsed_host_utc) = PrimitiveDateTime::parse(host_utc_rfc1123, &*RFC1123_FORMAT) else {
+        return false;
+    };
+
+    let Ok(mut state) = HOST_TIME_SYNC_STATE.write() else {
+        return false;
+    };
+
+    *state = Some(HostTimeSyncState {
+        synced_host_utc: parsed_host_utc.assume_utc(),
+        synced_instant: Instant::now(),
+    });
+    true
+}
+
+/// Returns true when current host-time sync state is older than `max_age`.
+/// If there is no host-time sync state yet, this returns true.
+pub fn host_time_sync_is_stale(max_age: std::time::Duration) -> bool {
+    let Ok(state) = HOST_TIME_SYNC_STATE.read() else {
+        return true;
+    };
+    state
+        .as_ref()
+        .is_none_or(|synced| synced.synced_instant.elapsed() > max_age)
+}
+
+fn get_current_utc_time_synced() -> OffsetDateTime {
+    let Ok(state) = HOST_TIME_SYNC_STATE.read() else {
+        return OffsetDateTime::now_utc();
+    };
+
+    let Some(synced) = state.as_ref() else {
+        return OffsetDateTime::now_utc();
+    };
+
+    let elapsed = synced.synced_instant.elapsed();
+    match time::Duration::try_from(elapsed) {
+        Ok(elapsed_time) => synced.synced_host_utc + elapsed_time,
+        Err(_) => OffsetDateTime::now_utc(),
+    }
 }
 
 pub fn get_date_time_unix_nano() -> i128 {
@@ -471,6 +526,7 @@ mod tests {
     use std::env;
     use std::fs;
     use std::path::PathBuf;
+    use std::time::Duration;
 
     #[derive(Serialize, Deserialize)]
     struct TestStruct {
@@ -821,6 +877,34 @@ mod tests {
         assert!(
             result.is_err(),
             "Should fail to parse invalid datetime string"
+        );
+    }
+
+    #[test]
+    fn sync_host_utc_time_from_rfc1123_string_test() {
+        let host_time = "Mon, 01 Jan 2024 00:00:00 GMT";
+        assert!(
+            super::sync_host_utc_time_from_rfc1123_string(host_time),
+            "Expected valid host RFC1123 time to update sync state"
+        );
+
+        assert!(
+            !super::host_time_sync_is_stale(Duration::from_secs(3600)),
+            "Sync state should not be stale right after update"
+        );
+
+        std::thread::sleep(Duration::from_millis(1));
+        assert!(
+            super::host_time_sync_is_stale(Duration::from_millis(0)),
+            "Sync state should be stale when max_age is zero"
+        );
+    }
+
+    #[test]
+    fn sync_host_utc_time_from_rfc1123_string_invalid_input_test() {
+        assert!(
+            !super::sync_host_utc_time_from_rfc1123_string("invalid-rfc1123"),
+            "Expected invalid host RFC1123 time to fail"
         );
     }
 }
