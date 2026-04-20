@@ -1067,6 +1067,7 @@ mod tests {
     use super::key::Key;
     use super::local_rules;
     use crate::key_keeper;
+    use crate::key_keeper::KeyKeeper;
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::server_mock;
     use std::env;

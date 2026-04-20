@@ -234,7 +234,10 @@ pub(crate) fn build_fail_closed_rules(
 
 fn validate_local_rules_file(local_rules: &LocalAuthorizationRulesFile) -> Result<()> {
     if let Some(default_access) = &local_rules.defaultAccess {
-        if !matches!(default_access.trim(), "allow" | "deny") {
+        if !matches!(
+            default_access.trim().to_lowercase().as_str(), // case-insensitive match
+            "allow" | "deny"
+        ) {
             return Err(Error::Invalid(format!(
                 "local rules defaultAccess must be 'allow' or 'deny', got '{}'",
                 default_access
