@@ -814,7 +814,7 @@ fn get_top_proxy_connection_summary(
     mut summary: Vec<ProxyConnectionSummary>,
     max_count: usize,
 ) -> Vec<ProxyConnectionSummary> {
-    summary.sort_by(|a, b| a.count.cmp(&b.count));
+    summary.sort_by_key(|a| a.count);
     let len = summary.len();
     if len > max_count {
         summary = summary.split_off(len - max_count);
