@@ -17,8 +17,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-pub(crate) const LOCAL_RULE_FILE_PARSE_RETRY_COUNT: usize = 3;
-pub(crate) const LOCAL_RULE_FILE_PARSE_RETRY_DELAY: Duration = Duration::from_millis(50);
+const LOCAL_RULE_FILE_PARSE_RETRY_COUNT: usize = 3;
+const LOCAL_RULE_FILE_PARSE_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Copy)]
 pub(crate) enum LocalRuleTarget {
@@ -102,11 +102,11 @@ pub(crate) fn get_rules_dir_from_key_dir(key_dir: &Path) -> PathBuf {
 }
 
 /// Get the state of the local rule file - whether it is present or missing, and if present, its last modified time.
-pub(crate) fn get_local_rule_file_state(file_path: &Path) -> LocalRuleFileState {
-    match fs::metadata(file_path) {
+fn get_local_rule_file_state(local_rules_file_path: &Path) -> LocalRuleFileState {
+    match fs::metadata(local_rules_file_path) {
         Ok(metadata) => match metadata.modified() {
             Ok(modified) => LocalRuleFileState::Present(modified),
-            Err(_) => LocalRuleFileState::Present(SystemTime::UNIX_EPOCH),
+            Err(_) => LocalRuleFileState::Present(SystemTime::UNIX_EPOCH), // TODO: if we cannot get the modified time, we can treat it as present but with an unknown modified time. Using UNIX_EPOCH as a placeholder here, but it might be better to have a separate variant for this case.
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => LocalRuleFileState::Missing,
         Err(e) => LocalRuleFileState::Error(format!(
@@ -118,7 +118,7 @@ pub(crate) fn get_local_rule_file_state(file_path: &Path) -> LocalRuleFileState 
 /// Parse the rule ID descriptor from the raw rule ID string.
 /// The raw rule ID can be either a plain logical ID or
 /// a base64-encoded JSON string containing the logical ID and whether to use local file rules.
-pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescriptor {
+fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescriptor {
     let raw_rule_id = raw_rule_id.unwrap_or_default().trim();
     if raw_rule_id.is_empty() {
         return RuleIdDescriptor::default();
@@ -140,40 +140,92 @@ pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescr
     }
 }
 
-pub(crate) fn normalize_authorization_item(
+fn normalize_authorization_item(
     authorization_item: Option<AuthorizationItem>,
-    descriptor: &RuleIdDescriptor,
+    rule_id_descriptor: &RuleIdDescriptor,
 ) -> Option<AuthorizationItem> {
     authorization_item.map(|mut item| {
-        if !descriptor.logical_id.is_empty() {
-            item.id = descriptor.logical_id.clone();
+        if !rule_id_descriptor.logical_id.is_empty() {
+            item.id = format!(
+                "{}-useLocalFileRules: {}",
+                rule_id_descriptor.logical_id, rule_id_descriptor.use_local_file_rules
+            );
         }
         item
     })
 }
 
-pub(crate) fn merge_authorization_item(
+fn merge_authorization_item(
     remote_rules: Option<AuthorizationItem>,
     local_rules: LocalAuthorizationRulesFile,
-    descriptor: &RuleIdDescriptor,
+    rule_id_descriptor: &RuleIdDescriptor,
 ) -> Option<AuthorizationItem> {
     let mut merged_item = remote_rules.unwrap_or(AuthorizationItem {
         defaultAccess: "deny".to_string(),
         mode: "disabled".to_string(),
-        id: descriptor.logical_id.clone(),
+        id: rule_id_descriptor.logical_id.clone(),
         rules: None,
     });
 
-    if !descriptor.logical_id.is_empty() {
-        merged_item.id = descriptor.logical_id.clone();
+    // merge local rule id with remote rule id by appending local id to remote id with an underscore,
+    // so that we can have both ids in the merged result for better traceability.
+    // For example, if remote id is "decoded-id" and local id is "local-id", the merged id will be "decoded-id_local-id".
+    // This also ensures that if local rules are applied, the merged rules will have a different id than the remote rules,
+    // which can help to avoid confusion and make it clear that the rules have been modified by local rules.
+    if let Some(local_id) = local_rules.id {
+        merged_item.id = merged_item.id + "_" + &local_id;
     }
 
+    // for defaultAccess, we will let local rules override remote rules if local rules have it defined,
+    // as defaultAccess is a high-level setting that can significantly change the access control behavior.
     if let Some(default_access) = local_rules.defaultAccess {
         merged_item.defaultAccess = default_access;
     }
 
     merged_item.rules = merge_access_control_rules(merged_item.rules, local_rules.rules);
     Some(merged_item)
+}
+
+const LOCAL_RULE_NAME_PREFIX: &str = "LocalFileRules_";
+
+/// Add prefix 'LocalFileRules_' to all name and reference parts in local rules
+/// to avoid conflicts with remote rules that may have the same names but different definitions.
+fn prefix_local_rule_names(mut rules: AccessControlRules) -> AccessControlRules {
+    // Prefix privilege names
+    if let Some(privileges) = &mut rules.privileges {
+        for privilege in privileges.iter_mut() {
+            privilege.name = format!("{LOCAL_RULE_NAME_PREFIX}{}", privilege.name);
+        }
+    }
+
+    // Prefix role names and their privilege references
+    if let Some(roles) = &mut rules.roles {
+        for role in roles.iter_mut() {
+            role.name = format!("{LOCAL_RULE_NAME_PREFIX}{}", role.name);
+            for privilege_ref in role.privileges.iter_mut() {
+                *privilege_ref = format!("{LOCAL_RULE_NAME_PREFIX}{privilege_ref}");
+            }
+        }
+    }
+
+    // Prefix identity names
+    if let Some(identities) = &mut rules.identities {
+        for identity in identities.iter_mut() {
+            identity.name = format!("{LOCAL_RULE_NAME_PREFIX}{}", identity.name);
+        }
+    }
+
+    // Prefix role assignment role and identity references
+    if let Some(role_assignments) = &mut rules.roleAssignments {
+        for ra in role_assignments.iter_mut() {
+            ra.role = format!("{LOCAL_RULE_NAME_PREFIX}{}", ra.role);
+            for identity_ref in ra.identities.iter_mut() {
+                *identity_ref = format!("{LOCAL_RULE_NAME_PREFIX}{identity_ref}");
+            }
+        }
+    }
+
+    rules
 }
 
 fn merge_access_control_rules(
@@ -183,12 +235,18 @@ fn merge_access_control_rules(
     match (remote_rules, local_rules) {
         (None, None) => None,
         (Some(rules), None) | (None, Some(rules)) => Some(rules),
-        (Some(remote), Some(local)) => Some(AccessControlRules {
-            privileges: merge_rule_vectors(remote.privileges, local.privileges),
-            roles: merge_rule_vectors(remote.roles, local.roles),
-            identities: merge_rule_vectors(remote.identities, local.identities),
-            roleAssignments: merge_rule_vectors(remote.roleAssignments, local.roleAssignments),
-        }),
+        (Some(remote), Some(local)) => {
+            let prefixed_local = prefix_local_rule_names(local);
+            Some(AccessControlRules {
+                privileges: merge_rule_vectors(remote.privileges, prefixed_local.privileges),
+                roles: merge_rule_vectors(remote.roles, prefixed_local.roles),
+                identities: merge_rule_vectors(remote.identities, prefixed_local.identities),
+                roleAssignments: merge_rule_vectors(
+                    remote.roleAssignments,
+                    prefixed_local.roleAssignments,
+                ),
+            })
+        }
     }
 }
 
@@ -211,17 +269,17 @@ fn merge_rule_vectors<T>(remote: Option<Vec<T>>, local: Option<Vec<T>>) -> Optio
 /// but will set defaultAccess to "deny" and remove all specific rules.
 pub(crate) fn build_fail_closed_rules(
     remote_rules: Option<AuthorizationItem>,
-    descriptor: &RuleIdDescriptor,
+    rule_id_descriptor: &RuleIdDescriptor,
 ) -> Option<AuthorizationItem> {
     let mut rules = remote_rules.unwrap_or(AuthorizationItem {
         defaultAccess: "deny".to_string(),
         mode: "enforce".to_string(),
-        id: descriptor.logical_id.clone(),
+        id: rule_id_descriptor.logical_id.clone(),
         rules: None,
     });
 
-    if !descriptor.logical_id.is_empty() {
-        rules.id = descriptor.logical_id.clone();
+    if !rule_id_descriptor.logical_id.is_empty() {
+        rules.id = rule_id_descriptor.logical_id.clone();
     }
 
     // block all the requests by setting defaultAccess to deny and removing all specific rules,
@@ -268,6 +326,9 @@ fn validate_access_control_rules(rules: &AccessControlRules) -> Result<()> {
     Ok(())
 }
 
+/// Validate privileges and return the set of privilege names.
+/// Privilege names must be unique and non-empty.
+/// Each privilege must have a non-empty path, and if queryParameters are defined, they cannot contain empty keys or values.
 fn validate_privileges(privileges: Option<&Vec<Privilege>>) -> Result<HashSet<String>> {
     let mut names = HashSet::new();
     if let Some(privileges) = privileges {
@@ -302,6 +363,9 @@ fn validate_privileges(privileges: Option<&Vec<Privilege>>) -> Result<HashSet<St
     Ok(names)
 }
 
+/// Validate roles and return the set of role names.
+/// Role names must be unique and non-empty.
+/// Each role, it must reference at least one privilege, and the referenced privileges cannot be duplicated within the role.
 fn validate_roles(
     roles: Option<&Vec<Role>>,
     privilege_names: &HashSet<String>,
@@ -351,6 +415,9 @@ fn validate_roles(
     Ok(names)
 }
 
+/// Validate identities and return the set of identity names.
+/// Identity names must be unique and non-empty.
+/// Each identity must have at least one selector defined (userName, groupName, exePath or processName).
 fn validate_identities(identities: Option<&Vec<Identity>>) -> Result<HashSet<String>> {
     let mut names = HashSet::new();
     if let Some(identities) = identities {
@@ -508,7 +575,7 @@ pub(crate) async fn resolve_effective_rules(
             "disabled"
         };
         write_local_rules_event(
-            LoggerLevel::Info,
+            LoggerLevel::Warn,
             target,
             "LocalFileRulesStateChanged",
             format!("{} local file rules {action}.", target.display_name()),
@@ -541,7 +608,7 @@ pub(crate) async fn resolve_effective_rules(
                 ) =>
             {
                 write_local_rules_event(
-                    LoggerLevel::Info,
+                    LoggerLevel::Warn,
                     target,
                     "LocalFileRulesStateChanged",
                     format!(
@@ -553,7 +620,7 @@ pub(crate) async fn resolve_effective_rules(
             }
             (LocalRuleFileState::Present(_), LocalRuleFileState::Present(_)) => {
                 write_local_rules_event(
-                    LoggerLevel::Info,
+                    LoggerLevel::Warn,
                     target,
                     "LocalFileRulesStateChanged",
                     format!(
@@ -685,9 +752,10 @@ pub(crate) fn write_local_rules_event(
 mod tests {
     use super::{
         get_rules_dir_from_key_dir, merge_authorization_item, parse_rule_id_descriptor,
-        read_local_rules_file, resolve_effective_rules, validate_access_control_rules,
-        validate_identities, validate_privileges, validate_role_assignments, validate_roles,
-        LocalAuthorizationRulesFile, LocalRuleMonitorState, LocalRuleTarget, RuleIdDescriptor,
+        prefix_local_rule_names, read_local_rules_file, resolve_effective_rules,
+        validate_access_control_rules, validate_identities, validate_privileges,
+        validate_role_assignments, validate_roles, LocalAuthorizationRulesFile,
+        LocalRuleMonitorState, LocalRuleTarget, RuleIdDescriptor, LOCAL_RULE_NAME_PREFIX,
     };
     use crate::key_keeper::key::{
         AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
@@ -698,15 +766,10 @@ mod tests {
     use std::env;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn create_temp_rules_dir(test_name: &str) -> PathBuf {
         let mut dir = env::temp_dir();
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        dir.push(format!("local_rules_{test_name}_{nonce}"));
+        dir.push(format!("local_rules_{test_name}"));
         _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -943,13 +1006,66 @@ mod tests {
 
         let merged =
             merge_authorization_item(Some(remote_rules), local_rules, &descriptor).unwrap();
-        assert_eq!(merged.id, "decoded-id");
+        assert_eq!(merged.id, "decoded-id-useLocalFileRules: true_local-id");
         assert_eq!(merged.defaultAccess, "allow");
         let merged_rules = merged.rules.unwrap();
-        assert_eq!(merged_rules.privileges.unwrap().len(), 2);
-        assert_eq!(merged_rules.roles.unwrap().len(), 2);
-        assert_eq!(merged_rules.identities.unwrap().len(), 2);
-        assert_eq!(merged_rules.roleAssignments.unwrap().len(), 2);
+
+        let privileges = merged_rules.privileges.unwrap();
+        assert_eq!(privileges.len(), 2);
+        assert_eq!(privileges[0].name, "remote-privilege");
+        assert_eq!(privileges[1].name, "LocalFileRules_local-privilege");
+
+        let roles = merged_rules.roles.unwrap();
+        assert_eq!(roles.len(), 2);
+        assert_eq!(roles[0].name, "remote-role");
+        assert_eq!(roles[1].name, "LocalFileRules_local-role");
+        assert_eq!(roles[1].privileges[0], "LocalFileRules_local-privilege");
+
+        let identities = merged_rules.identities.unwrap();
+        assert_eq!(identities.len(), 2);
+        assert_eq!(identities[0].name, "remote-identity");
+        assert_eq!(identities[1].name, "LocalFileRules_local-identity");
+
+        let role_assignments = merged_rules.roleAssignments.unwrap();
+        assert_eq!(role_assignments.len(), 2);
+        assert_eq!(role_assignments[0].role, "remote-role");
+        assert_eq!(role_assignments[1].role, "LocalFileRules_local-role");
+        assert_eq!(
+            role_assignments[1].identities[0],
+            "LocalFileRules_local-identity"
+        );
+    }
+
+    #[test]
+    fn prefix_local_rule_names_test() {
+        let rules = sample_access_control_rules();
+        let prefixed = prefix_local_rule_names(rules);
+
+        let privileges = prefixed.privileges.unwrap();
+        assert_eq!(privileges.len(), 1);
+        assert_eq!(privileges[0].name, format!("{LOCAL_RULE_NAME_PREFIX}p1"));
+        assert_eq!(privileges[0].path, "/p1"); // path should not be prefixed
+
+        let roles = prefixed.roles.unwrap();
+        assert_eq!(roles[0].name, format!("{LOCAL_RULE_NAME_PREFIX}r1"));
+        assert_eq!(
+            roles[0].privileges[0],
+            format!("{LOCAL_RULE_NAME_PREFIX}p1")
+        );
+
+        let identities = prefixed.identities.unwrap();
+        assert_eq!(identities[0].name, format!("{LOCAL_RULE_NAME_PREFIX}i1"));
+        assert_eq!(identities[0].userName.as_deref(), Some("i1")); // selector values should not be prefixed
+
+        let role_assignments = prefixed.roleAssignments.unwrap();
+        assert_eq!(
+            role_assignments[0].role,
+            format!("{LOCAL_RULE_NAME_PREFIX}r1")
+        );
+        assert_eq!(
+            role_assignments[0].identities[0],
+            format!("{LOCAL_RULE_NAME_PREFIX}i1")
+        );
     }
 
     #[test]
@@ -1129,7 +1245,10 @@ mod tests {
 
         assert!(changed);
         let effective_rules = effective_rules.unwrap();
-        assert_eq!(effective_rules.id, "decoded-id");
+        assert_eq!(
+            effective_rules.id,
+            "decoded-id-useLocalFileRules: true_local-effective-id"
+        );
         assert_eq!(effective_rules.defaultAccess, "allow");
         assert!(effective_rules.rules.is_some());
         assert!(!tracker.parse_failed);
