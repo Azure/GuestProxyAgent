@@ -550,7 +550,7 @@ pub(crate) async fn read_local_rules_file(
             }
             Err(e) => {
                 last_error = e.to_string();
-                // write trace level log for each parse failure attempt, 
+                // write trace level log for each parse failure attempt,
                 // and return error with last_error if it is the final attempt,
                 // it is to avoid flooding logs with transient parse failures but still have visibility when it finally fails after retries.
                 logger::write(format!(
