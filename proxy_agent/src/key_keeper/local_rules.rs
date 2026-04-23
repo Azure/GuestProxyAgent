@@ -550,7 +550,10 @@ pub(crate) async fn read_local_rules_file(
             }
             Err(e) => {
                 last_error = e.to_string();
-                logger::write_warning(format!(
+                // write trace level log for each parse failure attempt, 
+                // and return error with last_error if it is the final attempt,
+                // it is to avoid flooding logs with transient parse failures but still have visibility when it finally fails after retries.
+                logger::write(format!(
                     "Failed to parse {} local rules file {} on attempt {}: {}",
                     target.display_name(),
                     file_path.display(),
@@ -573,6 +576,7 @@ pub(crate) async fn read_local_rules_file(
 }
 
 /// Resolve the effective authorization rules by considering both remote rules and local file rules based on the descriptor and current state.
+/// Return the effective rules and whether the rules have changed compared to the previous effective rules in the tracker.
 pub(crate) async fn resolve_effective_rules(
     rules_dir: &Path,
     remote_rules: Option<AuthorizationItem>,
@@ -715,7 +719,10 @@ pub(crate) async fn resolve_effective_rules(
         let fail_closed_rules = build_fail_closed_rules(normalized_remote_rules, &descriptor);
         tracker.parse_failed = true;
         tracker.effective_rules = fail_closed_rules.clone();
-        return (fail_closed_rules, true);
+        return (
+            fail_closed_rules,
+            !previous_parse_failed || file_state_changed,
+        );
     }
 
     match read_local_rules_file(&local_rules_file, target).await {
@@ -746,7 +753,10 @@ pub(crate) async fn resolve_effective_rules(
             let fail_closed_rules = build_fail_closed_rules(normalized_remote_rules, &descriptor);
             tracker.parse_failed = true;
             tracker.effective_rules = fail_closed_rules.clone();
-            (fail_closed_rules, true)
+            (
+                fail_closed_rules,
+                !previous_parse_failed || file_state_changed,
+            )
         }
     }
 }
