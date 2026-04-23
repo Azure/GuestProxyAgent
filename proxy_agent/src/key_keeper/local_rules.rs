@@ -71,6 +71,23 @@ pub(crate) struct RuleIdDescriptor {
     pub(crate) use_local_file_rules: bool,
 }
 
+impl RuleIdDescriptor {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.logical_id.is_empty()
+    }
+
+    pub(crate) fn display_id(&self) -> String {
+        if self.logical_id.is_empty() {
+            "unknown".to_string()
+        } else {
+            format!(
+                "{}-useLocalFileRules-{}",
+                self.logical_id, self.use_local_file_rules
+            )
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct EncodedRuleId {
@@ -145,11 +162,8 @@ fn normalize_authorization_item(
     rule_id_descriptor: &RuleIdDescriptor,
 ) -> Option<AuthorizationItem> {
     authorization_item.map(|mut item| {
-        if !rule_id_descriptor.logical_id.is_empty() {
-            item.id = format!(
-                "{}-useLocalFileRules: {}",
-                rule_id_descriptor.logical_id, rule_id_descriptor.use_local_file_rules
-            );
+        if !rule_id_descriptor.is_empty() {
+            item.id = rule_id_descriptor.display_id();
         }
         item
     })
@@ -163,9 +177,13 @@ fn merge_authorization_item(
     let mut merged_item = remote_rules.unwrap_or(AuthorizationItem {
         defaultAccess: "deny".to_string(),
         mode: "disabled".to_string(),
-        id: rule_id_descriptor.logical_id.clone(),
+        id: rule_id_descriptor.display_id(),
         rules: None,
     });
+
+    if !rule_id_descriptor.is_empty() {
+        merged_item.id = rule_id_descriptor.display_id();
+    }
 
     // merge local rule id with remote rule id by appending local id to remote id with an underscore,
     // so that we can have both ids in the merged result for better traceability.
@@ -274,12 +292,12 @@ pub(crate) fn build_fail_closed_rules(
     let mut rules = remote_rules.unwrap_or(AuthorizationItem {
         defaultAccess: "deny".to_string(),
         mode: "enforce".to_string(),
-        id: rule_id_descriptor.logical_id.clone(),
+        id: rule_id_descriptor.display_id(),
         rules: None,
     });
 
-    if !rule_id_descriptor.logical_id.is_empty() {
-        rules.id = rule_id_descriptor.logical_id.clone();
+    if !rule_id_descriptor.is_empty() {
+        rules.id = rule_id_descriptor.display_id();
     }
 
     // block all the requests by setting defaultAccess to deny and removing all specific rules,
@@ -669,13 +687,13 @@ pub(crate) async fn resolve_effective_rules(
         return (tracker.effective_rules.clone(), false);
     }
 
-    // SPEC: No corresponding rule file found - treat it as no advanced configuration set yet, which means root-only to WS and all to IMDS.
+    // SPEC: No corresponding local rules file found - treat it as no local advanced configuration set yet, which means root-only to WS and all to IMDS.
     // This is to support new VM just provisioned and the customer payload has not downloaded & applied within the VM yet.
     if matches!(current_file_state, LocalRuleFileState::Missing) {
         tracker.parse_failed = false;
-        tracker.effective_rules = None;
+        tracker.effective_rules = normalized_remote_rules.clone();
         return (
-            None,
+            normalized_remote_rules,
             use_local_file_rules_changed || file_state_changed || previous_parse_failed,
         );
     }
@@ -1006,7 +1024,7 @@ mod tests {
 
         let merged =
             merge_authorization_item(Some(remote_rules), local_rules, &descriptor).unwrap();
-        assert_eq!(merged.id, "decoded-id-useLocalFileRules: true_local-id");
+        assert_eq!(merged.id, "decoded-id-useLocalFileRules-true_local-id");
         assert_eq!(merged.defaultAccess, "allow");
         let merged_rules = merged.rules.unwrap();
 
@@ -1247,7 +1265,7 @@ mod tests {
         let effective_rules = effective_rules.unwrap();
         assert_eq!(
             effective_rules.id,
-            "decoded-id-useLocalFileRules: true_local-effective-id"
+            "decoded-id-useLocalFileRules-true_local-effective-id"
         );
         assert_eq!(effective_rules.defaultAccess, "allow");
         assert!(effective_rules.rules.is_some());
@@ -1266,7 +1284,7 @@ mod tests {
         .await;
 
         assert!(changed);
-        assert!(effective_rules.is_none());
+        assert!(effective_rules.is_some());
         assert!(!tracker.parse_failed);
     }
 
@@ -1292,7 +1310,7 @@ mod tests {
 
         assert!(changed);
         let effective_rules = effective_rules.unwrap();
-        assert_eq!(effective_rules.id, "decoded-id");
+        assert_eq!(effective_rules.id, "decoded-id-useLocalFileRules-true");
         assert_eq!(effective_rules.defaultAccess, "deny");
         assert!(effective_rules.rules.is_none());
         assert!(tracker.parse_failed);
