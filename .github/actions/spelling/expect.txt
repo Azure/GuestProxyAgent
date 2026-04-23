@@ -302,6 +302,7 @@ testurl
 tgid
 THH
 thiserror
+Thu
 timedout
 timeup
 tlsv
