@@ -729,11 +729,11 @@ impl Display for KeyAction {
 
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
-const HOST_DATE_TIME_SYNC_MAX_AGE: Duration = Duration::from_secs(60 * 15);
+const HOST_DATE_TIME_DRIFT_MAX_AGE: Duration = Duration::from_secs(60 * 15);
 
 /// Get the current status of the key from the secure channel.
-/// This function will perform a GET request to the secure channel status endpoint.
-/// If the host time sync is stale, it will use `get_and_sync_host_time` to update the host time.
+/// This function will perform a single GET request to the secure channel status endpoint.
+/// If the host time sync is stale, it will sync the host time from the response headers.
 pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
     let endpoint = hyper_client::HostEndpoint::new(host, port, STATUS_URL);
     let mut headers = HashMap::new();
@@ -742,22 +742,31 @@ pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
         "True ".to_string(),
     );
 
-    let status: KeyStatus =
-        if proxy_agent_shared::misc_helpers::host_time_sync_is_stale(HOST_DATE_TIME_SYNC_MAX_AGE) {
-            let (key_status, host_time_synced) = hyper_client::get_and_sync_host_time(
-                &endpoint,
-                &headers,
-                None,
-                None,
-                logger::write_warning,
-            )
-            .await?;
-            logger::write(format!("Host time synced: {host_time_synced}",));
-            key_status
-        } else {
-            hyper_client::get(&endpoint, &headers, None, None, logger::write_warning).await?
-        };
+    let request = hyper_client::build_request(Method::GET, &endpoint, &headers, None, None, None)?;
 
+    let response = hyper_client::send_request(
+        &endpoint.host,
+        endpoint.port,
+        request,
+        logger::write_warning,
+    )
+    .await?;
+
+    if !response.status().is_success() {
+        return Err(proxy_agent_shared::error::Error::Hyper(
+            proxy_agent_shared::error::HyperErrorType::ServerError(
+                endpoint.to_string(),
+                response.status(),
+            ),
+        ))?;
+    }
+
+    if proxy_agent_shared::misc_helpers::host_time_sync_is_stale(HOST_DATE_TIME_DRIFT_MAX_AGE) {
+        let host_time_synced = hyper_client::sync_host_time_from_headers(response.headers());
+        logger::write(format!("Host time synced: {host_time_synced}"));
+    }
+
+    let status: KeyStatus = hyper_client::read_response_body(response).await?;
     status.validate()?;
 
     Ok(status)

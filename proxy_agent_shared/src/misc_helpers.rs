@@ -81,7 +81,7 @@ pub fn get_date_time_rfc1123_string() -> String {
 /// Update host-time sync state from a RFC1123 datetime string.
 /// Returns true when sync state is updated successfully, false otherwise.
 pub fn sync_host_utc_time_from_rfc1123_string(host_utc_rfc1123: &str) -> bool {
-    let Ok(parsed_host_utc) = PrimitiveDateTime::parse(host_utc_rfc1123, &*RFC1123_FORMAT) else {
+    let Ok(parsed_host_utc) = parse_rfc1123_to_offset_datetime(host_utc_rfc1123) else {
         return false;
     };
 
@@ -90,10 +90,20 @@ pub fn sync_host_utc_time_from_rfc1123_string(host_utc_rfc1123: &str) -> bool {
     };
 
     *state = Some(HostTimeSyncState {
-        synced_host_utc: parsed_host_utc.assume_utc(),
+        synced_host_utc: parsed_host_utc,
         synced_instant: Instant::now(),
     });
     true
+}
+
+pub fn parse_rfc1123_to_offset_datetime(rfc1123_str: &str) -> Result<OffsetDateTime> {
+    PrimitiveDateTime::parse(rfc1123_str, &*RFC1123_FORMAT)
+        .map(|dt| dt.assume_utc())
+        .map_err(|e| {
+            Error::ParseDateTimeStringError(format!(
+                "Failed to parse RFC1123 datetime string '{rfc1123_str}': {e}"
+            ))
+        })
 }
 
 /// Returns true when current host-time sync state is older than `max_age`.
@@ -898,6 +908,11 @@ mod tests {
             super::host_time_sync_is_stale(Duration::from_millis(0)),
             "Sync state should be stale when max_age is zero"
         );
+
+        // reset sync state to None for other tests
+        let _ = super::HOST_TIME_SYNC_STATE
+            .write()
+            .map(|mut state| *state = None);
     }
 
     #[test]
