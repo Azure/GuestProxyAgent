@@ -55,6 +55,18 @@ if [[ $os == *"Ubuntu"* ]]; then
             break
         fi
     done
+elif [[ $os == *"SUSE"* ]] || [[ $os == *"SLES"* ]]; then
+    for  i in {1..3}; do
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via zypper $i"
+        sudo zypper --non-interactive install jq
+        sleep 10
+        install=$(zypper se --installed-only jq)
+        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
+        if [[ $install == *"jq"* ]]; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - jq installed successfully"
+            break
+        fi
+    done
 else
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via dnf $i"
