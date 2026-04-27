@@ -7,13 +7,42 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
+pub use windows_service::service::ServiceState;
 use windows_service::service::{
     ServiceAccess, ServiceAction, ServiceActionType, ServiceConfig, ServiceErrorControl,
-    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus,
-    ServiceType,
+    ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceStatus, ServiceType,
 };
 use windows_service::service::{ServiceDependency, ServiceFailureActions};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+
+/// Holds the runtime status of a Windows service.
+#[derive(Debug)]
+pub struct ServiceStatusInfo {
+    pub service_name: String,
+    pub state: Option<ServiceState>,
+    pub start_type: String,
+}
+
+impl ServiceStatusInfo {
+    /// Human-readable summary, e.g. "Running, AutoStart" or "NotInstalled".
+    pub fn summary(&self) -> String {
+        match self.state {
+            Some(ref state) => format!("{:?}, {}", state, self.start_type),
+            None => "NotInstalled".to_string(),
+        }
+    }
+
+    /// Log-friendly message including the service name and summary.
+    pub fn message(&self) -> String {
+        match self.state {
+            Some(_) => format!("service: {} status: {}", self.service_name, self.summary()),
+            None => format!(
+                "service: {} status query failed, service may not be installed",
+                self.service_name
+            ),
+        }
+    }
+}
 
 pub async fn start_service_with_retry(
     service_name: &str,
@@ -167,7 +196,7 @@ pub fn install_or_update_service(
     }
 }
 
-fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
+pub fn query_service_status(service_name: &str) -> Result<ServiceStatus> {
     let service_manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
             .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))?;
@@ -305,6 +334,7 @@ pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::{path::PathBuf, process::Command};
+    use windows_service::service::ServiceState;
 
     #[tokio::test]
     async fn test_install_service() {
@@ -412,5 +442,72 @@ mod tests {
         assert!(output_str.contains("STOPPED"));
         //Clean up - delete service
         super::stop_and_delete_service(service_name).await.unwrap();
+    }
+
+    #[test]
+    fn test_service_status_info_summary() {
+        // Not installed
+        let info = super::ServiceStatusInfo {
+            service_name: "TestSvc".to_string(),
+            state: None,
+            start_type: "NotInstalled".to_string(),
+        };
+        assert_eq!(info.summary(), "NotInstalled");
+
+        // Running, AutoStart
+        let info = super::ServiceStatusInfo {
+            service_name: "TestSvc".to_string(),
+            state: Some(ServiceState::Running),
+            start_type: "AutoStart".to_string(),
+        };
+        assert_eq!(info.summary(), "Running, AutoStart");
+
+        // Stopped, Disabled
+        let info = super::ServiceStatusInfo {
+            service_name: "TestSvc".to_string(),
+            state: Some(ServiceState::Stopped),
+            start_type: "Disabled".to_string(),
+        };
+        assert_eq!(info.summary(), "Stopped, Disabled");
+    }
+
+    #[test]
+    fn test_service_status_info_message() {
+        // Not installed — message must mention the service name and "query failed"
+        let info = super::ServiceStatusInfo {
+            service_name: "TestSvc".to_string(),
+            state: None,
+            start_type: "NotInstalled".to_string(),
+        };
+        let msg = info.message();
+        assert!(
+            msg.contains("TestSvc"),
+            "Expected service name in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("query failed"),
+            "Expected 'query failed' in message, got: {msg}"
+        );
+
+        // Installed and running — message must contain "status:" and the summary
+        let info = super::ServiceStatusInfo {
+            service_name: "TestSvc".to_string(),
+            state: Some(ServiceState::Running),
+            start_type: "AutoStart".to_string(),
+        };
+        let msg = info.message();
+        assert!(
+            msg.contains("TestSvc"),
+            "Expected service name in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("status:"),
+            "Expected 'status:' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains(&info.summary()),
+            "Expected summary '{}' in message, got: {msg}",
+            info.summary()
+        );
     }
 }
