@@ -424,23 +424,28 @@ mod tests {
         // no arguments
         let result = super::truncate_cmd_args("", 4);
         assert_eq!(result, "", "empty input should return empty string");
-       
+
         // fewer than max args
         let result = super::truncate_cmd_args("app.exe arg1", 4);
-        assert_eq!(result, "app.exe arg1", "should return all args when fewer than max");
-   
+        assert_eq!(
+            result, "app.exe arg1",
+            "should return all args when fewer than max"
+        );
+
         // exactly max args
         let result = super::truncate_cmd_args("app.exe arg1 arg2 arg3 --secret=password", 4);
-        assert_eq!(result, "app.exe arg1 arg2 arg3", "should truncate to first 4 args");
-   
-         // more than max args and quoted arg with spaces
+        assert_eq!(
+            result, "app.exe arg1 arg2 arg3",
+            "should truncate to first 4 args"
+        );
+
+        // more than max args and quoted arg with spaces
         let result = super::truncate_cmd_args(
             r#""C:\Program Files\app.exe" arg1 "arg with spaces" arg3 --secret=password"#,
             4,
         );
         assert_eq!(
-            result,
-            r#""C:\Program Files\app.exe" arg1 "arg with spaces" arg3"#,
+            result, r#""C:\Program Files\app.exe" arg1 "arg with spaces" arg3"#,
             "should treat quoted strings with whitespace as single args"
         );
     }
