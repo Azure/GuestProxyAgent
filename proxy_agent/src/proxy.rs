@@ -77,6 +77,7 @@ pub struct User {
 
 const UNDEFINED: &str = "undefined";
 const EMPTY: &str = "empty";
+const MAX_CMD_ARGS: usize = 4;
 
 async fn get_user(
     logon_id: u64,
@@ -112,10 +113,12 @@ fn get_process_info(process_id: u32) -> (PathBuf, String) {
     let cmdline_path = format!("/proc/{}/cmdline", process_id);
     let process_cmd_line = match std::fs::read(&cmdline_path) {
         Ok(bytes) => {
-            // cmdline is null-separated, convert to space-separated string
+            // cmdline is null-separated; take only the first few arguments
+            // to avoid capturing credentials in later args
             bytes
                 .split(|&b| b == 0)
                 .filter(|s| !s.is_empty())
+                .take(MAX_CMD_ARGS)
                 .map(|s| String::from_utf8_lossy(s).into_owned())
                 .collect::<Vec<String>>()
                 .join(" ")
