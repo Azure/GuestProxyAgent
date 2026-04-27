@@ -112,10 +112,12 @@ fn get_process_info(process_id: u32) -> (PathBuf, String) {
     let cmdline_path = format!("/proc/{}/cmdline", process_id);
     let process_cmd_line = match std::fs::read(&cmdline_path) {
         Ok(bytes) => {
-            // cmdline is null-separated, convert to space-separated string
+            // cmdline is null-separated; only take the first 4 arguments
+            // to avoid capturing credentials that may appear in later args
             bytes
                 .split(|&b| b == 0)
                 .filter(|s| !s.is_empty())
+                .take(4)
                 .map(|s| String::from_utf8_lossy(s).into_owned())
                 .collect::<Vec<String>>()
                 .join(" ")
