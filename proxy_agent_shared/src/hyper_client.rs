@@ -142,6 +142,30 @@ where
     read_response_body(response).await
 }
 
+/// Try to sync host time from a response header map.
+/// The function first looks for a custom date header (x-ms-azure-host-date) and
+///     if not found, falls back to the standard HTTP date header.
+///     if custom date header is present but invalid, it will not fall back to standard date header
+/// Returns true when sync is updated successfully.
+pub fn sync_host_time_from_headers(headers: &hyper::HeaderMap) -> bool {
+    // first try custom date header
+    if let Some(host_date) = headers.get(DATE_HEADER) {
+        if let Ok(host_date_rfc1123) = host_date.to_str() {
+            return misc_helpers::sync_host_utc_time_from_rfc1123_string(host_date_rfc1123);
+        }
+    }
+
+    // fallback to standard HTTP date header
+    if let Some(host_date) = headers.get(hyper::header::DATE) {
+        if let Ok(host_date_rfc1123) = host_date.to_str() {
+            return misc_helpers::sync_host_utc_time_from_rfc1123_string(host_date_rfc1123);
+        }
+    }
+
+    // return false if no valid date header found
+    false
+}
+
 pub async fn read_response_body<T>(
     mut response: hyper::Response<hyper::body::Incoming>,
 ) -> Result<T>
@@ -539,7 +563,7 @@ mod tests {
     use crate::{
         host_clients::{imds_client::ImdsClient, wire_server_client::WireServerClient},
         logger::logger_manager,
-        server_mock,
+        misc_helpers, server_mock,
     };
     use tokio_util::sync::CancellationToken;
 
@@ -607,5 +631,87 @@ mod tests {
         assert!(!instance_info.get_resource_group_name().is_empty());
 
         cancellation_token.cancel();
+    }
+
+    #[test]
+    fn sync_host_time_from_headers_tests() {
+        // should return false when no date headers are present
+        let headers = hyper::HeaderMap::new();
+        assert!(
+            !super::sync_host_time_from_headers(&headers),
+            "should return false when no date headers are present"
+        );
+
+        // should return true with valid custom date header
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(
+            super::DATE_HEADER,
+            "Wed, 23 Apr 2025 12:00:00 GMT".parse().unwrap(),
+        );
+        assert!(
+            super::sync_host_time_from_headers(&headers),
+            "should return true with valid custom date header"
+        );
+
+        // should return true with valid standard Date header
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(
+            hyper::header::DATE,
+            "Wed, 23 Apr 2025 12:00:00 GMT".parse().unwrap(),
+        );
+        assert!(
+            super::sync_host_time_from_headers(&headers),
+            "should return true with valid standard Date header"
+        );
+
+        // when both headers are present but invalid, should return false without panic (to_str() succeeds but RFC1123 parse fails)
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(super::DATE_HEADER, "not-a-valid-date".parse().unwrap());
+        headers.insert(hyper::header::DATE, "also-not-valid".parse().unwrap());
+        assert!(
+            !super::sync_host_time_from_headers(&headers),
+            "should return false when both headers have invalid dates"
+        );
+
+        // When the custom header is present but has an invalid date string,
+        // the function returns false immediately (does not fall back to standard Date header)
+        // because to_str() succeeds but the RFC1123 parse fails.
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(super::DATE_HEADER, "not-a-valid-date".parse().unwrap());
+        headers.insert(
+            hyper::header::DATE,
+            "Wed, 23 Apr 2025 12:00:00 GMT".parse().unwrap(),
+        );
+        assert!(
+            !super::sync_host_time_from_headers(&headers),
+            "should return false without falling back when custom header has invalid date"
+        );
+
+        // when both headers are present and valid, should return true (sync from custom header takes precedence)
+        // and not fallback to standard Date header
+        let mut headers = hyper::HeaderMap::new();
+        let custom_host_time = "Wed, 23 Apr 2025 12:00:00 GMT";
+        headers.insert(super::DATE_HEADER, custom_host_time.parse().unwrap());
+        headers.insert(
+            hyper::header::DATE,
+            "Thu, 24 Apr 2025 12:00:00 GMT".parse().unwrap(),
+        );
+        // Both are valid; the function should return true
+        assert!(
+            super::sync_host_time_from_headers(&headers),
+            "should return true when both headers are present"
+        );
+        // verify the sync time is from the custom header, not the standard Date header (which is 1 day later)
+        let sync_time = misc_helpers::parse_rfc1123_to_offset_datetime(
+            &misc_helpers::get_date_time_rfc1123_string(),
+        )
+        .unwrap();
+        let expected_sync_time =
+            misc_helpers::parse_rfc1123_to_offset_datetime(custom_host_time).unwrap();
+        let diff = sync_time - expected_sync_time;
+        assert!(
+            diff < time::Duration::seconds(5),
+            "sync time should be close to the custom header time"
+        );
     }
 }
