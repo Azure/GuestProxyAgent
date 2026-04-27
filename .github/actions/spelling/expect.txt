@@ -207,6 +207,7 @@ oneshot
 opencode
 opensource
 parseable
+peekable
 PERCPU
 pgpkey
 pgrep

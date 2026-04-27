@@ -292,7 +292,46 @@ pub fn get_process_cmd(handler: isize) -> Result<String> {
         std::slice::from_raw_parts(cmd_buffer.Buffer, (cmd_buffer.Length / 2) as usize)
     });
 
-    Ok(cmd)
+    // Only keep the first few arguments to avoid capturing credentials
+    // that may appear in later command-line arguments
+    Ok(truncate_cmd_args(&cmd, super::MAX_CMD_ARGS))
+}
+
+/// Truncate a command line string to at most `max_args` arguments,
+/// respecting double-quoted strings that may contain whitespace.
+fn truncate_cmd_args(cmd: &str, max_args: usize) -> String {
+    let mut args = Vec::new();
+    let mut chars = cmd.chars().peekable();
+
+    while args.len() < max_args {
+        // Skip whitespace between arguments
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        if chars.peek().is_none() {
+            break;
+        }
+
+        let mut arg = String::new();
+        if chars.peek() == Some(&'"') {
+            // Quoted argument — consume until closing quote
+            arg.push(chars.next().unwrap()); // opening "
+            for c in chars.by_ref() {
+                arg.push(c);
+                if c == '"' {
+                    break;
+                }
+            }
+        } else {
+            // Unquoted argument — consume until whitespace
+            while chars.peek().is_some_and(|c| !c.is_whitespace()) {
+                arg.push(chars.next().unwrap());
+            }
+        }
+        args.push(arg);
+    }
+
+    args.join(" ")
 }
 
 #[allow(dead_code)]
@@ -378,5 +417,36 @@ mod tests {
             "process full name should not be empty"
         );
         assert!(!cmd.is_empty(), "process cmd should not be empty");
+    }
+
+    #[test]
+    fn truncate_cmd_args_tests() {
+        // no arguments
+        let result = super::truncate_cmd_args("", 4);
+        assert_eq!(result, "", "empty input should return empty string");
+
+        // fewer than max args
+        let result = super::truncate_cmd_args("app.exe arg1", 4);
+        assert_eq!(
+            result, "app.exe arg1",
+            "should return all args when fewer than max"
+        );
+
+        // exactly max args
+        let result = super::truncate_cmd_args("app.exe arg1 arg2 arg3 --secret=password", 4);
+        assert_eq!(
+            result, "app.exe arg1 arg2 arg3",
+            "should truncate to first 4 args"
+        );
+
+        // more than max args and quoted arg with spaces
+        let result = super::truncate_cmd_args(
+            r#""C:\Program Files\app.exe" arg1 "arg with spaces" arg3 --secret=password"#,
+            4,
+        );
+        assert_eq!(
+            result, r#""C:\Program Files\app.exe" arg1 "arg with spaces" arg3"#,
+            "should treat quoted strings with whitespace as single args"
+        );
     }
 }
