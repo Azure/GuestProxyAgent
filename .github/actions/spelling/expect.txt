@@ -206,6 +206,7 @@ openprocess
 oneshot
 opencode
 opensource
+parseable
 PERCPU
 pgpkey
 pgrep
@@ -301,6 +302,7 @@ testurl
 tgid
 THH
 thiserror
+Thu
 timedout
 timeup
 tlsv
