@@ -58,11 +58,21 @@ if [[ $os == *"Ubuntu"* ]]; then
 elif [[ $os == *"SUSE"* ]] || [[ $os == *"SLES"* ]]; then
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via zypper $i"
+        sudo zypper refresh
         sudo zypper --non-interactive install jq
+        if ! command -v jq &>/dev/null; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - zypper install failed, downloading jq binary directly"
+            arch=$(uname -m)
+            if [[ "$arch" == "aarch64" ]]; then
+                jq_arch="arm64"
+            else
+                jq_arch="amd64"
+            fi
+            sudo curl -L -o /usr/local/bin/jq "https://github.com/jqlang/jq/releases/latest/download/jq-linux-${jq_arch}"
+            sudo chmod +x /usr/local/bin/jq
+        fi
         sleep 10
-        install=$(zypper se --installed-only jq)
-        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
-        if [[ $install == *"jq"* ]]; then
+        if command -v jq &>/dev/null; then
             echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - jq installed successfully"
             break
         fi
