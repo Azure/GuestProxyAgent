@@ -226,6 +226,16 @@ namespace GuestProxyAgentTest.Utilities
                 NetworkProfile = await DoCreateVMNetWorkProfile(logger, rgr),
             };
 
+            var useSGI = !string.IsNullOrEmpty(this.testScenarioSetting.VMImageDetails.SharedGalleryImageUniqueId);
+            // Use Shared Gallery Image if SharedGalleryImageUniqueId is provided in the test setting
+            if (useSGI)
+            {
+                vmData.StorageProfile.ImageReference = new ImageReference()
+                {
+                    SharedGalleryImageUniqueId = new ResourceIdentifier(this.testScenarioSetting.VMImageDetails.SharedGalleryImageUniqueId)
+                };
+            }
+
             if (enableProxyAgent)
             {
                 vmData.SecurityProfile = new SecurityProfile()
@@ -243,7 +253,7 @@ namespace GuestProxyAgentTest.Utilities
                         },
                     }
                 };
-                if (!Constants.IS_WINDOWS())
+                if (!Constants.IS_WINDOWS() && !useSGI)
                 {
                     // Only Linux VMs support flag 'AddProxyAgentExtension',
                     // Windows VMs always have the GPA VM Extension installed when ProxyAgentSettings.Enabled is true.

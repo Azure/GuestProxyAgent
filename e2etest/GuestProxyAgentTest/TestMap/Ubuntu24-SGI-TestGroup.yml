@@ -1,0 +1,9 @@
+groupName: Ubuntu24-SGI
+vmImagePublisher:  
+vmImageOffer: 
+vmImageSku: 
+vmImageVersion: 
+sharedGalleryImageUniqueId: /SharedGalleries/0a2c89a7-a44e-4cd0-b6ec-868432ad1d13-proxyagent/images/ubuntu-2404-gen2/versions/latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BakedInScenario
+    name: BakedInScenario
