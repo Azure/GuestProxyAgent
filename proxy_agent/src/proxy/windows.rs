@@ -292,15 +292,7 @@ pub fn get_process_cmd(handler: isize) -> Result<String> {
         std::slice::from_raw_parts(cmd_buffer.Buffer, (cmd_buffer.Length / 2) as usize)
     });
 
-    // Only keep the first 4 arguments to avoid capturing credentials
-    // that may appear in later command-line arguments
-    let truncated_cmd = cmd
-        .split_whitespace()
-        .take(4)
-        .collect::<Vec<&str>>()
-        .join(" ");
-
-    Ok(truncated_cmd)
+    Ok(cmd)
 }
 
 #[allow(dead_code)]
