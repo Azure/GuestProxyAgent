@@ -259,6 +259,17 @@ namespace GuestProxyAgentTest.Utilities
                     // Windows VMs always have the GPA VM Extension installed when ProxyAgentSettings.Enabled is true.
                     vmData.SecurityProfile.ProxyAgentSettings.AddProxyAgentExtension = true;
                 }
+
+                // If the access control profile reference id is not set, set the mode to Enforce to make sure the proxy agent is working in expected way.
+                // This is for test images which don't have the access control profile set up, or for shared gallery images which can't reference the access control profile in other subscription.
+                if (string.IsNullOrEmpty(vmData.SecurityProfile.ProxyAgentSettings.WireServer.InVmAccessControlProfileReferenceId))
+                {
+                    vmData.SecurityProfile.ProxyAgentSettings.WireServer.Mode = HostEndpointSettingsMode.Enforce;
+                }
+                if (string.IsNullOrEmpty(vmData.SecurityProfile.ProxyAgentSettings.Imds.InVmAccessControlProfileReferenceId))
+                {
+                    vmData.SecurityProfile.ProxyAgentSettings.Imds.Mode = HostEndpointSettingsMode.Enforce;
+                }
             }
 
             if (Constants.IS_WINDOWS())
