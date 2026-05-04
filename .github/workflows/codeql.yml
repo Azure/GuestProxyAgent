@@ -78,7 +78,7 @@ jobs:
                 rpm \
                 musl-tools \
 
-        sudo snap install dotnet-sdk --classic
+        sudo apt-get install -y dotnet-sdk-8.0
         sudo chown -R root:root /var/lib
 
     # Initializes the CodeQL tools for scanning.

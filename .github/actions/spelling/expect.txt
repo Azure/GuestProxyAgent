@@ -381,3 +381,4 @@ xxxx
 xxxxxxxx
 xxxxxxxxxxx
 zipsas
+zypper
