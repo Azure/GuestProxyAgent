@@ -42,6 +42,7 @@ use std::{ffi::OsString, time::Duration};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
+const DISABLED_MODE: &str = "disabled";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
 //const DENY_DEFAULT_ACCESS: &str = "deny";
 
@@ -63,7 +64,7 @@ pub struct KeyStatus {
     // specifies what keys are expected for telemetry purposes.
     // Exact values are TBD, but could include things like user id.
     requiredClaimsHeaderPairs: Option<Vec<String>>,
-    // One of Disabled, Wireserver, WireserverAndImds. valid at version 1.0
+    // One of Disabled, Audit, Wireserver, WireserverAndImds. valid at version 1.0
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secureChannelState: Option<String>,
     // Indicates if the secure channel is enabled. valid at version 2.0
@@ -605,19 +606,23 @@ impl KeyStatus {
             match &self.authorizationRules {
                 Some(rules) => match &rules.wireserver {
                     Some(item) => item.mode.to_lowercase(),
-                    None => "disabled".to_string(),
+                    None => DISABLED_MODE.to_string(),
                 },
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             }
         } else {
+            // in older version: secureChannelState indicates what endpoints have secure channel protections enabled.
+            // One of Disabled, Audit, Wireserver, WireserverAndImds.
             let state = match &self.secureChannelState {
                 Some(s) => s.to_lowercase(),
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             };
             if state == "wireserver" || state == "wireserverandimds" {
                 ENFORCE_MODE.to_string()
-            } else {
+            } else if state == "audit" {
                 AUDIT_MODE.to_string()
+            } else {
+                DISABLED_MODE.to_string()
             }
         }
     }
@@ -627,19 +632,23 @@ impl KeyStatus {
             match &self.authorizationRules {
                 Some(rules) => match &rules.imds {
                     Some(item) => item.mode.to_lowercase(),
-                    None => "disabled".to_string(),
+                    None => DISABLED_MODE.to_string(),
                 },
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             }
         } else {
+            // in older version: secureChannelState indicates what endpoints have secure channel protections enabled.
+            // One of Disabled, Audit, Wireserver, WireserverAndImds.
             let state = match &self.secureChannelState {
                 Some(s) => s.to_lowercase(),
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             };
             if state == "wireserverandimds" {
                 ENFORCE_MODE.to_string()
-            } else {
+            } else if state == "audit" {
                 AUDIT_MODE.to_string()
+            } else {
+                DISABLED_MODE.to_string()
             }
         }
     }
@@ -937,6 +946,27 @@ mod tests {
             "WireServer mode mismatch"
         );
         assert_eq!(status_v1.get_imds_mode(), "audit", "IMDS mode mismatch");
+
+        // Test the case when secureChannelState is Disabled, both WireServer and IMDS should be in disabled mode.
+        let status_response_v1 = r#"{
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": null,
+            "secureChannelState": "Disabled",
+            "version": "1.0"
+        }"#;
+        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
+        assert_eq!(
+            super::DISABLED_MODE.to_string(),
+            status_v1.get_wire_server_mode(),
+            "WireServer mode mismatch when secureChannelState is Disabled"
+        );
+        assert_eq!(
+            super::DISABLED_MODE.to_string(),
+            status_v1.get_imds_mode(),
+            "IMDS mode mismatch when secureChannelState is Disabled"
+        );
     }
 
     #[test]
