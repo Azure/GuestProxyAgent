@@ -643,12 +643,15 @@ impl KeyStatus {
                 Some(s) => s.to_lowercase(),
                 None => DISABLED_MODE.to_string(),
             };
-            if state == "wireserverandimds" {
-                ENFORCE_MODE.to_string()
-            } else if state == "audit" {
-                AUDIT_MODE.to_string()
-            } else {
+
+            if state == DISABLED_MODE {
                 DISABLED_MODE.to_string()
+            } else if state == "wireserverandimds" {
+                ENFORCE_MODE.to_string()
+            } else {
+                // audit mode when secureChannelState is audit or wireserver,
+                // because in both cases IMDS has some level of protection, just not enforce.
+                AUDIT_MODE.to_string()
             }
         }
     }
