@@ -230,7 +230,10 @@ impl Privilege {
         // The decoded path may contain '?' if the attacker encoded it as %3F.
         // Split so we match only the path portion, and extract any embedded query parameters.
         let (actual_path, embedded_query) = match lowered_request_path.find('?') {
-            Some(pos) => (&lowered_request_path[..pos], Some(&lowered_request_path[pos + 1..])),
+            Some(pos) => (
+                &lowered_request_path[..pos],
+                Some(&lowered_request_path[pos + 1..]),
+            ),
             None => (lowered_request_path, None),
         };
 
@@ -268,18 +271,15 @@ impl Privilege {
 
                 for (key, value) in query_parameters {
                     // Percent-decode query keys/values before matching to prevent encoded bypass attacks.
-                    match all_query_pairs
-                        .iter()
-                        .find(|(k, _)| {
-                            percent_encoding::percent_decode_str(k)
-                                .decode_utf8_lossy()
-                                .to_lowercase()
-                                == *key
-                        })
-                    {
+                    match all_query_pairs.iter().find(|(k, _)| {
+                        percent_encoding::percent_decode_str(k)
+                            .decode_utf8_lossy()
+                            .to_lowercase()
+                            == *key
+                    }) {
                         Some((_, v)) => {
-                            let decoded_v = percent_encoding::percent_decode_str(v)
-                                .decode_utf8_lossy();
+                            let decoded_v =
+                                percent_encoding::percent_decode_str(v).decode_utf8_lossy();
                             if decoded_v.to_lowercase() == *value {
                                 logger.write(
                                     LoggerLevel::Trace,

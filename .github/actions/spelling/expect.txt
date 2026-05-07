@@ -108,6 +108,7 @@ ffi
 FIXEDFILEINFO
 Fmanagement
 FOF
+Fresource
 FSETID
 FSO
 fsprogs
