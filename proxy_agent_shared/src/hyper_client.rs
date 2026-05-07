@@ -714,4 +714,16 @@ mod tests {
             "sync time should be close to the custom header time"
         );
     }
+
+    #[test]
+    fn query_pairs_test() {
+        let url = "/test?key1=value1&key%202=value%202"
+            .parse::<hyper::Uri>()
+            .unwrap();
+        let pairs = super::query_pairs(&url);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0], ("key1".to_string(), "value1".to_string()));
+        // query_pairs returns raw (non-decoded) values for signature compatibility
+        assert_eq!(pairs[1], ("key%202".to_string(), "value%202".to_string()));
+    }
 }

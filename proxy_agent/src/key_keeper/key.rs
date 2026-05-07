@@ -244,12 +244,19 @@ impl Privilege {
                 for (key, value) in query_parameters {
                     // We may need to optimize this like `lowered_request_path` if there are too many query parameters in the future,
                     // but currently we expect only a few query parameters at most, so the performance impact should be minimal.
+                    // Percent-decode query keys/values before matching to prevent encoded bypass attacks.
                     match hyper_client::query_pairs(request_url)
                         .into_iter()
-                        .find(|(k, _)| k.to_lowercase() == *key)
-                    {
+                        .find(|(k, _)| {
+                            percent_encoding::percent_decode_str(k)
+                                .decode_utf8_lossy()
+                                .to_lowercase()
+                                == *key
+                        }) {
                         Some((_, v)) => {
-                            if v.to_lowercase() == *value {
+                            let decoded_v =
+                                percent_encoding::percent_decode_str(&v).decode_utf8_lossy();
+                            if decoded_v.to_lowercase() == *value {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
@@ -859,6 +866,7 @@ pub async fn attest_key(host: &str, port: u16, key: &Key) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::ffi::OsString;
     #[cfg(not(windows))]
     use std::os::unix::ffi::OsStringExt;
@@ -1484,6 +1492,59 @@ mod tests {
         assert!(
             !privilege2.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should not be matched"
+        );
+
+        // Test percent-encoded query key: key1 encoded as k%65y1 should still match
+        let url: Uri = "http://localhost/test?k%65y1=value1&key2=value2"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded query key should match"
+        );
+
+        // Test percent-encoded query value: value1 encoded as valu%651 should still match
+        let url: Uri = "http://localhost/test?key1=valu%651&key2=value2"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded query value should match"
+        );
+
+        // Test percent-encoded slash in query value: resource=https%3A%2F%2Fmanagement.azure.com%2F
+        let privilege_with_resource = Privilege {
+            name: "token".to_string(),
+            path: "/metadata/identity/oauth2/token".to_string(),
+            queryParameters: Some(HashMap::from([(
+                "resource".to_string(),
+                "https://management.azure.com/".to_string(),
+            )])),
+        };
+        let url: Uri = "http://169.254.169.254/metadata/identity/oauth2/token?resource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded slashes/colons in query value should match decoded privilege"
+        );
+
+        // Test both key and value percent-encoded simultaneously
+        let url: Uri = "http://localhost/test?k%65y1=valu%651&k%65y2=valu%652"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "both percent-encoded key and value should match"
+        );
+
+        // Test encoded key that does NOT match should still fail
+        let url: Uri = "http://localhost/test?k%65y1=value1&k%65y2=wrongvalue"
+            .parse()
+            .unwrap();
+        assert!(
+            !privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded key with wrong value should not match"
         );
     }
 
