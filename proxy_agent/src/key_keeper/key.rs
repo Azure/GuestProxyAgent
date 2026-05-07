@@ -215,7 +215,7 @@ impl Clone for Privilege {
 impl Privilege {
     /// Note: `self.path` and `self.queryParameters` keys/values are expected to be
     /// pre-lowercased (done in `ComputedAuthorizationItem::from_authorization_item`).
-    /// `lowered_request_path` should be `request_url.path().to_lowercase()`, hoisted by the caller.
+    /// `lowered_request_path` should be the percent-decoded, lowercased request path.
     pub fn is_match(
         &self,
         logger: &mut ConnectionLogger,
@@ -226,7 +226,15 @@ impl Privilege {
             LoggerLevel::Trace,
             format!("Start to match privilege '{}'", self.name),
         );
-        if lowered_request_path.starts_with(&self.path) {
+
+        // The decoded path may contain '?' if the attacker encoded it as %3F.
+        // Split so we match only the path portion, and extract any embedded query parameters.
+        let (actual_path, embedded_query) = match lowered_request_path.find('?') {
+            Some(pos) => (&lowered_request_path[..pos], Some(&lowered_request_path[pos + 1..])),
+            None => (lowered_request_path, None),
+        };
+
+        if actual_path.starts_with(&self.path) {
             logger.write(
                 LoggerLevel::Trace,
                 format!("Matched privilege path '{}'", self.path),
@@ -241,21 +249,37 @@ impl Privilege {
                     ),
                 );
 
+                // Collect query pairs from the URI query string.
+                let mut all_query_pairs = hyper_client::query_pairs(request_url);
+
+                // Also collect query pairs embedded in the decoded path (from encoded %3F).
+                // These are already percent-decoded and lowercased from lowered_request_path.
+                if let Some(eq) = embedded_query {
+                    for pair in eq.split('&') {
+                        let mut split = pair.splitn(2, '=');
+                        let key = split.next().unwrap_or("");
+                        if key.is_empty() {
+                            continue;
+                        }
+                        let value = split.next().unwrap_or("");
+                        all_query_pairs.push((key.to_string(), value.to_string()));
+                    }
+                }
+
                 for (key, value) in query_parameters {
-                    // We may need to optimize this like `lowered_request_path` if there are too many query parameters in the future,
-                    // but currently we expect only a few query parameters at most, so the performance impact should be minimal.
                     // Percent-decode query keys/values before matching to prevent encoded bypass attacks.
-                    match hyper_client::query_pairs(request_url)
-                        .into_iter()
+                    match all_query_pairs
+                        .iter()
                         .find(|(k, _)| {
                             percent_encoding::percent_decode_str(k)
                                 .decode_utf8_lossy()
                                 .to_lowercase()
                                 == *key
-                        }) {
+                        })
+                    {
                         Some((_, v)) => {
-                            let decoded_v =
-                                percent_encoding::percent_decode_str(&v).decode_utf8_lossy();
+                            let decoded_v = percent_encoding::percent_decode_str(v)
+                                .decode_utf8_lossy();
                             if decoded_v.to_lowercase() == *value {
                                 logger.write(
                                     LoggerLevel::Trace,
@@ -1545,6 +1569,21 @@ mod tests {
         assert!(
             !privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "percent-encoded key with wrong value should not match"
+        );
+
+        // Test encoded '?' (%3F) in path: IMDS decodes the full URL so the query params are real.
+        // The caller (authorization_rules.rs) percent-decodes the path before passing it here,
+        // so lowered_request_path will contain '?' from the decoded %3F.
+        let url: Uri = "http://169.254.169.254/metadata/identity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "encoded %3F query separator must be decoded and query params matched"
         );
     }
 
