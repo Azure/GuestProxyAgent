@@ -12,6 +12,9 @@
 /rpm-build/RPMS/
 /rpm-build/SRPMS/
 /debbuild/
+/rpmbuild/BUILD/
+/rpmbuild/RPMS/
+/rpmbuild/SRPMS/
 
 .idea/
 

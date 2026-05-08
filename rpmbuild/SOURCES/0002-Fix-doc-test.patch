@@ -1,0 +1,25 @@
+From dda014e52c427043be3dbf95dc196a23e0cd06d2 Mon Sep 17 00:00:00 2001
+From: ZhidongPeng <zpeng@microsoft.com>
+Date: Wed, 24 Sep 2025 20:34:16 +0000
+Subject: [PATCH] Fix doc test
+
+---
+ proxy_agent_shared/src/misc_helpers.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/proxy_agent_shared/src/misc_helpers.rs b/proxy_agent_shared/src/misc_helpers.rs
+index 676a8e1..238b04c 100644
+--- a/proxy_agent_shared/src/misc_helpers.rs
++++ b/proxy_agent_shared/src/misc_helpers.rs
+@@ -184,7 +184,7 @@ pub fn get_files(dir: &Path) -> Result<Vec<PathBuf>> {
+ /// ```rust
+ /// use std::path::PathBuf;
+ /// use proxy_agent_shared::misc_helpers;
+-/// let dir = PathBuf::from("C:\\");
++/// let dir = PathBuf::from(".");
+ /// let search_regex_pattern = r"^(.*\.log)$";  // search for files with .log extension
+ /// let files = misc_helpers::search_files(&dir, search_regex_pattern).unwrap();
+ ///
+-- 
+2.51.0
+
