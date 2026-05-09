@@ -49,6 +49,7 @@ namespace GuestProxyAgentTest.Utilities
                    vmImagePublisher = group.VmImagePublisher,
                    vmImageSku = group.VmImageSku,
                    vmImageVersion = group.VmImageVersion,
+                   sharedGalleryImageUniqueId = group.SharedGalleryImageUniqueId,
                    testGroupName = group.GroupName,
                    testScenarioClassName = ele.ClassName,
                    testScenarioName = ele.Name,
