@@ -19,6 +19,7 @@ namespace GuestProxyAgentTest.Models
         public string VmImageOffer { get; set; } = null!;
         public string VmImageSku { get; set; } = null!;
         public string VmImageVersion { get; set; } = null!;
+        public string SharedGalleryImageUniqueId { get; set; } = null!;
         public List<TestScenarioConfig> Scenarios { get; set; } = null!;
     }
 

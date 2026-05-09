@@ -13,6 +13,7 @@ namespace GuestProxyAgentTest.Settings
         internal string vmImageOffer = "";
         internal string vmImageSku = "";
         internal string vmImageVersion = "";
+        internal string sharedGalleryImageUniqueId = "";
         internal string suffixName = new Random().Next(1000).ToString();
         internal string testScenarioClassName = "GuestProxyAgentTest.TestScenarios.BVTScenario";
         internal int testScenarioTimeoutMilliseconds = 1000 * 60 * 120;
@@ -26,7 +27,8 @@ namespace GuestProxyAgentTest.Settings
                     Publisher = vmImagePublisher,
                     Offer = vmImageOffer,
                     Sku = vmImageSku,
-                    Version = vmImageVersion
+                    Version = vmImageVersion,
+                    SharedGalleryImageUniqueId = sharedGalleryImageUniqueId
                 };
             }
         }
@@ -54,11 +56,13 @@ namespace GuestProxyAgentTest.Settings
         public string Offer { get; set; } = null!;
         public string Sku { get; set; } = null!;
         public string Version { get; set; } = null!;
+        public string SharedGalleryImageUniqueId { get; set; } = null!;
 
         public bool IsArm64
         {
             get
             {
+                // TODO: SharedGalleryImageUniqueId also contains architecture info, need to parse it when it's available
                 return (Offer == null ? false : Offer.Contains("arm64", StringComparison.OrdinalIgnoreCase)) ||
                   (Sku == null ? false : Sku.Contains("arm64", StringComparison.OrdinalIgnoreCase));
             }
