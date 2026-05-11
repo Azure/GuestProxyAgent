@@ -106,12 +106,15 @@ FFFFFFFF
 fffi
 ffi
 FIXEDFILEINFO
+Fmanagement
 FOF
+Fresource
 FSETID
 FSO
 fsprogs
 fstorage
 fstype
+ftoken
 fwlink
 Fzpeng
 gaplugin
@@ -312,6 +315,7 @@ tokio
 topdir
 totalentries
 transitioning
+trustyuser
 UBR
 UBRSTRING
 udev
@@ -323,6 +327,7 @@ Unregistering
 unregisters
 unspec
 uzers
+valu
 VCpus
 vcruntime
 vendored
@@ -365,6 +370,7 @@ WMI
 workarounds
 WORKINGSET
 WORKDIR
+wrongvalue
 WScript
 wsf
 Wsh
@@ -381,3 +387,4 @@ xxxx
 xxxxxxxx
 xxxxxxxxxxx
 zipsas
+zypper

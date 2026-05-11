@@ -52,14 +52,34 @@ namespace GuestProxyAgentTest.TestCases
             if (EnableProxyAgent)
             {
                 // property 'inVMAccessControlProfileReferenceId' cannot be used together with property 'mode'
-                patch.SecurityProfile.ProxyAgentSettings.WireServer = new HostEndpointSettings
+                if (string.IsNullOrEmpty(TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId))
                 {
-                    InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
-                };
-                patch.SecurityProfile.ProxyAgentSettings.Imds = new HostEndpointSettings
+                    patch.SecurityProfile.ProxyAgentSettings.WireServer = new HostEndpointSettings
+                    {
+                        Mode = HostEndpointSettingsMode.Enforce,
+                    };
+                }
+                else
                 {
-                    InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId,
-                };
+                    patch.SecurityProfile.ProxyAgentSettings.WireServer = new HostEndpointSettings
+                    {
+                        InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
+                    };
+                }
+                if (string.IsNullOrEmpty(TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId))
+                {
+                    patch.SecurityProfile.ProxyAgentSettings.Imds = new HostEndpointSettings
+                    {
+                        Mode = HostEndpointSettingsMode.Enforce,
+                    };
+                }
+                else
+                {
+                    patch.SecurityProfile.ProxyAgentSettings.Imds = new HostEndpointSettings
+                    {
+                        InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId,
+                    };
+                }
             }
 
             await vmr.UpdateAsync(Azure.WaitUntil.Completed, patch, cancellationToken: context.CancellationToken);

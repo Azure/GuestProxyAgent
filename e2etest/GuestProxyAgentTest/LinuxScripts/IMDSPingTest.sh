@@ -16,18 +16,24 @@ for i in {1..10}; do
     fi
     sleep 1
 
+    authorizationHeader=$(curl -s -I -H "Metadata:True" $url | grep -Fi "x-ms-azure-host-authorization")
     if [ "${imdsSecureChannelEnabled,,}" = "true" ]  # case insensitive comparison
     then
-        authorizationHeader=$(curl -s -I -H "Metadata:True" $url | grep -Fi "x-ms-azure-host-authorization")
         if [ "$authorizationHeader" = "" ]; then
             echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Response authorization header not exist"
             exit -1
         else
-            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Response authorization header exists"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Response authorization header exists as expected"
         fi
         sleep 1
     else
-		echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - IMDS secure channel is not enabled. Skipping x-ms-azure-host-authorization header validation"
+        if [ "$authorizationHeader" = "" ]; then
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Response authorization header not exist as expected"
+        else
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Response authorization header exists"
+            exit -1
+        fi
+        sleep 1
 	fi
 done
 
