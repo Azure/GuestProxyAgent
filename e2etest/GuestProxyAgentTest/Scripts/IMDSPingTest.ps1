@@ -23,8 +23,8 @@ while ($i -lt 10) {
             exit -1
         }
 
+        $responseHeaders = $response.Headers
         if ("$imdsSecureChannelEnabled" -ieq "true") { # case insensitive comparison
-            $responseHeaders = $response.Headers
             if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
                 Write-Error "$((Get-Date).ToUniversalTime()) - Ping test failed. Response does not contain x-ms-azure-host-authorization header"
                 exit -1
@@ -32,10 +32,15 @@ while ($i -lt 10) {
             else {
                 Write-Output "$((Get-Date).ToUniversalTime()) - Ping test passed. Response contains x-ms-azure-host-authorization header"
             }
-		
         }
         else {
-            Write-Output "$((Get-Date).ToUniversalTime()) - IMDS secure channel is not enabled. Skipping x-ms-azure-host-authorization header validation"
+            if ($null -eq $responseHeaders["x-ms-azure-host-authorization"]) {
+                Write-Output "$((Get-Date).ToUniversalTime()) - Ping test passed. Response does not contain x-ms-azure-host-authorization header as expected"
+            }
+            else {
+                Write-Error "$((Get-Date).ToUniversalTime()) - Ping test failed. Response contains x-ms-azure-host-authorization header"
+                exit -1
+            }
         }
 
         $webRequest.Abort()

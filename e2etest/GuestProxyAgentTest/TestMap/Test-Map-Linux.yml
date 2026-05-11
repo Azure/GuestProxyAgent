@@ -6,3 +6,4 @@ testGroupList:
   - include: Redhat90-TestGroup.yml
   - include: Suse15SP4-TestGroup.yml
   - include: Rocky9-TestGroup.yml
+  - include: Ubuntu24-SGI-TestGroup.yml

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ProxyAgentExt"
-version = "1.0.43"
+version = "1.0.44"
 dependencies = [
  "clap",
  "ctor",
@@ -172,7 +172,7 @@ dependencies = [
 
 [[package]]
 name = "azure-proxy-agent"
-version = "1.0.43"
+version = "1.0.44"
 dependencies = [
  "aya",
  "base64",
@@ -186,6 +186,7 @@ dependencies = [
  "libloading",
  "nix",
  "once_cell",
+ "percent-encoding",
  "proxy_agent_shared",
  "regex",
  "serde",
@@ -831,15 +832,14 @@ checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "openssl"
-version = "0.10.78"
+version = "0.10.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f38c4372413cdaaf3cc79dd92d29d7d9f5ab09b51b10dded508fb90bb70b9222"
+checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
 dependencies = [
  "bitflags",
  "cfg-if",
  "foreign-types",
  "libc",
- "once_cell",
  "openssl-macros",
  "openssl-sys",
 ]
@@ -866,9 +866,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.114"
+version = "0.9.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13ce1245cd07fcc4cfdb438f7507b0c7e4f3849a69fd84d52374c66d83741bb6"
+checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
 dependencies = [
  "cc",
  "libc",
@@ -887,6 +887,12 @@ dependencies = [
  "serde",
  "windows-sys",
 ]
+
+[[package]]
+name = "percent-encoding"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pin-project-lite"
@@ -932,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "proxy_agent_setup"
-version = "1.0.43"
+version = "1.0.44"
 dependencies = [
  "clap",
  "proxy_agent_shared",
@@ -944,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "proxy_agent_shared"
-version = "1.0.43"
+version = "1.0.44"
 dependencies = [
  "chrono",
  "concurrent-queue",

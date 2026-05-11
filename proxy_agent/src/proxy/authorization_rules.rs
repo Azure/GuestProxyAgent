@@ -191,7 +191,9 @@ impl ComputedAuthorizationItem {
             return true;
         }
 
-        let lowered_request_path = request_url.path().to_lowercase();
+        let decoded_path =
+            percent_encoding::percent_decode_str(request_url.path()).decode_utf8_lossy();
+        let lowered_request_path = decoded_path.to_lowercase();
         let mut any_privilege_matched = false;
         for privilege in self.privileges.values() {
             let privilege_name = &privilege.name;
@@ -634,5 +636,108 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = std::fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[tokio::test]
+    async fn test_percent_encoded_path_must_not_bypass_privilege() {
+        let mut test_logger = ConnectionLogger::new(0, 0);
+
+        // Simulate a privilege restricting /metadata/identity/oauth2/token
+        let access_control_rules = AccessControlRules {
+            roles: Some(vec![Role {
+                name: "tokenRole".to_string(),
+                privileges: vec!["tokenPrivilege".to_string()],
+            }]),
+            privileges: Some(vec![Privilege {
+                name: "tokenPrivilege".to_string(),
+                path: "/metadata/identity/oauth2/token".to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "trustedUser".to_string(),
+                userName: Some("trustyuser".to_string()),
+                groupName: None,
+                exePath: None,
+                processName: None,
+            }]),
+            roleAssignments: Some(vec![RoleAssignment {
+                role: "tokenRole".to_string(),
+                identities: vec!["trustedUser".to_string()],
+            }]),
+        };
+        let authorization_item = AuthorizationItem {
+            defaultAccess: "allow".to_string(),
+            mode: "enforce".to_string(),
+            rules: Some(access_control_rules),
+            id: "0".to_string(),
+        };
+        let rules = ComputedAuthorizationItem::from_authorization_item(authorization_item);
+
+        let attacker_claims = Claims {
+            userId: 9999,
+            userName: "attacker".to_string(),
+            userGroups: vec!["users".to_string()],
+            processId: 1234,
+            processFullPath: PathBuf::from("/usr/bin/curl"),
+            clientIp: "127.0.0.1".to_string(),
+            clientPort: 12345,
+            processName: OsString::from("curl"),
+            processCmdLine: "curl".to_string(),
+            runAsElevated: false,
+        };
+
+        // Normal path is correctly denied for attacker
+        let url = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            !rules.is_allowed(&mut test_logger, url, attacker_claims.clone()),
+            "Normal path must be denied for attacker"
+        );
+
+        // Percent-encoded %2F bypass: must also be denied
+        let url_encoded = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2%2Ftoken?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            !rules.is_allowed(&mut test_logger, url_encoded, attacker_claims.clone()),
+            "Percent-encoded path (%2F) must NOT bypass privilege matching"
+        );
+
+        // Mixed encoding: %2f (lowercase hex) must also be caught
+        let url_lower_hex = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2%2ftoken?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            !rules.is_allowed(&mut test_logger, url_lower_hex, attacker_claims.clone()),
+            "Percent-encoded path (%2f lowercase) must NOT bypass privilege matching"
+        );
+
+        // Trusted user should still be allowed through normal path
+        let trusted_claims = Claims {
+            userId: 1000,
+            userName: "trustyuser".to_string(),
+            userGroups: vec!["users".to_string()],
+            processId: 5678,
+            processFullPath: PathBuf::from("/usr/bin/curl"),
+            clientIp: "127.0.0.1".to_string(),
+            clientPort: 12345,
+            processName: OsString::from("curl"),
+            processCmdLine: "curl".to_string(),
+            runAsElevated: false,
+        };
+        let url = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            rules.is_allowed(&mut test_logger, url, trusted_claims.clone()),
+            "Trusted user must be allowed through normal path"
+        );
+
+        // Trusted user should still be allowed through percent-encoded path (%2F)
+        let url = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2%2Ftoken?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            rules.is_allowed(&mut test_logger, url, trusted_claims.clone()),
+            "Trusted user must be allowed through percent-encoded path (%2F)"
+        );
+
+        // Trusted user should still be allowed through percent-encoded path (%2f) with lowercase hex
+        let url = hyper::Uri::from_str("http://169.254.169.254/metadata/identity/oauth2%2ftoken?api-version=2018-02-01&resource=https://management.azure.com/").unwrap();
+        assert!(
+            rules.is_allowed(&mut test_logger, url, trusted_claims.clone()),
+            "Trusted user must be allowed through percent-encoded path (%2f)"
+        );
     }
 }

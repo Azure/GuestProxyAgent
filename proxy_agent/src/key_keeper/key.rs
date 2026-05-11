@@ -42,6 +42,7 @@ use std::{ffi::OsString, time::Duration};
 
 const AUDIT_MODE: &str = "audit";
 const ENFORCE_MODE: &str = "enforce";
+const DISABLED_MODE: &str = "disabled";
 //const ALLOW_DEFAULT_ACCESS: &str = "allow";
 //const DENY_DEFAULT_ACCESS: &str = "deny";
 
@@ -63,7 +64,7 @@ pub struct KeyStatus {
     // specifies what keys are expected for telemetry purposes.
     // Exact values are TBD, but could include things like user id.
     requiredClaimsHeaderPairs: Option<Vec<String>>,
-    // One of Disabled, Wireserver, WireserverAndImds. valid at version 1.0
+    // One of Disabled, Audit, Wireserver, WireserverAndImds. valid at version 1.0
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secureChannelState: Option<String>,
     // Indicates if the secure channel is enabled. valid at version 2.0
@@ -215,7 +216,7 @@ impl Clone for Privilege {
 impl Privilege {
     /// Note: `self.path` and `self.queryParameters` keys/values are expected to be
     /// pre-lowercased (done in `ComputedAuthorizationItem::from_authorization_item`).
-    /// `lowered_request_path` should be `request_url.path().to_lowercase()`, hoisted by the caller.
+    /// `lowered_request_path` should be the percent-decoded, lowercased request path.
     pub fn is_match(
         &self,
         logger: &mut ConnectionLogger,
@@ -226,7 +227,18 @@ impl Privilege {
             LoggerLevel::Trace,
             format!("Start to match privilege '{}'", self.name),
         );
-        if lowered_request_path.starts_with(&self.path) {
+
+        // The decoded path may contain '?' if the attacker encoded it as %3F.
+        // Split so we match only the path portion, and extract any embedded query parameters.
+        let (actual_path, embedded_query) = match lowered_request_path.find('?') {
+            Some(pos) => (
+                &lowered_request_path[..pos],
+                Some(&lowered_request_path[pos + 1..]),
+            ),
+            None => (lowered_request_path, None),
+        };
+
+        if actual_path.starts_with(&self.path) {
             logger.write(
                 LoggerLevel::Trace,
                 format!("Matched privilege path '{}'", self.path),
@@ -241,15 +253,35 @@ impl Privilege {
                     ),
                 );
 
+                // Collect query pairs from the URI query string.
+                let mut all_query_pairs = hyper_client::query_pairs(request_url);
+
+                // Also collect query pairs embedded in the decoded path (from encoded %3F).
+                // These are already percent-decoded and lowercased from lowered_request_path.
+                if let Some(eq) = embedded_query {
+                    for pair in eq.split('&') {
+                        let mut split = pair.splitn(2, '=');
+                        let key = split.next().unwrap_or("");
+                        if key.is_empty() {
+                            continue;
+                        }
+                        let value = split.next().unwrap_or("");
+                        all_query_pairs.push((key.to_string(), value.to_string()));
+                    }
+                }
+
                 for (key, value) in query_parameters {
-                    // We may need to optimize this like `lowered_request_path` if there are too many query parameters in the future,
-                    // but currently we expect only a few query parameters at most, so the performance impact should be minimal.
-                    match hyper_client::query_pairs(request_url)
-                        .into_iter()
-                        .find(|(k, _)| k.to_lowercase() == *key)
-                    {
+                    // Percent-decode query keys/values before matching to prevent encoded bypass attacks.
+                    match all_query_pairs.iter().find(|(k, _)| {
+                        percent_encoding::percent_decode_str(k)
+                            .decode_utf8_lossy()
+                            .to_lowercase()
+                            == *key
+                    }) {
                         Some((_, v)) => {
-                            if v.to_lowercase() == *value {
+                            let decoded_v =
+                                percent_encoding::percent_decode_str(v).decode_utf8_lossy();
+                            if decoded_v.to_lowercase() == *value {
                                 logger.write(
                                     LoggerLevel::Trace,
                                     format!(
@@ -605,19 +637,23 @@ impl KeyStatus {
             match &self.authorizationRules {
                 Some(rules) => match &rules.wireserver {
                     Some(item) => item.mode.to_lowercase(),
-                    None => "disabled".to_string(),
+                    None => DISABLED_MODE.to_string(),
                 },
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             }
         } else {
+            // in older version: secureChannelState indicates what endpoints have secure channel protections enabled.
+            // One of Disabled, Audit, Wireserver, WireserverAndImds.
             let state = match &self.secureChannelState {
                 Some(s) => s.to_lowercase(),
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             };
             if state == "wireserver" || state == "wireserverandimds" {
                 ENFORCE_MODE.to_string()
-            } else {
+            } else if state == "audit" {
                 AUDIT_MODE.to_string()
+            } else {
+                DISABLED_MODE.to_string()
             }
         }
     }
@@ -627,18 +663,25 @@ impl KeyStatus {
             match &self.authorizationRules {
                 Some(rules) => match &rules.imds {
                     Some(item) => item.mode.to_lowercase(),
-                    None => "disabled".to_string(),
+                    None => DISABLED_MODE.to_string(),
                 },
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             }
         } else {
+            // in older version: secureChannelState indicates what endpoints have secure channel protections enabled.
+            // One of Disabled, Audit, Wireserver, WireserverAndImds.
             let state = match &self.secureChannelState {
                 Some(s) => s.to_lowercase(),
-                None => "disabled".to_string(),
+                None => DISABLED_MODE.to_string(),
             };
-            if state == "wireserverandimds" {
+
+            if state == DISABLED_MODE {
+                DISABLED_MODE.to_string()
+            } else if state == "wireserverandimds" {
                 ENFORCE_MODE.to_string()
             } else {
+                // audit mode when secureChannelState is audit or wireserver,
+                // because in both cases IMDS has some level of protection, just not enforce.
                 AUDIT_MODE.to_string()
             }
         }
@@ -658,7 +701,7 @@ impl KeyStatus {
 impl Display for KeyStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f,
-            "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}",
+            "authorizationScheme: {}, keyDeliveryMethod: {}, keyGuid: {}, secureChannelState: {}, version: {}, WireServerMode: {}, IMDSMode: {}",
             self.authorizationScheme,
             self.keyDeliveryMethod,
             match &self.keyGuid {
@@ -666,7 +709,9 @@ impl Display for KeyStatus {
                 None => "None".to_string(),
             },
             self.get_secure_channel_state(),
-            self.version)
+            self.version,
+            self.get_wire_server_mode(),
+            self.get_imds_mode())
     }
 }
 
@@ -859,6 +904,7 @@ pub async fn attest_key(host: &str, port: u16, key: &Key) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::ffi::OsString;
     #[cfg(not(windows))]
     use std::os::unix::ffi::OsStringExt;
@@ -935,10 +981,44 @@ mod tests {
             "WireServer mode mismatch"
         );
         assert_eq!(status_v1.get_imds_mode(), "audit", "IMDS mode mismatch");
+
+        // Test the case when secureChannelState is Disabled, both WireServer and IMDS should be in disabled mode.
+        let status_response_v1 = r#"{
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": null,
+            "secureChannelState": "Disabled",
+            "version": "1.0"
+        }"#;
+        let status_v1: KeyStatus = serde_json::from_str(status_response_v1).unwrap();
+        assert_eq!(
+            super::DISABLED_MODE.to_string(),
+            status_v1.get_wire_server_mode(),
+            "WireServer mode mismatch when secureChannelState is Disabled"
+        );
+        assert_eq!(
+            super::DISABLED_MODE.to_string(),
+            status_v1.get_imds_mode(),
+            "IMDS mode mismatch when secureChannelState is Disabled"
+        );
     }
 
     #[test]
     fn key_status_v2_test() {
+        let status_response = r#"{"authorizationRules":null,"authorizationScheme":"Azure-HMAC-SHA256","keyDeliveryMethod":"http","keyGuid":null,"keyIncarnationId":null,"requiredClaimsHeaderPairs":[],"secureChannelEnabled":false,"version":"2.0"}"#;
+        let status: KeyStatus = serde_json::from_str(status_response).unwrap();
+        assert_eq!(
+            "disabled",
+            status.get_wire_server_mode(),
+            "WireServer mode mismatch when secureChannelEnabled is false"
+        );
+        assert_eq!(
+            "disabled",
+            status.get_imds_mode(),
+            "IMDS mode mismatch when secureChannelEnabled is false"
+        );
+
         let status_response = r#"{
             "authorizationScheme": "Azure-HMAC-SHA256",
             "keyDeliveryMethod": "http",
@@ -1484,6 +1564,74 @@ mod tests {
         assert!(
             !privilege2.is_match(&mut logger, &url, &url.path().to_lowercase()),
             "privilege should not be matched"
+        );
+
+        // Test percent-encoded query key: key1 encoded as k%65y1 should still match
+        let url: Uri = "http://localhost/test?k%65y1=value1&key2=value2"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded query key should match"
+        );
+
+        // Test percent-encoded query value: value1 encoded as valu%651 should still match
+        let url: Uri = "http://localhost/test?key1=valu%651&key2=value2"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded query value should match"
+        );
+
+        // Test percent-encoded slash in query value: resource=https%3A%2F%2Fmanagement.azure.com%2F
+        let privilege_with_resource = Privilege {
+            name: "token".to_string(),
+            path: "/metadata/identity/oauth2/token".to_string(),
+            queryParameters: Some(HashMap::from([(
+                "resource".to_string(),
+                "https://management.azure.com/".to_string(),
+            )])),
+        };
+        let url: Uri = "http://169.254.169.254/metadata/identity/oauth2/token?resource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded slashes/colons in query value should match decoded privilege"
+        );
+
+        // Test both key and value percent-encoded simultaneously
+        let url: Uri = "http://localhost/test?k%65y1=valu%651&k%65y2=valu%652"
+            .parse()
+            .unwrap();
+        assert!(
+            privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "both percent-encoded key and value should match"
+        );
+
+        // Test encoded key that does NOT match should still fail
+        let url: Uri = "http://localhost/test?k%65y1=value1&k%65y2=wrongvalue"
+            .parse()
+            .unwrap();
+        assert!(
+            !privilege.is_match(&mut logger, &url, &url.path().to_lowercase()),
+            "percent-encoded key with wrong value should not match"
+        );
+
+        // Test encoded '?' (%3F) in path: IMDS decodes the full URL so the query params are real.
+        // The caller (authorization_rules.rs) percent-decodes the path before passing it here,
+        // so lowered_request_path will contain '?' from the decoded %3F.
+        let url: Uri = "http://169.254.169.254/metadata/identity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "encoded %3F query separator must be decoded and query params matched"
         );
     }
 
