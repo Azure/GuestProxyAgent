@@ -34,5 +34,5 @@
 .vs/
 
 # pentest run & results
-/pentest/results/
+/pentest/*/results/
 __pycache__/
