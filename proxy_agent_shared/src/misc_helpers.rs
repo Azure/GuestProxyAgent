@@ -249,8 +249,18 @@ pub fn json_read_from_file<T>(file_path: &Path) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let file = File::open(file_path)?;
-    let obj: T = serde_json::from_reader(file)?;
+    // Read the whole file to bytes so we can transparently skip an optional
+    // UTF-8 BOM (EF BB BF). serde_json does not strip a BOM and would otherwise
+    // fail the parse with "expected value at line 1 column 1" for any file
+    // produced by editors / tools that default to BOM-prefixed UTF-8 (e.g.
+    // Windows PowerShell 5.1's `Set-Content -Encoding UTF8`, Notepad, VS Code's
+    // "UTF-8 with BOM").
+    let bytes = fs::read(file_path)?;
+    let payload = match bytes.as_slice() {
+        [0xEF, 0xBB, 0xBF, rest @ ..] => rest,
+        rest => rest,
+    };
+    let obj: T = serde_json::from_slice(payload)?;
 
     Ok(obj)
 }
@@ -583,6 +593,53 @@ mod tests {
         assert_eq!(test.date_time_unix_nano, json.date_time_unix_nano);
         assert_eq!(test.long_os_version, json.long_os_version);
         assert_eq!(test.current_exe_dir, json.current_exe_dir);
+
+        _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn json_read_from_file_skips_utf8_bom_test() {
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct Small {
+            name: String,
+            value: u32,
+        }
+
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("json_read_from_file_skips_utf8_bom_test");
+        _ = fs::remove_dir_all(&temp_test_path);
+        super::try_create_folder(&temp_test_path).unwrap();
+
+        let body = r#"{"name":"hello","value":42}"#;
+        let expected = Small {
+            name: "hello".to_string(),
+            value: 42,
+        };
+
+        // 1. BOM-less file parses (regression guard for existing behavior).
+        let no_bom = temp_test_path.join("no_bom.json");
+        fs::write(&no_bom, body.as_bytes()).unwrap();
+        assert_eq!(
+            super::json_read_from_file::<Small>(&no_bom).unwrap(),
+            expected
+        );
+
+        // 2. UTF-8 BOM-prefixed file parses (the actual fix).
+        let with_bom = temp_test_path.join("with_bom.json");
+        let mut bytes = Vec::with_capacity(3 + body.len());
+        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+        bytes.extend_from_slice(body.as_bytes());
+        fs::write(&with_bom, &bytes).unwrap();
+        assert_eq!(
+            super::json_read_from_file::<Small>(&with_bom).unwrap(),
+            expected
+        );
+
+        // 3. A bare BOM (no payload) still surfaces as a parse error rather
+        //    than being silently treated as an empty document.
+        let bom_only = temp_test_path.join("bom_only.json");
+        fs::write(&bom_only, &[0xEF, 0xBB, 0xBF]).unwrap();
+        assert!(super::json_read_from_file::<Small>(&bom_only).is_err());
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
