@@ -254,7 +254,7 @@ where
     // fail the parse with "expected value at line 1 column 1" for any file
     // produced by editors / tools that default to BOM-prefixed UTF-8 (e.g.
     // Windows PowerShell 5.1's `Set-Content -Encoding UTF8`, Notepad, VS Code's
-    // "UTF-8 with BOM"). 
+    // "UTF-8 with BOM").
     let bytes = fs::read(file_path)?;
     let payload = match bytes.as_slice() {
         [0xEF, 0xBB, 0xBF, rest @ ..] => rest,
