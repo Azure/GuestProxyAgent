@@ -38,6 +38,7 @@ use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::service::service_fn;
+use hyper::Method;
 use hyper::StatusCode;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
@@ -375,6 +376,32 @@ impl ProxyServer {
                 http_connection_context.url
             ),
         );
+
+        // Explicit method allow-list. GPA is an HTTP/1.1 forward proxy for a
+        // fixed set of fabric endpoints, so it must reject:
+        //   * CONNECT — accepting it would turn GPA into a generic outbound TCP
+        //     tunnel and bypass the per-endpoint authorization + signing logic.
+        //   * TRACE   — GPA injects an HMAC `x-ms-azure-host-authorization`
+        //     signature and `x-ms-azure-host-claims` before forwarding; a TRACE
+        //     would cause the upstream to echo those secrets back to the local
+        //     (potentially unprivileged) caller.
+        //   * Any non-standard verb — defense in depth against request smuggling
+        //     and unexpected upstream behavior on unknown tokens.
+        // Reject *before* any auth/upstream lookup so attackers cannot pivot
+        // through unsupported methods, and respond with an explicit 405 + Allow
+        // (RFC 7231 §6.5.5) so clients and pen-test harnesses see a real status
+        // line instead of a silent RST.
+        if !Self::is_method_allowed(&http_connection_context.method) {
+            let bad_method = http_connection_context.method.to_string();
+            self.log_connection_summary(
+                &mut http_connection_context,
+                StatusCode::METHOD_NOT_ALLOWED,
+                false,
+                format!("Rejected unsupported HTTP method '{bad_method}'"),
+            )
+            .await;
+            return Ok(Self::method_not_allowed_response());
+        }
 
         if http_connection_context.contains_traversal_characters() {
             self.log_connection_summary(
@@ -878,6 +905,48 @@ impl ProxyServer {
         response
     }
 
+    /// Methods that GPA's HTTP/1.1 forward-proxy will accept and try to route
+    /// to a fabric endpoint. Anything else (CONNECT, TRACE, made-up verbs)
+    /// is rejected with 405 by `handle_new_http_request` BEFORE any
+    /// authorization or upstream lookup happens.
+    const ALLOWED_METHODS: &'static [Method] = &[
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::HEAD,
+        Method::OPTIONS,
+        Method::PATCH,
+    ];
+    const ALLOW_HEADER_VALUE: &'static str = "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH";
+
+    fn is_method_allowed(method: &Method) -> bool {
+        Self::ALLOWED_METHODS.iter().any(|m| m == method)
+    }
+
+    /// Build an explicit `405 Method Not Allowed` response with an `Allow`
+    /// header listing the supported verbs and a short text body so that
+    /// clients (and pen-test harnesses) can see a real HTTP status line
+    /// instead of a silent connection close.
+    fn method_not_allowed_response() -> Response<BoxBody<Bytes, hyper::Error>> {
+        let body = Full::new(Bytes::from_static(b"Method Not Allowed"))
+            .map_err(|never| match never {})
+            .boxed();
+        let mut response = Response::new(body);
+        *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+        let headers = response.headers_mut();
+        headers.insert(
+            hyper::header::ALLOW,
+            HeaderValue::from_static(Self::ALLOW_HEADER_VALUE),
+        );
+        headers.insert(
+            hyper::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        headers.insert(hyper::header::CONNECTION, HeaderValue::from_static("close"));
+        response
+    }
+
     async fn handle_request_with_signature(
         &self,
         mut http_connection_context: HttpConnectionContext,
@@ -1137,6 +1206,64 @@ mod tests {
         );
 
         // stop the listener
+        cancellation_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn unsupported_methods_return_405() {
+        // GPA must reject CONNECT, TRACE, and any unknown verb with an
+        // explicit 405 + Allow header rather than silently closing the
+        // connection. Regression test for pen-test finding A4.
+        // We use std::net + spawn_blocking because this crate doesn't enable
+        // tokio's `io-util` feature.
+        use std::io::{Read, Write};
+        use std::net::TcpStream as StdTcpStream;
+        use std::time::Duration as StdDuration;
+
+        let host = "127.0.0.1";
+        let port: u16 = 8092; // distinct from other tests
+        let shared_state = shared_state::SharedState::start_all();
+        let cancellation_token = shared_state.get_cancellation_token();
+        let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
+
+        tokio::spawn({
+            let proxy_server = proxy_server.clone();
+            async move {
+                proxy_server.start().await;
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        async fn first_status_line(host: &'static str, port: u16, raw: &'static str) -> String {
+            tokio::task::spawn_blocking(move || {
+                let mut stream = StdTcpStream::connect((host, port)).expect("connect");
+                stream
+                    .set_read_timeout(Some(StdDuration::from_secs(2)))
+                    .expect("set_read_timeout");
+                stream.write_all(raw.as_bytes()).expect("write");
+                let mut buf = [0u8; 256];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                text.lines().next().unwrap_or("").to_string()
+            })
+            .await
+            .expect("spawn_blocking")
+        }
+
+        for raw in [
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n",
+            "TRACE / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            "WIDGET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+        ] {
+            let status_line = first_status_line(host, port, raw).await;
+            assert!(
+                status_line.starts_with("HTTP/1.1 405"),
+                "expected 405 status line for raw request {:?}, got {:?}",
+                raw,
+                status_line
+            );
+        }
+
         cancellation_token.cancel();
     }
 }
