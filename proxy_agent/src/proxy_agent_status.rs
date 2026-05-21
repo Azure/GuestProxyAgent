@@ -307,6 +307,16 @@ impl ProxyAgentStatusTask {
             ))
             .await;
         } else {
+            #[cfg(not(windows))]
+            {
+                proxy_agent_shared::linux::set_file_permissions(&full_file_path, 0o640)
+                    .unwrap_or_else(|e| {
+                        logger::write_error(format!(
+                            "Failed to set status.json file permission to 640 with error: {e}"
+                        ));
+                    });
+            }
+
             // need overwrite the status message to indicate the status file is written successfully
             self.update_agent_status_message(format!(
                 "Aggregate status written to status file: {}",
