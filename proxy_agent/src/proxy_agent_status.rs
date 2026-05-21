@@ -292,6 +292,11 @@ impl ProxyAgentStatusTask {
     async fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
         let full_file_path = self.status_dir.join("status.json");
         if let Err(e) = misc_helpers::json_write_to_file_async(&status, &full_file_path).await {
+            self.update_agent_status_message(format!(
+                "Error writing aggregate status to status file: {e}"
+            ))
+            .await;
+        } else {
             #[cfg(not(windows))]
             {
                 proxy_agent_shared::linux::set_file_permissions(&full_file_path, 0o640)
@@ -302,11 +307,6 @@ impl ProxyAgentStatusTask {
                     });
             }
 
-            self.update_agent_status_message(format!(
-                "Error writing aggregate status to status file: {e}"
-            ))
-            .await;
-        } else {
             // need overwrite the status message to indicate the status file is written successfully
             self.update_agent_status_message(format!(
                 "Aggregate status written to status file: {}",
