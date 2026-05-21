@@ -12,16 +12,31 @@ const EBPF_FILE: &str = "ebpf_cgroup.o";
 const CONFIG_PATH: &str = "/etc/azure/proxy-agent.json";
 const EBPF_PATH: &str = "/usr/lib/azure-proxy-agent/ebpf_cgroup.o";
 
-pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> Result<u64> {
+pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> Result<()> {
     copy_service_config_file(service_name, service_file_dir)
 }
 
-fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> Result<u64> {
+fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> Result<()> {
     let service_config_name = format!("{service_name}.service");
     let src_config_file_path = service_file_dir.join(&service_config_name);
     let dst_config_file_path = PathBuf::from(proxy_agent_shared::linux::SERVICE_CONFIG_FOLDER_PATH)
         .join(&service_config_name);
-    fs::copy(src_config_file_path, dst_config_file_path).map_err(Into::into)
+    fs::copy(src_config_file_path, &dst_config_file_path).map_err(|e| {
+        std::io::Error::other(format!(
+            "Failed to copy service config file to {dst_config_file_path:?} with error: {e}"
+        ))
+    })?;
+    // set the file permissions to 644 for the service config unit file
+    proxy_agent_shared::linux::set_file_permissions(&dst_config_file_path, 0o644).map_err(|e| {
+        std::io::Error::other(format!(
+            "Failed to set file permissions for {dst_config_file_path:?} with error: {e}"
+        ))
+    })?;
+
+    logger::write(format!(
+        "Copied service config file to {dst_config_file_path:?}"
+    ));
+    Ok(())
 }
 
 fn backup_service_config_file(backup_folder: PathBuf) {
@@ -94,7 +109,22 @@ pub fn copy_files(src_folder: PathBuf) {
         src_folder.join("azure-proxy-agent"),
         dst_folder.join("azure-proxy-agent"),
     );
+    // set the file permissions to 755 for the azure-proxy-agent binary
+    proxy_agent_shared::linux::set_file_permissions(&dst_folder.join("azure-proxy-agent"), 0o755)
+        .unwrap_or_else(|e| {
+            logger::write_error(format!(
+                "Failed to set azure-proxy-agent file permission to 755 with error: {e}"
+            ));
+        });
+
     copy_file(src_folder.join(CONFIG_FILE), PathBuf::from(CONFIG_PATH));
+    proxy_agent_shared::linux::set_file_permissions(&PathBuf::from(CONFIG_PATH), 0o644)
+        .unwrap_or_else(|e| {
+            logger::write_error(format!(
+                "Failed to set config file permission to 644 with error: {e}"
+            ));
+        });
+
     copy_file(src_folder.join(EBPF_FILE), PathBuf::from(EBPF_PATH));
 }
 

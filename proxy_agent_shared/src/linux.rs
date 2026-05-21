@@ -174,9 +174,18 @@ pub fn read_proc_memory_status(pid: u32) -> Result<MemStatus> {
     Ok(MemStatus { vmrss_kb, vmhwm_kb })
 }
 
+/// Set the file permissions for a file or directory.
+pub fn set_file_permissions(path: &PathBuf, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let permissions = fs::Permissions::from_mode(mode);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::misc_helpers;
+    use std::os::unix::fs::PermissionsExt as _;
 
     #[test]
     fn get_os_version_tests() {
@@ -227,5 +236,16 @@ mod tests {
                 println!("Failed to get the cgroup2 mount path {}.", e);
             }
         };
+    }
+
+    #[test]
+    fn set_file_permissions_test() {
+        let test_file_path = "/tmp/test_file_permissions.txt";
+        std::fs::write(test_file_path, "test").unwrap();
+        let path = std::path::PathBuf::from(test_file_path);
+        super::set_file_permissions(&path, 0o644).unwrap();
+        let metadata = std::fs::metadata(test_file_path).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o644);
+        std::fs::remove_file(test_file_path).unwrap();
     }
 }
