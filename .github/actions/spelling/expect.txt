@@ -176,7 +176,6 @@ handleapi
 hdr
 hklm
 hlist
-hmacs
 HMACs
 homoglyph
 hostga
@@ -257,7 +256,7 @@ netns
 netsh
 Newtonsoft
 nftables
-nics
+NICs
 nifs
 nmake
 nmap
