@@ -211,6 +211,7 @@ joutvhu
 JScript
 keyonly
 kinvolk
+kmemleak
 kotlin
 kprobe
 ktime
@@ -271,13 +272,14 @@ notjson
 notlike
 norestart
 npidof
+nprintf
 NSG
 nsudo
 ntdll
 NTSTATUS
 ntimeout
 OICI
-onscreen 
+onscreen
 onebranch
 openprocess
 oneshot
@@ -398,6 +400,7 @@ suse
 Swatinem
 SWbem
 SYD
+SYG
 sysinfoapi
 sysinit
 SYSLIB
@@ -513,4 +516,5 @@ XXXXXX
 xxxxxxxx
 xxxxxxxxxxx
 zipsas
+zureuser
 zypper
