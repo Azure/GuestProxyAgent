@@ -292,16 +292,6 @@ impl ProxyAgentStatusTask {
     async fn write_aggregate_status_to_file(&self, status: GuestProxyAgentAggregateStatus) {
         let full_file_path = self.status_dir.join("status.json");
         if let Err(e) = misc_helpers::json_write_to_file_async(&status, &full_file_path).await {
-            #[cfg(not(windows))]
-            {
-                proxy_agent_shared::linux::set_file_permissions(&full_file_path, 0o640)
-                    .unwrap_or_else(|e| {
-                        logger::write_error(format!(
-                            "Failed to set status.json file permission to 640 with error: {e}"
-                        ));
-                    });
-            }
-
             self.update_agent_status_message(format!(
                 "Error writing aggregate status to status file: {e}"
             ))
