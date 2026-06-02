@@ -177,6 +177,7 @@ hdr
 hklm
 hlist
 HMAC
+hmacs
 HMACs
 homoglyph
 hostga
@@ -258,6 +259,7 @@ netsh
 Newtonsoft
 nftables
 nic
+nics
 nifs
 nmake
 nmap
