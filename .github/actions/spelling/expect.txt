@@ -183,6 +183,7 @@ microsoftlosangeles
 microsoftwindowsdesktop
 mmm
 mnt
+monomorphization
 msasn
 msp
 msrc
@@ -233,6 +234,7 @@ proxyagentextensionvalidation
 proxyagentvalidation
 ptrace
 pwstr
+Razr
 rcv
 RDFE
 redhat
