@@ -1,0 +1,145 @@
+name: Bloat Budget
+
+# Enforce a hard cargo-bloat budget so silent binary
+# growth blocks merge. The musl static builds themselves live in
+# .github/workflows/reusable-build.yml (build-linux-amd64 / build-linux-arm64
+# / build-windows-amd64 / build-windows-arm64); this workflow only adds the
+# per-(target, role) regression gate on top of them.
+#
+# Per-target ceilings exist on purpose: a Linux musl binary and a Windows
+# MSVC binary (with static_vcruntime + windows-sys) have very different
+# baselines. One shared ceiling would either let Windows regress silently
+# or false-flag every Linux PR. See ci/README.md for the override path.
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Per-crate share is meaningful as a ratio and is stable across platforms,
+  # so we keep it global. The absolute ceiling moves into the matrix.
+  MAX_CRATE_SHARE: "0.10"        # 10% of text per non-first-party crate
+
+concurrency:
+  group: bloat-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  bloat-budget:
+    name: bloat (${{ matrix.target }} / ${{ matrix.crate }})
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -------- Linux x86_64 musl --------
+          - target: x86_64-unknown-linux-musl
+            runs_on: ubuntu-latest
+            crate: azure-proxy-agent
+            max_binary_bytes: "20000000"   # 20 MB
+            apt_packages: musl-tools
+          - target: x86_64-unknown-linux-musl
+            runs_on: ubuntu-latest
+            crate: ProxyAgentExt
+            max_binary_bytes: "15000000"   # 15 MB
+            apt_packages: musl-tools
+          - target: x86_64-unknown-linux-musl
+            runs_on: ubuntu-latest
+            crate: proxy_agent_setup
+            max_binary_bytes: "10000000"   # 10 MB
+            apt_packages: musl-tools
+
+          # -------- Linux aarch64 musl (native arm64 runner) --------
+          - target: aarch64-unknown-linux-musl
+            runs_on: ubuntu-24.04-arm
+            crate: azure-proxy-agent
+            max_binary_bytes: "22000000"   # arm64 codegen is slightly larger
+            apt_packages: musl-tools
+          - target: aarch64-unknown-linux-musl
+            runs_on: ubuntu-24.04-arm
+            crate: ProxyAgentExt
+            max_binary_bytes: "16000000"
+            apt_packages: musl-tools
+          - target: aarch64-unknown-linux-musl
+            runs_on: ubuntu-24.04-arm
+            crate: proxy_agent_setup
+            max_binary_bytes: "11000000"
+            apt_packages: musl-tools
+
+          # -------- Windows x86_64 MSVC --------
+          - target: x86_64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: azure-proxy-agent
+            max_binary_bytes: "28000000"   # MSVC + static_vcruntime + windows-sys
+          - target: x86_64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: ProxyAgentExt
+            max_binary_bytes: "22000000"
+          - target: x86_64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: proxy_agent_setup
+            max_binary_bytes: "15000000"
+
+          # -------- Windows aarch64 MSVC (cross-compiled on x64 runner) --------
+          - target: aarch64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: azure-proxy-agent
+            max_binary_bytes: "30000000"
+          - target: aarch64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: ProxyAgentExt
+            max_binary_bytes: "23000000"
+          - target: aarch64-pc-windows-msvc
+            runs_on: windows-latest
+            crate: proxy_agent_setup
+            max_binary_bytes: "16000000"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install apt packages (Linux only)
+        if: runner.os == 'Linux' && matrix.apt_packages != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bloat-${{ matrix.target }}-${{ matrix.crate }}
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      - name: Run cargo-bloat
+        shell: bash
+        run: |
+          cargo bloat --release --crates \
+            --target ${{ matrix.target }} \
+            -p ${{ matrix.crate }} \
+            --message-format json > bloat.json
+
+      - name: Enforce budget
+        shell: bash
+        run: |
+          python3 ci/check_bloat.py \
+            --bloat-json bloat.json \
+            --max-binary-bytes ${{ matrix.max_binary_bytes }} \
+            --max-crate-share ${{ env.MAX_CRATE_SHARE }} \
+            | tee bloat-report.txt
+
+      - name: Upload bloat report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloat-report-${{ matrix.target }}-${{ matrix.crate }}
+          path: |
+            bloat.json
+            bloat-report.txt
+          if-no-files-found: warn
