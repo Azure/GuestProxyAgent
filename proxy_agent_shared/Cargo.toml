@@ -14,7 +14,11 @@ serde = "1.0.152"
 serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
-regex = "1.11"               # match file name 
+# perf            = all match-time optimizations
+# unicode-perl    = \w / \s / \d / \b classes
+# unicode-case    = case folding for (?i)
+# Other Unicode tables (gencat, script, segment, age, bool) intentionally omitted.
+regex = { version = "1.11", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"] }
 thiserror = "1.0.64"
 tokio = { version = "1", features = ["fs", "rt", "macros", "net", "sync", "time"] }
 tokio-util = "0.7.11"

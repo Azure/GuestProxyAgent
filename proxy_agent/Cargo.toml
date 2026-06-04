@@ -16,7 +16,8 @@ serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 bitflags = "2.6.0"            # support bitflag enum
-regex = "1.11"                # match process name in cmdline
+# Must match proxy_agent_shared's feature set (Cargo unifies across the workspace).
+regex = { version = "1.11", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time",  "net", "macros", "sync"] }
 tokio-util = "0.7.11"
 http = "1.1.0"

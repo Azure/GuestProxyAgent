@@ -19,8 +19,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Per-crate share is meaningful as a ratio and is stable across platforms,
-  # so we keep it global. The absolute ceiling moves into the matrix.
+  # Strict default: every non-first-party crate must stay under this share of
+  # the text section. Per-(target, crate) exceptions live in the matrix below
+  # as `crate_share_overrides` so they're auditable and narrowly scoped.
   MAX_CRATE_SHARE: "0.10"        # 10% of text per non-first-party crate
 
 concurrency:
@@ -40,62 +41,79 @@ jobs:
             runs_on: ubuntu-latest
             crate: azure-proxy-agent
             max_binary_bytes: "20000000"   # ~20 MB
+            # Vendored OpenSSL (approved crypto) is structurally ~20% of text
+            # for the agent on musl; HMAC-SHA256 in proxy_agent_shared pulls it.
+            crate_share_overrides: "openssl_sys=0.25"
             apt_packages: musl-tools
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "15000000"   # ~15 MB
+            max_binary_bytes: "9000000"   # ~9 MB
+            crate_share_overrides: "clap_builder=0.15"
             apt_packages: musl-tools
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: proxy_agent_setup
-            max_binary_bytes: "10000000"   # ~10 MB
+            max_binary_bytes: "6000000"   # ~6 MB
+            # proxy_agent_setup is tiny (~1 MiB text after the openssl gate),
+            # so a normal-sized clap derive parser is ~30% by share.
+            crate_share_overrides: "clap_builder=0.35"
             apt_packages: musl-tools
 
           # -------- Linux aarch64 musl (native arm64 runner) --------
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: azure-proxy-agent
-            max_binary_bytes: "22000000"   # arm64 codegen is slightly larger
+            max_binary_bytes: "20000000" 
+            crate_share_overrides: "openssl_sys=0.15"
             apt_packages: musl-tools
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: ProxyAgentExt
             max_binary_bytes: "16000000"
+            crate_share_overrides: "clap_builder=0.15"
             apt_packages: musl-tools
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: proxy_agent_setup
             max_binary_bytes: "11000000"
+            crate_share_overrides: "clap_builder=0.35"
             apt_packages: musl-tools
 
           # -------- Windows x86_64 MSVC --------
           - target: x86_64-pc-windows-msvc
             runs_on: windows-latest
             crate: azure-proxy-agent
-            max_binary_bytes: "28000000"   # MSVC + static_vcruntime + windows-sys
+            max_binary_bytes: "10000000"
           - target: x86_64-pc-windows-msvc
             runs_on: windows-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "22000000"
+            max_binary_bytes: "5000000"
+            crate_share_overrides: "clap_builder=0.20"
           - target: x86_64-pc-windows-msvc
             runs_on: windows-latest
             crate: proxy_agent_setup
-            max_binary_bytes: "15000000"
+            max_binary_bytes: "4000000"
+            crate_share_overrides: "clap_builder=0.35"
 
           # -------- Windows aarch64 MSVC (cross-compiled on x64 runner) --------
           - target: aarch64-pc-windows-msvc
             runs_on: windows-latest
             crate: azure-proxy-agent
-            max_binary_bytes: "30000000"
+            max_binary_bytes: "8000000"
+            # No vendored OpenSSL on Windows (BCrypt), but the binary is much
+            # smaller so tokio's fixed cost crosses 10% by share.
+            crate_share_overrides: "tokio=0.12"
           - target: aarch64-pc-windows-msvc
             runs_on: windows-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "23000000"
+            max_binary_bytes: "5000000"
+            crate_share_overrides: "clap_builder=0.20"
           - target: aarch64-pc-windows-msvc
             runs_on: windows-latest
             crate: proxy_agent_setup
-            max_binary_bytes: "16000000"
+            max_binary_bytes: "4000000"
+            crate_share_overrides: "clap_builder=0.25"
 
     steps:
       - uses: actions/checkout@v4
@@ -128,10 +146,15 @@ jobs:
       - name: Enforce budget
         shell: bash
         run: |
+          overrides=""
+          for kv in ${{ matrix.crate_share_overrides }}; do
+            overrides="$overrides --crate-share-override $kv"
+          done
           python3 ci/check_bloat.py \
             --bloat-json bloat.json \
             --max-binary-bytes ${{ matrix.max_binary_bytes }} \
             --max-crate-share ${{ env.MAX_CRATE_SHARE }} \
+            $overrides \
             | tee bloat-report.txt
 
       - name: Upload bloat report
