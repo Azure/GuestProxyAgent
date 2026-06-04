@@ -1,6 +1,6 @@
 [package]
 name = "azure-proxy-agent"
-version = "9.9.9"      # always 3-number version
+version = "1.0.45"      # always 3-number version
 edition = "2021"
 build = "build.rs"
 readme = "README.md"
