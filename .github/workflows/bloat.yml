@@ -39,17 +39,17 @@ jobs:
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: azure-proxy-agent
-            max_binary_bytes: "20000000"   # 20 MB
+            max_binary_bytes: "20000000"   # ~20 MB
             apt_packages: musl-tools
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "15000000"   # 15 MB
+            max_binary_bytes: "15000000"   # ~15 MB
             apt_packages: musl-tools
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: proxy_agent_setup
-            max_binary_bytes: "10000000"   # 10 MB
+            max_binary_bytes: "10000000"   # ~10 MB
             apt_packages: musl-tools
 
           # -------- Linux aarch64 musl (native arm64 runner) --------
