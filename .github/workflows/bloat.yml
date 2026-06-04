@@ -49,7 +49,7 @@ jobs:
             runs_on: ubuntu-latest
             crate: ProxyAgentExt
             max_binary_bytes: "9000000"   # ~9 MB
-            crate_share_overrides: "clap_builder=0.15"
+            crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
             apt_packages: musl-tools
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
@@ -71,7 +71,7 @@ jobs:
             runs_on: ubuntu-24.04-arm
             crate: ProxyAgentExt
             max_binary_bytes: "16000000"
-            crate_share_overrides: "clap_builder=0.15"
+            crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
             apt_packages: musl-tools
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
@@ -89,12 +89,12 @@ jobs:
             runs_on: windows-latest
             crate: ProxyAgentExt
             max_binary_bytes: "5000000"
-            crate_share_overrides: "clap_builder=0.20"
+            crate_share_overrides: "clap_builder=0.20 regex_automata=0.15 regex_syntax=0.15"
           - target: x86_64-pc-windows-msvc
             runs_on: windows-latest
             crate: proxy_agent_setup
             max_binary_bytes: "4000000"
-            crate_share_overrides: "clap_builder=0.35"
+            crate_share_overrides: "clap_builder=0.35 regex_automata=0.20 regex_syntax=0.15"
 
           # -------- Windows aarch64 MSVC (cross-compiled on x64 runner) --------
           - target: aarch64-pc-windows-msvc
@@ -108,12 +108,12 @@ jobs:
             runs_on: windows-latest
             crate: ProxyAgentExt
             max_binary_bytes: "5000000"
-            crate_share_overrides: "clap_builder=0.20"
+            crate_share_overrides: "clap_builder=0.20 regex_automata=0.15 regex_syntax=0.15"
           - target: aarch64-pc-windows-msvc
             runs_on: windows-latest
             crate: proxy_agent_setup
             max_binary_bytes: "4000000"
-            crate_share_overrides: "clap_builder=0.25"
+            crate_share_overrides: "clap_builder=0.25 regex_automata=0.20 regex_syntax=0.15"
 
     steps:
       - uses: actions/checkout@v4
