@@ -5,8 +5,11 @@ use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::result::Result;
 use once_cell::sync::Lazy;
+#[cfg(feature = "signing")]
 use openssl::hash::MessageDigest;
+#[cfg(feature = "signing")]
 use openssl::pkey::PKey;
+#[cfg(feature = "signing")]
 use openssl::sign::Signer;
 use os_info::Info;
 use serde_derive::{Deserialize, Serialize};
@@ -115,6 +118,7 @@ pub fn get_cgroup2_mount_path() -> Result<PathBuf> {
     ))
 }
 
+#[cfg(feature = "signing")]
 pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<String> {
     match hex::decode(hex_encoded_key) {
         Ok(key) => {

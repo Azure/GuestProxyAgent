@@ -61,11 +61,17 @@ features = [
 os_info = "3.7.0"   # read Linux OS version and arch
 sysinfo = "0.30.13" # read CPU & RAM information for Linux
 
+[features]
+default = []
+# Enables compute_signature (HMAC-SHA256 via OpenSSL on Linux).
+# Binaries that don't sign anything (e.g. proxy_agent_setup) should leave this off.
+signing = ["dep:openssl"]
+
 # For MUSL targets (Linux MUSL)
 [target.'cfg(all(target_env = "musl", not(target_os = "windows")))'.dependencies]
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 
 
 # For GNU Linux (optional, if you want system OpenSSL)
 [target.'cfg(all(target_env = "gnu", not(target_os = "windows")))'.dependencies]
-openssl = "0.10"
+openssl = { version = "0.10", optional = true }

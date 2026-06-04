@@ -12,7 +12,3 @@ members = [
 exclude = [
     "debbuild"
 ]
-
-[profile.release]
-lto = "thin"         # thin LTO does cross-crate dead-code elimination, removing unreachable OpenSSL
-strip = "symbols"    # removes the debug info sections and symbol table
