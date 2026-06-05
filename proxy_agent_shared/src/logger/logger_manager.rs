@@ -210,18 +210,13 @@ mod tests {
 
     fn setup() {
         TEST_INIT.call_once(|| {
-            // Setup logger_manager for unit tests
-            let logger = crate::logger::rolling_logger::RollingLogger::create_new(
+            // Setup logger_manager for unit tests via the shared one-shot helper.
+            crate::logger::init_loggers(
                 get_temp_test_dir(),
-                "test.log".to_string(),
+                &[(TEST_LOGGER_KEY, "test.log")],
+                TEST_LOGGER_KEY,
                 200,
                 6,
-            );
-            let mut loggers = std::collections::HashMap::new();
-            loggers.insert(TEST_LOGGER_KEY.to_string(), logger);
-            crate::logger::logger_manager::set_loggers(
-                loggers,
-                TEST_LOGGER_KEY.to_string(),
                 LoggerLevel::Trace,
             );
 

@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use proxy_agent_shared::logger::{logger_manager, rolling_logger::RollingLogger, LoggerLevel};
+use proxy_agent_shared::logger::{self, logger_manager, LoggerLevel};
 use std::path::PathBuf;
+
 static LOGGER_KEY: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+
 pub fn get_logger_key() -> String {
     LOGGER_KEY
         .get()
@@ -11,15 +13,14 @@ pub fn get_logger_key() -> String {
 }
 
 pub fn init_logger(log_folder: String, log_name: &str) {
-    let logger = RollingLogger::create_new(
+    logger::init_loggers(
         PathBuf::from(log_folder),
-        log_name.to_string(),
+        &[(log_name, log_name)],
+        log_name,
         20 * 1024 * 1024,
         30,
+        LoggerLevel::Trace,
     );
-    let mut loggers = std::collections::HashMap::new();
-    loggers.insert(log_name.to_string(), logger);
-    logger_manager::set_loggers(loggers, log_name.to_string(), LoggerLevel::Trace);
 
     if !LOGGER_KEY.initialized() {
         if let Err(e) = LOGGER_KEY.set(log_name.to_string()) {
