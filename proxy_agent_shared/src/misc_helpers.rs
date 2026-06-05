@@ -525,7 +525,7 @@ pub fn resolve_env_variables(input: &str) -> String {
 /// let input_to_sign = b"Sample input data";
 /// let signature = misc_helpers::compute_signature(hex_encoded_key, input_to_sign).unwrap();
 /// ```
-#[cfg(not(windows))]
+#[cfg(all(not(windows), feature = "signing"))]
 pub use linux::compute_signature;
 #[cfg(windows)]
 pub use windows::compute_signature;
@@ -824,6 +824,7 @@ mod tests {
         assert_eq!(expected, resolved, "resolved string mismatch");
     }
 
+    #[cfg(feature = "signing")]
     #[test]
     fn compute_signature_test() {
         let hex_encoded_key = "4A404E635266556A586E3272357538782F413F4428472B4B6250645367566B59";
