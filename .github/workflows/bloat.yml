@@ -108,7 +108,7 @@ jobs:
             runs_on: windows-latest
             crate: ProxyAgentExt
             max_binary_bytes: "5000000"
-            crate_share_overrides: "clap_builder=0.20 regex_automata=0.15 regex_syntax=0.15"
+            crate_share_overrides: "clap_builder=0.20 regex_automata=0.20 regex_syntax=0.15"
           - target: aarch64-pc-windows-msvc
             runs_on: windows-latest
             crate: proxy_agent_setup
