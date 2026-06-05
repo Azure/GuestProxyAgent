@@ -16,7 +16,7 @@ pub enum Error {
     #[error("Hex encoded key '{0}' is invalid: {1}")]
     Hex(String, hex::FromHexError),
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), feature = "signing"))]
     #[error("ComputeSignature error in {0}: {1}")]
     ComputeSignature(String, openssl::error::ErrorStack),
     #[cfg(windows)]
