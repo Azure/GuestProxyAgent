@@ -13,6 +13,7 @@ pub mod setup;
 mod linux;
 
 use clap::Parser;
+use proxy_agent_shared::constants::{PROXY_AGENT_SERVICE_DISPLAY_NAME, PROXY_AGENT_SERVICE_NAME};
 use proxy_agent_shared::current_info;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::service;
@@ -20,12 +21,8 @@ use std::process;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
 
-#[cfg(windows)]
-const SERVICE_NAME: &str = "GuestProxyAgent";
-const SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";
-
-#[cfg(not(windows))]
-const SERVICE_NAME: &str = "azure-proxy-agent";
+const SERVICE_NAME: &str = PROXY_AGENT_SERVICE_NAME;
+const SERVICE_DISPLAY_NAME: &str = PROXY_AGENT_SERVICE_DISPLAY_NAME;
 
 #[tokio::main]
 async fn main() {
