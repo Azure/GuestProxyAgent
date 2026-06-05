@@ -6,7 +6,6 @@
 use super::error::{Error, HyperErrorType};
 use super::misc_helpers;
 use super::result::Result;
-use http::request::Builder;
 use http::request::Parts;
 use http::Method;
 use http_body_util::combinators::BoxBody;
@@ -274,8 +273,8 @@ pub fn build_request(
     endpoint: &HostEndpoint,
     headers: &HashMap<String, String>,
     body: Option<&[u8]>,
-    key_guid: Option<String>,
-    key: Option<String>,
+    _key_guid: Option<String>,
+    _key: Option<String>,
 ) -> Result<Request<BoxBody<Bytes, hyper::Error>>> {
     let mut request_builder = Request::builder()
         .method(method)
@@ -301,19 +300,22 @@ pub fn build_request(
         request_builder = request_builder.header(key, value);
     }
 
-    if let (Some(key), Some(key_guid)) = (key, key_guid) {
-        let body_vec = body.map(|b| b.to_vec());
-        let input_to_sign = request_to_sign_input(&request_builder, body_vec)?;
-        let authorization_value = format!(
-            "{} {} {}",
-            AUTHORIZATION_SCHEME,
-            key_guid,
-            misc_helpers::compute_signature(&key, input_to_sign.as_slice())?
-        );
-        request_builder = request_builder.header(
-            AUTHORIZATION_HEADER.to_string(),
-            authorization_value.to_string(),
-        );
+    #[cfg(feature = "signing")]
+    {
+        if let (Some(key), Some(key_guid)) = (_key, _key_guid) {
+            let body_vec = body.map(|b| b.to_vec());
+            let input_to_sign = request_to_sign_input(&request_builder, body_vec)?;
+            let authorization_value = format!(
+                "{} {} {}",
+                AUTHORIZATION_SCHEME,
+                key_guid,
+                misc_helpers::compute_signature(&key, input_to_sign.as_slice())?
+            );
+            request_builder = request_builder.header(
+                AUTHORIZATION_HEADER.to_string(),
+                authorization_value.to_string(),
+            );
+        }
     }
 
     let boxed_body = match body {
@@ -407,7 +409,11 @@ pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
     data
 }
 
-fn request_to_sign_input(request_builder: &Builder, body: Option<Vec<u8>>) -> Result<Vec<u8>> {
+#[cfg(feature = "signing")]
+fn request_to_sign_input(
+    request_builder: &http::request::Builder,
+    body: Option<Vec<u8>>,
+) -> Result<Vec<u8>> {
     let mut data: Vec<u8> = match request_builder.method_ref() {
         Some(m) => m.as_str().as_bytes().to_vec(),
         None => {

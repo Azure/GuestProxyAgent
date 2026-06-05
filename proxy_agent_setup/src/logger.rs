@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 use proxy_agent_shared::{
-    logger::{logger_manager, rolling_logger::RollingLogger, LoggerLevel},
+    logger::{self, logger_manager, LoggerLevel},
     misc_helpers,
 };
 use std::path::PathBuf;
@@ -12,10 +12,14 @@ pub fn init_logger() {
 }
 
 fn force_init_logger(log_folder: PathBuf, log_name: &str) {
-    let logger = RollingLogger::create_new(log_folder, log_name.to_string(), 20 * 1024 * 1024, 30);
-    let mut loggers = std::collections::HashMap::new();
-    loggers.insert(log_name.to_string(), logger);
-    logger_manager::set_loggers(loggers, log_name.to_string(), LoggerLevel::Trace);
+    logger::init_loggers(
+        log_folder,
+        &[(log_name, log_name)],
+        log_name,
+        20 * 1024 * 1024,
+        30,
+        LoggerLevel::Trace,
+    );
 }
 
 pub fn write(message: String) {

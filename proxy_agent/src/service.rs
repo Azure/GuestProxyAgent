@@ -11,11 +11,9 @@ use crate::redirector::{self, Redirector};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::current_info;
 use proxy_agent_shared::hyper_client::HostEndpoint;
-use proxy_agent_shared::logger::rolling_logger::RollingLogger;
-use proxy_agent_shared::logger::{logger_manager, LoggerLevel};
+use proxy_agent_shared::logger::logger_manager;
 use proxy_agent_shared::proxy_agent_aggregate_status;
 use proxy_agent_shared::telemetry::event_logger;
-use std::path::PathBuf;
 
 #[cfg(not(windows))]
 use std::time::Duration;
@@ -42,7 +40,20 @@ pub async fn start_service(shared_state: SharedState) {
     if log_folder == proxy_agent_shared::misc_helpers::empty_path() {
         println!("The log folder is not set, skip write to GPA managed file log.");
     } else {
-        setup_loggers(log_folder, config::get_file_log_level());
+        proxy_agent_shared::logger::init_loggers(
+            log_folder,
+            &[
+                (logger::AGENT_LOGGER_KEY, "ProxyAgent.log"),
+                (
+                    ConnectionLogger::CONNECTION_LOGGER_KEY,
+                    "ProxyAgent.Connection.log",
+                ),
+            ],
+            logger::AGENT_LOGGER_KEY,
+            constants::MAX_LOG_FILE_SIZE,
+            constants::MAX_LOG_FILE_COUNT as u16,
+            config::get_file_log_level(),
+        );
     }
 
     let start_message = format!(
@@ -83,32 +94,6 @@ pub async fn start_service(shared_state: SharedState) {
             proxy_server.start().await;
         }
     });
-}
-
-fn setup_loggers(log_folder: PathBuf, max_logger_level: LoggerLevel) {
-    let agent_logger = RollingLogger::create_new(
-        log_folder.clone(),
-        "ProxyAgent.log".to_string(),
-        constants::MAX_LOG_FILE_SIZE,
-        constants::MAX_LOG_FILE_COUNT as u16,
-    );
-    let connection_logger = RollingLogger::create_new(
-        log_folder.clone(),
-        "ProxyAgent.Connection.log".to_string(),
-        constants::MAX_LOG_FILE_SIZE,
-        constants::MAX_LOG_FILE_COUNT as u16,
-    );
-    let mut loggers = std::collections::HashMap::new();
-    loggers.insert(logger::AGENT_LOGGER_KEY.to_string(), agent_logger);
-    loggers.insert(
-        ConnectionLogger::CONNECTION_LOGGER_KEY.to_string(),
-        connection_logger,
-    );
-    logger_manager::set_loggers(
-        loggers,
-        logger::AGENT_LOGGER_KEY.to_string(),
-        max_logger_level,
-    );
 }
 
 /// Start the service and wait until the service is stopped.
