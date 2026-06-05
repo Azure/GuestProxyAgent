@@ -404,6 +404,7 @@ impl ProxyServer {
         }
 
         if http_connection_context.contains_traversal_characters() {
+            // If the proxied request contains traversal characters, we will return 404 Not Found to avoid potential security issues.
             self.log_connection_summary(
                 &mut http_connection_context,
                 StatusCode::NOT_FOUND,
