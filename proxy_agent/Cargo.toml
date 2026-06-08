@@ -9,7 +9,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-proxy_agent_shared = { path ="../proxy_agent_shared"}
+proxy_agent_shared = { path = "../proxy_agent_shared", features = ["signing"] }
 once_cell = "1.17.0"          # use Lazy
 serde = "1.0.152"
 serde_derive = "1.0.152"

@@ -935,7 +935,21 @@ impl KeyKeeper {
                     key_file.display(),
                     e
                 )))
-            })
+            })?;
+
+            #[cfg(not(windows))]
+            {
+                // set the file permissions to 600 for non-windows platform
+                proxy_agent_shared::linux::set_file_permissions(&key_file, 0o600).map_err(|e| {
+                    Error::Key(KeyErrorType::StoreLocalKey(format!(
+                        "set_file_permissions '{}' failed {}",
+                        key_file.display(),
+                        e
+                    )))
+                })?;
+            }
+
+            Ok(())
         }
     }
 

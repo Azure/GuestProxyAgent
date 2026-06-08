@@ -46,7 +46,7 @@ use windows_sys::Win32::System::Threading::{
 use winreg::enums::*;
 use winreg::RegKey;
 
-fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) -> Option<u32> {
+pub fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) -> Option<u32> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     match hklm.open_subkey(key_name) {
         Ok(key) => match key.get_value(value_name) {
@@ -63,7 +63,7 @@ fn read_reg_int(key_name: &str, value_name: &str, default_value: Option<u32>) ->
     default_value
 }
 
-fn read_reg_string(key_name: &str, value_name: &str, default_value: String) -> String {
+pub fn read_reg_string(key_name: &str, value_name: &str, default_value: String) -> String {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
 
     if let Ok(key) = hklm.open_subkey(key_name) {
