@@ -2,11 +2,49 @@
 // SPDX-License-Identifier: MIT
 
 use crate::misc_helpers;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub mod logger_manager;
 pub mod rolling_logger;
 
 pub type LoggerLevel = log::Level;
+
+/// This function is a convenience wrapper that sets up the logging infrastructure for a given role.
+///
+/// # Arguments
+/// * `log_folder` — directory the rolling logs are written to.
+/// * `files` — `(logger_key, file_name)` pairs; each pair becomes one
+///   `RollingLogger`. The keys are what call sites use later via
+///   `logger_manager::log(key, …)`.
+/// * `primary_key` — the default logger key (must appear in `files`).
+/// * `max_file_size` — per-file size budget passed to `RollingLogger`.
+/// * `max_file_count` — number of rolled files retained.
+/// * `max_level` — maximum file-log level.
+///
+/// # Panics
+/// `logger_manager::set_loggers` panics if `primary_key` is not present in `files`.
+///      this function preserves that contract.
+pub fn init_loggers(
+    log_folder: PathBuf,
+    files: &[(&str, &str)],
+    primary_key: &str,
+    max_file_size: u64,
+    max_file_count: u16,
+    max_level: LoggerLevel,
+) {
+    let mut loggers = HashMap::with_capacity(files.len());
+    for (key, file_name) in files {
+        let logger = rolling_logger::RollingLogger::create_new(
+            log_folder.clone(),
+            (*file_name).to_string(),
+            max_file_size,
+            max_file_count,
+        );
+        loggers.insert((*key).to_string(), logger);
+    }
+    logger_manager::set_loggers(loggers, primary_key.to_string(), max_level);
+}
 
 const HEADER_LENGTH: usize = 34;
 pub fn get_log_header(level: LoggerLevel) -> String {

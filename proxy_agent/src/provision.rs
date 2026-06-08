@@ -435,10 +435,20 @@ async fn write_provision_state(
     }
 
     if let Err(e) = std::fs::write(
-        provisioned_file,
+        &provisioned_file,
         misc_helpers::get_date_time_string_with_milliseconds(),
     ) {
         logger::write_error(format!("Failed to write provisioned file with error: {e}"));
+    }
+    #[cfg(not(windows))]
+    {
+        proxy_agent_shared::linux::set_file_permissions(&provisioned_file, 0o600).unwrap_or_else(
+            |e| {
+                logger::write_error(format!(
+                    "Failed to set provisioned file permission to 600 with error: {e}"
+                ));
+            },
+        );
     }
 
     let mut failed_state_message =
@@ -483,6 +493,19 @@ async fn write_provision_state(
         Err(e) => {
             logger::write_error(format!("Failed to write temp status file with error: {e}"));
         }
+    }
+
+    #[cfg(not(windows))]
+    {
+        proxy_agent_shared::linux::set_file_permissions(
+            &provision_dir.join(STATUS_TAG_FILE_NAME),
+            0o600,
+        )
+        .unwrap_or_else(|e| {
+            logger::write_error(format!(
+                "Failed to set status file permission to 600 with error: {e}"
+            ));
+        });
     }
 }
 
