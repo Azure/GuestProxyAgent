@@ -255,7 +255,7 @@ kfunc
 kinvolk
 kmemleak
 kotlin
-KPI
+kpi
 kprobe
 ktime
 kusto
@@ -297,7 +297,7 @@ MRTD
 msasn
 msc
 msp
-MSR
+msr
 msrc
 multilib
 nbf
@@ -359,7 +359,7 @@ PCAP
 pcapng
 pcaps
 pcr
-PDB
+pdb
 PEERCRED
 pentest
 PENTEST
@@ -462,7 +462,7 @@ sklookup
 sku
 sles
 sln
-SLO
+slo
 smp
 SNAT
 snp
