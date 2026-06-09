@@ -407,13 +407,15 @@ On AKS nodes, any pod with hostNetwork or a permissive NetworkPolicy can reach n
 - After AuthN/AuthZ pass, splice the body between accept socket and upstream socket using `splice(2)` when the request has no body transformation.
 - Avoids two user-space copies on the common GET path.
 
-### 7.3 Crate consolidation
+### 7.3 Crate consolidation — ✅ done
 
 [Detailed design](Innovation-7.3-crate-consolidation.md)
 
 - Today: `proxy_agent`, `proxy_agent_extension`, `proxy_agent_setup`, `proxy_agent_shared`.
 - Move duplicated helpers (logging, config loading, version probing) into `proxy_agent_shared`.
 - Build with musl for a single static binary per role; run `cargo-bloat` in CI with a budget.
+
+**Status: done.** Logger setup and the GPA service-name constants have moved into `proxy_agent_shared` (PR 353), removing ~60 lines of boilerplate from the three binaries. The OS/version probe and the HTTP client already live in `proxy_agent_shared`; the JSON config loader is intentionally not moved — only `proxy_agent` reads a JSON config (the extension is driven by HandlerEnvironment / sequence files, and the setup tool has no runtime config), so there is no second copy to consolidate. The musl static-binary builds for both `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` are already produced by `build-linux.sh` from the shared `reusable-build.yml` workflow (Windows MSVC builds go through `build.cmd` in the same file). On top of those, the `cargo-bloat` regression gate is now live in CI as a per-(target, role) matrix with absolute + per-crate-share ceilings (PR 352, see [`ci/README.md`](../../ci/README.md)). A new opt-in `signing` Cargo feature on `proxy_agent_shared` lets `proxy_agent_setup` and `ProxyAgentExt` drop the vendored OpenSSL dep entirely.
 
 ### Metrics
 
