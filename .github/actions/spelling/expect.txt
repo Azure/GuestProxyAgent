@@ -299,6 +299,7 @@ msc
 msp
 msr
 msrc
+MSRs
 multilib
 nbf
 ncurl
@@ -360,6 +361,7 @@ pcapng
 pcaps
 pcr
 pdb
+PDBs
 PEERCRED
 pentest
 PENTEST
