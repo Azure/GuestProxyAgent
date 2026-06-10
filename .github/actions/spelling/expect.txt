@@ -105,7 +105,6 @@ defattr
 dentity
 deploymentid
 desync
-desyncs
 detbox
 detlbl
 dettitle
@@ -158,7 +157,6 @@ exampleosdiskname
 examplevmname
 exepath
 exfil
-EXTCONFIG
 extconfig
 exthandlers
 fafbfc
@@ -171,7 +169,6 @@ ffcecb
 ffebe
 fff
 ffff
-FFFF
 FFFFFFFF
 fffi
 ffi
@@ -299,7 +296,6 @@ msc
 msp
 msr
 msrc
-MSRs
 multilib
 nbf
 ncurl
@@ -356,12 +352,9 @@ parseable
 passwordless
 peekable
 pcap
-PCAP
 pcapng
-pcaps
 pcr
 pdb
-PDBs
 PEERCRED
 pentest
 PENTEST
