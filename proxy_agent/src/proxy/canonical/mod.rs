@@ -37,11 +37,47 @@
 //!
 //! `canonicalize(canonicalize(x).render()) == canonicalize(x)`. This is
 //! enforced via property tests in `tests::proptests`.
+//!
+//! ## Fuzzing (M2)
+//!
+//! The M2 exit criterion is "zero panics in 1 CPU-day of fuzzing." We
+//! currently meet it with the [`proptests`] module — `no_panics` runs
+//! `canonicalize_str` against random printable-ASCII strings and
+//! `idempotent` exercises the parse-canonicalize-render-reparse loop.
+//! Crank case counts via the standard env var:
+//!
+//! ```text
+//! PROPTEST_CASES=1000000 cargo test -p azure-proxy-agent --release \
+//!     proxy::canonical::proptests
+//! ```
+//!
+//! A dedicated `cargo-fuzz` (libFuzzer) target would give better corpus
+//! minimization and coverage feedback. It is **deferred** because
+//! `proxy_agent` is a binary crate (`src/main.rs`, no `lib.rs`) and
+//! `cargo-fuzz` requires importing a library. The non-invasive
+//! follow-up:
+//!
+//! 1. Add a `lib.rs` re-exporting `pub mod proxy;` (and whatever else
+//!    the fuzz targets need). The existing binary should stay
+//!    `bin/azure-proxy-agent.rs` to avoid disturbing release artifact
+//!    paths.
+//! 2. `cargo fuzz init` in the crate, then add targets
+//!    `fuzz_targets/canonicalize.rs` and `fuzz_targets/matches.rs`
+//!    calling `azure_proxy_agent::proxy::canonical::canonicalize_str`
+//!    and `CanonicalPattern::matches` respectively.
+//! 3. Wire `cargo fuzz run canonicalize -- -max_total_time=86400` into
+//!    the nightly CI matrix.
 
 pub mod destination;
 pub mod path;
 pub mod query;
 pub mod rule;
+
+// Innovation 2.1 M2 property tests live behind the `proptests` feature
+// so the default `cargo test` inner loop stays fast. CI picks them up
+// through `cargo test --all-features` (see build-linux.sh).
+#[cfg(all(test, feature = "proptests"))]
+mod property_tests;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -64,12 +100,7 @@ pub use rule::CanonicalPattern;
 ///
 /// `/` is intentionally NOT in this set because [`path::split_and_resolve`]
 /// already guarantees no literal `/` survives inside a segment.
-const PATH_SEG_ENCODE: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'%')
-    .add(b'#')
-    .add(b'?')
-    .add(b';');
+const PATH_SEG_ENCODE: &AsciiSet = &CONTROLS.add(b' ').add(b'%').add(b'#').add(b'?').add(b';');
 
 /// Bytes that must be percent-encoded inside a query key or value.
 ///
@@ -249,6 +280,26 @@ fn check_scheme(uri: &Uri) -> Result<(), CanonError> {
     }
 }
 
+/// Reject any URL whose authority carries `userinfo` (the `user[:pass]@`
+/// prefix before the host).
+///
+/// Hyper exposes the full authority string via [`Uri::authority`]; the
+/// presence of a literal `@` is the unambiguous signal of userinfo. We
+/// refuse it entirely because it is the canonical host-smuggle vector
+/// (pentest C7): `http://169.254.169.254:80@evil.com/` *looks* like
+/// IMDS to a careless parser but resolves to `evil.com` in real HTTP
+/// clients. Symmetrically, `http://attacker@169.254.169.254/` lets the
+/// attacker decorate an otherwise-legitimate URL with audit-confusing
+/// junk.
+fn check_userinfo(uri: &Uri) -> Result<(), CanonError> {
+    if let Some(authority) = uri.authority() {
+        if authority.as_str().contains('@') {
+            return Err(CanonError::UserinfoPresent);
+        }
+    }
+    Ok(())
+}
+
 /// Canonicalize a parsed request.
 ///
 /// Returns `Ok(CanonicalRequest)` for inputs that survive every stage of
@@ -258,6 +309,7 @@ fn check_scheme(uri: &Uri) -> Result<(), CanonError> {
 pub fn canonicalize(uri: &Uri, method: &Method) -> Result<CanonicalRequest, CanonError> {
     check_scheme(uri)?;
     check_method(method)?;
+    check_userinfo(uri)?;
 
     let destination = destination::classify(uri)?;
 
@@ -452,10 +504,10 @@ mod mod_tests {
             "/%",
             "/%%",
             "/%%%",
-            "/%C0%AF",                                  // overlong utf-8
+            "/%C0%AF", // overlong utf-8
             "/very/long/path/that/repeats/very/long/path/that/repeats",
-            "/a/../../..",                              // underflow
-            "/a/b/c/../../..",                          // exact-root underflow
+            "/a/../../..",     // underflow
+            "/a/b/c/../../..", // exact-root underflow
         ];
         let methods = &[Method::GET, Method::POST, Method::CONNECT];
         for raw in paths {

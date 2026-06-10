@@ -47,6 +47,15 @@ pub fn canonicalize_path(raw: &str) -> Result<(Vec<String>, bool), CanonError> {
     let lowered = decoded.to_ascii_lowercase();
     let segments = split_and_resolve(&lowered)?;
 
+    // A trailing `/` only carries meaning when there's a non-root
+    // segment in front of it. Without this clamp, inputs that collapse
+    // to root after dot/matrix resolution (e.g. `/;/`, `/./`, `//`)
+    // would carry `trailing_slash = true` even though `render()`
+    // produces just `/` — which re-parses with `trailing_slash =
+    // false`, breaking the canonicalize-render-canonicalize idempotency
+    // invariant the rest of the pipeline depends on.
+    let trailing_slash = trailing_slash && segments.len() > 1;
+
     Ok((segments, trailing_slash))
 }
 
@@ -140,31 +149,33 @@ fn split_and_resolve(path: &str) -> Result<Vec<String>, CanonError> {
     let mut segments: Vec<String> = vec![ROOT.to_string()];
     // RFC 3986 defines a path as a sequence of segments separated by '/'.
     for raw_seg in path.split('/') {
-        if raw_seg.is_empty() || raw_seg == "." {
-            // `//`, leading `/`, and `.` collapse away.
+        // ';' is a sub-delim — it's a perfectly legal character inside a path segment.
+        // Strip matrix params *before* dot-resolution so a segment like
+        // `.;jsessionid=1` (which decodes to the current-directory
+        // marker `.` after stripping) is dropped rather than preserved.
+        // The reverse order let `/.;` canonicalize to `["", "."]` while
+        // its rendered form `//.` re-parsed to `[""]`, breaking the
+        // idempotency invariant exercised by the M2 proptest.
+        // Matrix params are never used in authorization decisions:
+        // e.g. `segment;k=v;k2=v2` -> `segment`.
+        let cleaned = match raw_seg.find(';') {
+            Some(pos) => &raw_seg[..pos],
+            None => raw_seg,
+        };
+        // A segment that's empty (from `//`), a current-directory marker
+        // (`.`), or pure matrix params (`;k=v`, which strips to "")
+        // collapses away — same treatment, same reason: keeping any of
+        // them in the canonical form would re-introduce the kind of
+        // request/rule asymmetry the canonical model exists to remove.
+        if cleaned.is_empty() || cleaned == "." {
             continue;
         }
-        if raw_seg == ".." {
+        if cleaned == ".." {
             // Pop the previous segment. Popping the root is an error.
             if segments.len() <= 1 {
                 return Err(CanonError::PathUnderflow);
             }
             segments.pop();
-            continue;
-        }
-        // ';' is a sub-delim — it's a perfectly legal character inside a path segment.
-        // Strip matrix params as matrix params are never used in authorization decisions
-        //  e.g. `segment;k=v;k2=v2` -> `segment`.
-        let cleaned = match raw_seg.find(';') {
-            Some(pos) => &raw_seg[..pos],
-            None => raw_seg,
-        };
-        // A segment that's pure matrix params (`;k=v`) collapses to the
-        // empty string after stripping. Drop it, the same way we drop
-        // `//` — otherwise the canonical form of `/a/;k=v/b` would
-        // differ from `/a/b`, re-introducing exactly the kind of
-        // request/rule asymmetry the canonical model exists to remove.
-        if cleaned.is_empty() {
             continue;
         }
         segments.push(cleaned.to_string());
@@ -627,6 +638,210 @@ mod path_tests {
             "A1.overlong_utf8",
             "http://169.254.169.254/metadata/%C0%AFidentity",
         )];
+        for (label, url) in either {
+            let err = super::super::canonicalize_str(url).unwrap_err();
+            assert!(
+                matches!(err, CanonError::OverlongUtf8 | CanonError::InvalidUtf8),
+                "vector={label} got={err:?}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // D1 extended path vectors (M2: golden vectors for the pentest D1
+    // "URL parsing differentials" family — pentest/linux/DESIGN.md row D1
+    // and design doc §3.1).
+    //
+    // The Appendix A.1 table above is the *representative* set the
+    // design promises by name. These are the additional concrete forms
+    // that must produce the same canonical output (or the same typed
+    // deny) so that the matcher's behavior cannot diverge from the
+    // upstream server's interpretation.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn d1_extended_path_vectors_canonicalize_successfully() {
+        let cases: &[(&str, &str, &str)] = &[
+            // Mixed-case percent escapes for `/` decode the same.
+            (
+                "D1.lowercase_encoded_slash",
+                "http://169.254.169.254/metadata%2fidentity",
+                "/metadata/identity",
+            ),
+            // Double-encoded `..` (`%252e%252e`) decodes ONCE to the literal
+            // bytes `%2e%2e` — it must NOT collapse like `..` would.
+            (
+                "D1.double_encoded_dotdot",
+                "http://169.254.169.254/metadata/%252e%252e/identity",
+                "/metadata/%2e%2e/identity",
+            ),
+            // Multiple matrix params on a single segment all strip.
+            (
+                "D1.multiple_matrix_params",
+                "http://169.254.169.254/metadata;a=1;b=2;c=3/identity",
+                "/metadata/identity",
+            ),
+            // Matrix params across multiple segments.
+            (
+                "D1.matrix_params_each_segment",
+                "http://169.254.169.254/metadata;k=v/identity;k2=v2",
+                "/metadata/identity",
+            ),
+            // A segment that is ONLY matrix params (`;k=v`) collapses to
+            // nothing — never to an empty segment that would shift indices.
+            (
+                "D1.matrix_only_segment_drops",
+                "http://169.254.169.254/a/;k=v/b",
+                "/a/b",
+            ),
+            // Encoded space survives as a literal space in the segment;
+            // render() must percent-encode it back.
+            (
+                "D1.encoded_space_in_segment",
+                "http://169.254.169.254/foo%20bar",
+                "/foo bar",
+            ),
+            // Combined dot / dotdot / matrix in one path.
+            (
+                "D1.combined_dot_dotdot_matrix",
+                "http://169.254.169.254/a/b/./c/../d;p=q/e",
+                "/a/b/d/e",
+            ),
+            // Leading multi-slash collapses to single root.
+            (
+                "D1.leading_multi_slash",
+                "http://169.254.169.254///metadata",
+                "/metadata",
+            ),
+            // Intermixed `./` segments collapse.
+            (
+                "D1.intermixed_dot_segments",
+                "http://169.254.169.254/./a/./b/./",
+                "/a/b",
+            ),
+            // Case folding plus encoded slash plus matrix.
+            (
+                "D1.combined_case_encoded_slash_matrix",
+                "http://169.254.169.254/Foo%2FBar;p=q",
+                "/foo/bar",
+            ),
+            // Encoded `;` (`%3B`) decodes to a literal `;` and then
+            // triggers the same matrix-param stripping as a raw `;` —
+            // this symmetry is REQUIRED, otherwise an attacker could
+            // smuggle past a `/foo;v=1` deny rule by writing `/foo%3Bv=1`.
+            (
+                "D1.encoded_semicolon_strips_like_raw",
+                "http://169.254.169.254/a%3Bb",
+                "/a",
+            ),
+        ];
+        for (label, url, expected) in cases {
+            assert_eq!(canon_path_via_pipeline(url), *expected, "vector={label}");
+        }
+    }
+
+    #[test]
+    fn d1_extended_path_vectors_rejected() {
+        // Exact-error vectors.
+        let exact: &[(&str, &str, CanonError)] = &[
+            // Truncated percent at end of input (no following hex digits).
+            (
+                "D1.truncated_percent_end",
+                "http://169.254.169.254/a%",
+                CanonError::MalformedPercent,
+            ),
+            (
+                "D1.truncated_percent_one_hex",
+                "http://169.254.169.254/a%2",
+                CanonError::MalformedPercent,
+            ),
+            // Non-hex characters after `%`.
+            (
+                "D1.non_hex_percent",
+                "http://169.254.169.254/a%ZZ",
+                CanonError::MalformedPercent,
+            ),
+            (
+                "D1.partial_non_hex_percent",
+                "http://169.254.169.254/a%2G",
+                CanonError::MalformedPercent,
+            ),
+            // All four control-character flavours the matcher must deny.
+            (
+                "D1.nul_byte",
+                "http://169.254.169.254/a%00b",
+                CanonError::ControlChar,
+            ),
+            (
+                "D1.cr_byte",
+                "http://169.254.169.254/a%0Db",
+                CanonError::ControlChar,
+            ),
+            (
+                "D1.tab_byte",
+                "http://169.254.169.254/a%09b",
+                CanonError::ControlChar,
+            ),
+            (
+                "D1.del_byte",
+                "http://169.254.169.254/a%7Fb",
+                CanonError::ControlChar,
+            ),
+            // Decoded non-ASCII (valid UTF-8 but outside the matcher's
+            // ASCII-only contract).
+            (
+                "D1.decoded_non_ascii_lowercase_e_acute",
+                "http://169.254.169.254/caf%C3%A9",
+                CanonError::InvalidUtf8,
+            ),
+            // Underflow variants the Appendix table doesn't enumerate.
+            (
+                "D1.underflow_from_root",
+                "http://169.254.169.254/..",
+                CanonError::PathUnderflow,
+            ),
+            (
+                "D1.underflow_via_dotdot_chain",
+                "http://169.254.169.254/a/b/../../..",
+                CanonError::PathUnderflow,
+            ),
+            // Embedded `?` smuggled via uppercase AND lowercase `%3F`.
+            (
+                "D1.embedded_query_uppercase_hex",
+                "http://169.254.169.254/x%3Fy",
+                CanonError::EmbeddedQuery,
+            ),
+            (
+                "D1.embedded_query_lowercase_hex",
+                "http://169.254.169.254/x%3fy",
+                CanonError::EmbeddedQuery,
+            ),
+        ];
+        for (label, url, expected) in exact {
+            assert_eq!(
+                super::super::canonicalize_str(url).unwrap_err(),
+                *expected,
+                "vector={label}"
+            );
+        }
+
+        // Either-of class: 3-byte and 4-byte overlong UTF-8 sequences may
+        // surface as OverlongUtf8 or InvalidUtf8 depending on which check
+        // fires first.
+        let either: &[(&str, &str)] = &[
+            (
+                "D1.overlong_utf8_3byte_slash",
+                "http://169.254.169.254/x/%E0%80%AFy",
+            ),
+            (
+                "D1.overlong_utf8_4byte_slash",
+                "http://169.254.169.254/x/%F0%80%80%AFy",
+            ),
+            (
+                "D1.overlong_utf8_2byte_backslash",
+                "http://169.254.169.254/x/%C1%9Cy",
+            ),
+        ];
         for (label, url) in either {
             let err = super::super::canonicalize_str(url).unwrap_err();
             assert!(

@@ -88,7 +88,35 @@ pub fn classify(uri: &Uri) -> Result<Destination, CanonError> {
         }
     };
 
-    let port = uri.port_u16().unwrap_or(constants::IMDS_PORT);
+    let port = if let Some(p) = uri.port() {
+        // Happy path: hyper successfully framed the port and it fits in
+        // u16. Re-parsing the text here is a belt-and-suspenders check
+        // so we never widen the return type just to thread an infallible
+        // unwrap through.
+        p.as_str().parse::<u16>().map_err(|_| CanonError::BadPort)?
+    } else {
+        // hyper's port() / port_u16() both return None when the port
+        // text is *present but malformed* (e.g. ":99999" overflows
+        // u16). The old `port_u16().unwrap_or(IMDS_PORT)` collapsed
+        // this into the default, which let
+        // `http://169.254.169.254:99999/x` smuggle past as IMDS.
+        // Inspect the authority string ourselves to tell "no port"
+        // apart from "bad port". For IPv6, the host is bracketed
+        // (`[...]`), so any colon *after* `]` is the port separator;
+        // otherwise the last `:` (if any) is.
+        let port_text: Option<&str> = uri.authority().and_then(|a| {
+            let s = a.as_str();
+            if let Some(rb) = s.rfind(']') {
+                s[rb + 1..].strip_prefix(':')
+            } else {
+                s.rsplit_once(':').map(|(_, p)| p)
+            }
+        });
+        match port_text {
+            Some(text) => text.parse::<u16>().map_err(|_| CanonError::BadPort)?,
+            None => constants::IMDS_PORT,
+        }
+    };
 
     let ip = parse_host_as_ip(host)?;
     match ip {
@@ -261,10 +289,7 @@ fn parse_inet_aton(input: &str) -> Result<Option<Ipv4Addr>, CanonError> {
 
 fn parse_numeric_octet(s: &str) -> Result<u32, CanonError> {
     // 0x... => hex
-    if let Some(rest) = s
-        .strip_prefix("0x")
-        .or_else(|| s.strip_prefix("0X"))
-    {
+    if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         if rest.is_empty() || rest.len() > 8 {
             return Err(CanonError::BadHost);
         }
@@ -370,15 +395,11 @@ mod destination_tests {
             ("0251.0376.0251.0376", imds),
             ("0xa9.0xfe.0xa9.0xfe", imds),
             ("169.0xfe.0251.254", imds),
-            ("169.254.43518", imds),      // 3-part form
-            ("169.16624894", two_part),   // 2-part form
+            ("169.254.43518", imds),    // 3-part form
+            ("169.16624894", two_part), // 2-part form
         ];
         for (input, expected) in cases {
-            assert_eq!(
-                aton(input).unwrap(),
-                Some(*expected),
-                "input={input:?}"
-            );
+            assert_eq!(aton(input).unwrap(), Some(*expected), "input={input:?}");
         }
     }
 
@@ -388,15 +409,15 @@ mod destination_tests {
         // arity, and the empty string itself.
         let bad: &[&str] = &[
             "",
-            "1.2.3.4.5",   // too many parts
-            "1..2.3",      // double dot
-            ".1.2.3",      // leading dot
-            "1.2.3.",      // trailing dot
-            "300.1.1.1",   // 4-part octet > 0xFF
-            "256.0.0.0",   // 4-part octet > 0xFF
-            "256.1",       // 2-part top byte > 0xFF
-            "1.16777216",  // 2-part low value > 0x00FF_FFFF
-            "1.2.65536",   // 3-part last value > 0xFFFF
+            "1.2.3.4.5",  // too many parts
+            "1..2.3",     // double dot
+            ".1.2.3",     // leading dot
+            "1.2.3.",     // trailing dot
+            "300.1.1.1",  // 4-part octet > 0xFF
+            "256.0.0.0",  // 4-part octet > 0xFF
+            "256.1",      // 2-part top byte > 0xFF
+            "1.16777216", // 2-part low value > 0x00FF_FFFF
+            "1.2.65536",  // 3-part last value > 0xFFFF
         ];
         for input in bad {
             assert_eq!(
@@ -429,20 +450,13 @@ mod destination_tests {
         let v6_mapped: Ipv6Addr = "::ffff:169.254.169.254".parse().unwrap();
         let cases: &[(&str, IpAddr)] = &[
             ("127.0.0.1", IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            (
-                "2852039166",
-                IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
-            ),
+            ("2852039166", IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))),
             ("::1", IpAddr::V6(Ipv6Addr::LOCALHOST)),
             ("[::1]", IpAddr::V6(Ipv6Addr::LOCALHOST)),
             ("::ffff:169.254.169.254", IpAddr::V6(v6_mapped)),
         ];
         for (input, expected) in cases {
-            assert_eq!(
-                host(input).unwrap(),
-                Some(*expected),
-                "input={input:?}"
-            );
+            assert_eq!(host(input).unwrap(), Some(*expected), "input={input:?}");
         }
     }
 
@@ -531,10 +545,7 @@ mod destination_tests {
             ("http://169.254.169.254:80/x", Destination::Imds),
             ("http://168.63.129.16:80/x", Destination::WireServer),
             ("http://168.63.129.16:32526/x", Destination::HostGaPlugin),
-            (
-                "http://[::ffff:169.254.169.254]/x",
-                Destination::Imds,
-            ),
+            ("http://[::ffff:169.254.169.254]/x", Destination::Imds),
         ];
         for (url, expected) in cases {
             assert_eq!(classify(&uri(url)).unwrap(), *expected, "url={url}");
@@ -666,10 +677,7 @@ mod destination_tests {
             ("A2.decimal_32bit", "http://2852039166/x"),
             ("A2.hex_packed", "http://0xa9fea9fe/x"),
             ("A2.octal_quad", "http://0251.0376.0251.0376/x"),
-            (
-                "A2.ipv4_mapped_dotted",
-                "http://[::ffff:169.254.169.254]/x",
-            ),
+            ("A2.ipv4_mapped_dotted", "http://[::ffff:169.254.169.254]/x"),
             ("A2.ipv4_mapped_hex", "http://[::ffff:a9fe:a9fe]/x"),
             // Explicit :80 — must still classify as IMDS (default port).
             ("A2.explicit_default_port", "http://169.254.169.254:80/x"),
@@ -721,6 +729,145 @@ mod destination_tests {
             assert_eq!(dest_via_pipeline(url), *expected, "{label}");
         }
     }
+
+    // -----------------------------------------------------------------
+    // C7 extended host vectors (M2: golden vectors for the pentest C7
+    // "host-form differentials" family — design doc §3.2). The
+    // Appendix A.2 table above covers IMDS-side variations; this
+    // expands to:
+    //
+    //   - WireServer (168.63.129.16) in every numeric form.
+    //   - HostGAPlugin (same IP, port 32526) in every numeric form.
+    //   - Adversarial host shapes from the threat-model section: userinfo
+    //     smuggling, port smuggling, hostname-uppercase / trailing-dot,
+    //     out-of-range port, malformed IP literal.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn c7_extended_host_vectors_classify_correctly() {
+        // (label, url, expected) — all numeric forms of 168.63.129.16
+        // (= 0xA83F8110 = 2_822_734_096 decimal) must classify to
+        // WireServer when on port 80 and HostGaPlugin when on :32526.
+        let cases: &[(&str, &str, Destination)] = &[
+            // WireServer ↔ numeric forms.
+            (
+                "C7.wireserver_decimal_32bit",
+                "http://2822734096/x",
+                Destination::WireServer,
+            ),
+            (
+                "C7.wireserver_hex_packed",
+                "http://0xa83f8110/x",
+                Destination::WireServer,
+            ),
+            (
+                "C7.wireserver_ipv4_mapped_dotted",
+                "http://[::ffff:168.63.129.16]/x",
+                Destination::WireServer,
+            ),
+            (
+                "C7.wireserver_ipv4_mapped_hex",
+                "http://[::ffff:a83f:8110]/x",
+                Destination::WireServer,
+            ),
+            // HostGAPlugin ↔ numeric forms (still on :32526).
+            (
+                "C7.hostga_decimal_with_port",
+                "http://2822734096:32526/x",
+                Destination::HostGaPlugin,
+            ),
+            (
+                "C7.hostga_hex_packed_with_port",
+                "http://0xa83f8110:32526/x",
+                Destination::HostGaPlugin,
+            ),
+        ];
+        for (label, url, expected) in cases {
+            assert_eq!(dest_via_pipeline(url), *expected, "vector={label}");
+        }
+    }
+
+    #[test]
+    fn c7_hostname_shape_variations_classify_as_unknown() {
+        // Every hostname shape stays Unknown — the matcher never
+        // trusts DNS. host_text is preserved verbatim (modulo any
+        // lowercasing hyper does at parse time) for audit.
+        let cases: &[(&str, &str)] = &[
+            // Plain hostname.
+            ("C7.hostname_plain", "http://metadata.azure.internal/x"),
+            // Uppercased hostname.
+            ("C7.hostname_uppercase", "http://METADATA.AZURE.INTERNAL/x"),
+            // Trailing-dot hostname (FQDN). Hyper may or may not
+            // strip the dot, but classification is still Unknown.
+            (
+                "C7.hostname_trailing_dot",
+                "http://metadata.azure.internal./x",
+            ),
+            // Arbitrary attacker-controlled hostname.
+            ("C7.hostname_attacker", "http://attacker.example.com/x"),
+        ];
+        for (label, url) in cases {
+            match dest_via_pipeline(url) {
+                Destination::Unknown { host_text, .. } => assert!(
+                    host_text.is_some(),
+                    "vector={label}: host_text must be preserved for audit"
+                ),
+                d => panic!("vector={label}: expected Unknown, got {d:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn c7_adversarial_host_shapes_rejected() {
+        use super::super::CanonError;
+
+        // (label, url, expected_one_of) — the canonicalizer's
+        // top-level entrypoint may surface either of two errors
+        // depending on whether hyper or our gate rejects the input
+        // first. Both are equally a deny.
+        let cases: &[(&str, &str, &[CanonError])] = &[
+            // Userinfo smuggle: `user@host`. UserinfoPresent is the
+            // preferred surfacing; BadHost is the fallback if hyper
+            // refuses to parse it as an absolute URI.
+            (
+                "C7.userinfo_bare_user",
+                "http://user@169.254.169.254/x",
+                &[CanonError::UserinfoPresent, CanonError::BadHost],
+            ),
+            (
+                "C7.userinfo_user_password",
+                "http://user:pass@169.254.169.254/x",
+                &[CanonError::UserinfoPresent, CanonError::BadHost],
+            ),
+            // Port-smuggle: `IP:port@evil` is the classic confusable
+            // (the `:80` looks like a port but the `@` makes the real
+            // host `evil`). Either UserinfoPresent or BadHost.
+            (
+                "C7.port_smuggle_via_userinfo",
+                "http://169.254.169.254:80@evil.com/x",
+                &[CanonError::UserinfoPresent, CanonError::BadHost],
+            ),
+            // Out-of-range port (>65535).
+            (
+                "C7.port_too_large",
+                "http://169.254.169.254:99999/x",
+                &[CanonError::BadPort, CanonError::BadHost],
+            ),
+            // Malformed dotted-quad (octet > 255).
+            (
+                "C7.ipv4_octet_overflow",
+                "http://999.999.999.999/x",
+                &[CanonError::BadHost],
+            ),
+        ];
+        for (label, url, expected_set) in cases {
+            match super::super::canonicalize_str(url) {
+                Ok(ok) => panic!("vector={label}: expected deny, got Ok({ok:?})"),
+                Err(err) => assert!(
+                    expected_set.contains(&err),
+                    "vector={label}: got {err:?}, expected one of {expected_set:?}"
+                ),
+            }
+        }
+    }
 }
-
-

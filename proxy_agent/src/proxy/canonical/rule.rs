@@ -184,14 +184,14 @@ mod rule_tests {
             // case folding + leading-slash root marker preserved.
             ("/Metadata", None, &["", "metadata"], &[]),
             // dot-segments collapse on the rule side too.
+            ("/a/./b/../c", None, &["", "a", "c"], &[]),
+            // trailing slash on rule is dropped from segments (same as request side).
             (
-                "/a/./b/../c",
+                "/metadata/identity/",
                 None,
-                &["", "a", "c"],
+                &["", "metadata", "identity"],
                 &[],
             ),
-            // trailing slash on rule is dropped from segments (same as request side).
-            ("/metadata/identity/", None, &["", "metadata", "identity"], &[]),
             // None vs Some(empty) both yield an empty required_query.
             ("/x", None, &["", "x"], &[]),
             ("/x", Some(&[]), &["", "x"], &[]),
@@ -221,11 +221,15 @@ mod rule_tests {
                 "from_privilege must default to Any (input path={path:?})"
             );
             assert_eq!(p.path_prefix, segs(expect_segs), "path={path:?}");
-            let actual: Vec<(String, Vec<String>)> =
-                p.required_query.into_iter().collect();
+            let actual: Vec<(String, Vec<String>)> = p.required_query.into_iter().collect();
             let expected: Vec<(String, Vec<String>)> = expect_q
                 .iter()
-                .map(|(k, vs)| ((*k).to_string(), vs.iter().map(|v| (*v).to_string()).collect()))
+                .map(|(k, vs)| {
+                    (
+                        (*k).to_string(),
+                        vs.iter().map(|v| (*v).to_string()).collect(),
+                    )
+                })
                 .collect();
             assert_eq!(actual, expected, "path={path:?}");
         }
@@ -378,8 +382,7 @@ mod rule_tests {
         // Across keys: AND. Within a key: OR over the rule's allowed values.
         // Build patterns directly so we can exercise multiple values per key
         // (the on-disk Privilege format only supports a single value per key).
-        let multi_value =
-            pat(RuleDestination::Any, &["", "m"], &[("v", &["a", "b"])]);
+        let multi_value = pat(RuleDestination::Any, &["", "m"], &[("v", &["a", "b"])]);
         let multi_key = pat(
             RuleDestination::Any,
             &["", "m"],
@@ -389,7 +392,12 @@ mod rule_tests {
 
         let cases: &[(&CanonicalPattern, &str, bool, &str)] = &[
             // No required_query -> any query (including none) matches.
-            (&no_query, "http://169.254.169.254/m", true, "no constraint + no query"),
+            (
+                &no_query,
+                "http://169.254.169.254/m",
+                true,
+                "no constraint + no query",
+            ),
             (
                 &no_query,
                 "http://169.254.169.254/m?anything=here",
@@ -467,11 +475,7 @@ mod rule_tests {
             ),
             // Encoded value on the request side decodes once to match the rule.
             (
-                &CanonicalPattern::from_privilege(&priv_of(
-                    "/m",
-                    Some(&[("k", "a b")]),
-                ))
-                .unwrap(),
+                &CanonicalPattern::from_privilege(&priv_of("/m", Some(&[("k", "a b")]))).unwrap(),
                 "http://169.254.169.254/m?k=a%20b",
                 true,
                 "request value decoded once matches rule value",
