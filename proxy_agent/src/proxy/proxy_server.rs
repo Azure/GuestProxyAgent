@@ -501,6 +501,7 @@ impl ProxyServer {
             port,
             http_connection_context.get_logger_mut_ref(),
             request.uri().clone(),
+            request.method().clone(),
             claims.clone(),
             access_control_rules,
         );

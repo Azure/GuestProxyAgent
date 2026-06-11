@@ -333,6 +333,51 @@ pub fn canonicalize_str(url: &str) -> Result<CanonicalRequest, CanonError> {
     canonicalize(&uri, &Method::GET)
 }
 
+/// Rollout flag controlling whether the canonical pipeline shadows or
+/// replaces the legacy authorizer.
+///
+/// See `doc/plans/Innovation-2.1-canonical-request.md` §9 (Shadow-Mode
+/// Rollout). Defaults to [`CanonicalMode::Off`] so production traffic
+/// keeps the pre-canonical behavior bit-for-bit.
+///
+/// - [`Off`](CanonicalMode::Off): legacy decides; canonical not invoked.
+/// - [`Shadow`](CanonicalMode::Shadow): legacy decides; canonical runs
+///   in parallel and divergences are logged as telemetry. **Behavior
+///   unchanged** — this is the M3 default for dev/test.
+/// - [`Enforce`](CanonicalMode::Enforce): canonical decides; legacy is
+///   still computed for divergence telemetry. Wired but only intended
+///   for use once shadow-mode reports zero divergences (M5/M6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CanonicalMode {
+    #[default]
+    Off,
+    Shadow,
+    Enforce,
+}
+
+impl std::fmt::Display for CanonicalMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CanonicalMode::Off => write!(f, "off"),
+            CanonicalMode::Shadow => write!(f, "shadow"),
+            CanonicalMode::Enforce => write!(f, "enforce"),
+        }
+    }
+}
+
+impl std::str::FromStr for CanonicalMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" | "" => Ok(CanonicalMode::Off),
+            "shadow" => Ok(CanonicalMode::Shadow),
+            "enforce" => Ok(CanonicalMode::Enforce),
+            other => Err(format!("Invalid CanonicalMode: {other}")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod mod_tests {
     //! Cross-cutting tests for the canonical pipeline.
@@ -540,5 +585,38 @@ mod mod_tests {
         for (err, expected_code) in cases {
             assert_eq!(err.code(), *expected_code, "variant={err:?}");
         }
+    }
+
+    #[test]
+    fn canonical_mode_parses_and_defaults_off() {
+        use std::str::FromStr;
+
+        // Empty / missing config string defaults to Off so production
+        // traffic is unchanged when the config key is absent.
+        assert_eq!(CanonicalMode::default(), CanonicalMode::Off);
+        assert_eq!(CanonicalMode::from_str("").unwrap(), CanonicalMode::Off);
+
+        // Accepted spellings — case- and whitespace-insensitive so
+        // operators can write "Shadow" or " enforce " without surprises.
+        let cases: &[(&str, CanonicalMode)] = &[
+            ("off", CanonicalMode::Off),
+            ("Off", CanonicalMode::Off),
+            ("shadow", CanonicalMode::Shadow),
+            ("SHADOW", CanonicalMode::Shadow),
+            ("  shadow  ", CanonicalMode::Shadow),
+            ("enforce", CanonicalMode::Enforce),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                CanonicalMode::from_str(input).unwrap(),
+                *expected,
+                "input={input:?}"
+            );
+        }
+
+        // Unknown strings reject — better to fail loud at config load
+        // than silently fall through to Off and lie in telemetry.
+        assert!(CanonicalMode::from_str("audit").is_err());
+        assert!(CanonicalMode::from_str("on").is_err());
     }
 }

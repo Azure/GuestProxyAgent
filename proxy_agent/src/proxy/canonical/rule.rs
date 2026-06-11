@@ -124,6 +124,12 @@ impl CanonicalPattern {
 }
 
 #[cfg(test)]
+// The table-driven tests below intentionally carry deep nested-tuple
+// literal types like `&[(&str, Option<&[(&str, &str)]>, &[&str], &[(&str, &[&str])])]`.
+// That nesting IS the readability point — each column lines up with a
+// (input, expected) axis the test is exercising — and factoring it out
+// into a `type` alias hurts at-a-glance reading more than it helps.
+#[allow(clippy::type_complexity)]
 mod rule_tests {
     use std::collections::HashMap;
 
