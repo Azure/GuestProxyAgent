@@ -9,7 +9,9 @@ abe
 addrlen
 addrpair
 advapi
+aef
 AFidentity
+AFy
 aks
 almalinux
 ATL
@@ -21,6 +23,7 @@ autocrlf
 autonumber
 AWI
 aya
+AZaz
 AZUREPUBLICCLOUD
 azuretools
 backcompat
@@ -44,12 +47,15 @@ buildshell
 byos
 bytecodealliance
 callouts
+canonicalizable
 canonicalizer
 cbl
 ccbdee
 ccbf
+ced
 CEL
 CES
+cfa
 cgroups
 cgroupv
 cgtop
@@ -106,6 +112,7 @@ dllmain
 dministrator
 dnf
 dodce
+dotdot
 dotnet
 DPAPI
 dport
@@ -146,7 +153,8 @@ extconfig
 fafbfc
 failmode
 Fapi
-Fbar
+fbar
+fccad
 fde
 fea
 ffcecb
@@ -156,6 +164,7 @@ ffff
 FFFFFFFF
 fffi
 ffi
+FFu
 fidentity
 FIXEDFILEINFO
 Fmanagement
@@ -179,11 +188,13 @@ guestproxyagentmsis
 guiddef
 handleapi
 hdr
+hexdigit
 hklm
 hlist
 HMACs
 homoglyph
 hostga
+hostgaplugin
 hostingenvironmentconfig
 HTAB
 httpwg
@@ -232,6 +243,7 @@ kpi
 kprobe
 ktime
 kusto
+kvs
 lbl
 lgrui
 libbpf
@@ -358,6 +370,7 @@ proxyagentvalidation
 pscustomobject
 ptrace
 pwstr
+qkv
 raci
 radamsa
 Razr
@@ -372,6 +385,7 @@ registrykey
 reimplementation
 rekor
 relativeurl
+reparse
 Reprovisioning
 resf
 reuseport
@@ -386,6 +400,7 @@ rolename
 rootdir
 rpmbuild
 RPMS
+rsid
 rstr
 RTMR
 rul
@@ -439,6 +454,7 @@ stdbool
 stdint
 stdoutput
 stduser
+strat
 subsecond
 substatus
 Substatuses
@@ -486,11 +502,14 @@ tshark
 TSV
 Tsv
 tsv
+typo'd
 UAMI
 UBR
 UBRSTRING
 udev
+uncanonicalizable
 unistd
+unk
 unmark
 unparseable
 updateable
@@ -554,6 +573,7 @@ xbf
 xcopy
 XDP
 xef
+xfe
 xfsprogs
 xsi
 xxxx
@@ -564,3 +584,4 @@ Zeroizing
 zipsas
 zureuser
 zypper
+zzz
