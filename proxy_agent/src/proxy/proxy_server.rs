@@ -475,53 +475,56 @@ impl ProxyServer {
         };
         http_connection_context.log(LoggerLevel::Trace, claim_details.to_string());
 
-        // authenticate the connection
-        let access_control_rules = match proxy_authorizer::get_access_control_rules(
-            ip.to_string(),
-            port,
-            self.access_control_shared_state.clone(),
-        )
-        .await
-        {
-            Ok(rules) => rules,
-            Err(e) => {
-                self.log_connection_summary(
-                    &mut http_connection_context,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    false,
-                    format!("Failed to get access control rules: {e}"),
-                )
-                .await;
-                return Ok(Self::closed_response(StatusCode::INTERNAL_SERVER_ERROR));
-            }
-        };
-        http_connection_context.log(LoggerLevel::Trace, "Authorizing the request.".to_string());
-        let result = proxy_authorizer::authorize(
-            ip.to_string(),
-            port,
-            http_connection_context.get_logger_mut_ref(),
-            request.uri().clone(),
-            claims.clone(),
-            access_control_rules,
-        );
-        if result != AuthorizeResult::Ok {
-            // log to authorize failed connection summary
-            self.log_connection_summary(
-                &mut http_connection_context,
-                StatusCode::FORBIDDEN,
-                true,
-                "Authorize failed".to_string(),
+        // do not authenticate if the request is to be skipped
+        if !http_connection_context.should_skip_sig() {
+            // authenticate the connection
+            let access_control_rules = match proxy_authorizer::get_access_control_rules(
+                ip.to_string(),
+                port,
+                self.access_control_shared_state.clone(),
             )
-            .await;
-            if result == AuthorizeResult::Forbidden {
+            .await
+            {
+                Ok(rules) => rules,
+                Err(e) => {
+                    self.log_connection_summary(
+                        &mut http_connection_context,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        false,
+                        format!("Failed to get access control rules: {e}"),
+                    )
+                    .await;
+                    return Ok(Self::closed_response(StatusCode::INTERNAL_SERVER_ERROR));
+                }
+            };
+            http_connection_context.log(LoggerLevel::Trace, "Authorizing the request.".to_string());
+            let result = proxy_authorizer::authorize(
+                ip.to_string(),
+                port,
+                http_connection_context.get_logger_mut_ref(),
+                request.uri().clone(),
+                claims.clone(),
+                access_control_rules,
+            );
+            if result != AuthorizeResult::Ok {
+                // log to authorize failed connection summary
                 self.log_connection_summary(
                     &mut http_connection_context,
                     StatusCode::FORBIDDEN,
-                    false,
-                    format!("Block unauthorized request: {claim_details}"),
+                    true,
+                    "Authorize failed".to_string(),
                 )
                 .await;
-                return Ok(Self::closed_response(StatusCode::FORBIDDEN));
+                if result == AuthorizeResult::Forbidden {
+                    self.log_connection_summary(
+                        &mut http_connection_context,
+                        StatusCode::FORBIDDEN,
+                        false,
+                        format!("Block unauthorized request: {claim_details}"),
+                    )
+                    .await;
+                    return Ok(Self::closed_response(StatusCode::FORBIDDEN));
+                }
             }
         }
 
