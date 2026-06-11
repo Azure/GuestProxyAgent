@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 
+use crate::common_state::CommonState;
 use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::telemetry::Event;
@@ -18,12 +19,39 @@ static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 /// Store the event directory path, so that other modules can access it if needed.
 static EVENTS_DIR: tokio::sync::OnceCell<PathBuf> = tokio::sync::OnceCell::const_new();
+static DIRECT_SEND_CONFIG: tokio::sync::OnceCell<DirectSendConfig> =
+    tokio::sync::OnceCell::const_new();
 const MAX_EXTENSION_EVENT_FILE_COUNT: usize = 1000;
+
+#[derive(Clone, Debug)]
+pub struct DirectSendConfig {
+    execution_mode: String,
+    event_name: String,
+    version: Option<String>,
+    common_state: CommonState,
+}
+
+impl DirectSendConfig {
+    pub fn new(
+        execution_mode: String,
+        event_name: String,
+        version: Option<String>,
+        common_state: CommonState,
+    ) -> Self {
+        Self {
+            execution_mode,
+            event_name,
+            version,
+            common_state,
+        }
+    }
+}
 
 pub async fn start<F, Fut>(
     event_dir: PathBuf,
     mut interval: Duration,
     max_event_file_count: usize,
+    direct_send_config: Option<DirectSendConfig>,
     set_status_fn: F,
 ) where
     F: Fn(String) -> Fut,
@@ -43,6 +71,13 @@ pub async fn start<F, Fut>(
         let message = "Event directory is already set, cannot set it again.";
         set_status_fn(message.to_string());
         logger_manager::write_log(Level::Warn, message.to_string());
+    }
+    if let Some(config) = direct_send_config.clone() {
+        if DIRECT_SEND_CONFIG.set(config).is_err() {
+            let message = "DirectSendConfig is already set, cannot set it again.";
+            set_status_fn(message.to_string());
+            logger_manager::write_log(Level::Warn, message.to_string());
+        }
     }
 
     let shutdown = SHUT_DOWN.clone();
@@ -73,9 +108,47 @@ pub async fn start<F, Fut>(
 
         let mut events: Vec<Event> = Vec::new();
         events.reserve_exact(EVENT_QUEUE.len());
-
         for event in EVENT_QUEUE.try_iter() {
             events.push(event);
+        }
+
+        // Try to send the events directly via the in-memory telemetry queue
+        // first, so VMs without disk write permission can still report
+        // telemetry. Any events that cannot be enqueued directly (the direct
+        // path is None or the queue is full/closed) fall back to being
+        // buffered on disk below.
+        let events: Vec<Event> = match &direct_send_config {
+            Some(config) => {
+                let event_count = events.len();
+                let remaining_events: Vec<Event> = events
+                    .into_iter()
+                    .filter(|event| {
+                        crate::telemetry::event_sender::try_enqueue_generic_event(
+                            event,
+                            config.execution_mode.clone(),
+                            config.event_name.clone(),
+                            config.version.clone(),
+                        )
+                        .is_err()
+                    })
+                    .collect();
+                if remaining_events.len() < event_count {
+                    // some events were queued directly, notify the event_sender
+                    if let Err(e) = config.common_state.notify_telemetry_event().await {
+                        logger_manager::write_warn(format!(
+                        "report_generic_event: failed to notify telemetry event with error: {e}"
+                    ));
+                    };
+                }
+
+                // return the possible remaining events
+                remaining_events
+            }
+            None => events,
+        };
+        if events.is_empty() {
+            // all events were queued directly, skip the rest
+            continue;
         }
 
         // Check the event file counts,
@@ -173,6 +246,27 @@ pub async fn report_extension_status_event(
     extension: crate::telemetry::Extension,
     operation_status: crate::telemetry::OperationStatus,
 ) {
+    let event = crate::telemetry::ExtensionStatusEvent::new(extension, operation_status);
+
+    if let Some(config) = DIRECT_SEND_CONFIG.get() {
+        // Try to send the event directly via the in-memory telemetry queue first,
+        // so VMs without disk write permission can still report telemetry.
+        // If the queue is full/closed, fall back to buffering the event on disk.
+        if crate::telemetry::event_sender::try_enqueue_extension_event(
+            &event,
+            config.execution_mode.clone(),
+        )
+        .is_ok()
+        {
+            if let Err(e) = config.common_state.notify_telemetry_event().await {
+                logger_manager::write_warn(format!(
+                        "report_extension_status_event: failed to notify telemetry event with error: {e}"
+                    ));
+            }
+            return;
+        }
+    }
+
     let event_dir = match EVENTS_DIR.get() {
         Some(dir) => dir.clone(),
         None => {
@@ -207,7 +301,6 @@ pub async fn report_extension_status_event(
         }
     }
 
-    let event = crate::telemetry::ExtensionStatusEvent::new(extension, operation_status);
     let mut file_path = event_dir.to_path_buf();
     file_path.push(crate::telemetry::new_extension_event_file_name());
     if let Err(e) = misc_helpers::json_write_to_file_async(&event, &file_path).await {
@@ -266,11 +359,17 @@ mod tests {
         // Start the event logger loop and set the EVENTS_DIR
         let cloned_events_dir = events_dir.to_path_buf();
         tokio::spawn(async {
-            super::start(cloned_events_dir, Duration::from_millis(100), 3, |_| {
-                async {
-                    // do nothing
-                }
-            })
+            super::start(
+                cloned_events_dir,
+                Duration::from_millis(100),
+                3,
+                None,
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
             .await;
         });
 

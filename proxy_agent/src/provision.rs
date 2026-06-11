@@ -335,14 +335,22 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
     // those tasks starts to run after provision finished or provision timedout
     set_resource_limits();
 
-    let cloned_agent_status_shared_state =
-        event_threads_shared_state.agent_status_shared_state.clone();
     tokio::spawn({
-        async {
+        let cloned_agent_status_shared_state =
+            event_threads_shared_state.agent_status_shared_state.clone();
+        let direct_send_config = event_logger::DirectSendConfig::new(
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
+            None,
+            event_threads_shared_state.common_state.clone(),
+        );
+
+        async move {
             event_logger::start(
                 config::get_events_dir(),
                 Duration::default(),
                 config::get_max_event_file_count(),
+                Some(direct_send_config),
                 move |status: String| {
                     let cloned_agent_status_shared_state = cloned_agent_status_shared_state.clone();
                     async move {

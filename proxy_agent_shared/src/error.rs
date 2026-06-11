@@ -61,6 +61,9 @@ pub enum Error {
         "Failed to get proxy agent aggregate status (server error: {0}; status file error: {1})"
     )]
     GetProxyAgentAggregateStatus(String, String),
+
+    #[error("Failed to enqueue telemetry event with error: {0}")]
+    EnqueueEvent(String),
 }
 
 #[derive(Debug, thiserror::Error)]

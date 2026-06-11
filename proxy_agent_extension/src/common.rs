@@ -234,11 +234,17 @@ pub async fn start_event_logger() {
                 return;
             }
 
-            telemetry::event_logger::start(event_folder, interval, max_event_file_count, |_| {
-                async {
-                    // do nothing
-                }
-            })
+            telemetry::event_logger::start(
+                event_folder,
+                interval,
+                max_event_file_count,
+                None, // always write to extension telemetry events folder
+                |_| {
+                    async {
+                        // do nothing
+                    }
+                },
+            )
             .await;
         }
     });
