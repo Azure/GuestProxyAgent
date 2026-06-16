@@ -23,6 +23,7 @@ use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::{common::constants, common::result::Result, proxy::Claims};
+use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 
 #[derive(PartialEq)]
@@ -232,9 +233,16 @@ pub fn authorize(
     port: u16,
     logger: &mut ConnectionLogger,
     request_uri: hyper::Uri,
+    request_method: hyper::Method,
     claims: Claims,
     access_control_rules: Option<ComputedAuthorizationItem>,
 ) -> AuthorizeResult {
+    // If the request should skip signature and the claims indicate elevated privileges, allow the request.
+    // This is a security measure to allow certain endpoints are exempt from enforcement regardless of the VM's configuration.
+    if hyper_client::should_skip_sig(&request_method, &request_uri) && claims.runAsElevated {
+        return AuthorizeResult::Ok;
+    }
+
     let auth = get_authorizer(ip, port, claims);
     logger.write(
         LoggerLevel::Trace,
@@ -683,6 +691,138 @@ mod tests {
             auth.authorize(&mut test_logger, url.clone(), access_control_rules)
                 == AuthorizeResult::Forbidden,
             "HostGA authentication must be Forbidden with enforce deny rules"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_skip_sig_test() {
+        // Build claims for an elevated and a non-elevated process.
+        let elevated_claims = crate::proxy::Claims {
+            userId: 0,
+            userName: "test".to_string(),
+            userGroups: vec!["test".to_string()],
+            processId: std::process::id(),
+            processName: OsString::from("test"),
+            processFullPath: PathBuf::from("test"),
+            processCmdLine: "test".to_string(),
+            runAsElevated: true,
+            clientIp: "127.0.0.1".to_string(),
+            clientPort: 0,
+        };
+        let mut non_elevated_claims = elevated_claims.clone();
+        non_elevated_claims.runAsElevated = false;
+
+        let mut test_logger = ConnectionLogger::new(2, 2);
+
+        // Set up an enforce-deny rule for WireServer so the normal authorize path
+        // would return Forbidden if the skip-sig early return did not take effect.
+        let access_control_shared_state = AccessControlSharedState::start_new();
+        let enforce_deny_rules = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            id: "id".to_string(),
+            rules: None,
+        };
+        access_control_shared_state
+            .set_wireserver_rules(Some(enforce_deny_rules))
+            .await
+            .unwrap();
+        let wireserver_deny_rules = access_control_shared_state
+            .get_wireserver_rules()
+            .await
+            .unwrap();
+
+        // Skip-sig URIs (per hyper_client::should_skip_sig):
+        //   o PUT  /vmAgentLog
+        //   o POST /machine/?comp=telemetrydata
+        let vm_agent_log_uri = hyper::Uri::from_str("/vmAgentLog").unwrap();
+        let telemetry_uri = hyper::Uri::from_str("/machine/?comp=telemetrydata").unwrap();
+        let non_skip_uri = hyper::Uri::from_str("http://localhost/test?").unwrap();
+
+        // 1. Skip-sig URI + elevated claims => Ok even though rule is enforce-deny.
+        assert!(
+            super::authorize(
+                crate::common::constants::WIRE_SERVER_IP.to_string(),
+                crate::common::constants::WIRE_SERVER_PORT,
+                &mut test_logger,
+                vm_agent_log_uri.clone(),
+                hyper::Method::PUT,
+                elevated_claims.clone(),
+                wireserver_deny_rules.clone(),
+            ) == AuthorizeResult::Ok,
+            "PUT /vmAgentLog with elevated claims must be Ok regardless of deny rules"
+        );
+        assert!(
+            super::authorize(
+                crate::common::constants::WIRE_SERVER_IP.to_string(),
+                crate::common::constants::WIRE_SERVER_PORT,
+                &mut test_logger,
+                telemetry_uri.clone(),
+                hyper::Method::POST,
+                elevated_claims.clone(),
+                wireserver_deny_rules.clone(),
+            ) == AuthorizeResult::Ok,
+            "POST /machine/?comp=telemetrydata with elevated claims must be Ok regardless of deny rules"
+        );
+
+        // 2. Skip-sig URI but the claims are NOT elevated => must fall through to the
+        //    normal authorizer, which forbids WireServer access for non-elevated callers.
+        assert!(
+            super::authorize(
+                crate::common::constants::WIRE_SERVER_IP.to_string(),
+                crate::common::constants::WIRE_SERVER_PORT,
+                &mut test_logger,
+                vm_agent_log_uri.clone(),
+                hyper::Method::PUT,
+                non_elevated_claims.clone(),
+                wireserver_deny_rules.clone(),
+            ) == AuthorizeResult::Forbidden,
+            "Skip-sig URI without elevated claims must fall through and be Forbidden"
+        );
+
+        // 3. Skip-sig URI methods that do not match the exempt method => still enforced.
+        //    GET /vmAgentLog is not exempt, so the deny rule applies.
+        assert!(
+            super::authorize(
+                crate::common::constants::WIRE_SERVER_IP.to_string(),
+                crate::common::constants::WIRE_SERVER_PORT,
+                &mut test_logger,
+                vm_agent_log_uri.clone(),
+                hyper::Method::GET,
+                elevated_claims.clone(),
+                wireserver_deny_rules.clone(),
+            ) == AuthorizeResult::Forbidden,
+            "GET /vmAgentLog is not skip-sig and must be Forbidden under enforce-deny"
+        );
+
+        // 4. Non-skip-sig URI with elevated claims => normal authorizer path is used.
+        //    Under enforce-deny the request must be Forbidden.
+        assert!(
+            super::authorize(
+                crate::common::constants::WIRE_SERVER_IP.to_string(),
+                crate::common::constants::WIRE_SERVER_PORT,
+                &mut test_logger,
+                non_skip_uri.clone(),
+                hyper::Method::GET,
+                elevated_claims.clone(),
+                wireserver_deny_rules.clone(),
+            ) == AuthorizeResult::Forbidden,
+            "Non skip-sig request must follow access control rules (Forbidden under enforce-deny)"
+        );
+
+        // 5. Skip-sig URI + elevated claims must also short-circuit for endpoints whose
+        //    authorizer would otherwise reject everything (e.g. the ProxyAgent listener).
+        assert!(
+            super::authorize(
+                crate::common::constants::PROXY_AGENT_IP.to_string(),
+                crate::common::constants::PROXY_AGENT_PORT,
+                &mut test_logger,
+                telemetry_uri.clone(),
+                hyper::Method::POST,
+                elevated_claims.clone(),
+                None,
+            ) == AuthorizeResult::Ok,
+            "Skip-sig + elevated claims must short-circuit even on the ProxyAgent listener"
         );
     }
 }
