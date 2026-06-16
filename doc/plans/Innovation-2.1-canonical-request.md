@@ -284,6 +284,7 @@ hyper::Uri │ ▼ parse_scheme_method (must be http; reject https/ws/...; metho
 | `MalformedPercent` | Truncated / non-hex `%XX`             | Deny; 400 | `CANON_PCT`       |
 | `OverlongUtf8`     | Classic IDS-bypass payload            | Deny; 400 | `CANON_OVERLONG`  |
 | `InvalidUtf8`      | Random bytes or wrong codec           | Deny; 400 | `CANON_UTF8`      |
+| `NonAscii`         | Unicode confusable / homoglyph attack in **path** (query allows non-ASCII values) | Deny; 400 | `CANON_NON_ASCII` |
 | `ControlChar`      | CRLF injection attempt                | Deny; 400 | `CANON_CTRL`      |
 | `PathUnderflow`    | Too many `..`                         | Deny; 400 | `CANON_UNDERFLOW` |
 | `EmbeddedQuery`    | `%3F` smuggling                       | Deny; 400 | `CANON_EMBQ`      |

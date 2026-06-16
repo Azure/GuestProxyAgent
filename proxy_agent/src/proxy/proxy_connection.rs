@@ -282,8 +282,19 @@ impl HttpConnectionContext {
         hyper_client::should_skip_sig(&self.method, &self.url)
     }
 
+    /// Pre-canonical defense-in-depth guard. Returns `true` if the request
+    /// path contains a pattern commonly used to bypass prefix-based
+    /// authorization rules. See [`path_has_traversal`] for the exact set.
+    /// This is checked in `handle_new_http_request` before any rule lookup
+    /// so suspicious paths short-circuit to 404 without ever reaching the
+    /// matcher or the upstream.
+    ///
+    /// Once the canonical pipeline graduates to enforce mode (M5), the
+    /// `PathUnderflow` / slash-collapsing / encoded-dot handling in
+    /// `crate::proxy::canonical::path` subsumes this check entirely and
+    /// this method can be removed.
     pub fn contains_traversal_characters(&self) -> bool {
-        self.url.path().contains("..")
+        path_has_traversal(self.url.path())
     }
 
     pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
@@ -390,6 +401,129 @@ impl Clone for ConnectionLogger {
             tcp_connection_id: self.tcp_connection_id,
             http_connection_id: self.http_connection_id,
             queue: Vec::new(), // Do not clone the queue, as it is used for logging
+        }
+    }
+}
+
+/// Returns `true` if `raw_path` (the path component of a request URI in
+/// its on-wire, *not yet percent-decoded* form) contains a pattern that
+/// is commonly used to bypass prefix-based authorization rules.
+///
+/// Caught by this function (rejected with 404 by the caller):
+///   * `..` — literal dot-dot anywhere in the path
+///   * `%2E%2E`, `%2e%2e`, and mixed-case (`%2E%2e`, `%2e%2E`) — caught
+///     after a single percent-decode pass
+///   * `.%2e`, `%2E.`, etc. — same single-decode pass collapses them
+///     into a literal `..`
+///   * `//` — two or more consecutive slashes (multi-slash bypass).
+///     Legacy prefix-matching treats `/foo//bar` as a distinct path
+///     from `/foo/bar`; reject the raw form so attackers cannot pivot
+///     past a privilege whose path string lacks the extra slash.
+///
+/// INTENTIONALLY NOT rejected here (the canonical pipeline in
+/// [`crate::proxy::canonical::path`] handles these and will subsume this
+/// guard entirely once it graduates to enforce mode in M5):
+///   * single `.` segments — valid in real paths like `/.well-known/*`
+///   * `;` matrix parameters — sub-delim that is legal inside a segment
+///   * non-ASCII / Unicode-confusable bytes — caught by `reject_non_ascii`
+///   * embedded `?` after percent-decode — caught by canonical's EmbQ check
+///   * trailing-slash variation — clamped by canonical's normalizer
+///
+/// Decoding uses `decode_utf8_lossy`: any invalid-UTF-8 percent
+/// sequences are replaced by U+FFFD (which does not contain `..`), and
+/// truly malformed sequences are passed through unchanged. This keeps
+/// the check fail-open for the rare valid non-ASCII path while staying
+/// safe for the traversal cases that matter.
+fn path_has_traversal(raw_path: &str) -> bool {
+    if raw_path.contains("//") {
+        return true;
+    }
+    let decoded = percent_encoding::percent_decode_str(raw_path).decode_utf8_lossy();
+    decoded.contains("..")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_has_traversal;
+
+    #[test]
+    fn clean_paths_are_not_traversal() {
+        for p in [
+            "/",
+            "/metadata/instance",
+            "/metadata/identity/oauth2/token",
+            "/machine/?comp=goalstate",
+            "/.well-known/foo",
+            "/metadata/instance?api-version=2021-02-01",
+        ] {
+            assert!(
+                !path_has_traversal(p),
+                "expected clean path, got traversal: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn literal_dot_dot_is_traversal() {
+        for p in [
+            "/foo/../bar",
+            "/metadata/./identity/../identity/oauth2/token",
+            "/..",
+            "../etc/passwd",
+        ] {
+            assert!(path_has_traversal(p), "expected traversal: {p:?}");
+        }
+    }
+
+    #[test]
+    fn percent_encoded_dot_dot_is_traversal() {
+        // Uppercase, lowercase, and mixed-case percent encodings must all
+        // be caught — they all decode to a literal `..` in a single pass.
+        for p in [
+            "/foo/%2E%2E/bar",
+            "/foo/%2e%2e/bar",
+            "/foo/%2E%2e/bar",
+            "/foo/%2e%2E/bar",
+            "/foo/.%2e/bar",
+            "/foo/%2E./bar",
+            "/metadata/%2E/identity/%2E%2E/identity/oauth2/token",
+        ] {
+            assert!(
+                path_has_traversal(p),
+                "expected percent-encoded traversal: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn multi_slash_is_traversal() {
+        for p in [
+            "//metadata/instance",
+            "/metadata//instance",
+            "/metadata///identity//oauth2//token",
+            "//",
+        ] {
+            assert!(
+                path_has_traversal(p),
+                "expected multi-slash traversal: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_dot_and_matrix_params_are_not_traversal_here() {
+        // Single `.` segments and matrix params (`;`) are not traversal
+        // markers and must pass through this pre-canonical guard. The
+        // canonical pipeline applies its own normalization in M5.
+        for p in [
+            "/metadata/./instance",
+            "/metadata/instance;jsessionid=abc",
+            "/.well-known/openid-configuration",
+        ] {
+            assert!(
+                !path_has_traversal(p),
+                "expected non-traversal (deferred to canonical): {p:?}"
+            );
         }
     }
 }

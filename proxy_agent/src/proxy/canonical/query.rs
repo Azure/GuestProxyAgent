@@ -7,8 +7,13 @@
 //!   become part of the value).
 //! - Single percent-decode of both key and value.
 //! - Lowercase the key (case-insensitive matching).
-//! - Reject control characters and non-ASCII in both key and value
-//!   (same rationale as for the path).
+//! - Reject control characters and malformed UTF-8 in both key and value.
+//!   Unlike the path pipeline, well-formed non-ASCII UTF-8 is **allowed**
+//!   here: query *values* legitimately carry it (e.g. an IMDS
+//!   `msi_res_id` / `resource` ARM id whose resource-group name contains
+//!   Unicode letters, which Azure naming rules permit). The path stays
+//!   ASCII-only because IMDS / WireServer / HGAP paths never contain
+//!   non-ASCII and a confusable path segment could slip past a deny rule.
 //! - Fold into a `BTreeMap<String, Vec<String>>`: deterministic key
 //!   ordering, insertion order preserved within a key.
 
@@ -72,14 +77,18 @@ fn decode_query_component(raw: &str) -> Result<String, CanonError> {
             }
         }
     }
+    // `String::from_utf8` still rejects malformed byte sequences
+    // (`InvalidUtf8`), so smuggling via broken encodings is closed. We
+    // deliberately do NOT reject well-formed non-ASCII here the way the
+    // path pipeline does: query values legitimately carry Unicode (e.g.
+    // an ARM `msi_res_id` whose resource-group name has Unicode letters),
+    // and a confusable in a query value cannot slip past a path-prefix
+    // deny rule. Control characters stay forbidden in both halves.
     let s = String::from_utf8(out).map_err(|_| CanonError::InvalidUtf8)?;
     for b in s.bytes() {
         if b < 0x20 || b == 0x7F {
             return Err(CanonError::ControlChar);
         }
-    }
-    if !s.is_ascii() {
-        return Err(CanonError::InvalidUtf8);
     }
     Ok(s)
 }
@@ -165,6 +174,36 @@ mod query_tests {
         assert_eq!(
             canonicalize_query("k=%0A").unwrap_err(),
             CanonError::ControlChar
+        );
+    }
+
+    #[test]
+    fn non_ascii_allowed_in_query_value_and_key() {
+        // Unlike the path pipeline, well-formed non-ASCII UTF-8 is
+        // accepted in the query so legitimate ARM ids (e.g. an
+        // `msi_res_id` whose resource-group name has Unicode letters) are
+        // not rejected. The decoded codepoints survive verbatim.
+        // Value side: U+4E2D `中`.
+        let q = canonicalize_query("k=%E4%B8%AD").unwrap();
+        assert_eq!(q.get("k"), Some(&vec!["\u{4e2d}".to_string()]));
+        // Key side: U+00E9 `é` (only A–Z is ASCII-lowercased, so the
+        // non-ASCII key is preserved as-is).
+        let q = canonicalize_query("caf%C3%A9=1").unwrap();
+        assert_eq!(q.get("caf\u{e9}"), Some(&vec!["1".to_string()]));
+        // Both halves non-ASCII.
+        let q = canonicalize_query("%C3%A9=%C3%A9").unwrap();
+        assert_eq!(q.get("\u{e9}"), Some(&vec!["\u{e9}".to_string()]));
+    }
+
+    #[test]
+    fn malformed_utf8_still_reports_invalid_utf8() {
+        // Lone continuation byte (0x80 with no lead byte) is genuine
+        // encoding corruption, not a homoglyph attack. It must stay on
+        // `InvalidUtf8` / `CANON_UTF8` so the two audit-log classes
+        // remain separable.
+        assert_eq!(
+            canonicalize_query("k=%80").unwrap_err(),
+            CanonError::InvalidUtf8
         );
     }
 }

@@ -256,8 +256,6 @@ mod rule_tests {
             ("/x", Some(&[("k", "%ZZ")])),
             // Control byte in rule query key.
             ("/x", Some(&[("k\x01", "v")])),
-            // Non-ASCII in rule query value.
-            ("/x", Some(&[("k", "café")])),
         ];
         for (path, qp) in bad {
             let r = CanonicalPattern::from_privilege(&priv_of(path, *qp));

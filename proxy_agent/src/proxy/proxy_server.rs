@@ -404,15 +404,15 @@ impl ProxyServer {
         }
 
         if http_connection_context.contains_traversal_characters() {
-            // If the proxied request contains traversal characters, we will return 404 Not Found to avoid potential security issues.
+            // If the proxied request contains traversal characters, we will return 403 Forbidden to avoid potential security issues.
             self.log_connection_summary(
                 &mut http_connection_context,
-                StatusCode::NOT_FOUND,
+                StatusCode::FORBIDDEN,
                 false,
-                "Traversal characters found in the request, return NOT_FOUND!".to_string(),
+                "Traversal characters found in the request, return FORBIDDEN!".to_string(),
             )
             .await;
-            return Ok(Self::closed_response(StatusCode::NOT_FOUND));
+            return Ok(Self::closed_response(StatusCode::FORBIDDEN));
         }
 
         if http_connection_context.url == provision::provision_query::PROVISION_URL_PATH {

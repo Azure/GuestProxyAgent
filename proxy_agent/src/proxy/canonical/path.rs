@@ -136,10 +136,17 @@ fn reject_control_chars(s: &str) -> Result<(), CanonError> {
 }
 
 fn reject_non_ascii(s: &str) -> Result<(), CanonError> {
+    // Well-formed-UTF-8 non-ASCII gets its own dedicated error class so
+    // it shows up in audit logs as `canon=error:CANON_NON_ASCII`,
+    // distinguishable from genuine encoding corruption (`CANON_UTF8`,
+    // `CANON_OVERLONG`). The Unicode-confusable attack class
+    // (U+0131 dotless-i, fullwidth solidus, Cyrillic homoglyphs)
+    // surfaces exclusively here, making the family greppable in audit
+    // logs without false positives from random-byte fuzz.
     if s.is_ascii() {
         Ok(())
     } else {
-        Err(CanonError::InvalidUtf8)
+        Err(CanonError::NonAscii)
     }
 }
 
@@ -267,8 +274,10 @@ mod path_tests {
             ("/x%0A", CanonError::ControlChar),
             ("/x%0D", CanonError::ControlChar),
             ("/x%7F", CanonError::ControlChar),
-            // Non-ASCII after decode: U+4E2D `中` in UTF-8
-            ("/x%E4%B8%AD", CanonError::InvalidUtf8),
+            // Non-ASCII after decode: U+4E2D `中` in UTF-8 — well-formed,
+            // so it surfaces as NonAscii (Unicode-confusable / homoglyph
+            // attack class), not InvalidUtf8 (encoding corruption).
+            ("/x%E4%B8%AD", CanonError::NonAscii),
             // Embedded `?` from %3F smuggling
             (
                 "/metadata/identity%3Fapi-version=2018",
@@ -480,11 +489,14 @@ mod path_tests {
             assert!(reject_non_ascii(s).is_ok(), "input={s:?}");
         }
         // Any non-ASCII character (1, 2, 3, or 4 UTF-8 bytes wide) must
-        // be rejected.
+        // be rejected with the NonAscii code — distinct from InvalidUtf8
+        // (random bytes) and OverlongUtf8 (IDS-bypass overlongs) so audit
+        // logs can `grep CANON_NON_ASCII` for the homoglyph attack class
+        // without picking up generic encoding-failure noise.
         for s in ["é", "中", "🙂", "/abc/中文/x"] {
             assert_eq!(
                 reject_non_ascii(s).unwrap_err(),
-                CanonError::InvalidUtf8,
+                CanonError::NonAscii,
                 "input={s:?}"
             );
         }
@@ -788,11 +800,13 @@ mod path_tests {
                 CanonError::ControlChar,
             ),
             // Decoded non-ASCII (valid UTF-8 but outside the matcher's
-            // ASCII-only contract).
+            // ASCII-only contract). Distinct from encoding-corruption
+            // (`InvalidUtf8`) and overlong-bypass (`OverlongUtf8`)
+            // because this is the Unicode-confusable attack family.
             (
                 "D1.decoded_non_ascii_lowercase_e_acute",
                 "http://169.254.169.254/caf%C3%A9",
-                CanonError::InvalidUtf8,
+                CanonError::NonAscii,
             ),
             // Underflow variants the Appendix table doesn't enumerate.
             (

@@ -215,6 +215,19 @@ pub enum CanonError {
     OverlongUtf8,
     #[error("invalid UTF-8 in path/query")]
     InvalidUtf8,
+    /// Decoded **path** bytes were well-formed UTF-8 but contained at
+    /// least one non-ASCII codepoint. Separated from
+    /// [`CanonError::InvalidUtf8`] so audit logs distinguish *encoding
+    /// corruption* (random bytes, wrong codec) from *Unicode-confusable
+    /// attacks* (e.g. U+0131 dotless-i looks like ASCII `i`, fullwidth
+    /// solidus U+FF0F looks like ASCII `/`, Cyrillic homoglyphs) where the
+    /// attacker hand-crafts perfectly valid UTF-8 specifically to fool
+    /// ASCII-only string comparisons. The two classes have very different
+    /// triage paths, so they get different stable codes. Only the path
+    /// pipeline raises this — the query pipeline allows non-ASCII values
+    /// (ARM ids may contain Unicode).
+    #[error("non-ASCII codepoint in path")]
+    NonAscii,
     #[error("control character in path/query")]
     ControlChar,
     #[error("path traversal past root")]
@@ -237,6 +250,7 @@ impl CanonError {
             CanonError::MalformedPercent => "CANON_PCT",
             CanonError::OverlongUtf8 => "CANON_OVERLONG",
             CanonError::InvalidUtf8 => "CANON_UTF8",
+            CanonError::NonAscii => "CANON_NON_ASCII",
             CanonError::ControlChar => "CANON_CTRL",
             CanonError::PathUnderflow => "CANON_UNDERFLOW",
             CanonError::EmbeddedQuery => "CANON_EMBQ",
@@ -576,6 +590,7 @@ mod mod_tests {
             (CanonError::MalformedPercent, "CANON_PCT"),
             (CanonError::OverlongUtf8, "CANON_OVERLONG"),
             (CanonError::InvalidUtf8, "CANON_UTF8"),
+            (CanonError::NonAscii, "CANON_NON_ASCII"),
             (CanonError::ControlChar, "CANON_CTRL"),
             (CanonError::PathUnderflow, "CANON_UNDERFLOW"),
             (CanonError::EmbeddedQuery, "CANON_EMBQ"),
