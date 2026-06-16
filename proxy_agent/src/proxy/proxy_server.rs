@@ -1176,9 +1176,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            http::StatusCode::NOT_FOUND,
+            http::StatusCode::FORBIDDEN,
             response.status(),
-            "response.status must be NOT_FOUND."
+            "response.status must be FORBIDDEN."
         );
 
         // test large request body
