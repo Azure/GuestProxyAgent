@@ -26,7 +26,7 @@ jobs:
           body: Release notes
 
   build-windows-amd64:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: create-release
 
     steps:
@@ -180,7 +180,7 @@ jobs:
           asset_content_type: application/zip
 
   build-windows-arm64:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: create-release
 
     steps:

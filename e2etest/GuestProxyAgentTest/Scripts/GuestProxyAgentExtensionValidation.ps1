@@ -55,7 +55,7 @@ $extensionFolder = Split-Path -Path $statusFolderPath -Parent
 Write-Output "$((Get-Date).ToUniversalTime()) - Extension Folder: $extensionFolder"
 $PIRExePath = [IO.Path]::Combine($extensionFolder, "ProxyAgentExt.exe")
 
-Write-Output "$((Get-Date).ToUniversalTime()) - TEST: ProxyAgentVMExtension Status is succesful, Check that status file is success with 5 minute timeout"
+Write-Output "$((Get-Date).ToUniversalTime()) - TEST: ProxyAgentVMExtension Status is successful, Check that status file is success with 5 minute timeout"
 $guestProxyAgentExtensionStatusObjGenerated = $false
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 do {
