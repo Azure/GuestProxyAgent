@@ -9,9 +9,7 @@ abe
 addrlen
 addrpair
 advapi
-aef
 AFidentity
-AFy
 aks
 almalinux
 ATL
@@ -47,15 +45,12 @@ buildshell
 byos
 bytecodealliance
 callouts
-canonicalizable
 canonicalizer
 cbl
 ccbdee
 ccbf
-ced
 CEL
 CES
-cfa
 cgroups
 cgroupv
 cgtop
@@ -164,7 +159,6 @@ ffff
 FFFFFFFF
 fffi
 ffi
-FFu
 fidentity
 FIXEDFILEINFO
 Fmanagement
@@ -370,7 +364,6 @@ proxyagentvalidation
 pscustomobject
 ptrace
 pwstr
-qkv
 raci
 radamsa
 Razr
@@ -385,7 +378,6 @@ registrykey
 reimplementation
 rekor
 relativeurl
-reparse
 Reprovisioning
 resf
 reuseport
@@ -502,12 +494,10 @@ tshark
 TSV
 Tsv
 tsv
-typo'd
 UAMI
 UBR
 UBRSTRING
 udev
-uncanonicalizable
 unistd
 unk
 unmark
@@ -573,7 +563,6 @@ xbf
 xcopy
 XDP
 xef
-xfe
 xfsprogs
 xsi
 xxxx
@@ -584,4 +573,3 @@ Zeroizing
 zipsas
 zureuser
 zypper
-zzz
