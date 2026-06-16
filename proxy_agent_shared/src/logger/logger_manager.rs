@@ -6,7 +6,7 @@
 
 use super::rolling_logger::RollingLogger;
 #[cfg(windows)]
-use crate::etw::etw_writter::WindowsEventWritter;
+use crate::etw::etw_writer::WindowsEventWriter;
 use crate::logger::LoggerLevel;
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ static MAX_LOG_LEVEL: tokio::sync::OnceCell<LoggerLevel> = tokio::sync::OnceCell
 static MAX_SYSTEM_LOG_LEVEL: tokio::sync::OnceCell<LoggerLevel> =
     tokio::sync::OnceCell::const_new();
 #[cfg(windows)]
-static WINDOWS_ETW_LOGGER: tokio::sync::OnceCell<WindowsEventWritter> =
+static WINDOWS_ETW_LOGGER: tokio::sync::OnceCell<WindowsEventWriter> =
     tokio::sync::OnceCell::const_new();
 
 /// Setup the loggers and set the default logger key
@@ -69,7 +69,7 @@ pub fn set_system_logger(max_log_level: LoggerLevel, _event_log_name: &str, _ser
     #[cfg(windows)]
     {
         if !WINDOWS_ETW_LOGGER.initialized() {
-            match WindowsEventWritter::new(_event_log_name, _service_name) {
+            match WindowsEventWriter::new(_event_log_name, _service_name) {
                 Ok(logger) => {
                     if let Err(e) = WINDOWS_ETW_LOGGER.set(logger) {
                         write_system_log(
