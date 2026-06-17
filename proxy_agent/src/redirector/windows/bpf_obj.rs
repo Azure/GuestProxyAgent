@@ -224,14 +224,63 @@ pub struct bpf_object {
 #[repr(C)]
 pub struct _sock_addr_audit_key {
     pub protocol: u32,
-    pub source_port: [u16; 2],
+    pub source_port: u32,
 }
 pub type sock_addr_audit_key_t = _sock_addr_audit_key;
 impl sock_addr_audit_key_t {
     pub fn from_source_port(port: u16) -> Self {
         sock_addr_audit_key_t {
             protocol: IPPROTO_TCP,
-            source_port: [port.to_be(), 0],
+            source_port: u32::from(port.to_be()),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct _sock_addr_audit_entry {
+    pub logon_id: u32,
+    pub process_id: u32,
+    pub is_root: u32,
+    pub destination_ipv4: u32,
+    pub destination_port: u32,
+}
+pub type sock_addr_audit_entry_t = _sock_addr_audit_entry;
+impl sock_addr_audit_entry_t {
+    pub fn empty() -> Self {
+        sock_addr_audit_entry_t {
+            logon_id: 0,
+            process_id: 0,
+            is_root: 0,
+            destination_ipv4: 0,
+            destination_port: 0,
+        }
+    }
+}
+
+pub fn is_valid_new_audit_entry(value: &sock_addr_audit_entry_t) -> bool {
+    // The canonical/shared layout encodes destination_port as u32 with a u16
+    // network-byte-order value in the low 16 bits, and is_root as a boolean.
+    value.is_root <= 1 && (value.destination_port & 0xFFFF_0000) == 0
+}
+
+// Legacy layout used by older Windows eBPF programs before shared struct migration.
+#[repr(C)]
+pub struct _sock_addr_audit_entry_legacy {
+    pub logon_id: u64,
+    pub process_id: u32,
+    pub is_admin: i32,
+    pub destination_ipv4: u32,
+    pub destination_port: u16,
+}
+pub type sock_addr_audit_entry_legacy_t = _sock_addr_audit_entry_legacy;
+impl sock_addr_audit_entry_legacy_t {
+    pub fn empty() -> Self {
+        sock_addr_audit_entry_legacy_t {
+            logon_id: 0,
+            process_id: 0,
+            is_admin: 0,
+            destination_ipv4: 0,
+            destination_port: 0,
         }
     }
 }
@@ -264,14 +313,14 @@ pub type ip_address_t = _ip_address;
 #[repr(C)]
 pub struct _destination_entry {
     pub destination_ip: ip_address_t,
-    pub destination_port: [u16; 2], // first element is the port number, second element is empty
+    pub destination_port: u32,
     pub protocol: u32,
 }
 impl _destination_entry {
     pub fn empty() -> Self {
         _destination_entry {
             destination_ip: ip_address_t::empty(),
-            destination_port: [0, 0],
+            destination_port: 0,
             protocol: IPPROTO_TCP,
         }
     }
@@ -279,7 +328,7 @@ impl _destination_entry {
     pub fn from_ipv4(ipv4: u32, port: u16) -> Self {
         let mut entry = Self::empty();
         entry.destination_ip = ip_address_t::from_ipv4(ipv4);
-        entry.destination_port[0] = port.to_be();
+        entry.destination_port = u32::from(port.to_be());
         entry
     }
 }

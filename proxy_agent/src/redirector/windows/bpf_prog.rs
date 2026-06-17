@@ -268,12 +268,11 @@ impl BpfObject {
 
         // query by source port.
         let key = sock_addr_audit_key_t::from_source_port(source_port);
-        let value = AuditEntry::empty();
-
-        let result = bpf_map_lookup_elem(
+        let mut value = sock_addr_audit_entry_t::empty();
+        let result_new = bpf_map_lookup_elem(
             map_fd,
             &key as *const sock_addr_audit_key_t as *const c_void,
-            &value as *const AuditEntry as *mut c_void,
+            &mut value as *mut sock_addr_audit_entry_t as *mut c_void,
         )
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
@@ -282,14 +281,52 @@ impl BpfObject {
             ))
         })?;
 
-        if result != 0 {
+        if result_new == 0 && is_valid_new_audit_entry(&value) {
+            return Ok(AuditEntry {
+                logon_id: u64::from(value.logon_id),
+                process_id: value.process_id,
+                is_admin: value.is_root as i32,
+                destination_ipv4: value.destination_ipv4,
+                destination_port: value.destination_port as u16,
+            });
+        }
+
+        if result_new == 0 {
+            logger::write(format!(
+                "audit_map entry for source_port={} decoded with new layout but failed validation, falling back to legacy layout",
+                source_port
+            ));
+        }
+
+        // Backward compatibility: older Windows eBPF programs use a larger
+        // audit entry layout (u64 logon_id, i32 is_admin, u16 destination_port).
+        let mut legacy_value = sock_addr_audit_entry_legacy_t::empty();
+        let result_legacy = bpf_map_lookup_elem(
+            map_fd,
+            &key as *const sock_addr_audit_key_t as *const c_void,
+            &mut legacy_value as *mut sock_addr_audit_entry_legacy_t as *mut c_void,
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::MapLookupElem(
+                source_port.to_string(),
+                format!("Error: {e}"),
+            ))
+        })?;
+
+        if result_legacy != 0 {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
                 source_port.to_string(),
-                format!("Result: {result}"),
+                format!("Result new={result_new}, legacy={result_legacy}"),
             )));
         }
 
-        Ok(value)
+        Ok(AuditEntry {
+            logon_id: legacy_value.logon_id,
+            process_id: legacy_value.process_id,
+            is_admin: legacy_value.is_admin,
+            destination_ipv4: legacy_value.destination_ipv4,
+            destination_port: legacy_value.destination_port,
+        })
     }
 
     /**

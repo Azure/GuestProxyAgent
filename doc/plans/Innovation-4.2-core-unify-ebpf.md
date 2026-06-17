@@ -21,7 +21,7 @@ Replace today's per-kernel-version eBPF source duplication with CO-RE (Compile O
 
 > **Prerequisites:** None — foundational eBPF layer. Unblocks [4.1](Innovation-4.1-sk-lookup-bpf-lsm.md), [4.3](Innovation-4.3-ipv6-dual-stack.md), [4.4](Innovation-4.4-ebpf-throttling-lru.md), [5.1](Innovation-5.1-aks-container-native.md), [5.3](Innovation-5.3-cross-cloud-port.md).
 
-> **Status (Linux):** ✅ Implemented. The Linux `cgroup/connect4` + `kprobe/tcp_v4_connect` program (`linux-ebpf/ebpf_cgroup.c`) now compiles to a single CO-RE object (`ebpf_cgroup.o`) that relocates kernel-struct field offsets at load time against the running kernel's BTF. Windows (`ebpf/`) is bridged (shared header referenced) but not yet fully migrated.
+> **Status (Linux/Windows):** ✅ Implemented for Linux CO-RE. ✅ Windows now uses shared audit structs in `ebpf/` and keeps runtime compatibility with both new and legacy Windows eBPF audit layouts during mixed-version rollout.
 
 ## 1. Overview & Goals
 
@@ -59,7 +59,7 @@ Linux and Windows have two source trees with similar logic but separate definiti
 1. The kernel wrapper type **must be named `sock`** (the real kernel type name). A custom name such as `probe_sock` does not exist in the kernel BTF, so the `<byte_off> ... struct probe_sock.__sk_common` relocation fails and the program is rejected at load.
 2. The **destination of the read must be a plain (non-relocatable) type**. If you read into a local `struct sock_common` that also carries `preserve_access_index`, the write offset is relocated to the *kernel's* offset (e.g. `skc_family` at 16) and overflows the local stack copy — the verifier rejects it with `invalid write to stack`.
 
-- For Windows, eBPF-for-Windows already uses BTF; the plan is to mirror the same shared header so user-space struct layouts align byte-for-byte (bridge in place, full migration pending).
+- For Windows, `ebpf/socket.h` now aliases to the canonical shared header (`shared-ebpf/include/gpa_audit_event.h`) so map and redirect-context layouts align with the shared contract. The user-space decoder accepts both the canonical layout and the legacy layout to preserve compatibility with previously shipped eBPF programs.
 
 ## 4. Shared Headers
 
@@ -95,7 +95,7 @@ The canonical, platform-neutral structs live in `shared-ebpf/include/gpa_audit_e
 
 ## 5. Build System
 
-The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `cargo build`, making it the single source of truth for both `cargo` and the production script:
+Linux eBPF objects are compiled by **`proxy_agent/build.rs`** during normal `cargo build`:
 
 - Invokes `clang -target bpf -Werror -O2 -g <arch-define> -I shared-ebpf/include -I linux-ebpf -c linux-ebpf/ebpf_cgroup.c -o ebpf_cgroup.o`. `-g` emits the `.BTF`/`.BTF.ext` sections that carry the CO-RE relocation records.
 - **Arch-aware:** reads `CARGO_CFG_TARGET_ARCH` and selects `-D__TARGET_ARCH_x86` (x86_64) or `-D__TARGET_ARCH_arm64 -I/usr/include/aarch64-linux-gnu` (aarch64), mirroring the two branches that used to live in `build-linux.sh`.
@@ -104,6 +104,8 @@ The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `car
 - `cargo:rerun-if-changed` on `shared-ebpf/include` and `linux-ebpf` recompiles whenever sources change.
 
 **`build-linux.sh`** no longer compiles eBPF itself: it adds the shared include path, lets `build.rs` produce `ebpf_cgroup.o`, then verifies the object exists at `$out_dir/ebpf_cgroup.o` before packaging.
+
+Windows eBPF objects are compiled by **`build.cmd`** (`redirect.bpf.o` then `redirect.bpf.sys` via `Convert-BpfToNative.ps1`), matching existing Windows packaging/signing workflow.
 
 - Output name is `ebpf_cgroup.o`, matching `ebpfProgramName` in `proxy_agent/config/GuestProxyAgent.linux.json`. (Future programs — `sk_lookup.o`, `lsm.o` — slot into the `ebpf_programs` list in `build.rs`.)
 - Requires `clang` 15+.
@@ -118,14 +120,14 @@ The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `car
 
 - `proxy_agent/src/redirector/linux.rs` loads the object with **aya** (`EbpfLoader` + BTF) and attaches the two programs by name: `connect4` (`CgroupSockAddr`) and `tcp_v4_connect` (`KProbe` on `tcp_connect`).
 - `proxy_agent/src/redirector/linux/ebpf_obj.rs` keeps the `[u32; N]` ↔ `gpa_*` binary contract for map keys/values.
-- Windows side references the shared header for its user-space event layout (bridge); full switch to the shared structs is pending.
+- Windows side uses the shared header and dual-decode compatibility in user-space: `lookup_audit` and redirect-context parsing first attempt canonical `sock_addr_audit_entry_t`, validate decoded fields, then fall back to legacy `sock_addr_audit_entry_legacy_t` when needed.
 - Removed: hardcoded-offset blob read of `sock_common`; replaced with per-field CO-RE reads.
 
 ## 8. Tests
 
 - `redirector::linux::ebpf_obj` layout unit tests assert the Rust `[u32; N]` mappings match the shared C structs (run on every build).
 - `redirector::linux::tests::linux_ebpf_test` (feature `test-with-root`, run by `build-linux.sh`) actually **loads and attaches** the CO-RE object on the build host, exercising the kprobe relocation path end-to-end. Bring-up validated it loads cleanly via `bpftool prog loadall` (no unresolved CO-RE relocations, verifier accepts the program).
-- Pending: cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loading the same object; load-time budget \< 100 ms; Windows layout assertion.
+- Pending: cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loading the same object; load-time budget \< 100 ms; dedicated Windows compatibility tests that exercise both canonical and legacy audit layouts.
 
 ## 9. Risks
 
@@ -133,6 +135,7 @@ The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `car
 - **Relocating a local copy** — reading into a `preserve_access_index` type overflows the stack copy; always read CO-RE fields into plain scalars. Mitigation: documented in `ebpf_cgroup.c`; load test catches regressions.
 - **clang/LLVM bugs** in CO-RE relocation. Mitigation: pin clang 15+.
 - **Stale object pickup** — multiple build-output dirs can leave old objects around. Mitigation: `build.rs` writes the object to a deterministic profile/`deps` path; `build-linux.sh` verifies it.
+- **Mixed-version Windows rollout** — new agent with old eBPF program (or inverse) can misinterpret audit value bytes. Mitigation: user-space decode path validates canonical fields and falls back to legacy layout for map lookup and redirect-context reads.
 
 ## 10. Milestones
 
@@ -141,7 +144,7 @@ The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `car
 | M1  | Linux CO-RE object via aya + preserve_access_index | ✅ `ebpf_cgroup.o` loads/attaches on supported kernels |
 | M2  | Shared header + Rust layout assertions       | ✅ `ebpf_obj` layout tests green on Linux             |
 | M3  | Arch-aware, fail-fast, deterministic build   | ✅ `build.rs` (x86_64 + arm64) owns the compile        |
-| M4  | Windows migration to shared structs          | Bridge in place; full switch pending                 |
+| M4  | Windows migration to shared structs          | ✅ Shared structs active + legacy decode fallback; `build.cmd` owns `redirect.bpf` build |
 | M5  | Drop per-kernel builds + cross-kernel CI     | CI matrix \< 1/3 of previous count                   |
 
 Detail design for direction 4.2. Parent: [Innovation-Directions.md](Innovation-Directions.md).

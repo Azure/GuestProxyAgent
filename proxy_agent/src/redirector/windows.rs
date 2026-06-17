@@ -5,6 +5,9 @@ mod bpf_api;
 mod bpf_obj;
 mod bpf_prog;
 
+use self::bpf_obj::{
+    is_valid_new_audit_entry, sock_addr_audit_entry_legacy_t, sock_addr_audit_entry_t,
+};
 use crate::common::error::{BpfErrorType, Error, WindowsApiErrorType};
 use crate::common::{constants, logger, result::Result};
 use crate::redirector::AuditEntry;
@@ -107,38 +110,84 @@ pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) {
 
 pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntry> {
     // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
-    let value = AuditEntry::empty();
-    let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
-    let mut redirect_context_returned: u32 = 0;
-    let result = unsafe {
+    let mut value = sock_addr_audit_entry_t::empty();
+    let redirect_context_size_new = mem::size_of::<sock_addr_audit_entry_t>() as u32;
+    let mut redirect_context_returned_new: u32 = 0;
+    let result_new = unsafe {
         WinSock::WSAIoctl(
             raw_socket_id,
             WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
             ptr::null(),
             0,
-            &value as *const AuditEntry as *mut c_void,
-            redirect_context_size,
-            &mut redirect_context_returned,
+            &mut value as *mut sock_addr_audit_entry_t as *mut c_void,
+            redirect_context_size_new,
+            &mut redirect_context_returned_new,
             ptr::null_mut(),
             None,
         )
     };
-    if result != 0 {
-        let error = unsafe { WinSock::WSAGetLastError() };
-        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT result: {result}, WSAGetLastError: {error}",
-        ))));
+
+    if result_new == 0
+        && redirect_context_returned_new == redirect_context_size_new
+        && is_valid_new_audit_entry(&value)
+    {
+        return Ok(AuditEntry {
+            logon_id: u64::from(value.logon_id),
+            process_id: value.process_id,
+            is_admin: value.is_root as i32,
+            destination_ipv4: value.destination_ipv4,
+            destination_port: value.destination_port as u16,
+        });
     }
 
-    // Need to check the returned size to ensure it matches the expected size,
-    // since the result is 0 even if there is no redirect context in this socket stream.
-    if redirect_context_returned != redirect_context_size {
-        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT returned size: {redirect_context_returned}, expected size: {redirect_context_size}",
-        ))));
+    if result_new == 0 && redirect_context_returned_new == redirect_context_size_new {
+        logger::write(
+            "redirect context decoded with new layout but failed field validation, falling back to legacy layout"
+                .to_string(),
+        );
     }
 
-    Ok(value)
+    let mut legacy_value = sock_addr_audit_entry_legacy_t::empty();
+    let redirect_context_size_legacy = mem::size_of::<sock_addr_audit_entry_legacy_t>() as u32;
+    let mut redirect_context_returned_legacy: u32 = 0;
+    let result_legacy = unsafe {
+        WinSock::WSAIoctl(
+            raw_socket_id,
+            WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
+            ptr::null(),
+            0,
+            &mut legacy_value as *mut sock_addr_audit_entry_legacy_t as *mut c_void,
+            redirect_context_size_legacy,
+            &mut redirect_context_returned_legacy,
+            ptr::null_mut(),
+            None,
+        )
+    };
+
+    if result_legacy == 0 && redirect_context_returned_legacy == redirect_context_size_legacy {
+        return Ok(AuditEntry {
+            logon_id: legacy_value.logon_id,
+            process_id: legacy_value.process_id,
+            is_admin: legacy_value.is_admin,
+            destination_ipv4: legacy_value.destination_ipv4,
+            destination_port: legacy_value.destination_port,
+        });
+    }
+
+    let new_last_error = if result_new != 0 {
+        unsafe { WinSock::WSAGetLastError() }
+    } else {
+        0
+    };
+    let legacy_last_error = if result_legacy != 0 {
+        unsafe { WinSock::WSAGetLastError() }
+    } else {
+        0
+    };
+
+    Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
+        "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT incompatible layout: new(result={result_new}, returned={redirect_context_returned_new}, expected={redirect_context_size_new}, wsa={new_last_error}), legacy(result={result_legacy}, returned={redirect_context_returned_legacy}, expected={redirect_context_size_legacy}, wsa={legacy_last_error})",
+    ))))
 }
 
 pub async fn update_wire_server_redirect_policy(
