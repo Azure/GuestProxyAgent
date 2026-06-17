@@ -4,14 +4,11 @@
 //! This module contains the logic to send the telemetry event to the wire server.
 use std::time::Duration;
 
-use crate::common_state::{self, CommonState};
+use crate::common_state::CommonState;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::logger::{logger_manager, LoggerLevel};
-use crate::result::Result;
-use crate::telemetry::telemetry_event::{
-    TelemetryData, TelemetryEvent, TelemetryEventVMData, VmMetaData,
-};
+use crate::telemetry::telemetry_event::{TelemetryData, TelemetryEvent, TelemetryEventVMData};
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::Lazy;
 
@@ -74,6 +71,7 @@ impl EventSender {
         );
         // refresh vm metadata
         match self
+            .common_state
             .update_vm_meta_data(&wire_server_client, &imds_client)
             .await
         {
@@ -93,53 +91,6 @@ impl EventSender {
                 "VmMetaData is not available. Skipping sending telemetry events.".to_string(),
             );
         }
-    }
-
-    pub async fn update_vm_meta_data(
-        &self,
-        wire_server_client: &WireServerClient,
-        imds_client: &ImdsClient,
-    ) -> Result<()> {
-        let guid = self
-            .common_state
-            .get_state(common_state::SECURE_KEY_GUID.to_string())
-            .await
-            .unwrap_or(None);
-        let key = self
-            .common_state
-            .get_state(common_state::SECURE_KEY_VALUE.to_string())
-            .await
-            .unwrap_or(None);
-        let goal_state = wire_server_client
-            .get_goalstate(guid.clone(), key.clone())
-            .await?;
-        let shared_config = wire_server_client
-            .get_shared_config(
-                goal_state.get_shared_config_uri(),
-                guid.clone(),
-                key.clone(),
-            )
-            .await?;
-
-        let instance_info = imds_client
-            .get_imds_instance_info(guid.clone(), key.clone())
-            .await?;
-        let vm_meta_data = VmMetaData {
-            container_id: goal_state.get_container_id(),
-            role_name: shared_config.get_role_name(),
-            role_instance_name: shared_config.get_role_instance_name(),
-            tenant_name: shared_config.get_deployment_name(),
-            subscription_id: instance_info.get_subscription_id(),
-            resource_group_name: instance_info.get_resource_group_name(),
-            vm_id: instance_info.get_vm_id(),
-            image_origin: instance_info.get_image_origin(),
-        };
-
-        self.common_state
-            .set_vm_meta_data(Some(vm_meta_data))
-            .await?;
-
-        Ok(())
     }
 
     async fn send_events(
@@ -472,45 +423,6 @@ mod tests {
         );
 
         assert!(test_queue.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_update_vm_meta_data_with_mock_server() {
-        let ip = "127.0.0.1";
-        let port = 9073u16;
-
-        let cancellation_token = CancellationToken::new();
-        let common_state = CommonState::start_new(cancellation_token.clone());
-        let event_sender = EventSender::new(common_state.clone());
-
-        let port = server_mock::start(ip.to_string(), port, cancellation_token.clone())
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let wire_server_client = WireServerClient::new(ip, port);
-        let imds_client = ImdsClient::new(ip, port);
-
-        // Initially vm_meta_data should be None
-        let vm_meta_data = common_state.get_vm_meta_data().await.unwrap();
-        assert!(vm_meta_data.is_none());
-
-        // Update vm_meta_data
-        let result = event_sender
-            .update_vm_meta_data(&wire_server_client, &imds_client)
-            .await;
-        assert!(result.is_ok(), "update_vm_meta_data should succeed");
-
-        // Verify vm_meta_data was set
-        let vm_meta_data = common_state.get_vm_meta_data().await.unwrap();
-        assert!(vm_meta_data.is_some(), "vm_meta_data should be set");
-
-        let vm_data = vm_meta_data.unwrap();
-        // Values come from mock server responses
-        assert!(!vm_data.container_id.is_empty());
-        assert!(!vm_data.role_name.is_empty());
-
-        cancellation_token.cancel();
     }
 
     /// Consolidated test for all TELEMETRY_EVENT_QUEUE and wire server operations.
