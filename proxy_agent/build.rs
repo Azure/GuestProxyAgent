@@ -1,8 +1,5 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-use std::env;
-use std::path::PathBuf;
-use std::process::Command;
 
 fn main() {
     // Windows build setup
@@ -22,6 +19,10 @@ fn main() {
 
 #[cfg(not(windows))]
 fn compile_ebpf_with_core() {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = PathBuf::from(&out_dir);
     let workspace_root = env::var("CARGO_MANIFEST_DIR")
