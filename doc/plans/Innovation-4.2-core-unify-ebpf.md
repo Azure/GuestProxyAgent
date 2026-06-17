@@ -17,9 +17,11 @@
 
 Replace today's per-kernel-version eBPF source duplication with CO-RE (Compile Once, Run Everywhere). Share data structures between Linux (`linux-ebpf/`) and Windows (`ebpf/`), reduce build matrix to one object per program per platform.
 
-**Files affected:** `linux-ebpf/`, `ebpf/`, `proxy_agent/build.rs`, `proxy_agent/src/redirector/`.
+**Files affected:** `shared-ebpf/include/`, `linux-ebpf/`, `ebpf/`, `proxy_agent/build.rs`, `build-linux.sh`, `proxy_agent/src/redirector/`.
 
 > **Prerequisites:** None — foundational eBPF layer. Unblocks [4.1](Innovation-4.1-sk-lookup-bpf-lsm.md), [4.3](Innovation-4.3-ipv6-dual-stack.md), [4.4](Innovation-4.4-ebpf-throttling-lru.md), [5.1](Innovation-5.1-aks-container-native.md), [5.3](Innovation-5.3-cross-cloud-port.md).
+
+> **Status (Linux):** ✅ Implemented. The Linux `cgroup/connect4` + `kprobe/tcp_v4_connect` program (`linux-ebpf/ebpf_cgroup.c`) now compiles to a single CO-RE object (`ebpf_cgroup.o`) that relocates kernel-struct field offsets at load time against the running kernel's BTF. Windows (`ebpf/`) is bridged (shared header referenced) but not yet fully migrated.
 
 ## 1. Overview & Goals
 
@@ -39,65 +41,107 @@ Linux and Windows have two source trees with similar logic but separate definiti
 
 ## 3. CO-RE Design
 
-- Adopt **libbpf** and **libbpf-rs** for the Linux side; use `BPF_CORE_READ()` for any kernel-struct dereference so the verifier relocates at load time.
-- Use `vmlinux.h` generated from the build host's BTF as the canonical source for kernel-side types; relocations adapt to the target.
-- For Windows, eBPF-for-Windows already uses BTF; mirror the same approach so user-space struct layouts align byte-for-byte.
+**Implemented (Linux):**
+
+- The Linux loader is **aya** (`EbpfLoader::new().btf(Btf::from_sys_fs().ok().as_ref()).load_file(...)` in `proxy_agent/src/redirector/linux.rs`). Passing the kernel BTF from `/sys/kernel/btf/vmlinux` is what enables aya to apply CO-RE relocations at load time.
+- Rather than pulling in a full generated `vmlinux.h`, `linux-ebpf/socket.h` declares **minimal kernel structs** (`struct sock`, `struct sock_common` — only the fields we read) inside a `#pragma clang attribute push(__attribute__((preserve_access_index)), apply_to = record)` block. `preserve_access_index` is the mechanism that turns each field access into a CO-RE relocation record (emitted into `.BTF`/`.BTF.ext` by `clang -g`).
+- Kernel fields are read with `BPF_CORE_READ(sk, __sk_common.skc_daddr)` etc. into **plain local scalars**, e.g.:
+
+      __u16  skc_family = BPF_CORE_READ(sk, __sk_common.skc_family);
+      __be32 skc_daddr  = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+      __be16 skc_dport  = BPF_CORE_READ(sk, __sk_common.skc_dport);
+      __u16  skc_num    = BPF_CORE_READ(sk, __sk_common.skc_num);
+
+  This replaces the old `bpf_probe_read()` blob read against hardcoded offsets.
+
+**Two non-obvious requirements** (both caused load failures during bring-up):
+
+1. The kernel wrapper type **must be named `sock`** (the real kernel type name). A custom name such as `probe_sock` does not exist in the kernel BTF, so the `<byte_off> ... struct probe_sock.__sk_common` relocation fails and the program is rejected at load.
+2. The **destination of the read must be a plain (non-relocatable) type**. If you read into a local `struct sock_common` that also carries `preserve_access_index`, the write offset is relocated to the *kernel's* offset (e.g. `skc_family` at 16) and overflows the local stack copy — the verifier rejects it with `invalid write to stack`.
+
+- For Windows, eBPF-for-Windows already uses BTF; the plan is to mirror the same shared header so user-space struct layouts align byte-for-byte (bridge in place, full migration pending).
 
 ## 4. Shared Headers
 
-    // shared-ebpf/include/gpa_audit_event.h  (consumed by both linux-ebpf and ebpf)
-    #pragma once
-    #define GPA_AUDIT_PATH_MAX 256
-    struct gpa_audit_event {
-        __u64 cgroup_id;
-        __u32 pid;
-        __u64 pid_starttime_ns;
-        __u32 uid;
-        __u32 gid;
-        __u32 measurement_kind;
-        __u8  measurement[32];
-        char  exe_path[GPA_AUDIT_PATH_MAX];
-    };
-    _Static_assert(sizeof(struct gpa_audit_event) == 320, "stable layout");
+The canonical, platform-neutral structs live in `shared-ebpf/include/gpa_audit_event.h` and are consumed by `linux-ebpf/` today (and referenced by `ebpf/` for the Windows bridge). Their layouts are **binary-compatible with the Rust loader** in `proxy_agent/src/redirector/linux/ebpf_obj.rs`, which maps each to a fixed-size `[u32; N]` array — so field order/size cannot change without updating both sides.
 
-- Rust bindings generated with `bindgen` in `build.rs`; the struct layout is asserted in CI on both platforms.
+    // shared-ebpf/include/gpa_audit_event.h
+    #pragma once
+
+    struct gpa_ip_address {                 // 16 B  ([u32; 4])
+        union { __u32 ipv4; __u32 ipv6[4]; };
+    };
+    struct gpa_destination_entry {          // 24 B  ([u32; 6])
+        struct gpa_ip_address destination_ip;
+        __u32 destination_port;
+        __u32 protocol;
+    };
+    struct gpa_audit_key {                  //  8 B  ([u32; 2])
+        __u32 protocol;
+        __u32 source_port;
+    };
+    struct gpa_audit_event {                // 20 B  ([u32; 5])
+        __u32 logon_id;        // Linux: uid;  Windows: logon_id
+        __u32 process_id;
+        __u32 is_root;         // 1 if root/admin
+        __u32 destination_ipv4;
+        __u32 destination_port;
+    };
+    struct gpa_skip_process_entry { __u32 pid; };   // 4 B ([u32; 1])
+
+- The layout is locked at compile time with `_Static_assert(sizeof(...) == N, ...)` for each struct, so an accidental layout drift fails the eBPF build immediately instead of silently corrupting map data.
+- `linux-ebpf/socket.h` provides backward-compatible `typedef`s (`destination_entry`, `sock_addr_audit_key`, `sock_addr_audit_entry`, ...) onto the `gpa_*` structs so existing code reads unchanged.
+- The matching Rust layout is asserted by the `redirector::linux::ebpf_obj` unit tests (`destination_entry_test`, `sock_addr_audit_entry_test`, ...).
 
 ## 5. Build System
 
-- `proxy_agent/build.rs` invokes `clang -target bpf -O2 -g -c` with `-emit-llvm`+`llc` for each program file.
-- Pin `clang` version (15+); pin `llvm`.
-- Generated `.bpf.o` files are checked into the artifact pipeline (not the repo).
-- One output per program: `cgroup_connect.bpf.o`, `sk_lookup.bpf.o`, `lsm.bpf.o`, `audit_event.bpf.o`.
+The eBPF object is compiled by **`proxy_agent/build.rs`** during the normal `cargo build`, making it the single source of truth for both `cargo` and the production script:
+
+- Invokes `clang -target bpf -Werror -O2 -g <arch-define> -I shared-ebpf/include -I linux-ebpf -c linux-ebpf/ebpf_cgroup.c -o ebpf_cgroup.o`. `-g` emits the `.BTF`/`.BTF.ext` sections that carry the CO-RE relocation records.
+- **Arch-aware:** reads `CARGO_CFG_TARGET_ARCH` and selects `-D__TARGET_ARCH_x86` (x86_64) or `-D__TARGET_ARCH_arm64 -I/usr/include/aarch64-linux-gnu` (aarch64), mirroring the two branches that used to live in `build-linux.sh`.
+- **Fails the build on any eBPF error** (`-Werror` + `panic!` on non-zero clang exit), so a broken program is never shipped.
+- **Deterministic placement:** after compiling into `OUT_DIR`, the object is copied to the profile dir (e.g. `target/debug`, `out/<triple>/release`) and its `deps/` subdir. This guarantees the runtime loader (current-exe dir) and the test harness always load the freshly compiled object instead of a stale copy from another `azure-proxy-agent-<hash>` build directory.
+- `cargo:rerun-if-changed` on `shared-ebpf/include` and `linux-ebpf` recompiles whenever sources change.
+
+**`build-linux.sh`** no longer compiles eBPF itself: it adds the shared include path, lets `build.rs` produce `ebpf_cgroup.o`, then verifies the object exists at `$out_dir/ebpf_cgroup.o` before packaging.
+
+- Output name is `ebpf_cgroup.o`, matching `ebpfProgramName` in `proxy_agent/config/GuestProxyAgent.linux.json`. (Future programs — `sk_lookup.o`, `lsm.o` — slot into the `ebpf_programs` list in `build.rs`.)
+- Requires `clang` 15+.
 
 ## 6. BTF Strategy
 
-- Prefer kernel-provided `/sys/kernel/btf/vmlinux` at load time.
-- For kernels without BTF, ship a small BTF stub generated by `pahole` for the structs we actually use (`struct sock`, `struct task_struct`'s relevant fields).
-- Document a minimum kernel of 5.4 (per current README compatibility) with CO-RE relocations rather than per-kernel builds.
+- At load time aya reads the kernel-provided `/sys/kernel/btf/vmlinux` (`Btf::from_sys_fs()`) and relocates the program's field accesses to the running kernel's layout.
+- We deliberately **do not** ship or commit a generated `vmlinux.h`. The program only touches a handful of `struct sock_common` fields, so minimal hand-declared structs with `preserve_access_index` cover the relocation set and keep the source small. (A generated `vmlinux.h` remains the fallback if future programs touch many kernel structs.)
+- Minimum kernel target remains 5.4 (per README), served by CO-RE relocations rather than per-kernel builds.
 
 ## 7. Integration
 
-- `proxy_agent/src/redirector/linux/` uses `libbpf-rs` Skel objects generated by `libbpf-cargo`.
-- Windows side switches to consume the same header for the user-space event ring buffer.
-- Removed: per-distro compile-time forks; replaced with feature probes at load.
+- `proxy_agent/src/redirector/linux.rs` loads the object with **aya** (`EbpfLoader` + BTF) and attaches the two programs by name: `connect4` (`CgroupSockAddr`) and `tcp_v4_connect` (`KProbe` on `tcp_connect`).
+- `proxy_agent/src/redirector/linux/ebpf_obj.rs` keeps the `[u32; N]` ↔ `gpa_*` binary contract for map keys/values.
+- Windows side references the shared header for its user-space event layout (bridge); full switch to the shared structs is pending.
+- Removed: hardcoded-offset blob read of `sock_common`; replaced with per-field CO-RE reads.
 
 ## 8. Tests
 
-- Cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loads each program and runs a smoke test that triggers the audit event.
-- Layout assertion test on both Linux and Windows; deliberate field add must update version number.
-- Performance: load time \< 100 ms across all kernels.
+- `redirector::linux::ebpf_obj` layout unit tests assert the Rust `[u32; N]` mappings match the shared C structs (run on every build).
+- `redirector::linux::tests::linux_ebpf_test` (feature `test-with-root`, run by `build-linux.sh`) actually **loads and attaches** the CO-RE object on the build host, exercising the kprobe relocation path end-to-end. Bring-up validated it loads cleanly via `bpftool prog loadall` (no unresolved CO-RE relocations, verifier accepts the program).
+- Pending: cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loading the same object; load-time budget \< 100 ms; Windows layout assertion.
 
 ## 9. Risks
 
-- **clang/LLVM bugs** in CO-RE relocation. Mitigation: pin known-good toolchain; fallback to per-kernel build path retained for one release.
-- **vmlinux.h size** — large but only at build time; not shipped.
+- **CO-RE relocation name mismatch** — kernel wrapper types must use real kernel names (`sock`, not `probe_sock`) or relocations fail at load. Mitigation: covered by the `linux_ebpf_test` load test.
+- **Relocating a local copy** — reading into a `preserve_access_index` type overflows the stack copy; always read CO-RE fields into plain scalars. Mitigation: documented in `ebpf_cgroup.c`; load test catches regressions.
+- **clang/LLVM bugs** in CO-RE relocation. Mitigation: pin clang 15+.
+- **Stale object pickup** — multiple build-output dirs can leave old objects around. Mitigation: `build.rs` writes the object to a deterministic profile/`deps` path; `build-linux.sh` verifies it.
 
 ## 10. Milestones
 
 | M   | Deliverable                                  | Exit                                                 |
 |-----|----------------------------------------------|------------------------------------------------------|
-| M1  | libbpf-rs adoption                           | Existing program runs unchanged on supported kernels |
-| M2  | Shared header + cross-platform Rust bindings | Layout assertions green on both OSes                 |
-| M3  | Drop per-kernel builds                       | CI matrix \< 1/3 of previous count                   |
+| M1  | Linux CO-RE object via aya + preserve_access_index | ✅ `ebpf_cgroup.o` loads/attaches on supported kernels |
+| M2  | Shared header + Rust layout assertions       | ✅ `ebpf_obj` layout tests green on Linux             |
+| M3  | Arch-aware, fail-fast, deterministic build   | ✅ `build.rs` (x86_64 + arm64) owns the compile        |
+| M4  | Windows migration to shared structs          | Bridge in place; full switch pending                 |
+| M5  | Drop per-kernel builds + cross-kernel CI     | CI matrix \< 1/3 of previous count                   |
 
 Detail design for direction 4.2. Parent: [Innovation-Directions.md](Innovation-Directions.md).
