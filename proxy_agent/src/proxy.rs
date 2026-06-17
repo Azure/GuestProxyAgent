@@ -53,12 +53,36 @@ pub struct Claims {
     pub userName: String,
     pub userGroups: Vec<String>,
     pub processId: u32,
+    #[serde(with = "os_string_as_string")]
     pub processName: OsString,
     pub processFullPath: PathBuf,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub clientIp: String,
     pub clientPort: u16,
+}
+
+/// Serialize/deserialize an `OsString` as a human-readable UTF-8 string instead
+/// of serde's default platform-tagged byte array (e.g. `{"Unix":[112,121,...]}`
+/// or `{"Windows":[87,105,...]}`). Non-UTF-8 bytes are replaced lossily.
+mod os_string_as_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::ffi::OsString;
+
+    pub fn serialize<S>(value: &OsString, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string_lossy())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<OsString, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OsString::from(s))
+    }
 }
 
 struct Process {
