@@ -286,7 +286,7 @@ impl HttpConnectionContext {
     /// path contains a pattern commonly used to bypass prefix-based
     /// authorization rules. See [`path_has_traversal`] for the exact set.
     /// This is checked in `handle_new_http_request` before any rule lookup
-    /// so suspicious paths short-circuit to 404 without ever reaching the
+    /// so suspicious paths short-circuit to 403 without ever reaching the
     /// matcher or the upstream.
     ///
     /// Once the canonical pipeline graduates to enforce mode (M5), the
