@@ -566,7 +566,8 @@ mod tests {
         );
 
         let source_port = 1;
-        let audit = bpf.lookup_audit(source_port);
+        let logger = &mut crate::proxy::proxy_connection::ConnectionLogger::new(1, 1);
+        let audit = bpf.lookup_audit(source_port, logger);
         assert!(
             audit.is_err(),
             "lookup_audit should return error for invalid source port"
@@ -591,7 +592,7 @@ mod tests {
                 .insert(key.to_array(), value.to_array(), 0)
                 .unwrap();
         }
-        let audit = bpf.lookup_audit(source_port);
+        let audit = bpf.lookup_audit(source_port, logger);
         match audit {
             Ok(entry) => {
                 assert_eq!(
