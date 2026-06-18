@@ -152,7 +152,7 @@ impl TcpConnectionContext {
         #[cfg(windows)] raw_socket_id: usize,
     ) -> Result<AuditEntry> {
         let client_source_port = client_addr.port();
-        match redirector::lookup_audit(client_source_port, redirector_shared_state).await {
+        match redirector::lookup_audit(client_source_port, redirector_shared_state, logger).await {
             Ok(data) => {
                 logger.write(
                     LoggerLevel::Trace,
@@ -195,7 +195,7 @@ impl TcpConnectionContext {
                         "Try to get audit entry from socket stream".to_string(),
                     );
 
-                    match redirector::get_audit_from_stream_socket(raw_socket_id) {
+                    match redirector::get_audit_from_stream_socket(raw_socket_id, logger) {
                         Ok(data) => {
                             logger.write(
                                 LoggerLevel::Info,

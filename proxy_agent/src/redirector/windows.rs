@@ -108,7 +108,10 @@ pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) {
     }
 }
 
-pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntry> {
+pub fn get_audit_from_redirect_context(
+    raw_socket_id: usize,
+    logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
+) -> Result<AuditEntry> {
     // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
     let mut value = sock_addr_audit_entry_t::empty();
     let redirect_context_size_new = mem::size_of::<sock_addr_audit_entry_t>() as u32;
@@ -141,7 +144,9 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
     }
 
     if result_new == 0 && redirect_context_returned_new == redirect_context_size_new {
-        logger::write(
+        // Log a trace message if the new layout is decoded but fails validation.
+        // It is normal for the new layout with older eBPF programs to be used in a different context.
+        logger.write(proxy_agent_shared::logger::LoggerLevel::Trace,
             "redirect context decoded with new layout but failed field validation, falling back to legacy layout"
                 .to_string(),
         );

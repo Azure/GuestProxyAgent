@@ -256,13 +256,17 @@ impl BpfObject {
 
         source_port - source local port.
 
-        entry - element from audit_map.
+        logger - connection logger.
 
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        audit entry from audit_map on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+    pub fn lookup_audit(
+        &self,
+        source_port: u16,
+        logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
+    ) -> Result<AuditEntry> {
         let map_name = "audit_map";
         let map_fd = self.get_bpf_map_fd(map_name)?;
 
@@ -292,7 +296,9 @@ impl BpfObject {
         }
 
         if result_new == 0 {
-            logger::write(format!(
+            // Log a trace message if the new layout is decoded but fails validation.
+            // It is normal for the new layout with older eBPF programs to be used in a different context.
+            logger.write(proxy_agent_shared::logger::LoggerLevel::Trace, format!(
                 "audit_map entry for source_port={} decoded with new layout but failed validation, falling back to legacy layout",
                 source_port
             ));

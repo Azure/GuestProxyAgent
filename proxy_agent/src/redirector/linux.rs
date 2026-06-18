@@ -238,7 +238,11 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+    pub fn lookup_audit(
+        &self,
+        source_port: u16,
+        _logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
+    ) -> Result<AuditEntry> {
         let audit_map_name = "audit_map";
         match self.0.map(audit_map_name) {
             Some(map) => match HashMap::try_from(map) {

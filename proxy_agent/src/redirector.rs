@@ -273,8 +273,11 @@ impl Redirector {
 }
 
 #[cfg(windows)]
-pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> Result<AuditEntry> {
-    windows::get_audit_from_redirect_context(raw_socket_id)
+pub fn get_audit_from_stream_socket(
+    raw_socket_id: usize,
+    logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
+) -> Result<AuditEntry> {
+    windows::get_audit_from_redirect_context(raw_socket_id, logger)
 }
 
 pub fn ip_to_string(ip: u32) -> String {
@@ -354,9 +357,10 @@ pub fn get_ebpf_file_path() -> PathBuf {
 pub async fn lookup_audit(
     source_port: u16,
     redirector_shared_state: &RedirectorSharedState,
+    logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
 ) -> Result<AuditEntry> {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object.lock().unwrap().lookup_audit(source_port)
+        bpf_object.lock().unwrap().lookup_audit(source_port, logger)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
