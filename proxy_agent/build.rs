@@ -48,7 +48,13 @@ fn compile_ebpf_with_core() {
             "-D__TARGET_ARCH_arm64",
             Some("-I/usr/include/aarch64-linux-gnu".to_string()),
         ),
-        _ => ("-D__TARGET_ARCH_x86", None),
+        // The x86_64 multiarch include is required so clang (-target bpf) can
+        // resolve `asm/types.h` (pulled in by <linux/bpf.h>) on hosts that do
+        // not install the gcc-multilib `/usr/include/asm` compatibility symlink.
+        _ => (
+            "-D__TARGET_ARCH_x86",
+            Some("-I/usr/include/x86_64-linux-gnu".to_string()),
+        ),
     };
 
     // Build flags for CO-RE compilation. These mirror build-linux.sh so both
