@@ -21,8 +21,9 @@
 
 use super::authorization_rules::{AuthorizationMode, ComputedAuthorizationItem};
 use super::proxy_connection::ConnectionLogger;
+use crate::proxy::canonical::CanonicalMode;
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
-use crate::{common::constants, common::result::Result, proxy::Claims};
+use crate::{common::config, common::constants, common::result::Result, proxy::Claims};
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 
@@ -243,12 +244,50 @@ pub fn authorize(
         return AuthorizeResult::Ok;
     }
 
-    let auth = get_authorizer(ip, port, claims);
+    let auth = get_authorizer(ip, port, claims.clone());
     logger.write(
         LoggerLevel::Trace,
         format!("Got auth: {}", auth.to_string()),
     );
-    auth.authorize(logger, request_uri, access_control_rules)
+    let legacy_result = auth.authorize(logger, request_uri.clone(), access_control_rules.clone());
+
+    // Innovation 2.1 M3 — shadow-mode integration.
+    //
+    // Only walks the canonical pipeline when the operator opts in via
+    // the `canonicalRequestMode` config key. With the default (`off`)
+    // there is **zero** additional work versus the pre-M3 control
+    // flow — that's what guarantees the "behavior unchanged for
+    // production traffic" exit criterion.
+    //
+    // Why we re-evaluate `is_allowed` here instead of recovering it
+    // from `legacy_result`: the wrapper above mixes in audit-mode
+    // softening and `runAsElevated` gating, neither of which the
+    // canonical matcher knows about. Comparing the wrapper output to
+    // the canonical matcher would produce phantom divergences. So we
+    // call the rules-only predicate twice in shadow/enforce — once
+    // through the Authorizer, once explicitly for the shadow
+    // comparison — accepting one extra matcher invocation per request
+    // only in non-production modes.
+    let mode = config::get_canonical_request_mode();
+    if mode != CanonicalMode::Off {
+        if let Some(rules) = access_control_rules.as_ref() {
+            let legacy_allowed = rules.is_allowed(logger, request_uri.clone(), claims.clone());
+            let _canon = rules.shadow_compare(
+                logger,
+                &request_uri,
+                &request_method,
+                &claims,
+                legacy_allowed,
+                mode,
+            );
+            // Enforce-mode *behavior* is deliberately deferred to
+            // M5/M6 — see the design doc §9.3. In M3 Enforce only
+            // surfaces telemetry; it does NOT yet replace the legacy
+            // decision. A one-shot warning above (during config load)
+            // tells operators the same.
+        }
+    }
+    legacy_result
 }
 
 #[cfg(test)]
