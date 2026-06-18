@@ -32,6 +32,7 @@
 //! ```
 
 pub mod authorization_rules;
+pub mod canonical;
 pub mod proxy_authorizer;
 pub mod proxy_connection;
 pub mod proxy_server;

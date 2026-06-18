@@ -20,6 +20,7 @@
 use super::{proxy_connection::ConnectionLogger, Claims};
 use crate::common::logger;
 use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, Identity, Privilege, Role};
+use crate::proxy::canonical::{self, CanonError, CanonicalMode, CanonicalPattern};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use serde_derive::{Deserialize, Serialize};
@@ -73,6 +74,40 @@ pub struct ComputedAuthorizationItem {
     // all the defined unique identities, distinct by name
     // key - identity name, value - identity object
     pub identities: HashMap<String, Identity>,
+
+    /// Innovation 2.1 shadow cache: each `Privilege` compiled through
+    /// the canonical pipeline once at rule-load time so per-request
+    /// shadow evaluation in [`ComputedAuthorizationItem::canonical_decision`]
+    /// is a plain linear scan instead of re-parsing the rule path on
+    /// every connection.
+    ///
+    /// Stored as `Vec<(name, pattern)>` rather than `HashMap` because:
+    /// - The access pattern is "scan all" — `canonical_decision`
+    ///   iterates every entry looking for matches; there is no
+    ///   lookup-by-privilege-name path on the canonical side.
+    /// - Iteration order is stable (insertion order), which makes
+    ///   divergence logs and any future "first match wins" semantics
+    ///   deterministic across processes — `HashMap` iteration is
+    ///   randomized.
+    /// - For typical rule counts (tens of entries) the per-entry
+    ///   overhead is smaller than `HashMap`.
+    ///
+    /// Skipped from (de)serialization because:
+    /// 1. The cache is a pure function of `privileges` — round-tripping
+    ///    it through the AuthorizationRulesForLogging JSON would just
+    ///    duplicate that data and risk drift if the canonical pipeline
+    ///    is upgraded between writer and reader.
+    /// 2. `CanonicalPattern` is not (and intentionally should not be)
+    ///    `Serialize`/`Deserialize` — its shape is an internal contract
+    ///    of the matcher.
+    ///
+    /// Privileges that fail to canonicalize at load time are dropped
+    /// from this cache **and** a warning is logged. This is fail-closed
+    /// for the canonical side: shadow / enforce mode will report a
+    /// divergence (legacy may still match the un-canonicalizable rule)
+    /// which is exactly the signal we want during rollout.
+    #[serde(skip, default)]
+    canonical_patterns: Vec<(String, CanonicalPattern)>,
 }
 
 #[allow(dead_code)]
@@ -171,9 +206,39 @@ impl ComputedAuthorizationItem {
             defaultAllowed: authorization_item.defaultAccess.to_lowercase() == "allow",
             mode: authorization_mode,
             identities: identity_dict,
+            canonical_patterns: Self::compile_canonical_patterns(&privilege_dict),
             privileges: privilege_dict,
             privilegeAssignments: privilege_assignments,
         }
+    }
+
+    /// Compile every privilege through the canonical pipeline once.
+    ///
+    /// Errors are logged and the offending privilege is dropped from
+    /// the cache (fail-closed on the canonical side; the legacy matcher
+    /// retains its copy in `self.privileges`). This is exactly the
+    /// shape of divergence shadow-mode is designed to surface.
+    fn compile_canonical_patterns(
+        privilege_dict: &HashMap<String, Privilege>,
+    ) -> Vec<(String, CanonicalPattern)> {
+        let mut out = Vec::with_capacity(privilege_dict.len());
+        for (name, privilege) in privilege_dict {
+            match CanonicalPattern::from_privilege(privilege) {
+                Ok(pat) => out.push((name.clone(), pat)),
+                Err(e) => {
+                    // Don't fail rule-load; canonical mode will deny
+                    // anything that needed this rule, which is the M3
+                    // signal we want operators to see.
+                    logger::write_warning(format!(
+                        "Privilege '{name}' failed canonicalization ({code}); dropping from canonical cache (legacy matcher unaffected). path={path:?}",
+                        name = name,
+                        code = e.code(),
+                        path = privilege.path,
+                    ));
+                }
+            }
+        }
+        out
     }
 
     pub fn is_allowed(
@@ -258,6 +323,203 @@ impl ComputedAuthorizationItem {
             ),
         );
         self.defaultAllowed
+    }
+
+    // ------------------------------------------------------------------
+    // Innovation 2.1 M3 — shadow-mode integration.
+    //
+    // The two methods below add the canonical-pipeline evaluator and the
+    // divergence comparator that `proxy_authorizer::authorize` invokes
+    // when the rollout flag is `shadow` or `enforce`. With the default
+    // flag (`off`) neither runs and the legacy path above is the
+    // entirety of the authorization decision — the M3 exit criterion
+    // "behavior unchanged for production traffic".
+    // ------------------------------------------------------------------
+
+    /// Canonical-pipeline mirror of [`is_allowed`].
+    ///
+    /// Runs the request through `canonical::canonicalize` and matches it
+    /// against the precomputed [`CanonicalPattern`]s in
+    /// `self.canonical_patterns`. The identity check is shared with the
+    /// legacy path (same `Identity::is_match` semantics, same default
+    /// fallback) — the only difference is *path matching*. This is what
+    /// the comparator targets.
+    ///
+    /// **Fail-closed**: canonicalization errors collapse to
+    /// [`CanonicalDecision::Error`], which the comparator surfaces in
+    /// the divergence record and which the enforce-mode caller treats
+    /// as deny.
+    pub fn canonical_decision(
+        &self,
+        logger: &mut ConnectionLogger,
+        request_uri: &hyper::Uri,
+        request_method: &hyper::Method,
+        claims: &Claims,
+    ) -> CanonicalDecision {
+        // Disabled mode short-circuits identically to legacy. We keep
+        // the two implementations symmetric here so a divergence is
+        // always attributable to path/query handling, never to the
+        // disabled-skip.
+        if self.mode == AuthorizationMode::Disabled {
+            return CanonicalDecision::Allowed;
+        }
+
+        let canon = match canonical::canonicalize(request_uri, request_method) {
+            Ok(c) => c,
+            Err(e) => return CanonicalDecision::Error(e),
+        };
+
+        let mut any_pattern_matched = false;
+        for (privilege_name, pattern) in &self.canonical_patterns {
+            if !pattern.matches(&canon) {
+                continue;
+            }
+            any_pattern_matched = true;
+            logger.write(
+                LoggerLevel::Trace,
+                format!("[canonical] Request matched privilege '{privilege_name}'."),
+            );
+
+            if let Some(assignments) = self.privilegeAssignments.get(privilege_name) {
+                for identity_name in assignments {
+                    if let Some(identity) = self.identities.get(identity_name) {
+                        if identity.is_match(logger, claims) {
+                            return CanonicalDecision::Allowed;
+                        }
+                    }
+                }
+            }
+        }
+
+        if any_pattern_matched {
+            // Same semantics as legacy: any privilege matched but no
+            // identity matched -> deny (do NOT fall through to default).
+            return CanonicalDecision::Denied;
+        }
+        if self.defaultAllowed {
+            CanonicalDecision::Allowed
+        } else {
+            CanonicalDecision::Denied
+        }
+    }
+
+    /// Compare the precomputed legacy decision with the canonical
+    /// pipeline's verdict and emit a single divergence log line per
+    /// request when they disagree.
+    ///
+    /// The shape of the emitted line is the M3 telemetry contract from
+    /// `doc/plans/Innovation-2.1-canonical-request.md` §9.2 — see
+    /// [`DivergenceRecord`]. We log it as a prefixed single-line
+    /// `key=value` record so dev/test grep / structured log shippers can
+    /// pick it up without a new telemetry pipeline (deferred to M4).
+    ///
+    /// Returns the canonical decision so an enforce-mode caller can use
+    /// it directly. Off / shadow callers ignore the return value.
+    pub fn shadow_compare(
+        &self,
+        logger: &mut ConnectionLogger,
+        request_uri: &hyper::Uri,
+        request_method: &hyper::Method,
+        claims: &Claims,
+        legacy_allowed: bool,
+        mode: CanonicalMode,
+    ) -> CanonicalDecision {
+        debug_assert!(
+            mode != CanonicalMode::Off,
+            "shadow_compare invoked while canonical mode is Off; the proxy_authorizer guard should have skipped this call"
+        );
+
+        let canon = self.canonical_decision(logger, request_uri, request_method, claims);
+
+        let canon_allowed = canon.allowed_or_fail_closed();
+        if canon_allowed != legacy_allowed {
+            let record = DivergenceRecord {
+                rule_set_id: &self.id,
+                mode,
+                legacy_decision: legacy_allowed,
+                canon_decision: &canon,
+                request_uri,
+            };
+            // Warn level: M3 wants this visible in dev/test without a
+            // separate telemetry pipeline. It's per-request only when
+            // there *is* a divergence, so noise stays low. The plan
+            // is to graduate this to a structured telemetry event in
+            // M4 (§9.3).
+            logger.write(LoggerLevel::Warn, record.to_log_line());
+        }
+        canon
+    }
+}
+
+/// Outcome of [`ComputedAuthorizationItem::canonical_decision`].
+///
+/// Distinct from the legacy `bool` return so the shadow comparator can
+/// distinguish "canonicalization rejected the request" from "matcher
+/// said deny" in the divergence record. Both collapse to `false` under
+/// [`CanonicalDecision::allowed_or_fail_closed`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CanonicalDecision {
+    Allowed,
+    Denied,
+    /// The canonical pipeline rejected the request before any matcher
+    /// ran. Always a deny in fail-closed evaluation.
+    Error(CanonError),
+}
+
+impl CanonicalDecision {
+    /// Project to a boolean using fail-closed semantics: errors become
+    /// `false`. Used by the comparator to decide whether the canonical
+    /// verdict diverges from the legacy bool.
+    pub fn allowed_or_fail_closed(&self) -> bool {
+        matches!(self, CanonicalDecision::Allowed)
+    }
+}
+
+impl std::fmt::Display for CanonicalDecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CanonicalDecision::Allowed => write!(f, "allow"),
+            CanonicalDecision::Denied => write!(f, "deny"),
+            CanonicalDecision::Error(e) => write!(f, "error:{}", e.code()),
+        }
+    }
+}
+
+/// Single divergence event between the legacy authorizer and the
+/// canonical pipeline. Mapped to a one-line audit string by
+/// [`DivergenceRecord::to_log_line`]; M4 will graduate this to a
+/// structured telemetry event per design §9.3.
+struct DivergenceRecord<'a> {
+    rule_set_id: &'a str,
+    mode: CanonicalMode,
+    legacy_decision: bool,
+    canon_decision: &'a CanonicalDecision,
+    /// The full original `hyper::Uri`. We only log the path+query
+    /// portion to keep authority/userinfo (already validated by the
+    /// canonical pipeline) out of audit lines.
+    request_uri: &'a hyper::Uri,
+}
+
+impl<'a> DivergenceRecord<'a> {
+    fn to_log_line(&self) -> String {
+        // `CANON_DIVERGENCE` is a stable prefix so structured log
+        // shippers and ad-hoc grep can both find these. Field order is
+        // also part of the contract — append-only.
+        let path = self.request_uri.path();
+        let query = self.request_uri.query().unwrap_or("");
+        let path_and_query = if query.is_empty() {
+            path.to_string()
+        } else {
+            format!("{path}?{query}")
+        };
+        format!(
+            "CANON_DIVERGENCE mode={mode} rule_set={rsid} legacy={legacy} canon={canon} uri={uri:?}",
+            mode = self.mode,
+            rsid = self.rule_set_id,
+            legacy = if self.legacy_decision { "allow" } else { "deny" },
+            canon = self.canon_decision,
+            uri = path_and_query,
+        )
     }
 }
 
@@ -738,6 +1000,234 @@ mod tests {
         assert!(
             rules.is_allowed(&mut test_logger, url, trusted_claims.clone()),
             "Trusted user must be allowed through percent-encoded path (%2f)"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Innovation 2.1 M3 — shadow-mode integration tests.
+    //
+    // These tests verify the new canonical-pipeline evaluator and the
+    // shadow comparator added in `ComputedAuthorizationItem`. They do
+    // NOT exercise the proxy_authorizer wire-up directly (that needs
+    // a live config getter); see `proxy_authorizer::tests` for the
+    // outer plumbing.
+    //
+    // What we pin here:
+    //   1. canonical_decision agrees with legacy on a path that does
+    //      not exercise canonicalization differences.
+    //   2. canonical_decision *disagrees* with legacy on the exact
+    //      bypass class M2 was built to catch — substring vs
+    //      segment prefix — so shadow telemetry has the signal it
+    //      promises in §9.2.
+    //   3. canonical_decision returns Error (fail-closed) when the
+    //      pipeline rejects the URL, and Display surfaces a stable
+    //      `error:<code>` token for the audit log.
+    //   4. compile_canonical_patterns drops privileges that cannot be
+    //      canonicalized, without taking down the rule load.
+    //   5. shadow_compare returns the canonical decision so an
+    //      enforce-mode caller can use it (M5/M6 hand-off).
+    // ------------------------------------------------------------------
+
+    use crate::proxy::authorization_rules::CanonicalDecision;
+    use crate::proxy::canonical::{CanonError, CanonicalMode};
+
+    /// Builds a single-privilege rule set: privilege path `/test` is
+    /// granted to one identity named "trusted". Default-deny.
+    fn build_test_rules(privilege_path: &str) -> ComputedAuthorizationItem {
+        let access_control_rules = AccessControlRules {
+            roles: Some(vec![Role {
+                name: "r".to_string(),
+                privileges: vec!["test".to_string()],
+            }]),
+            privileges: Some(vec![Privilege {
+                name: "test".to_string(),
+                path: privilege_path.to_string(),
+                queryParameters: None,
+            }]),
+            identities: Some(vec![Identity {
+                name: "trusted".to_string(),
+                userName: Some("trusted-user".to_string()),
+                groupName: None,
+                exePath: None,
+                processName: None,
+            }]),
+            roleAssignments: Some(vec![RoleAssignment {
+                role: "r".to_string(),
+                identities: vec!["trusted".to_string()],
+            }]),
+        };
+        let authorization_item = AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: "enforce".to_string(),
+            rules: Some(access_control_rules),
+            id: "test-rs".to_string(),
+        };
+        ComputedAuthorizationItem::from_authorization_item(authorization_item)
+    }
+
+    fn trusted_claims() -> Claims {
+        Claims {
+            userId: 0,
+            userName: "trusted-user".to_string(),
+            userGroups: vec![],
+            processId: 0,
+            processFullPath: PathBuf::from("p"),
+            clientIp: "0".to_string(),
+            clientPort: 0,
+            processName: OsString::from("p"),
+            processCmdLine: "p".to_string(),
+            runAsElevated: true,
+        }
+    }
+
+    #[test]
+    fn canonical_decision_agrees_with_legacy_on_clean_paths() {
+        // Sanity: when nothing in the URL exercises a canonical-vs-
+        // substring difference, the two evaluators must agree. If this
+        // ever flips, every shadow log line becomes noise and we lose
+        // the M3 signal. So this is a regression net for both sides.
+        let rules = build_test_rules("/test");
+        let claims = trusted_claims();
+        let mut log = ConnectionLogger::new(0, 0);
+
+        let cases: &[(&str, bool)] = &[
+            // (uri, expected_allowed)
+            ("http://169.254.169.254/test/x", true),
+            ("http://169.254.169.254/test", true),
+            // not under /test -> default deny
+            ("http://169.254.169.254/other", false),
+        ];
+        for (uri_str, expected) in cases {
+            let uri = hyper::Uri::from_str(uri_str).unwrap();
+            let legacy = rules.is_allowed(&mut log, uri.clone(), claims.clone());
+            let canon = rules.canonical_decision(&mut log, &uri, &hyper::Method::GET, &claims);
+            assert_eq!(legacy, *expected, "legacy verdict for {uri_str}");
+            assert_eq!(
+                canon.allowed_or_fail_closed(),
+                *expected,
+                "canonical verdict for {uri_str}"
+            );
+            assert_eq!(
+                legacy,
+                canon.allowed_or_fail_closed(),
+                "shadow drift for {uri_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_decision_diverges_on_substring_vs_segment_prefix() {
+        // THE M3 motivating divergence. Legacy `Privilege::is_match`
+        // uses `starts_with` -> `/test-evil/x` is "under /test" by
+        // substring. Canonical does segment-by-segment prefix
+        // matching -> `/test-evil/x` is NOT under `/test`. Shadow mode
+        // exists to report this exact class.
+        let rules = build_test_rules("/test");
+        let claims = trusted_claims();
+        let mut log = ConnectionLogger::new(0, 0);
+
+        let uri = hyper::Uri::from_str("http://169.254.169.254/test-evil/anything").unwrap();
+        let legacy = rules.is_allowed(&mut log, uri.clone(), claims.clone());
+        let canon = rules.canonical_decision(&mut log, &uri, &hyper::Method::GET, &claims);
+
+        // Legacy is buggy here (allows the SSRF-shaped path).
+        assert!(
+            legacy,
+            "legacy substring match should still allow /test-evil; if this fails, legacy was fixed and this test should be retired"
+        );
+        // Canonical correctly denies.
+        assert_eq!(
+            canon,
+            CanonicalDecision::Denied,
+            "canonical segment match must deny /test-evil"
+        );
+        // The shape we'll feed to telemetry:
+        assert_ne!(
+            legacy,
+            canon.allowed_or_fail_closed(),
+            "this is the divergence shadow mode must surface"
+        );
+    }
+
+    #[test]
+    fn canonical_decision_returns_error_for_userinfo_url() {
+        // Userinfo in the authority -> canonical rejects at the
+        // pipeline entry with UserinfoPresent. The decision must
+        // collapse to fail-closed and Display must surface the stable
+        // error code so audit logs can grep for it.
+        let rules = build_test_rules("/test");
+        let claims = trusted_claims();
+        let mut log = ConnectionLogger::new(0, 0);
+
+        // Build via hyper to avoid relying on whether `from_str`
+        // accepts the userinfo form.
+        let uri: hyper::Uri = match "http://attacker@169.254.169.254/test".parse() {
+            Ok(u) => u,
+            Err(_) => {
+                // Hyper may refuse to parse this -> nothing to test.
+                eprintln!("hyper refused to parse userinfo URL; skipping");
+                return;
+            }
+        };
+        let canon = rules.canonical_decision(&mut log, &uri, &hyper::Method::GET, &claims);
+        assert_eq!(
+            canon,
+            CanonicalDecision::Error(CanonError::UserinfoPresent),
+            "canonical must surface UserinfoPresent (got {canon:?})"
+        );
+        assert!(!canon.allowed_or_fail_closed(), "errors must fail-closed");
+        // The audit-log token shape is part of the §9.2 telemetry
+        // contract — keep it stable across refactors.
+        assert_eq!(canon.to_string(), "error:CANON_USERINFO");
+    }
+
+    #[test]
+    fn shadow_compare_returns_canonical_decision_for_enforce_handoff() {
+        // shadow_compare's return value is the M5/M6 hand-off: the
+        // enforce-mode caller will use it as the decision once the
+        // shadow window proves zero divergences. We pin its
+        // semantics here so a future enforce wiring doesn't get a
+        // surprise.
+        let rules = build_test_rules("/test");
+        let claims = trusted_claims();
+        let mut log = ConnectionLogger::new(0, 0);
+
+        // Divergent case: legacy=true (substring), canon=Denied.
+        let uri = hyper::Uri::from_str("http://169.254.169.254/test-evil/anything").unwrap();
+        let legacy_allowed = true;
+        let canon = rules.shadow_compare(
+            &mut log,
+            &uri,
+            &hyper::Method::GET,
+            &claims,
+            legacy_allowed,
+            CanonicalMode::Shadow,
+        );
+        assert_eq!(
+            canon,
+            CanonicalDecision::Denied,
+            "shadow_compare must return the canonical verdict"
+        );
+    }
+
+    #[test]
+    fn compile_canonical_patterns_drops_uncanonicalizable_rules() {
+        // A privilege whose path can't be canonicalized must NOT
+        // brick the whole rule-load — the legacy matcher still has
+        // its copy and the canonical cache simply skips it. This is
+        // exactly the asymmetry shadow mode is designed to surface.
+        //
+        // We use an overlong %C0%AF (canonically `/`) which the
+        // pipeline rejects with OverlongUtf8.
+        let rules = build_test_rules("/x%C0%AFy");
+
+        // Legacy still sees the privilege:
+        assert_eq!(rules.privileges.len(), 1);
+        // Canonical cache dropped it:
+        assert_eq!(
+            rules.canonical_patterns.len(),
+            0,
+            "uncanonicalizable privilege must be skipped from canonical cache"
         );
     }
 }

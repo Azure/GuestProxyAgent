@@ -17,6 +17,7 @@
 //! ```
 
 use crate::common::constants;
+use crate::common::logger;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
@@ -78,6 +79,16 @@ pub fn get_enable_http_proxy_trace() -> bool {
     SYSTEM_CONFIG.enableHttpProxyTrace.unwrap_or(false)
 }
 
+/// Rollout flag for the Innovation 2.1 canonical request pipeline.
+///
+/// Read from the optional `canonicalRequestMode` key in the GPA config
+/// JSON. Accepted values: `off`, `shadow`, `enforce`. Anything missing
+/// or unparseable resolves to [`CanonicalMode::Off`] so production
+/// traffic keeps the legacy authorizer end-to-end.
+pub fn get_canonical_request_mode() -> crate::proxy::canonical::CanonicalMode {
+    SYSTEM_CONFIG.get_canonical_request_mode()
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct Config {
@@ -104,6 +115,13 @@ pub struct Config {
     /// This is an optional config, mainly for manual debugging purpose
     #[serde(skip_serializing_if = "Option::is_none")]
     enableHttpProxyTrace: Option<bool>,
+    /// Innovation 2.1 canonical request rollout flag.
+    /// Optional; absent or unparseable values resolve to
+    /// [`crate::proxy::canonical::CanonicalMode::Off`] so production
+    /// behavior is unchanged when the key is missing.
+    /// Accepted values: `off`, `shadow`, `enforce`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    canonicalRequestMode: Option<String>,
 }
 
 impl Default for Config {
@@ -210,6 +228,33 @@ impl Config {
             return Some(log_level);
         }
         None
+    }
+
+    /// Resolve the canonical-request rollout flag.
+    ///
+    /// Returns [`crate::proxy::canonical::CanonicalMode::Off`] when the
+    /// config key is absent or holds an unrecognized value (with a
+    /// warning logged in the latter case). This conservative default is
+    /// what guarantees the "behavior unchanged for production traffic"
+    /// M3 exit criterion: nothing in the canonical pipeline runs until
+    /// the operator explicitly opts in.
+    pub fn get_canonical_request_mode(&self) -> crate::proxy::canonical::CanonicalMode {
+        use crate::proxy::canonical::CanonicalMode;
+        match &self.canonicalRequestMode {
+            None => CanonicalMode::Off,
+            Some(s) => match CanonicalMode::from_str(s) {
+                Ok(mode) => mode,
+                Err(err) => {
+                    // Don't take down the agent over a typo'd config key;
+                    // fall back to Off (the safe default) and log so
+                    // operators see the misconfiguration in trace.
+                    logger::write_warning(format!(
+                        "Invalid canonicalRequestMode={s:?} in config ({err}); defaulting to Off"
+                    ));
+                    CanonicalMode::Off
+                }
+            },
+        }
     }
 }
 
