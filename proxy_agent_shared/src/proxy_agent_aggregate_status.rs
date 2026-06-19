@@ -14,8 +14,8 @@ const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "%SYSTEMDRIVE%\\WindowsAzure\\
 const PROXY_AGENT_AGGREGATE_STATUS_FOLDER: &str = "/var/log/azure-proxy-agent/";
 pub const PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME: &str = "status.json";
 
-/// The URL path for the proxy agent status endpoint.
-pub const STATUS_URL_PATH: &str = "/status";
+/// The URL path for the proxy agent aggregated status endpoint.
+pub const STATUS_URL_PATH: &str = "/gpa-aggregated-status";
 
 pub fn get_proxy_agent_aggregate_status_folder() -> std::path::PathBuf {
     let path = misc_helpers::resolve_env_variables(PROXY_AGENT_AGGREGATE_STATUS_FOLDER);
