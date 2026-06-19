@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.45"
+version = "1.0.46"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -36,7 +36,7 @@ features = [
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7.0"     # windows NT service
-winreg = "0.11.0"             # windows reg read/write
+winreg = "0.11"             # windows reg read/write
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 chrono = "0.4.41"             # parse date time string
 

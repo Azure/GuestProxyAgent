@@ -1,6 +1,6 @@
 [package]
 name = "azure-proxy-agent"
-version = "1.0.45"      # always 3-number version
+version = "1.0.46"      # always 3-number version
 edition = "2021"
 build = "build.rs"
 readme = "README.md"
@@ -31,6 +31,12 @@ libc = "0.2.147"
 socket2 = "0.5"               # Set socket options without tokio/std conversion
 base64 = "0.22"
 percent-encoding = "2.3"
+# Optional: only compiled when the `proptests` feature is enabled (see
+# `[features]` below). Lives under `[dependencies]` rather than
+# `[dev-dependencies]` because Cargo rejects `optional` on dev-deps;
+# the only `use` sites are inside `#[cfg(all(test, feature = "proptests"))]`
+# modules so the crate never lands in the production binary.
+proptest = { version = "1.11", optional = true }
 
 [dependencies.uuid]
 version = "1.3.0"
@@ -84,6 +90,13 @@ features = [
 
 [features]
 test-with-root = []
+# Innovation 2.1 M2 property tests. Off by default so the inner-loop
+# `cargo test` skips both the proptest *crate compilation* (~3s the
+# first time) and the 256-case generation per property. The `dep:` form
+# below makes Cargo treat the optional `proptest` dependency as opt-in
+# too — with the feature off the crate is not pulled into the build
+# graph at all. CI picks it up via `--all-features` in build-linux.sh.
+proptests = ["dep:proptest"]
 
 [package.metadata.deb]
 name = "azure-proxy-agent"

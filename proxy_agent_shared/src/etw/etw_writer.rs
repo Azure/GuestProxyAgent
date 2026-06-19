@@ -32,11 +32,11 @@ fn to_event_level(level: LoggerLevel) -> REPORT_EVENT_TYPE {
 /// A struct for writing windows etw events to the Windows Event Log.
 /// It registers an event source and provides a method to write logs.
 /// It also ensures that the event source is deregistered when the struct is dropped.
-pub struct WindowsEventWritter {
+pub struct WindowsEventWriter {
     event_source: HANDLE,
 }
 
-impl WindowsEventWritter {
+impl WindowsEventWriter {
     pub fn new(event_log_name: &str, source_name: &str) -> Result<Self> {
         // Add event source in the Windows Registry before retrieving the event source handle.
         // `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\{event_log_name}\{source_name}`
@@ -58,7 +58,7 @@ impl WindowsEventWritter {
             ));
         }
 
-        Ok(WindowsEventWritter { event_source })
+        Ok(WindowsEventWriter { event_source })
     }
 
     pub fn write(&self, log_level: LoggerLevel, message: String) {
@@ -81,7 +81,7 @@ impl WindowsEventWritter {
     }
 }
 
-impl Drop for WindowsEventWritter {
+impl Drop for WindowsEventWriter {
     fn drop(&mut self) {
         unsafe {
             DeregisterEventSource(self.event_source);
@@ -91,12 +91,12 @@ impl Drop for WindowsEventWritter {
 
 #[cfg(test)]
 mod tests {
-    use super::WindowsEventWritter;
+    use super::WindowsEventWriter;
     use crate::etw::etw_reader::WindowsEventReader;
     use crate::logger::LoggerLevel;
     use chrono::DateTime;
 
-    /// This test verifies that the WindowsEventWritter can write to the Windows Event Log
+    /// This test verifies that the WindowsEventWriter can write to the Windows Event Log
     /// and that the written log can be queried successfully.
     /// It creates a new event source, writes a log message,
     /// and then queries the event log to verify that the message was written correctly.
@@ -117,7 +117,7 @@ mod tests {
         let event_log_name = "Application";
         let source_name = "Azure_GuestProxyAgent_TestApplication";
         let message = "This is a test log message";
-        let event_writer = WindowsEventWritter::new(event_log_name, source_name).unwrap();
+        let event_writer = WindowsEventWriter::new(event_log_name, source_name).unwrap();
         event_writer.write(LoggerLevel::Info, message.to_string());
 
         println!("Verifying event log for source: {}", source_name);

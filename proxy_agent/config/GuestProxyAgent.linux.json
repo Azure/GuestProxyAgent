@@ -9,5 +9,6 @@
     "cgroupRoot": "/sys/fs/cgroup",
     "fileLogLevel": "Info",
     "fileLogLevelForEvents": "Info",
-    "fileLogLevelForSystemEvents": "Info"
+    "fileLogLevelForSystemEvents": "Info",
+    "canonicalRequestMode": "Shadow"
 }

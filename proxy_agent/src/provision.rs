@@ -557,7 +557,7 @@ async fn get_provision_failed_state_message(
 }
 
 /// Get provision state
-/// It returns the current GPA serice provision state (from shared_state) for GPA service
+/// It returns the current GPA service provision state (from shared_state) for GPA service
 /// This function is designed and invoked in GPA service
 pub async fn get_provision_state_internal(
     provision_shared_state: ProvisionSharedState,

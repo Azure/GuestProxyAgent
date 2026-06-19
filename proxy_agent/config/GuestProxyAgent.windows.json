@@ -8,5 +8,6 @@
     "ebpfProgramName": "redirect.bpf.sys",
     "fileLogLevel": "Info",
     "fileLogLevelForEvents": "Info",
-    "fileLogLevelForSystemEvents": "Info"
+    "fileLogLevelForSystemEvents": "Info",
+    "canonicalRequestMode": "Shadow"
 }
