@@ -8,9 +8,9 @@ pub const IMDS_IP: &str = "169.254.169.254";
 pub const IMDS_PORT: u16 = 80u16;
 
 pub const WINDOWS_AZURE: &str = "Windows Azure";
+pub use proxy_agent_shared::constants::PROXY_AGENT_IP;
+pub use proxy_agent_shared::constants::PROXY_AGENT_PORT;
 pub use proxy_agent_shared::constants::PROXY_AGENT_SERVICE_NAME;
-pub const PROXY_AGENT_IP: &str = "127.0.0.1";
-pub const PROXY_AGENT_PORT: u16 = 3080;
 
 pub const WIRE_SERVER_IP_NETWORK_BYTE_ORDER: u32 = 0x10813FA8; // 168.63.129.16
 pub const GA_PLUGIN_IP_NETWORK_BYTE_ORDER: u32 = 0x10813FA8; // 168.63.129.16

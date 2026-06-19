@@ -7,7 +7,8 @@ use crate::structs::*;
 use proxy_agent_shared::current_info;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
-    self, GuestProxyAgentAggregateStatus, ProxyConnectionSummary,
+    self, GuestProxyAgentAggregateStatus, GuestProxyAgentAggregateStatusSource,
+    ProxyConnectionSummary,
 };
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, telemetry};
@@ -126,9 +127,10 @@ fn get_proxy_agent_service_file_version() -> String {
 }
 
 /// Determines what update action (if any) is needed for the proxy agent service.
-fn determine_update_action(
+async fn determine_update_action(
     proxy_agent_in_extension_version: &str,
     proxy_agent_service_version: &str,
+    proxy_agent_port: Option<u16>,
     status_file_path: Option<PathBuf>,
     logger_key: &str,
 ) -> Option<UpdateAction> {
@@ -145,10 +147,13 @@ fn determine_update_action(
             logger_key,
         );
         Some(UpdateAction::VersionMismatch)
-    } else if !check_version_in_proxy_agent_status_file(
+    } else if !check_version_in_proxy_agent_aggregate_status(
         proxy_agent_in_extension_version,
+        proxy_agent_port,
         status_file_path,
-    ) {
+    )
+    .await
+    {
         telemetry::event_logger::write_event(
             LoggerLevel::Info,
             format!(
@@ -242,9 +247,12 @@ async fn monitor_thread() {
             if let Some(action) = determine_update_action(
                 &proxy_agent_file_version_in_extension,
                 &proxy_agent_service_version,
+                Some(proxy_agent_shared::constants::PROXY_AGENT_PORT), // Proxy Agent port
                 None,
                 logger_key,
-            ) {
+            )
+            .await
+            {
                 if matches!(action, UpdateAction::VersionMismatch) {
                     backup_proxy_agent(&misc_helpers::path_to_string(
                         &common::setup_tool_exe_path(),
@@ -283,7 +291,8 @@ async fn monitor_thread() {
             &mut status,
             &mut status_state_obj,
             &mut service_state,
-        );
+        )
+        .await;
 
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
@@ -457,19 +466,13 @@ fn backup_proxy_agent(setup_tool: &String) {
 /// Checks if the proxy agent service is running a different version than the files present in the extension,
 /// This can happen when a VM is force-restarted during a proxy agent service update, causing the new service to not start properly.
 /// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
-fn check_version_in_proxy_agent_status_file(
+async fn check_version_in_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &str,
+    proxy_agent_port: Option<u16>,
     status_file_path: Option<PathBuf>,
 ) -> bool {
-    let aggregate_status_file_path = match status_file_path {
-        Some(path) => path,
-        None => proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
-            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
-    };
-    match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        &aggregate_status_file_path,
-    ) {
-        Ok(aggregate_status) => {
+    match get_proxy_agent_aggregate_status(proxy_agent_port, status_file_path).await {
+        Ok((aggregate_status, _)) => {
             let running_version = &aggregate_status.proxyAgentStatus.version;
             if running_version != proxy_agent_file_version_in_extension {
                 logger::write(format!(
@@ -481,41 +484,81 @@ fn check_version_in_proxy_agent_status_file(
             }
         }
         Err(e) => {
-            // Cannot read aggregate status — service may not be running at all.
+            // Cannot get aggregate status — service may not be running at all.
             // Treat this as an incomplete update so install is retried.
             logger::write(format!(
-                "Cannot read aggregate status file to verify running version: {e}.",
+                "Cannot get aggregate status to verify running version: {e}.",
             ));
             false
         }
     }
 }
 
-fn report_proxy_agent_aggregate_status(
+/// Get the proxy agent aggregate status from a specific port or file.
+/// If a port is provided, it will attempt to fetch the status from that port first and then specified status file.
+/// If no port is provided, it will attempt to read the status from the specified file directly.
+async fn get_proxy_agent_aggregate_status(
+    proxy_agent_port: Option<u16>,
+    status_file_path: Option<PathBuf>,
+) -> Result<
+    (
+        GuestProxyAgentAggregateStatus,
+        GuestProxyAgentAggregateStatusSource,
+    ),
+    proxy_agent_shared::error::Error,
+> {
+    let aggregate_status_file_path = match status_file_path {
+        Some(path) => path,
+        None => proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
+            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
+    };
+
+    match proxy_agent_port {
+        Some(port) => {
+            proxy_agent_aggregate_status::get_proxy_agent_aggregate_status(
+                proxy_agent_shared::constants::PROXY_AGENT_IP,
+                port,
+                &aggregate_status_file_path,
+            )
+            .await
+        }
+        None => Ok((
+            misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
+                &aggregate_status_file_path,
+            )?,
+            GuestProxyAgentAggregateStatusSource::FILE,
+        )),
+    }
+}
+
+async fn report_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
 ) {
-    let aggregate_status_file_path =
-        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
-            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
-
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
-    match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        &aggregate_status_file_path,
-    ) {
-        Ok(ok) => {
+    match get_proxy_agent_aggregate_status(
+        Some(proxy_agent_shared::constants::PROXY_AGENT_PORT),
+        None,
+    )
+    .await
+    {
+        Ok((proxy_agent_aggregate_status, source)) => {
             write_state_event(
-                constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
-                constants::SUCCESS_STATUS,
-                "Successfully read proxy agent aggregate status file".to_string(),
+                constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
+                &format!(
+                    "{success}|{source:?}",
+                    success = constants::SUCCESS_STATUS,
+                    source = source
+                ),
+                format!("Successfully get proxy agent aggregate status from {source:?}"),
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
                 service_state,
             );
-            proxy_agent_aggregate_status_top_level = ok;
+            proxy_agent_aggregate_status_top_level = proxy_agent_aggregate_status;
             extension_substatus(
                 proxy_agent_aggregate_status_top_level,
                 proxy_agent_file_version_in_extension,
@@ -525,9 +568,9 @@ fn report_proxy_agent_aggregate_status(
             );
         }
         Err(e) => {
-            let error_message = format!("Error in reading proxy agent aggregate status file: {e}");
+            let error_message = format!("{e}");
             write_state_event(
-                constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
+                constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
                 constants::ERROR_STATUS,
                 error_message.to_string(),
                 "report_proxy_agent_aggregate_status",
@@ -1541,8 +1584,8 @@ mod tests {
         assert_eq!(status.status, constants::TRANSITIONING_STATUS.to_string());
     }
 
-    #[test]
-    fn test_determine_update_action() {
+    #[tokio::test]
+    async fn test_determine_update_action() {
         use std::env;
         use std::fs;
 
@@ -1556,7 +1599,8 @@ mod tests {
 
         // Matching versions should return VersionMismatch
         let result =
-            super::determine_update_action(version_39, version_30, None, "test_logger_key");
+            super::determine_update_action(version_39, version_30, None, None, "test_logger_key")
+                .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::VersionMismatch),
@@ -1567,9 +1611,11 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None, // do not query from gpa server
             Some(PathBuf::from("nonexistent_path")),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::ResumeInterruptedUpdate),
@@ -1584,9 +1630,11 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::ResumeInterruptedUpdate),
@@ -1601,9 +1649,11 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result, None,
             "Expected None when status file exists and version matches"

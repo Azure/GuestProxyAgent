@@ -18,3 +18,6 @@ pub const PROXY_AGENT_SERVICE_NAME: &str = "azure-proxy-agent";
 
 /// Human-readable display name for the proxy agent service.
 pub const PROXY_AGENT_SERVICE_DISPLAY_NAME: &str = "Microsoft Azure Guest Proxy Agent";
+
+pub const PROXY_AGENT_IP: &str = "127.0.0.1";
+pub const PROXY_AGENT_PORT: u16 = 3080;
