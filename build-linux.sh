@@ -60,7 +60,7 @@ echo "======= BuildEnvironment is $BuildEnvironment"
 
 
 echo "======= rustup update to a particular version"
-rustup_version=1.92.0
+rustup_version=1.95.0
 rustup update $rustup_version
 
 # This command sets a specific Rust toolchain version for the current directory. 
