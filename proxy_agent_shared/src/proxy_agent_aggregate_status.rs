@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+use crate::result::Result;
 use crate::{logger::logger_manager, misc_helpers, time_buckets::Countable};
 use serde_derive::{Deserialize, Serialize};
 use std::{
@@ -113,26 +114,20 @@ pub enum GuestProxyAgentAggregateStatusSource {
     FILE,
 }
 
-pub use crate::result::Result;
-
 /// Get the proxy agent aggregate status from a specific port or file.
 /// It attempts to fetch the status from proxy agent server first and then specified status file.
 ///
 /// This helps remove the local disk write-permission dependency
 /// when communicating the aggregate status between Proxy Agent service and the extension.
 pub async fn get_proxy_agent_aggregate_status(
-    proxy_agent_server_ip: &str,
-    proxy_agent_server_port: u16,
+    http_ip: &str,
+    http_port: u16,
     status_file_path: &Path,
 ) -> Result<(
     GuestProxyAgentAggregateStatus,
     GuestProxyAgentAggregateStatusSource,
 )> {
-    let server_error = match get_proxy_agent_aggregate_status_from_server(
-        proxy_agent_server_ip,
-        proxy_agent_server_port,
-    )
-    .await
+    let server_error = match get_proxy_agent_aggregate_status_from_server(http_ip, http_port).await
     {
         Ok(status) => return Ok((status, GuestProxyAgentAggregateStatusSource::SERVER)),
         Err(e) => e,

@@ -130,7 +130,8 @@ fn get_proxy_agent_service_file_version() -> String {
 async fn determine_update_action(
     proxy_agent_in_extension_version: &str,
     proxy_agent_service_version: &str,
-    proxy_agent_port: Option<u16>,
+    http_ip: Option<String>,
+    http_port: Option<u16>,
     status_file_path: Option<PathBuf>,
     logger_key: &str,
 ) -> Option<UpdateAction> {
@@ -149,7 +150,8 @@ async fn determine_update_action(
         Some(UpdateAction::VersionMismatch)
     } else if !check_version_in_proxy_agent_aggregate_status(
         proxy_agent_in_extension_version,
-        proxy_agent_port,
+        http_ip,
+        http_port,
         status_file_path,
     )
     .await
@@ -247,7 +249,8 @@ async fn monitor_thread() {
             if let Some(action) = determine_update_action(
                 &proxy_agent_file_version_in_extension,
                 &proxy_agent_service_version,
-                Some(proxy_agent_shared::constants::PROXY_AGENT_PORT), // Proxy Agent port
+                Some(proxy_agent_shared::constants::WIRE_SERVER_IP.to_string()), // HTTP IP
+                Some(proxy_agent_shared::constants::WIRE_SERVER_PORT),           // HTTP port
                 None,
                 logger_key,
             )
@@ -468,10 +471,11 @@ fn backup_proxy_agent(setup_tool: &String) {
 /// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
 async fn check_version_in_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &str,
-    proxy_agent_port: Option<u16>,
+    http_ip: Option<String>,
+    http_port: Option<u16>,
     status_file_path: Option<PathBuf>,
 ) -> bool {
-    match get_proxy_agent_aggregate_status(proxy_agent_port, status_file_path).await {
+    match get_proxy_agent_aggregate_status(http_ip, http_port, status_file_path).await {
         Ok((aggregate_status, _)) => {
             let running_version = &aggregate_status.proxyAgentStatus.version;
             if running_version != proxy_agent_file_version_in_extension {
@@ -495,10 +499,11 @@ async fn check_version_in_proxy_agent_aggregate_status(
 }
 
 /// Get the proxy agent aggregate status from a specific port or file.
-/// If a port is provided, it will attempt to fetch the status from that port first and then specified status file.
-/// If no port is provided, it will attempt to read the status from the specified file directly.
+/// If ip and port are provided, it will attempt to fetch the status from that port first and then specified status file.
+/// or, it will attempt to read the status from the specified file directly.
 async fn get_proxy_agent_aggregate_status(
-    proxy_agent_port: Option<u16>,
+    http_ip: Option<String>,
+    http_port: Option<u16>,
     status_file_path: Option<PathBuf>,
 ) -> Result<
     (
@@ -513,21 +518,20 @@ async fn get_proxy_agent_aggregate_status(
             .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
     };
 
-    match proxy_agent_port {
-        Some(port) => {
-            proxy_agent_aggregate_status::get_proxy_agent_aggregate_status(
-                proxy_agent_shared::constants::PROXY_AGENT_IP,
-                port,
-                &aggregate_status_file_path,
-            )
-            .await
-        }
-        None => Ok((
+    if let (Some(http_ip), Some(http_port)) = (http_ip, http_port) {
+        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status(
+            &http_ip,
+            http_port,
+            &aggregate_status_file_path,
+        )
+        .await
+    } else {
+        Ok((
             misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
                 &aggregate_status_file_path,
             )?,
             GuestProxyAgentAggregateStatusSource::FILE,
-        )),
+        ))
     }
 }
 
@@ -538,8 +542,13 @@ async fn report_proxy_agent_aggregate_status(
     service_state: &mut ServiceState,
 ) {
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
+    // Attempt to get the proxy agent aggregate status from the GPA Proxy Server.
+    // If the GPA Proxy Server is not available, fall back to reading the status from the file.
+    // We used the WS IP and Port to let this http reqeust go through eBPF and redirectd to GPA proxy server,
+    // It utilizes the existing GPA claims as authorization signal
     match get_proxy_agent_aggregate_status(
-        Some(proxy_agent_shared::constants::PROXY_AGENT_PORT),
+        Some(proxy_agent_shared::constants::WIRE_SERVER_IP.to_string()),
+        Some(proxy_agent_shared::constants::WIRE_SERVER_PORT),
         None,
     )
     .await
@@ -1598,9 +1607,15 @@ mod tests {
         let version_30 = "1.0.30";
 
         // Matching versions should return VersionMismatch
-        let result =
-            super::determine_update_action(version_39, version_30, None, None, "test_logger_key")
-                .await;
+        let result = super::determine_update_action(
+            version_39,
+            version_30,
+            None,
+            None,
+            None,
+            "test_logger_key",
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::VersionMismatch),
@@ -1611,6 +1626,7 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
             None, // do not query from gpa server
             Some(PathBuf::from("nonexistent_path")),
             "test_logger_key",
@@ -1630,6 +1646,7 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
             None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
@@ -1649,6 +1666,7 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
             None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
