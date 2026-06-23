@@ -336,14 +336,6 @@ namespace GuestProxyAgentTest.Utilities
                 }
             });
 
-            var pips = rgr.GetPublicIPAddresses();
-
-            logger.Log("Creating public ip address.");
-            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
-            {
-                Location = TestSetting.Instance.location
-            });
-
             var nifs = rgr.GetNetworkInterfaces();
 
             logger.Log("Creating network interface.");
@@ -356,10 +348,6 @@ namespace GuestProxyAgentTest.Utilities
                             Subnet = new SubnetData()
                             {
                               Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/virtualNetworks/{this.vNetName}/subnets/default"),
-                            },
-                            PublicIPAddress = new PublicIPAddressData()
-                            {
-                                Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/publicIPAddresses/{this.pubIpName}"),
                             },
                             Name = "ipconfig1",
                         }
