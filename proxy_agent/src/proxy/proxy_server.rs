@@ -758,7 +758,10 @@ impl ProxyServer {
                 // If claims is None or runAsElevated is false
                 logger.write(
                     LoggerLevel::Warn,
-                    "Rejected /status request from unauthenticated caller.".to_string(),
+                    format!(
+                        "Rejected {} request from unauthenticated caller.",
+                        proxy_agent_shared::proxy_agent_aggregate_status::STATUS_URL_PATH
+                    ),
                 );
                 return Ok(Self::closed_response(StatusCode::FORBIDDEN));
             }
@@ -1225,7 +1228,7 @@ mod tests {
             Ok(_) => {
                 assert!(
                     false,
-                    "Expected error when calling /status endpoint without authentication"
+                    "Expected error when calling /gpa-aggregated-status endpoint without authentication"
                 );
             }
             Err(e) => {

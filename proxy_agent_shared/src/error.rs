@@ -58,7 +58,7 @@ pub enum Error {
     ParseDateTimeStringError(String),
 
     #[error(
-        "Failed to get proxy agent aggregate status:\n Server error: {0}\n Status file error: {1}"
+        "Failed to get proxy agent aggregate status (server error: {0}; status file error: {1})"
     )]
     GetProxyAgentAggregateStatus(String, String),
 }
