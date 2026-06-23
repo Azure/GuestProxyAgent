@@ -544,7 +544,7 @@ async fn report_proxy_agent_aggregate_status(
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
     // Attempt to get the proxy agent aggregate status from the GPA Proxy Server.
     // If the GPA Proxy Server is not available, fall back to reading the status from the file.
-    // We used the WS IP and Port to let this http reqeust go through eBPF and redirectd to GPA proxy server,
+    // We used the WS IP and Port to let this http request go through eBPF and redirect to GPA proxy server,
     // It utilizes the existing GPA claims as authorization signal
     match get_proxy_agent_aggregate_status(
         Some(proxy_agent_shared::constants::WIRE_SERVER_IP.to_string()),
