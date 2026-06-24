@@ -338,14 +338,14 @@ namespace GuestProxyAgentTest.Utilities
 
             logger.Log("Creating public ip address.");
             var pips = rgr.GetPublicIPAddresses();
-            var pipr = new PublicIPAddressData
+            var publicIPAddressData = new PublicIPAddressData
             {
                 Location = TestSetting.Instance.location
             };
             if (!string.IsNullOrEmpty(TestSetting.Instance.publicIPAddressServiceTag))
             {
                 logger.Log($"Creating public ip address with service tag: {TestSetting.Instance.publicIPAddressServiceTag}");
-                pipr = new PublicIPAddressData
+                publicIPAddressData = new PublicIPAddressData
                 {
                     Location = TestSetting.Instance.location,
                     PublicIPAllocationMethod = Azure.ResourceManager.Network.Models.NetworkIPAllocationMethod.Static,
@@ -364,7 +364,7 @@ namespace GuestProxyAgentTest.Utilities
                     },
                 };
             }
-            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, pipr);
+            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, publicIPAddressData);
 
             logger.Log("Creating network interface.");
             var nifs = rgr.GetNetworkInterfaces();
