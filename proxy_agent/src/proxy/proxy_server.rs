@@ -23,7 +23,6 @@
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
 use crate::common::{constants, error::Error, helpers, logger, result::Result};
-use crate::provision;
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -33,6 +32,7 @@ use crate::shared_state::provision_wrapper::ProvisionSharedState;
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::{EventThreadsSharedState, SharedState};
+use crate::{provision, proxy_agent_status};
 use http_body_util::Full;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::body::{Bytes, Incoming};
@@ -424,6 +424,18 @@ impl ProxyServer {
                 .await;
         }
 
+        if http_connection_context.url
+            == proxy_agent_shared::proxy_agent_aggregate_status::STATUS_URL_PATH
+        {
+            return self
+                .handle_status_request(
+                    http_connection_context.get_logger_mut_ref(),
+                    request,
+                    tcp_connection_context.claims.as_ref(),
+                )
+                .await;
+        }
+
         http_connection_context.log(
             LoggerLevel::Trace,
             "Getting destination IP and port.".to_string(),
@@ -697,10 +709,89 @@ impl ProxyServer {
             Err(e) => {
                 let error = format!("Failed to get provision state: {e}");
                 logger.write(LoggerLevel::Warn, error.to_string());
-                let mut response =
-                    Response::new(hyper_client::full_body(error.as_bytes().to_vec()));
-                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+
+                // return an error response and close the connection
+                Ok(Self::closed_response_with_body(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error,
+                ))
+            }
+        }
+    }
+
+    /// Handle a status request.
+    /// This function handles a status request by fetching the current status of the proxy agent service and returning it as a JSON response.
+    async fn handle_status_request(
+        &self,
+        logger: &mut ConnectionLogger,
+        request: Request<Limited<hyper::body::Incoming>>,
+        claims: Option<&Claims>,
+    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
+        // check MetaData header exists or not
+        if request
+            .headers()
+            .get(hyper_client::METADATA_HEADER)
+            .is_none()
+        {
+            logger.write(
+                LoggerLevel::Warn,
+                "No MetaData header found in the request.".to_string(),
+            );
+            return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
+        }
+
+        // Restrict status access to elevated callers only. The Metadata header is
+        // user-controlled and cannot be used as an authorization signal.
+
+        match claims {
+            Some(claims) if claims.runAsElevated => {
+                logger.write(
+                    LoggerLevel::Trace,
+                    format!(
+                        "Allowing {} request from elevated caller: {}",
+                        proxy_agent_shared::proxy_agent_aggregate_status::STATUS_URL_PATH,
+                        misc_helpers::path_to_string(&claims.processFullPath)
+                    ),
+                );
+            }
+            _ => {
+                // If claims is None or runAsElevated is false
+                logger.write(
+                    LoggerLevel::Warn,
+                    format!(
+                        "Rejected {} request from unauthenticated caller.",
+                        proxy_agent_shared::proxy_agent_aggregate_status::STATUS_URL_PATH
+                    ),
+                );
+                return Ok(Self::closed_response(StatusCode::FORBIDDEN));
+            }
+        }
+
+        let status = proxy_agent_status::ProxyAgentStatusTask::get_proxy_agent_aggregate_status(
+            &self.agent_status_shared_state,
+            &self.key_keeper_shared_state,
+            &self.connection_summary_shared_state,
+        )
+        .await;
+        match serde_json::to_string(&status) {
+            Ok(json) => {
+                let mut response = Response::new(hyper_client::full_body(json.as_bytes().to_vec()));
+                response.headers_mut().insert(
+                    hyper::header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json; charset=utf-8"),
+                );
+
                 Ok(response)
+            }
+            Err(e) => {
+                let error = format!("Failed to serialize status: {e}");
+                logger.write(LoggerLevel::Warn, error.to_string());
+
+                // return an error response and close the connection
+                Ok(Self::closed_response_with_body(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error,
+                ))
             }
         }
     }
@@ -907,6 +998,20 @@ impl ProxyServer {
         response
     }
 
+    fn closed_response_with_body(
+        status_code: StatusCode,
+        body: String,
+    ) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let mut response = Response::new(hyper_client::full_body(body.as_bytes().to_vec()));
+        *response.status_mut() = status_code;
+        // Add the Connection: close header to close the tcp connection
+        response
+            .headers_mut()
+            .insert(hyper::header::CONNECTION, HeaderValue::from_static("close"));
+
+        response
+    }
+
     /// Methods that GPA's HTTP/1.1 forward-proxy will accept and try to route
     /// to a fabric endpoint. Anything else (CONNECT, TRACE, made-up verbs)
     /// is rejected with 405 by `handle_new_http_request` BEFORE any
@@ -1091,7 +1196,7 @@ mod tests {
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
-    use proxy_agent_shared::hyper_client;
+    use proxy_agent_shared::{hyper_client, proxy_agent_aggregate_status};
     use std::collections::HashMap;
     use std::time::Duration;
 
@@ -1115,6 +1220,21 @@ mod tests {
         // give some time to let the listener started
         let sleep_duration = Duration::from_millis(100);
         tokio::time::sleep(sleep_duration).await;
+
+        // test /gpa-aggregated-status endpoint is forbidden for unauthenticated direct callers
+        match proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_from_server(host, port)
+            .await
+        {
+            Ok(_) => {
+                assert!(
+                    false,
+                    "Expected error when calling /gpa-aggregated-status endpoint without authentication"
+                );
+            }
+            Err(e) => {
+                assert!(e.to_string().to_ascii_lowercase().contains("forbidden"));
+            }
+        }
 
         let endpoint = hyper_client::HostEndpoint::new(host, port, "/");
         let request = hyper_client::build_request(

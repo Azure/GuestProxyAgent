@@ -99,9 +99,10 @@ impl ProxyAgentStatusTask {
         }
     }
 
-    async fn get_agent_status_message(&self) -> String {
-        match self
-            .agent_status_shared_state
+    async fn get_agent_status_message(
+        agent_status_shared_state: &AgentStatusSharedState,
+    ) -> String {
+        match agent_status_shared_state
             .get_module_status_message(AgentStatusModule::ProxyAgentStatus)
             .await
         {
@@ -165,48 +166,46 @@ impl ProxyAgentStatusTask {
         }
     }
 
-    async fn get_key_keeper_status(&self) -> ProxyAgentDetailStatus {
-        let mut key_latch_status = self
-            .agent_status_shared_state
+    async fn get_key_keeper_status(
+        agent_status_shared_state: &AgentStatusSharedState,
+        key_keeper_shared_state: &KeyKeeperSharedState,
+    ) -> ProxyAgentDetailStatus {
+        let mut key_latch_status = agent_status_shared_state
             .get_module_status(AgentStatusModule::KeyKeeper)
             .await;
         let mut states = HashMap::new();
         states.insert(
             "secureChannelState".to_string(),
-            self.key_keeper_shared_state
+            key_keeper_shared_state
                 .get_current_secure_channel_state()
                 .await
                 .unwrap_or(UNKNOWN_STATE.to_string()),
         );
-        if let Ok(Some(key_guid)) = self.key_keeper_shared_state.get_current_key_guid().await {
+        if let Ok(Some(key_guid)) = key_keeper_shared_state.get_current_key_guid().await {
             states.insert("keyGuid".to_string(), key_guid);
         }
         states.insert(
             "wireServerRuleId".to_string(),
-            self.key_keeper_shared_state
+            key_keeper_shared_state
                 .get_wireserver_rule_id()
                 .await
                 .unwrap_or(UNKNOWN_STATE.to_string()),
         );
         states.insert(
             "imdsRuleId".to_string(),
-            self.key_keeper_shared_state
+            key_keeper_shared_state
                 .get_imds_rule_id()
                 .await
                 .unwrap_or(UNKNOWN_STATE.to_string()),
         );
         states.insert(
             "hostGARuleId".to_string(),
-            self.key_keeper_shared_state
+            key_keeper_shared_state
                 .get_hostga_rule_id()
                 .await
                 .unwrap_or(UNKNOWN_STATE.to_string()),
         );
-        if let Ok(Some(incarnation)) = self
-            .key_keeper_shared_state
-            .get_current_key_incarnation()
-            .await
-        {
+        if let Ok(Some(incarnation)) = key_keeper_shared_state.get_current_key_incarnation().await {
             states.insert("keyIncarnationId".to_string(), incarnation.to_string());
         }
         key_latch_status.states = Some(states);
@@ -214,14 +213,16 @@ impl ProxyAgentStatusTask {
         key_latch_status
     }
 
-    async fn proxy_agent_status_new(&self) -> ProxyAgentStatus {
-        let key_latch_status = self.get_key_keeper_status().await;
-        let ebpf_status = self
-            .agent_status_shared_state
+    async fn proxy_agent_status_new(
+        agent_status_shared_state: &AgentStatusSharedState,
+        key_keeper_shared_state: &KeyKeeperSharedState,
+    ) -> ProxyAgentStatus {
+        let key_latch_status =
+            Self::get_key_keeper_status(agent_status_shared_state, key_keeper_shared_state).await;
+        let ebpf_status = agent_status_shared_state
             .get_module_status(AgentStatusModule::Redirector)
             .await;
-        let proxy_status = self
-            .agent_status_shared_state
+        let proxy_status = agent_status_shared_state
             .get_module_status(AgentStatusModule::ProxyServer)
             .await;
         let status = if key_latch_status.status != ModuleState::RUNNING
@@ -239,18 +240,16 @@ impl ProxyAgentStatusTask {
             // monitorStatus is proxy_agent_status itself status
             monitorStatus: ProxyAgentDetailStatus {
                 status: ModuleState::RUNNING,
-                message: self.get_agent_status_message().await,
+                message: Self::get_agent_status_message(agent_status_shared_state).await,
                 states: None,
             },
             keyLatchStatus: key_latch_status,
             ebpfProgramStatus: ebpf_status,
             proxyListenerStatus: proxy_status,
-            telemetryLoggerStatus: self
-                .agent_status_shared_state
+            telemetryLoggerStatus: agent_status_shared_state
                 .get_module_status(AgentStatusModule::TelemetryLogger)
                 .await,
-            proxyConnectionsCount: match self.agent_status_shared_state.get_connection_count().await
-            {
+            proxyConnectionsCount: match agent_status_shared_state.get_connection_count().await {
                 Ok(count) => count,
                 Err(e) => {
                     logger::write_error(format!("Error getting connection count: {e}"));
@@ -261,11 +260,28 @@ impl ProxyAgentStatusTask {
     }
 
     async fn guest_proxy_agent_aggregate_status_new(&self) -> GuestProxyAgentAggregateStatus {
+        Self::get_proxy_agent_aggregate_status(
+            &self.agent_status_shared_state,
+            &self.key_keeper_shared_state,
+            &self.connection_summary_shared_state,
+        )
+        .await
+    }
+
+    /// Get the aggregate status of the proxy agent service.
+    pub async fn get_proxy_agent_aggregate_status(
+        agent_status_shared_state: &AgentStatusSharedState,
+        key_keeper_shared_state: &KeyKeeperSharedState,
+        connection_summary_shared_state: &ConnectionSummarySharedState,
+    ) -> GuestProxyAgentAggregateStatus {
         GuestProxyAgentAggregateStatus {
             timestamp: misc_helpers::get_date_time_string_with_milliseconds(),
-            proxyAgentStatus: self.proxy_agent_status_new().await,
-            proxyConnectionSummary: match self
-                .connection_summary_shared_state
+            proxyAgentStatus: Self::proxy_agent_status_new(
+                agent_status_shared_state,
+                key_keeper_shared_state,
+            )
+            .await,
+            proxyConnectionSummary: match connection_summary_shared_state
                 .get_all_connection_summary()
                 .await
             {
@@ -275,8 +291,7 @@ impl ProxyAgentStatusTask {
                     vec![]
                 }
             },
-            failedAuthenticateSummary: match self
-                .connection_summary_shared_state
+            failedAuthenticateSummary: match connection_summary_shared_state
                 .get_all_failed_connection_summary()
                 .await
             {
