@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation
+﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using Azure;
 using Azure.Core;
@@ -336,26 +336,35 @@ namespace GuestProxyAgentTest.Utilities
                 }
             });
 
-            logger.Log("Creating public ip address with Service Tags...");
+            logger.Log("Creating public ip address.");
             var pips = rgr.GetPublicIPAddresses();
-            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
+            var pipr = new PublicIPAddressData
             {
-                Location = TestSetting.Instance.location,
-                PublicIPAllocationMethod = Azure.ResourceManager.Network.Models.NetworkIPAllocationMethod.Static,
-                PublicIPAddressVersion = Azure.ResourceManager.Network.Models.NetworkIPVersion.IPv4,
-                IPTags =
+                Location = TestSetting.Instance.location
+            };
+            if (!string.IsNullOrEmpty(TestSetting.Instance.publicIPAddressServiceTag))
+            {
+                logger.Log($"Creating public ip address with service tag: {TestSetting.Instance.publicIPAddressServiceTag}");
+                pipr = new PublicIPAddressData
                 {
-                    new Azure.ResourceManager.Network.Models.IPTag()
+                    Location = TestSetting.Instance.location,
+                    PublicIPAllocationMethod = Azure.ResourceManager.Network.Models.NetworkIPAllocationMethod.Static,
+                    PublicIPAddressVersion = Azure.ResourceManager.Network.Models.NetworkIPVersion.IPv4,
+                    IPTags =
                     {
-                        IPTagType = "FirstPartyUsage",
-                        Tag = "/CPlatRuntimeProxyAgentTests",
-                    }
-                },
-                Sku = new Azure.ResourceManager.Network.Models.PublicIPAddressSku()
-                {
-                    Name = Azure.ResourceManager.Network.Models.PublicIPAddressSkuName.Standard,
-                },
-            });
+                        new Azure.ResourceManager.Network.Models.IPTag()
+                        {
+                            IPTagType = "FirstPartyUsage",
+                            Tag = TestSetting.Instance.publicIPAddressServiceTag,
+                        }
+                    },
+                    Sku = new Azure.ResourceManager.Network.Models.PublicIPAddressSku()
+                    {
+                        Name = Azure.ResourceManager.Network.Models.PublicIPAddressSkuName.Standard,
+                    },
+                };
+            }
+            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, pipr);
 
             logger.Log("Creating network interface.");
             var nifs = rgr.GetNetworkInterfaces();
