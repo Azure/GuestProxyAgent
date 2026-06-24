@@ -338,7 +338,7 @@ namespace GuestProxyAgentTest.Utilities
 
             logger.Log("Creating public ip address with Service Tags...");
             var pips = rgr.GetPublicIPAddresses();
-            var natPublicIp = await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
+            await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
             {
                 Location = TestSetting.Instance.location,
                 PublicIPAllocationMethod = Azure.ResourceManager.Network.Models.NetworkIPAllocationMethod.Static,
