@@ -331,14 +331,34 @@ namespace GuestProxyAgentTest.Utilities
                     {
                         Name = "default",
                         AddressPrefix = "10.0.0.0/24",
-                        DefaultOutboundAccess = false
+                        DefaultOutboundAccess = false,
                     }
                 }
             });
 
-            var nifs = rgr.GetNetworkInterfaces();
+            logger.Log("Creating public ip address with Service Tags...");
+            var pips = rgr.GetPublicIPAddresses();
+            var natPublicIp = await pips.CreateOrUpdateAsync(WaitUntil.Completed, this.pubIpName, new PublicIPAddressData
+            {
+                Location = TestSetting.Instance.location,
+                PublicIPAllocationMethod = Azure.ResourceManager.Network.Models.NetworkIPAllocationMethod.Static,
+                PublicIPAddressVersion = Azure.ResourceManager.Network.Models.NetworkIPVersion.IPv4,
+                IPTags =
+                {
+                    new Azure.ResourceManager.Network.Models.IPTag()
+                    {
+                        IPTagType = "FirstPartyUsage",
+                        Tag = "/CPlatRuntimeProxyAgentTests",
+                    }
+                },
+                Sku = new Azure.ResourceManager.Network.Models.PublicIPAddressSku()
+                {
+                    Name = Azure.ResourceManager.Network.Models.PublicIPAddressSkuName.Standard,
+                },
+            });
 
             logger.Log("Creating network interface.");
+            var nifs = rgr.GetNetworkInterfaces();
             await nifs.CreateOrUpdateAsync(WaitUntil.Completed, this.netInfName, new NetworkInterfaceData()
             {
                 IPConfigurations =
@@ -348,6 +368,10 @@ namespace GuestProxyAgentTest.Utilities
                             Subnet = new SubnetData()
                             {
                               Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/virtualNetworks/{this.vNetName}/subnets/default"),
+                            },
+                            PublicIPAddress = new PublicIPAddressData()
+                            {
+                                Id = new ResourceIdentifier($"/subscriptions/{TestSetting.Instance.subscriptionId}/resourceGroups/{this.rgName}/providers/Microsoft.Network/publicIPAddresses/{this.pubIpName}"),
                             },
                             Name = "ipconfig1",
                         }
