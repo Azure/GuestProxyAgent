@@ -47,37 +47,148 @@ impl DirectSendConfig {
     }
 }
 
+/// Start the telemetry event logger loop in disk-only mode.
+///
+/// Events are buffered to disk and later picked up by the event reader. This is
+/// used by callers (such as the extension) that do not have a direct in-memory
+/// telemetry path. It deliberately does not reference the `event_sender` direct
+/// path so that the direct-send machinery is not linked into binaries that only
+/// use this entry point.
 pub async fn start<F, Fut>(
     event_dir: PathBuf,
-    mut interval: Duration,
+    interval: Duration,
     max_event_file_count: usize,
-    direct_send_config: Option<DirectSendConfig>,
     set_status_fn: F,
 ) where
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
+    // Disk-only mode: no events are sent directly, so every event falls through
+    // to be buffered on disk.
+    run_event_loop(
+        event_dir,
+        interval,
+        max_event_file_count,
+        set_status_fn,
+        |events| async move { events },
+    )
+    .await;
+}
+
+/// Start the telemetry event logger loop with a direct in-memory send path.
+///
+/// Events are first attempted to be sent directly via the in-memory telemetry
+/// queue (so VMs without disk write permission can still report telemetry).
+/// Any events that cannot be enqueued directly fall back to being buffered on
+/// disk.
+pub async fn start_with_direct_send<F, Fut>(
+    event_dir: PathBuf,
+    interval: Duration,
+    max_event_file_count: usize,
+    direct_send_config: DirectSendConfig,
+    set_status_fn: F,
+) where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    if DIRECT_SEND_CONFIG.set(direct_send_config.clone()).is_err() {
+        let message = "DirectSendConfig is already set, cannot set it again.";
+        logger_manager::write_warn(message.to_string());
+    }
+
+    run_event_loop(
+        event_dir,
+        interval,
+        max_event_file_count,
+        set_status_fn,
+        move |events| {
+            let config = direct_send_config.clone();
+            async move { try_direct_send_events(events, &config).await }
+        },
+    )
+    .await;
+}
+
+/// Try to send the drained events directly via the in-memory telemetry queue,
+/// returning the events that could not be enqueued directly (and therefore need
+/// to be buffered on disk).
+async fn try_direct_send_events(events: Vec<Event>, config: &DirectSendConfig) -> Vec<Event> {
+    try_direct_send_events_with(
+        events,
+        config,
+        crate::telemetry::event_sender::try_enqueue_generic_event,
+    )
+    .await
+}
+
+/// Implementation of [`try_direct_send_events`] with the enqueue operation
+/// injected, so the filtering / notify logic can be unit-tested without the
+/// global `event_sender` queue. `try_enqueue` returns `Ok` when the event was
+/// accepted by the direct path and `Err` when it must fall back to disk.
+async fn try_direct_send_events_with<E>(
+    events: Vec<Event>,
+    config: &DirectSendConfig,
+    try_enqueue: E,
+) -> Vec<Event>
+where
+    E: Fn(&Event, String, String, Option<String>) -> crate::result::Result<()>,
+{
+    let event_count = events.len();
+    let remaining_events: Vec<Event> = events
+        .into_iter()
+        .filter(|event| {
+            try_enqueue(
+                event,
+                config.execution_mode.clone(),
+                config.event_name.clone(),
+                config.version.clone(),
+            )
+            .is_err()
+        })
+        .collect();
+    if remaining_events.len() < event_count {
+        // some events were queued directly, notify the event_sender
+        if let Err(e) = config.common_state.notify_telemetry_event().await {
+            logger_manager::write_warn(format!(
+                "event_logger::try_direct_send_events: failed to notify telemetry event with error: {e}"
+            ));
+        };
+    }
+
+    // return the possible remaining events
+    remaining_events
+}
+
+/// Core event logger loop shared by the disk-only and direct-send entry points.
+///
+/// `direct_send` is given the events drained from the in-memory queue and
+/// returns the events that still need to be buffered on disk. For disk-only
+/// mode this is the identity function.
+async fn run_event_loop<F, Fut, S, SFut>(
+    event_dir: PathBuf,
+    mut interval: Duration,
+    max_event_file_count: usize,
+    set_status_fn: F,
+    direct_send: S,
+) where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+    S: Fn(Vec<Event>) -> SFut,
+    SFut: std::future::Future<Output = Vec<Event>>,
+{
     let message = "Telemetry event logger thread started.";
-    set_status_fn(message.to_string());
+    set_status_fn(message.to_string()).await;
 
     logger_manager::write_log(Level::Info, message.to_string());
 
     if let Err(e) = misc_helpers::try_create_folder(&event_dir) {
         let message = format!("Failed to create event folder with error: {e}");
-        set_status_fn(message.to_string());
+        logger_manager::write_warn(message.to_string());
     }
 
     if EVENTS_DIR.set(event_dir.clone()).is_err() {
         let message = "Event directory is already set, cannot set it again.";
-        set_status_fn(message.to_string());
-        logger_manager::write_log(Level::Warn, message.to_string());
-    }
-    if let Some(config) = direct_send_config.clone() {
-        if DIRECT_SEND_CONFIG.set(config).is_err() {
-            let message = "DirectSendConfig is already set, cannot set it again.";
-            set_status_fn(message.to_string());
-            logger_manager::write_log(Level::Warn, message.to_string());
-        }
+        logger_manager::write_warn(message.to_string());
     }
 
     let shutdown = SHUT_DOWN.clone();
@@ -87,7 +198,6 @@ pub async fn start<F, Fut>(
     loop {
         if EVENT_QUEUE.is_closed() {
             let message = "Event queue already closed, stop processing events.";
-            set_status_fn(message.to_string());
             logger_manager::write_log(Level::Info, message.to_string());
             break;
         }
@@ -95,7 +205,7 @@ pub async fn start<F, Fut>(
 
         if shutdown.load(Ordering::Relaxed) {
             let message = "Stop signal received, exiting the event logger thread.";
-            set_status_fn(message.to_string());
+            set_status_fn(message.to_string()).await;
 
             logger_manager::write_log(Level::Info, message.to_string());
             EVENT_QUEUE.close();
@@ -112,40 +222,9 @@ pub async fn start<F, Fut>(
             events.push(event);
         }
 
-        // Try to send the events directly via the in-memory telemetry queue
-        // first, so VMs without disk write permission can still report
-        // telemetry. Any events that cannot be enqueued directly (the direct
-        // path is None or the queue is full/closed) fall back to being
-        // buffered on disk below.
-        let events: Vec<Event> = match &direct_send_config {
-            Some(config) => {
-                let event_count = events.len();
-                let remaining_events: Vec<Event> = events
-                    .into_iter()
-                    .filter(|event| {
-                        crate::telemetry::event_sender::try_enqueue_generic_event(
-                            event,
-                            config.execution_mode.clone(),
-                            config.event_name.clone(),
-                            config.version.clone(),
-                        )
-                        .is_err()
-                    })
-                    .collect();
-                if remaining_events.len() < event_count {
-                    // some events were queued directly, notify the event_sender
-                    if let Err(e) = config.common_state.notify_telemetry_event().await {
-                        logger_manager::write_warn(format!(
-                        "report_generic_event: failed to notify telemetry event with error: {e}"
-                    ));
-                    };
-                }
-
-                // return the possible remaining events
-                remaining_events
-            }
-            None => events,
-        };
+        // Try to send the events directly first; any events that cannot be sent
+        // directly fall back to being buffered on disk below.
+        let events: Vec<Event> = direct_send(events).await;
         if events.is_empty() {
             // all events were queued directly, skip the rest
             continue;
@@ -359,17 +438,11 @@ mod tests {
         // Start the event logger loop and set the EVENTS_DIR
         let cloned_events_dir = events_dir.to_path_buf();
         tokio::spawn(async {
-            super::start(
-                cloned_events_dir,
-                Duration::from_millis(100),
-                3,
-                None,
-                |_| {
-                    async {
-                        // do nothing
-                    }
-                },
-            )
+            super::start(cloned_events_dir, Duration::from_millis(100), 3, |_| {
+                async {
+                    // do nothing
+                }
+            })
             .await;
         });
 
@@ -472,5 +545,108 @@ mod tests {
         }
         // wait for the queue write to event folder
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    fn create_direct_send_config() -> super::DirectSendConfig {
+        let common_state =
+            crate::common_state::CommonState::start_new(tokio_util::sync::CancellationToken::new());
+        super::DirectSendConfig::new(
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
+            Some("1.0.0".to_string()),
+            common_state,
+        )
+    }
+
+    fn create_event(message: &str) -> crate::telemetry::Event {
+        crate::telemetry::Event::new(
+            "Informational".to_string(),
+            message.to_string(),
+            "test_task".to_string(),
+            "test_module".to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn try_direct_send_events_empty_input() {
+        let config = create_direct_send_config();
+
+        // Empty input must return empty without touching the enqueue path.
+        let remaining = super::try_direct_send_events_with(Vec::new(), &config, |_, _, _, _| {
+            panic!("enqueue should not be called for empty input");
+        })
+        .await;
+
+        assert!(
+            remaining.is_empty(),
+            "Empty input should produce no remaining events"
+        );
+    }
+
+    #[tokio::test]
+    async fn try_direct_send_events_all_enqueued() {
+        let config = create_direct_send_config();
+        let events = vec![
+            create_event("event 1"),
+            create_event("event 2"),
+            create_event("event 3"),
+        ];
+
+        // Every event is accepted by the direct path, so nothing falls back to disk.
+        let remaining =
+            super::try_direct_send_events_with(events, &config, |_, _, _, _| Ok(())).await;
+
+        assert!(
+            remaining.is_empty(),
+            "All events were enqueued, none should remain for disk fallback"
+        );
+    }
+
+    #[tokio::test]
+    async fn try_direct_send_events_all_fail_back_to_disk() {
+        let config = create_direct_send_config();
+        let events = vec![create_event("event 1"), create_event("event 2")];
+        let expected_messages: Vec<String> = events.iter().map(|e| e.Message.clone()).collect();
+
+        // Every enqueue fails, so all events must be returned for disk fallback,
+        // preserving order.
+        let remaining = super::try_direct_send_events_with(events, &config, |_, _, _, _| {
+            Err(crate::error::Error::EnqueueEvent("queue full".to_string()))
+        })
+        .await;
+
+        let remaining_messages: Vec<String> = remaining.iter().map(|e| e.Message.clone()).collect();
+        assert_eq!(
+            remaining_messages, expected_messages,
+            "All events should fall back to disk (in order) when enqueue fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn try_direct_send_events_partial_fallback() {
+        let config = create_direct_send_config();
+        let events = vec![
+            create_event("send-ok"),
+            create_event("force-fail"),
+            create_event("send-ok"),
+        ];
+
+        // Only the event whose message is "force-fail" cannot be enqueued and
+        // therefore must be returned for disk fallback.
+        let remaining = super::try_direct_send_events_with(events, &config, |event, _, _, _| {
+            if event.Message == "force-fail" {
+                Err(crate::error::Error::EnqueueEvent("queue full".to_string()))
+            } else {
+                Ok(())
+            }
+        })
+        .await;
+
+        assert_eq!(
+            remaining.len(),
+            1,
+            "Only the event that failed to enqueue should remain"
+        );
+        assert_eq!(remaining[0].Message, "force-fail");
     }
 }

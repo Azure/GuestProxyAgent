@@ -172,10 +172,10 @@ impl EventSender {
     }
 }
 
-/// Try to enqueue a generic log event directly into the in-memory telemetry queue.
+/// Try to enqueue a generic log event into the in-memory telemetry queue.
 ///
 /// Returns `Err` if the queue is full/closed.
-pub fn try_enqueue_generic_event(
+pub(crate) fn try_enqueue_generic_event(
     event: &Event,
     execution_mode: String,
     event_name: String,
@@ -189,11 +189,9 @@ pub fn try_enqueue_generic_event(
         .map_err(|e| crate::error::Error::EnqueueEvent(format!("{e}")))
 }
 
-/// Try to enqueue an extension status event directly into the in-memory
-/// telemetry queue, bypassing the on-disk buffer.
+/// Try to enqueue an extension status event into the in-memory telemetry queue.
 ///
-/// Returns `Err` if the direct path is disabled (config not set) or the queue
-/// is full/closed, so the caller can fall back to buffering on disk.
+/// Returns `Err` if the queue is full/closed.
 pub(crate) fn try_enqueue_extension_event(
     event: &ExtensionStatusEvent,
     execution_mode: String,

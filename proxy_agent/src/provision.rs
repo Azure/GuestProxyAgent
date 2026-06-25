@@ -346,11 +346,11 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
         );
 
         async move {
-            event_logger::start(
+            event_logger::start_with_direct_send(
                 config::get_events_dir(),
                 Duration::default(),
                 config::get_max_event_file_count(),
-                Some(direct_send_config),
+                direct_send_config,
                 move |status: String| {
                     let cloned_agent_status_shared_state = cloned_agent_status_shared_state.clone();
                     async move {

@@ -32,14 +32,19 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 - `write_event` / `write_event_only` **always** push the event into a bounded
   in-memory `EVENT_QUEUE` (capacity 1000). Messages are truncated to 4 KB
   (`MAX_MESSAGE_LENGTH`).
-- A background loop in `event_logger::start` wakes **every 60 seconds** and
-  drains `EVENT_QUEUE`. When a `DirectSendConfig` is provided, each event is
-  first attempted on the **direct in-memory send path**
-  (`event_sender::try_enqueue_generic_event`), which converts it and pushes it
-  straight into the `EventSender`'s `TELEMETRY_EVENT_QUEUE`. If at least one
-  event was enqueued directly, the loop calls
-  `common_state.notify_telemetry_event()` to wake the sender. Only events that
-  cannot be enqueued directly fall back to disk.
+- A background loop in `event_logger::run_event_loop` wakes **every 60 seconds**
+  and drains `EVENT_QUEUE`. The loop is started through one of two entry points:
+  - `event_logger::start_with_direct_send` (proxy agent service): each event is
+    first attempted on the **direct in-memory send path**
+    (`event_sender::try_enqueue_generic_event`), which converts it and pushes it
+    straight into the `EventSender`'s `TELEMETRY_EVENT_QUEUE`. If at least one
+    event was enqueued directly, the loop calls
+    `common_state.notify_telemetry_event()` to wake the sender. Only events that
+    cannot be enqueued directly fall back to disk.
+  - `event_logger::start` (disk-only, e.g. the extension): the loop buffers
+    every event on disk and never references the direct send path. Keeping the
+    direct-send code out of this entry point lets dead-code elimination drop the
+    `event_sender` machinery from binaries that only buffer to disk.
 - `report_extension_status_event` (async) tries the direct path first via
   `event_sender::try_enqueue_extension_event` and, on success, notifies the
   sender and returns; otherwise it falls back to disk.
@@ -49,9 +54,9 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 - `DirectSendConfig` is defined in `event_logger.rs` and carries the
   `execution_mode`, `event_name`, optional `version`, and a `CommonState`
   handle (used to notify the sender).
-- It is passed into `event_logger::start(..., direct_send_config, ...)` by the
-  proxy agent service (see [provision.rs](../proxy_agent/src/provision.rs)) and
-  also cached in a static `DIRECT_SEND_CONFIG` so
+- It is passed into `event_logger::start_with_direct_send(..., direct_send_config, ...)`
+  by the proxy agent service (see [provision.rs](../proxy_agent/src/provision.rs))
+  and also cached in a static `DIRECT_SEND_CONFIG` so
   `report_extension_status_event` can use it.
 - The `execution_mode` / `event_name` / `version` match the `EventReader`
   configuration so events are shaped identically regardless of which path they
@@ -59,13 +64,14 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 
 ## Stage 2 — Disk buffer (fallback only)
 
-- The on-disk buffer is now a **fallback**, used only when no `DirectSendConfig`
-  is set or the in-memory send queue (`TELEMETRY_EVENT_QUEUE`) is full/closed.
-  This lets VMs without disk write permission still report telemetry over the
-  direct path.
-- Processes that pass a `DirectSendConfig` (the proxy agent service) send most
-  events directly. Processes that do not (e.g. the extension, which calls
-  `event_logger::start` with `None`) keep the original disk-only behavior.
+- The on-disk buffer is now a **fallback**, used only when the logger is started
+  without a `DirectSendConfig` (via `event_logger::start`) or the in-memory send
+  queue (`TELEMETRY_EVENT_QUEUE`) is full/closed. This lets VMs without disk
+  write permission still report telemetry over the direct path.
+- Processes that pass a `DirectSendConfig` (the proxy agent service, via
+  `event_logger::start_with_direct_send`) send most events directly. Processes
+  that do not (e.g. the extension, which calls the disk-only `event_logger::start`)
+  keep the original disk-only behavior.
 - Two file types act as the durable fallback buffer:
   - Generic logs: `^[0-9]+\.json$` → `TelemetryGenericLogsEvent`
   - Extension status: `^extension_[0-9]+\.json$` → `TelemetryExtensionEventsEvent`
