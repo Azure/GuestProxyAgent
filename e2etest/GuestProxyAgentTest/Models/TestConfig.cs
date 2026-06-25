@@ -1,10 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace GuestProxyAgentTest.Models
 {
@@ -17,6 +12,7 @@ namespace GuestProxyAgentTest.Models
         public string SubscriptionId { get; set; } = null!;
         public string Location { get; set; } = null!;
         public string VmSize { get; set; } = null!;
+        public string PublicIPAddressServiceTag { get; set; } = null!;
         public string SharedStorageAccountUrl { get; set; } = null!;
         public string WindowsInVmWireServerAccessControlProfileReferenceId { get; set; } = null!;
         public string WindowsInVmIMDSAccessControlProfileReferenceId { get; set; } = null!;
