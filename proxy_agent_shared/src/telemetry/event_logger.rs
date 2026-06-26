@@ -649,4 +649,32 @@ mod tests {
         );
         assert_eq!(remaining[0].Message, "force-fail");
     }
+
+    #[tokio::test]
+    async fn try_direct_send_events_notify_failed() {
+        let config = create_direct_send_config();
+        let events = vec![
+            create_event("event 1"),
+            create_event("event 2"),
+            create_event("event 3"),
+        ];
+
+        config.common_state.cancel_cancellation_token();
+        // Wait for the cancellation to take effect
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // check that the cancellation is effective
+        assert!(
+            config.common_state.notify_telemetry_event().await.is_err(),
+            "Expected error when notifying telemetry event after cancellation"
+        );
+
+        // Every event is accepted by the direct path, even failed to notify the event_sender.
+        let remaining =
+            super::try_direct_send_events_with(events, &config, |_, _, _, _| Ok(())).await;
+        assert!(
+            remaining.is_empty(),
+            "All events were enqueued, none should remain for disk fallback"
+        );
+    }
 }
