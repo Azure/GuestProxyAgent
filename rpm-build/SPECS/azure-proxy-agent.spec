@@ -22,10 +22,13 @@ mkdir -p %{buildroot}/usr/sbin/
 mkdir -p %{buildroot}/etc/azure/
 mkdir -p %{buildroot}/usr/lib/systemd/system/
 mkdir -p %{buildroot}/usr/lib/azure-proxy-agent/
+mkdir -p %{buildroot}/usr/share/man/man8/
 cp -f ./package/ProxyAgent/proxy-agent.json %{buildroot}/etc/azure/
 cp -f ./package/azure-proxy-agent.service %{buildroot}/usr/lib/systemd/system/
 cp -f ./package/ProxyAgent/ebpf_cgroup.o %{buildroot}/usr/lib/azure-proxy-agent/
 cp -f ./package/ProxyAgent/azure-proxy-agent %{buildroot}/usr/sbin/
+cp -f ./package/azure-proxy-agent.8 %{buildroot}/usr/share/man/man8/
+gzip -nf9 %{buildroot}/usr/share/man/man8/azure-proxy-agent.8
 
 %post
 %systemd_post azure-proxy-agent.service
@@ -40,6 +43,7 @@ cp -f ./package/ProxyAgent/azure-proxy-agent %{buildroot}/usr/sbin/
 /usr/sbin/azure-proxy-agent
 /etc/azure/proxy-agent.json
 /usr/lib/azure-proxy-agent/ebpf_cgroup.o
+/usr/share/man/man8/azure-proxy-agent.8.gz
 
 %changelog
 * Fri Sep 13 23:43:30 UTC 2024 - ARTProxyAgentVTeam@microsoft.com
