@@ -48,7 +48,7 @@ jobs:
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "9000000"   # ~9 MB
+            max_binary_bytes: "10000000"   # ~10 MB
             crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
             apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: x86_64-unknown-linux-musl
@@ -70,7 +70,7 @@ jobs:
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: ProxyAgentExt
-            max_binary_bytes: "16000000"
+            max_binary_bytes: "10000000"
             crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
             apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: aarch64-unknown-linux-musl

@@ -3,6 +3,7 @@
 
 use crate::hyper_client;
 use crate::logger::logger_manager;
+use crate::proxy_agent_aggregate_status;
 use crate::result::Result;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
@@ -110,6 +111,41 @@ async fn handle_request(
                 let state = unsafe { (*CURRENT_STATE).to_string() };
                 body_string = status_response.replace("$$secureChannelState$$", &state);
             }
+        } else if !segments.is_empty()
+            && segments[0] == proxy_agent_aggregate_status::STATUS_URL_PATH.trim_start_matches('/')
+        {
+            // get proxy agent aggregate status
+            let status_response = r#"{
+                "timestamp": "2023-01-01T00:00:00Z",
+                "proxyAgentStatus": {
+                    "version": "1.0",
+                    "status": "SUCCESS",
+                    "monitorStatus": {
+                        "status": "RUNNING",
+                        "message": "Monitor is running"
+                    },
+                    "keyLatchStatus": {
+                        "status": "RUNNING",
+                        "message": "Key latch is running"
+                    },
+                    "ebpfProgramStatus": {
+                        "status": "RUNNING",
+                        "message": "eBPF program is running"
+                    },
+                    "proxyListenerStatus": {
+                        "status": "RUNNING",
+                        "message": "Proxy listener is running"
+                    },
+                    "telemetryLoggerStatus": {
+                        "status": "RUNNING",
+                        "message": "Telemetry logger is running"
+                    },
+                    "proxyConnectionsCount": 0
+                },
+                "proxyConnectionSummary": [],
+                "failedAuthenticateSummary": []
+            }"#;
+            body_string = status_response.to_string();
         } else if !segments.is_empty() && segments[0] == "machine?comp=goalstate" {
             let goal_state_str = r#"<?xml version="1.0" encoding="utf-8"?>
             <GoalState xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="goalstate10.xsd">

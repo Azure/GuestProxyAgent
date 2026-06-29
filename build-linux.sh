@@ -60,7 +60,7 @@ echo "======= BuildEnvironment is $BuildEnvironment"
 
 
 echo "======= rustup update to a particular version"
-rustup_version=1.92.0
+rustup_version=1.95.0
 rustup update $rustup_version
 
 # This command sets a specific Rust toolchain version for the current directory. 
@@ -197,6 +197,7 @@ fi
 echo "======= copy to package folder"
 cp -f $out_dir/proxy_agent_setup $out_package_dir/
 cp -f $out_dir/azure-proxy-agent.service $out_package_dir/
+cp -f $out_dir/azure-proxy-agent.8 $out_package_dir/
 
 out_package_proxyagent_dir=$out_package_dir/ProxyAgent
 if [ ! -d $out_package_proxyagent_dir ]; then
@@ -250,6 +251,7 @@ pushd debbuild
     cp -f $out_package_proxyagent_dir/azure-proxy-agent ./
     cp -f $out_package_proxyagent_dir/proxy-agent.json ./
     cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./
+    cp -f $out_package_dir/azure-proxy-agent.8 ./
     cp -f $out_package_dir/azure-proxy-agent.service ./DEBIAN/
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  # replace pkgversion with actual version
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  # replace pkgversion with actual version

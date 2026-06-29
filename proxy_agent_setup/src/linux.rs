@@ -9,11 +9,33 @@ use std::{fs, path::PathBuf};
 const SERVICE_CONFIG_FILE_NAME: &str = "azure-proxy-agent.service";
 const CONFIG_FILE: &str = "proxy-agent.json";
 const EBPF_FILE: &str = "ebpf_cgroup.o";
+const MAN_FILE: &str = "azure-proxy-agent.8";
 const CONFIG_PATH: &str = "/etc/azure/proxy-agent.json";
 const EBPF_PATH: &str = "/usr/lib/azure-proxy-agent/ebpf_cgroup.o";
+const MAN_PATH: &str = "/usr/share/man/man8/azure-proxy-agent.8";
 
 pub fn setup_service(service_name: &str, service_file_dir: PathBuf) -> Result<()> {
-    copy_service_config_file(service_name, service_file_dir)
+    copy_service_config_file(service_name, service_file_dir.clone())?;
+    copy_man_page(service_file_dir);
+    Ok(())
+}
+
+// Install the man page (staged next to the service config file) so that
+// `man azure-proxy-agent` works on extension-based installs, matching the
+// distro (.deb/.rpm) packages. Older packages may not ship the man page, in
+// which case this is a no-op.
+fn copy_man_page(src_folder: PathBuf) {
+    let man_src = src_folder.join(MAN_FILE);
+    if !man_src.exists() {
+        return;
+    }
+    copy_file(man_src, PathBuf::from(MAN_PATH));
+    if let Err(e) = proxy_agent_shared::linux::set_file_permissions(&PathBuf::from(MAN_PATH), 0o644)
+    {
+        logger::write_error(format!(
+            "Failed to set man page file permission to 644 with error: {e}"
+        ));
+    }
 }
 
 fn copy_service_config_file(service_name: &str, service_file_dir: PathBuf) -> Result<()> {
@@ -99,6 +121,12 @@ pub fn backup_files() {
         running::proxy_agent_running_folder("").join("azure-proxy-agent"),
         backup_folder.join("azure-proxy-agent"),
     );
+    // back up the man page next to the service config file so restore can
+    // reinstall it from the same folder.
+    copy_file(
+        PathBuf::from(MAN_PATH),
+        backup::proxy_agent_backup_folder().join(MAN_FILE),
+    );
     backup_service_config_file(backup::proxy_agent_backup_folder());
 }
 
@@ -134,4 +162,5 @@ pub fn delete_files() {
     delete_file(proxy_agent_running_folder.join("azure-proxy-agent"));
     delete_file(PathBuf::from(crate::linux::CONFIG_PATH));
     delete_file(PathBuf::from(crate::linux::EBPF_PATH));
+    delete_file(PathBuf::from(crate::linux::MAN_PATH));
 }
