@@ -256,27 +256,21 @@ impl BpfObject {
 
         source_port - source local port.
 
-        logger - connection logger.
-
     Return Value:
 
         audit entry from audit_map on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_audit(
-        &self,
-        source_port: u16,
-        logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
-    ) -> Result<AuditEntry> {
+    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let map_name = "audit_map";
-        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let (map_fd, value_size) = self.get_bpf_map_fd_and_value_size(map_name)?;
 
         // query by source port.
         let key = sock_addr_audit_key_t::from_source_port(source_port);
-        let mut value = sock_addr_audit_entry_t::empty();
-        let result_new = bpf_map_lookup_elem(
+        let mut audit_value_entry = AuditValueEntry::empty(value_size);
+        let result = bpf_map_lookup_elem(
             map_fd,
             &key as *const sock_addr_audit_key_t as *const c_void,
-            &mut value as *mut sock_addr_audit_entry_t as *mut c_void,
+            audit_value_entry.value_pointer_mut(),
         )
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
@@ -285,54 +279,14 @@ impl BpfObject {
             ))
         })?;
 
-        if result_new == 0 && is_valid_new_audit_entry(&value) {
-            return Ok(AuditEntry {
-                logon_id: u64::from(value.logon_id),
-                process_id: value.process_id,
-                is_admin: value.is_root as i32,
-                destination_ipv4: value.destination_ipv4,
-                destination_port: value.destination_port as u16,
-            });
-        }
-
-        if result_new == 0 {
-            // Log a trace message if the new layout is decoded but fails validation.
-            // It is normal for the new layout with older eBPF programs to be used in a different context.
-            logger.write(proxy_agent_shared::logger::LoggerLevel::Trace, format!(
-                "audit_map entry for source_port={} decoded with new layout but failed validation, falling back to legacy layout",
-                source_port
-            ));
-        }
-
-        // Backward compatibility: older Windows eBPF programs use a larger
-        // audit entry layout (u64 logon_id, i32 is_admin, u16 destination_port).
-        let mut legacy_value = sock_addr_audit_entry_legacy_t::empty();
-        let result_legacy = bpf_map_lookup_elem(
-            map_fd,
-            &key as *const sock_addr_audit_key_t as *const c_void,
-            &mut legacy_value as *mut sock_addr_audit_entry_legacy_t as *mut c_void,
-        )
-        .map_err(|e| {
-            Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
-                format!("Error: {e}"),
-            ))
-        })?;
-
-        if result_legacy != 0 {
+        if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
                 source_port.to_string(),
-                format!("Result new={result_new}, legacy={result_legacy}"),
+                format!("Result: {result}"),
             )));
         }
 
-        Ok(AuditEntry {
-            logon_id: legacy_value.logon_id,
-            process_id: legacy_value.process_id,
-            is_admin: legacy_value.is_admin,
-            destination_ipv4: legacy_value.destination_ipv4,
-            destination_port: legacy_value.destination_port,
-        })
+        audit_value_entry.to_audit_entry()
     }
 
     /**
@@ -439,6 +393,11 @@ impl BpfObject {
     }
 
     fn get_bpf_map_fd(&self, map_name: &str) -> Result<i32> {
+        let (map_fd, _) = self.get_bpf_map_fd_and_value_size(map_name)?;
+        Ok(map_fd)
+    }
+
+    fn get_bpf_map_fd_and_value_size(&self, map_name: &str) -> Result<(i32, u32)> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
@@ -453,6 +412,8 @@ impl BpfObject {
             )));
         }
 
-        bpf_map__fd(bpf_map).map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))
+        let map_fd = bpf_map__fd(bpf_map)
+            .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
+        Ok((map_fd, bpf_map_value_size(bpf_map)))
     }
 }

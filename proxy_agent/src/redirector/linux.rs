@@ -238,11 +238,7 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn lookup_audit(
-        &self,
-        source_port: u16,
-        _logger: &mut crate::proxy::proxy_connection::ConnectionLogger,
-    ) -> Result<AuditEntry> {
+    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = "audit_map";
         match self.0.map(audit_map_name) {
             Some(map) => match HashMap::try_from(map) {
@@ -566,8 +562,7 @@ mod tests {
         );
 
         let source_port = 1;
-        let logger = &mut crate::proxy::proxy_connection::ConnectionLogger::new(1, 1);
-        let audit = bpf.lookup_audit(source_port, logger);
+        let audit = bpf.lookup_audit(source_port);
         assert!(
             audit.is_err(),
             "lookup_audit should return error for invalid source port"
@@ -592,7 +587,7 @@ mod tests {
                 .insert(key.to_array(), value.to_array(), 0)
                 .unwrap();
         }
-        let audit = bpf.lookup_audit(source_port, logger);
+        let audit = bpf.lookup_audit(source_port);
         match audit {
             Ok(entry) => {
                 assert_eq!(
