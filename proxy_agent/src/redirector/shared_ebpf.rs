@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 #![allow(non_camel_case_types)]
-#![cfg_attr(windows, allow(dead_code))]
+#![allow(dead_code)]
 
 use crate::common::{
     error::{BpfErrorType, Error},
@@ -336,8 +336,7 @@ impl AuditValueEntry {
 #[cfg(not(windows))]
 pub mod linux_types {
     pub use super::{
-        destination_entry, ip_address, sock_addr_audit_entry, sock_addr_audit_key,
-        sock_addr_skip_process_entry, IPPROTO_TCP,
+        destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
     };
 }
 
