@@ -296,7 +296,7 @@ impl AuditValueEntry {
 
                         let value = unsafe {
                             std::ptr::read_unaligned(
-                                entry.buffer.as_ptr() as *const sock_addr_audit_entry,
+                                entry.buffer.as_ptr() as *const sock_addr_audit_entry
                             )
                         };
                         Ok(value.to_audit_entry())
@@ -315,7 +315,7 @@ impl AuditValueEntry {
 
                         let value = unsafe {
                             std::ptr::read_unaligned(
-                                entry.buffer.as_ptr() as *const sock_addr_audit_entry_legacy,
+                                entry.buffer.as_ptr() as *const sock_addr_audit_entry_legacy
                             )
                         };
                         Ok(value.to_audit_entry())
@@ -358,8 +358,15 @@ mod tests {
         let entry = destination_entry::from_ipv4(0x1081_3FA8, 80);
         let array = entry.to_array();
 
-        assert_eq!(array[0], 0x1081_3FA8, "destination ipv4 should be in slot 0");
-        assert_eq!(array[4], u32::from(80u16.to_be()), "port should be network byte order");
+        assert_eq!(
+            array[0], 0x1081_3FA8,
+            "destination ipv4 should be in slot 0"
+        );
+        assert_eq!(
+            array[4],
+            u32::from(80u16.to_be()),
+            "port should be network byte order"
+        );
         assert_eq!(array[5], IPPROTO_TCP, "protocol should be TCP by default");
     }
 
@@ -372,7 +379,11 @@ mod tests {
         assert_eq!(rebuilt.protocol, IPPROTO_TCP, "protocol mismatch");
 
         #[cfg(windows)]
-        assert_eq!(rebuilt.source_port, u32::from(1234u16.to_be()), "source_port mismatch");
+        assert_eq!(
+            rebuilt.source_port,
+            u32::from(1234u16.to_be()),
+            "source_port mismatch"
+        );
 
         #[cfg(not(windows))]
         assert_eq!(rebuilt.source_port, 1234u32, "source_port mismatch");
@@ -383,7 +394,11 @@ mod tests {
         let pid = 4321;
         let key = sock_addr_skip_process_entry::from_pid(pid);
 
-        assert_eq!(key.to_array(), [pid], "pid should roundtrip through the map key layout");
+        assert_eq!(
+            key.to_array(),
+            [pid],
+            "pid should roundtrip through the map key layout"
+        );
     }
 
     #[test]

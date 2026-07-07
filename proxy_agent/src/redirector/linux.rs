@@ -6,6 +6,9 @@ use crate::common::{
     logger,
     result::Result,
 };
+use crate::redirector::shared_ebpf::linux_types::{
+    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
+};
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use aya::programs::{CgroupSockAddr, KProbe};
@@ -14,9 +17,6 @@ use aya::{
     programs::CgroupAttachMode,
 };
 use aya::{Btf, Ebpf, EbpfLoader};
-use crate::redirector::shared_ebpf::linux_types::{
-    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
-};
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use std::convert::TryFrom;
@@ -486,9 +486,7 @@ pub async fn update_hostga_redirect_policy(
 mod tests {
     use crate::common::config;
     use crate::common::constants;
-    use crate::redirector::shared_ebpf::linux_types::{
-        sock_addr_audit_entry, sock_addr_audit_key,
-    };
+    use crate::redirector::shared_ebpf::linux_types::{sock_addr_audit_entry, sock_addr_audit_key};
     use aya::maps::HashMap;
     use proxy_agent_shared::misc_helpers;
     use std::env;

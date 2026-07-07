@@ -59,11 +59,11 @@ Linux and Windows have two source trees with similar logic but separate definiti
 1. The kernel wrapper type **must be named `sock`** (the real kernel type name). A custom name such as `probe_sock` does not exist in the kernel BTF, so the `<byte_off> ... struct probe_sock.__sk_common` relocation fails and the program is rejected at load.
 2. The **destination of the read must be a plain (non-relocatable) type**. If you read into a local `struct sock_common` that also carries `preserve_access_index`, the write offset is relocated to the *kernel's* offset (e.g. `skc_family` at 16) and overflows the local stack copy — the verifier rejects it with `invalid write to stack`.
 
-- For Windows, `ebpf/socket.h` now aliases to the canonical shared header (`shared-ebpf/include/gpa_audit_event.h`) so map and redirect-context layouts align with the shared contract. The user-space decoder accepts both the canonical layout and the legacy layout to preserve compatibility with previously shipped eBPF programs.
+- For Windows, `ebpf/socket.h` now aliases to the canonical shared header (`shared-ebpf/include/gpa_audit_event.h`) so map and redirect-context layouts align with the shared contract. The shared Rust decoder in `proxy_agent/src/redirector/shared_ebpf.rs` accepts both the canonical layout and the legacy layout to preserve compatibility with previously shipped eBPF programs.
 
 ## 4. Shared Headers
 
-The canonical, platform-neutral structs live in `shared-ebpf/include/gpa_audit_event.h` and are consumed by `linux-ebpf/` today (and referenced by `ebpf/` for the Windows bridge). Their layouts are **binary-compatible with the Rust loader** in `proxy_agent/src/redirector/linux/ebpf_obj.rs`, which maps each to a fixed-size `[u32; N]` array — so field order/size cannot change without updating both sides.
+The canonical, platform-neutral structs live in `shared-ebpf/include/gpa_audit_event.h` and are consumed by `linux-ebpf/` today (and referenced by `ebpf/` for the Windows bridge). Their layouts are **binary-compatible with the shared Rust model** in `proxy_agent/src/redirector/shared_ebpf.rs`, which maps each to a fixed-size `[u32; N]` array and exports Linux/Windows-specific aliases from one place — so field order/size cannot change without updating both sides.
 
     // shared-ebpf/include/gpa_audit_event.h
     #pragma once
@@ -91,7 +91,7 @@ The canonical, platform-neutral structs live in `shared-ebpf/include/gpa_audit_e
 
 - The layout is locked at compile time with `_Static_assert(sizeof(...) == N, ...)` for each struct, so an accidental layout drift fails the eBPF build immediately instead of silently corrupting map data.
 - `linux-ebpf/socket.h` provides backward-compatible `typedef`s (`destination_entry`, `sock_addr_audit_key`, `sock_addr_audit_entry`, ...) onto the `gpa_*` structs so existing code reads unchanged.
-- The matching Rust layout is asserted by the `redirector::linux::ebpf_obj` unit tests (`destination_entry_test`, `sock_addr_audit_entry_test`, ...).
+- The matching Rust layout is asserted by the `redirector::shared_ebpf` unit tests (`destination_entry_ipv4_roundtrip_array_shape`, `skip_process_entry_pid_roundtrip`, `audit_entry_canonical_array_roundtrip`, ...).
 
 ## 5. Build System
 
@@ -118,16 +118,16 @@ Windows eBPF objects are compiled by **`build.cmd`** (`redirect.bpf.o` then `red
 
 ## 7. Integration
 
-- `proxy_agent/src/redirector/linux.rs` loads the object with **aya** (`EbpfLoader` + BTF) and attaches the two programs by name: `connect4` (`CgroupSockAddr`) and `tcp_v4_connect` (`KProbe` on `tcp_connect`).
-- `proxy_agent/src/redirector/linux/ebpf_obj.rs` keeps the `[u32; N]` ↔ `gpa_*` binary contract for map keys/values.
-- Windows side uses the shared header and dual-decode compatibility in user-space: `lookup_audit` and redirect-context parsing first attempt canonical `sock_addr_audit_entry_t`, validate decoded fields, then fall back to legacy `sock_addr_audit_entry_legacy_t` when needed.
+- `proxy_agent/src/redirector/linux.rs` loads the object with **aya** (`EbpfLoader` + BTF), attaches the two programs by name (`connect4` via `CgroupSockAddr`, `tcp_v4_connect` via `KProbe` on `tcp_connect`), and imports its map key/value layouts directly from `proxy_agent/src/redirector/shared_ebpf.rs`.
+- `proxy_agent/src/redirector/shared_ebpf.rs` now owns the `[u32; N]` ↔ `gpa_*` binary contract for map keys/values plus the shared audit decode path used by both Linux and Windows.
+- Windows side uses the shared header and shared dual-decode compatibility in user-space: `lookup_audit` and redirect-context parsing decode canonical `sock_addr_audit_entry` values when present and fall back to `sock_addr_audit_entry_legacy` when needed.
 - Removed: hardcoded-offset blob read of `sock_common`; replaced with per-field CO-RE reads.
 
 ## 8. Tests
 
-- `redirector::linux::ebpf_obj` layout unit tests assert the Rust `[u32; N]` mappings match the shared C structs (run on every build).
+- `redirector::shared_ebpf` layout unit tests assert the Rust `[u32; N]` mappings match the shared C structs, including Linux key/value roundtrips and Windows-compatible audit decode paths (run on every build).
 - `redirector::linux::tests::linux_ebpf_test` (feature `test-with-root`, run by `build-linux.sh`) actually **loads and attaches** the CO-RE object on the build host, exercising the kprobe relocation path end-to-end. Bring-up validated it loads cleanly via `bpftool prog loadall` (no unresolved CO-RE relocations, verifier accepts the program).
-- Pending: cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loading the same object; load-time budget \< 100 ms; dedicated Windows compatibility tests that exercise both canonical and legacy audit layouts.
+- Pending: cross-kernel matrix CI (5.4, 5.15, 6.1, 6.8) loading the same object; load-time budget \< 100 ms; broader Windows compatibility tests that exercise both canonical and legacy audit layouts through the live map and redirect-context paths.
 
 ## 9. Risks
 
@@ -142,7 +142,7 @@ Windows eBPF objects are compiled by **`build.cmd`** (`redirect.bpf.o` then `red
 | M   | Deliverable                                  | Exit                                                 |
 |-----|----------------------------------------------|------------------------------------------------------|
 | M1  | Linux CO-RE object via aya + preserve_access_index | ✅ `ebpf_cgroup.o` loads/attaches on supported kernels |
-| M2  | Shared header + Rust layout assertions       | ✅ `ebpf_obj` layout tests green on Linux             |
+| M2  | Shared header + Rust layout assertions       | ✅ `shared_ebpf` layout tests green on Linux and shared decode path in place |
 | M3  | Arch-aware, fail-fast, deterministic build   | ✅ `build.rs` (x86_64 + arm64) owns the compile        |
 | M4  | Windows migration to shared structs          | ✅ Shared structs active + legacy decode fallback; `build.cmd` owns `redirect.bpf` build |
 | M5  | Drop per-kernel builds + cross-kernel CI     | CI matrix \< 1/3 of previous count                   |
