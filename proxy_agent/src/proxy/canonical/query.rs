@@ -6,7 +6,15 @@
 //! - Split on `&`, then on the first `=` (additional `=` characters
 //!   become part of the value).
 //! - Single percent-decode of both key and value.
-//! - Lowercase the key (case-insensitive matching).
+//! - ASCII-lowercase **both** key and value (case-insensitive matching).
+//!   Values are folded too because the constrained query values GPA
+//!   matches on — ARM resource ids (`mi_res_id`, `resource`) — are
+//!   case-insensitive, and the legacy matcher lowercased values as well
+//!   (`key.rs::Privilege::is_match`: `decoded_v.to_lowercase() == value`).
+//!   Preserving value case here would reject valid requests that only
+//!   differ in casing from the rule (shadow-mode divergence KD-2).
+//!   ASCII folding leaves any non-ASCII bytes untouched, so the
+//!   non-ASCII-value allowance below still holds.
 //! - Reject control characters and malformed UTF-8 in both key and value.
 //!   Unlike the path pipeline, well-formed non-ASCII UTF-8 is **allowed**
 //!   here: query *values* legitimately carry it (e.g. an IMDS
@@ -43,7 +51,14 @@ pub fn canonicalize_query(raw: &str) -> Result<BTreeMap<String, Vec<String>>, Ca
             // ghost empty key into the map.
             continue;
         }
-        map.entry(k.to_ascii_lowercase()).or_default().push(v);
+        // ASCII-lowercase the value as well as the key: the rule side runs
+        // through this same function, so folding both sides keeps the
+        // `av == rv` comparison in `rule::CanonicalPattern::matches`
+        // case-insensitive — matching legacy semantics for case-insensitive
+        // ARM ids (KD-2).
+        map.entry(k.to_ascii_lowercase())
+            .or_default()
+            .push(v.to_ascii_lowercase());
     }
     Ok(map)
 }
@@ -122,6 +137,33 @@ mod query_tests {
         let q = canonicalize_query("API-Version=2018").unwrap();
         assert_eq!(q.get("api-version"), Some(&vec!["2018".to_string()]));
         assert!(!q.contains_key("API-Version"));
+    }
+
+    #[test]
+    fn value_ascii_lowercased() {
+        // KD-2 regression: query VALUES are ASCII-lowercased (like keys) so
+        // matching is case-insensitive. ARM resource ids are case-insensitive
+        // and the legacy matcher lowercased values too; preserving case here
+        // produced a `legacy=allow` / `canon=deny` shadow divergence.
+        let q = canonicalize_query(
+            "mi_res_id=/subscriptions/AB/resourceGroups/RG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/My-Id",
+        )
+        .unwrap();
+        assert_eq!(
+            q.get("mi_res_id"),
+            Some(&vec![
+                "/subscriptions/ab/resourcegroups/rg/providers/microsoft.managedidentity/userassignedidentities/my-id"
+                    .to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn value_non_ascii_preserved_under_ascii_fold() {
+        // ASCII folding must leave non-ASCII bytes untouched (the query
+        // pipeline allows Unicode in values). Only the ASCII `R` folds.
+        let q = canonicalize_query("resource=Rés").unwrap();
+        assert_eq!(q.get("resource"), Some(&vec!["rés".to_string()]));
     }
 
     #[test]
