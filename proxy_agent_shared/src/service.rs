@@ -94,30 +94,23 @@ pub fn update_service(
     }
 }
 
-pub fn query_service_executable_path(service_name: &str) -> PathBuf {
+pub fn query_service_executable_path(service_name: &str) -> Result<PathBuf> {
     #[cfg(windows)]
     {
         match windows_service::query_service_config(service_name) {
             Ok(service_config) => {
                 logger_manager::write_info(format!("Service {service_name} successfully queried",));
-                service_config.executable_path.to_path_buf()
+                Ok(service_config.executable_path.to_path_buf())
             }
             Err(e) => {
                 logger_manager::write_info(format!("Service {service_name} query failed: {e}",));
-                eprintln!("Service {service_name} query failed: {e}");
-                PathBuf::new()
+                Err(e)
             }
         }
     }
     #[cfg(not(windows))]
     {
-        match linux_service::query_service_executable_path(service_name) {
-            Ok(path) => path,
-            Err(e) => {
-                eprintln!("Service {service_name} query failed: {e}");
-                PathBuf::new()
-            }
-        }
+        linux_service::query_service_executable_path(service_name)
     }
 }
 
