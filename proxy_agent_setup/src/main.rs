@@ -274,7 +274,23 @@ async fn setup_service(proxy_agent_target_folder: PathBuf, _service_config_folde
             logger::write(format!("Service {SERVICE_NAME} start successfully"));
         }
         Err(e) => {
-            logger::write_error(format!("Service {SERVICE_NAME} start failed, error: {e:?}"));
+            #[cfg(windows)]
+            {
+                let core_status = service::check_service_status("EbpfCore");
+                let ext_status = service::check_service_status("NetEbpfExt");
+                match failing_ebpf_deps_message(&core_status, &ext_status) {
+                    Some(deps) => logger::write_error(format!(
+                        "Service {SERVICE_NAME} start failed, error: {e:?}. {deps}"
+                    )),
+                    None => logger::write_error(format!(
+                        "Service {SERVICE_NAME} start failed, error: {e:?}"
+                    )),
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                logger::write_error(format!("Service {SERVICE_NAME} start failed, error: {e:?}"));
+            }
             process::exit(1);
         }
     }
@@ -338,4 +354,90 @@ fn delete_folder(folder_to_be_delete: PathBuf) {
 fn delete_backup_folder() {
     let backup_folder = backup::proxy_agent_backup_folder();
     delete_folder(backup_folder);
+}
+
+/// Returns a message describing any EbpfCore/NetEbpfExt services that are not Running,
+/// or `None` when both are healthy. Extracted as a pure function for testability.
+#[cfg(windows)]
+fn failing_ebpf_deps_message(
+    core: &service::ServiceStatusInfo,
+    ext: &service::ServiceStatusInfo,
+) -> Option<String> {
+    let failing: Vec<String> = [core, ext]
+        .iter()
+        .filter(|s| {
+            s.state
+                .as_ref()
+                .is_none_or(|st| *st != service::ServiceState::Running)
+        })
+        .map(|s| s.message())
+        .collect();
+
+    if failing.is_empty() {
+        None
+    } else {
+        Some(format!("Failing eBPF dependencies: {}", failing.join("; ")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(windows)]
+    mod windows {
+        use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
+
+        fn make_status(name: &str, state: Option<ServiceState>) -> ServiceStatusInfo {
+            ServiceStatusInfo {
+                service_name: name.to_string(),
+                state,
+                start_type: "AutoStart".to_string(),
+            }
+        }
+
+        #[test]
+        fn both_running_returns_none() {
+            let core = make_status("EbpfCore", Some(ServiceState::Running));
+            let ext = make_status("NetEbpfExt", Some(ServiceState::Running));
+            assert!(super::super::failing_ebpf_deps_message(&core, &ext).is_none());
+        }
+
+        #[test]
+        fn both_not_installed_returns_both_names() {
+            let core = make_status("EbpfCore", None);
+            let ext = make_status("NetEbpfExt", None);
+            let msg = super::super::failing_ebpf_deps_message(&core, &ext).unwrap();
+            assert!(msg.contains("EbpfCore"), "expected EbpfCore in: {msg}");
+            assert!(msg.contains("NetEbpfExt"), "expected NetEbpfExt in: {msg}");
+        }
+
+        #[test]
+        fn core_not_installed_ext_running_returns_core_only() {
+            let core = make_status("EbpfCore", None);
+            let ext = make_status("NetEbpfExt", Some(ServiceState::Running));
+            let msg = super::super::failing_ebpf_deps_message(&core, &ext).unwrap();
+            assert!(msg.contains("EbpfCore"), "expected EbpfCore in: {msg}");
+            assert!(
+                !msg.contains("NetEbpfExt"),
+                "unexpected NetEbpfExt in: {msg}"
+            );
+        }
+
+        #[test]
+        fn core_running_ext_stopped_returns_ext_only() {
+            let core = make_status("EbpfCore", Some(ServiceState::Running));
+            let ext = make_status("NetEbpfExt", Some(ServiceState::Stopped));
+            let msg = super::super::failing_ebpf_deps_message(&core, &ext).unwrap();
+            assert!(!msg.contains("EbpfCore"), "unexpected EbpfCore in: {msg}");
+            assert!(msg.contains("NetEbpfExt"), "expected NetEbpfExt in: {msg}");
+        }
+
+        #[test]
+        fn both_stopped_returns_both_names() {
+            let core = make_status("EbpfCore", Some(ServiceState::Stopped));
+            let ext = make_status("NetEbpfExt", Some(ServiceState::Stopped));
+            let msg = super::super::failing_ebpf_deps_message(&core, &ext).unwrap();
+            assert!(msg.contains("EbpfCore"), "expected EbpfCore in: {msg}");
+            assert!(msg.contains("NetEbpfExt"), "expected NetEbpfExt in: {msg}");
+        }
+    }
 }
