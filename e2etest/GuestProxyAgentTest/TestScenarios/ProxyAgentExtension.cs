@@ -9,9 +9,6 @@ namespace GuestProxyAgentTest.TestScenarios
     {
         public override void TestScenarioSetup()
         {
-            string zipFile = Settings.TestSetting.Instance.zipFilePath;
-            string withoutExt = Path.GetFileNameWithoutExtension(zipFile);
-            string extractPath = Path.Combine(Path.GetDirectoryName(zipFile), withoutExt);
             // Passing in 0 version number for the first validation case
             string proxyAgentVersionBeforeUpdate = "0";
             string proxyAgentVersion = Settings.TestSetting.Instance.proxyAgentVersion;
