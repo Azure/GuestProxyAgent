@@ -129,6 +129,9 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
         ))));
     }
 
+    // The value size returned by WSAIoctl is the actual size of the data returned in the buffer.
+    audit_value_entry.set_value_size(redirect_context_returned)?;
+
     audit_value_entry.to_audit_entry()
 }
 

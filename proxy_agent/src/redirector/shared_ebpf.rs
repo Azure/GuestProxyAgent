@@ -257,6 +257,31 @@ impl AuditValueEntry {
         }
     }
 
+    pub fn set_value_size(&mut self, value_size: u32) -> Result<()> {
+        match self {
+            AuditValueEntry::Unknown(entry) => {
+                // check the value size is valid for the current entry types
+                if value_size != Self::VALUE_SIZE_NEW && value_size != Self::VALUE_SIZE_LEGACY {
+                    return Err(Error::Bpf(BpfErrorType::MapLookupElem(
+                        "set_value_size".to_string(),
+                        format!(
+                            "Invalid audit value size: {}, expected: {} or {}",
+                            value_size,
+                            Self::VALUE_SIZE_NEW,
+                            Self::VALUE_SIZE_LEGACY,
+                        ),
+                    )));
+                }
+
+                entry.read_size = value_size;
+            }
+            _ => {
+                // No-op, value size is fixed for other known types.
+            }
+        }
+        Ok(())
+    }
+
     pub fn value_size(&self) -> u32 {
         match self {
             AuditValueEntry::New(_) => Self::VALUE_SIZE_NEW,
