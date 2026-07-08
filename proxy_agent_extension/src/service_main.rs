@@ -102,9 +102,7 @@ fn resolve_proxy_agent_file_version_in_extension(
                 e
             );
             logger::write(error_message.clone());
-            status.formattedMessage.message = error_message;
-            status.code = constants::STATUS_CODE_NOT_OK;
-            status.status = status_state_obj.update_state(false);
+            set_error(status, status_state_obj, error_message);
             None
         }
     }
@@ -587,8 +585,7 @@ async fn report_proxy_agent_aggregate_status(
                 &logger::get_logger_key(),
                 service_state,
             );
-            status.status = status_state_obj.update_state(false);
-            status.configurationAppliedTime = misc_helpers::get_date_time_string();
+            set_error(status, status_state_obj, error_message.clone());
             status.substatus = {
                 vec![
                     SubStatus {
@@ -624,6 +621,35 @@ async fn report_proxy_agent_aggregate_status(
     }
 }
 
+/// Updates `status` to reflect a failure, atomically setting `status.status`,
+/// `status.code`, `status.formattedMessage.message`, and `status.configurationAppliedTime`.
+///
+/// **Intentional behavior**: `code` is kept at `STATUS_CODE_OK` (0) while the state machine
+/// is still `"Transitioning"` (fewer than 20 consecutive failures). It is only set to
+/// `STATUS_CODE_NOT_OK` once `status` reaches `"Error"`. This couples `code` and `status`
+/// so that CRP/VMSS operators do not see a hard-failure signal for what may be a transient
+/// blip. Previously `code` was set to `STATUS_CODE_NOT_OK` immediately at some call sites
+/// and left at 0 at others — this helper makes the behavior uniform and intentional.
+fn set_error(status: &mut StatusObj, state: &mut common::StatusState, message: String) {
+    status.status = state.update_state(false);
+    status.code = if status.status == *constants::ERROR_STATUS {
+        constants::STATUS_CODE_NOT_OK
+    } else {
+        constants::STATUS_CODE_OK
+    };
+    status.formattedMessage.message = message;
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+}
+
+/// Updates `status` to reflect a success, atomically setting `status.status`,
+/// `status.code`, `status.formattedMessage.message`, and `status.configurationAppliedTime`.
+fn set_success(status: &mut StatusObj, state: &mut common::StatusState, message: String) {
+    status.status = state.update_state(true);
+    status.code = constants::STATUS_CODE_OK;
+    status.formattedMessage.message = message;
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+}
+
 fn report_error_status(
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
@@ -634,7 +660,7 @@ fn report_error_status(
     use proxy_agent_shared::logger::LoggerLevel;
     use proxy_agent_shared::telemetry::event_logger;
 
-    status.status = status_state_obj.update_state(false);
+    set_error(status, status_state_obj, error_message.clone());
     if service_state.update_service_state_entry(error_key, constants::ERROR_STATUS, MAX_STATE_COUNT)
     {
         event_logger::write_event(
@@ -645,7 +671,6 @@ fn report_error_status(
             &logger::get_logger_key(),
         );
     }
-    status.configurationAppliedTime = misc_helpers::get_date_time_string();
     status.substatus = {
         vec![
             SubStatus {
@@ -831,8 +856,11 @@ fn extension_substatus(
             },
         ]
     };
-    status.status = status_state_obj.update_state(true);
-    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    set_success(
+        status,
+        status_state_obj,
+        "ProxyAgent extension is reporting successful status.".to_string(),
+    );
     write_state_event(
         constants::STATE_KEY_FILE_VERSION,
         constants::SUCCESS_STATUS,
@@ -965,10 +993,7 @@ fn report_proxy_agent_service_status(
                 String::from_utf8_lossy(&output.stderr)
             ));
             if output.status.success() {
-                status.configurationAppliedTime = misc_helpers::get_date_time_string();
-                status.code = constants::STATUS_CODE_OK;
-                status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message = message;
+                set_success(status, status_state_obj, message);
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             } else {
@@ -983,13 +1008,12 @@ fn report_proxy_agent_service_status(
                     "service_main",
                     &logger::get_logger_key(),
                 );
-                status.configurationAppliedTime = misc_helpers::get_date_time_string();
+                set_error(status, status_state_obj, err_message.clone());
+                // Override code with the actual process exit code
                 status.code = output
                     .status
                     .code()
                     .unwrap_or(constants::STATUS_CODE_NOT_OK);
-                status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message = err_message.clone();
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             }
@@ -1006,10 +1030,7 @@ fn report_proxy_agent_service_status(
                 &logger::get_logger_key(),
             );
             // report proxyagent service update failed state
-            status.configurationAppliedTime = misc_helpers::get_date_time_string();
-            status.code = constants::STATUS_CODE_NOT_OK;
-            status.status = status_state_obj.update_state(false);
-            status.formattedMessage.message = err_message.clone();
+            set_error(status, status_state_obj, err_message.clone());
             status.substatus = Default::default();
             common::report_status(status_folder, seq_no, status);
         }
@@ -1584,7 +1605,10 @@ mod tests {
         );
 
         assert_eq!(result, None);
-        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+        // After set_error with a single failure, StatusState is Transitioning,
+        // so code stays STATUS_CODE_OK (0). It flips to STATUS_CODE_NOT_OK only
+        // once the state machine reaches ERROR_STATUS (after 20 consecutive failures).
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
         assert!(status
             .formattedMessage
             .message
@@ -1720,5 +1744,144 @@ mod tests {
         // restore_purge_proxy_agent should return false when status is TRANSITIONING
         let result = super::restore_purge_proxy_agent(&mut status);
         assert!(!result);
+    }
+
+    // --- Tests for set_error / set_success helpers ---
+
+    #[test]
+    fn test_set_error_updates_message_while_transitioning() {
+        // A single failure: StatusState starts at Transitioning and stays there.
+        // The key fix: formattedMessage.message must be updated (no longer stale).
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+
+        super::set_error(
+            &mut status,
+            &mut state,
+            "aggregate status file unreadable".to_string(),
+        );
+
+        assert_eq!(status.status, constants::TRANSITIONING_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "aggregate status file unreadable"
+        );
+        // code stays 0 (OK) while still Transitioning
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+    }
+
+    #[test]
+    fn test_set_error_sets_code_not_ok_when_reaches_error_state() {
+        // After 20 consecutive failures the state machine transitions to Error.
+        // code must flip to STATUS_CODE_NOT_OK at that point.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        let error_msg = "aggregate status file unreadable".to_string();
+
+        for _ in 0..20 {
+            super::set_error(&mut status, &mut state, error_msg.clone());
+        }
+
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert_eq!(status.formattedMessage.message, error_msg);
+        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+    }
+
+    #[test]
+    fn test_set_success_resets_message_and_code() {
+        // After a failure (Transitioning), a success call must reset the message.
+        let mut status = make_test_status_obj(
+            constants::TRANSITIONING_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        // Drive one failure first so the state is in Transitioning
+        super::set_error(&mut status, &mut state, "some error".to_string());
+
+        super::set_success(
+            &mut status,
+            &mut state,
+            "ProxyAgent extension is reporting successful status.".to_string(),
+        );
+
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+    }
+
+    #[test]
+    fn test_report_error_status_updates_formatted_message() {
+        // Regression test for the original bug:
+        // report_error_status must update formattedMessage.message with the real error.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        let mut service_state = super::service_state::ServiceState::default();
+        let error_message = "aggregate status file unreadable".to_string();
+
+        super::report_error_status(
+            &mut status,
+            &mut state,
+            &mut service_state,
+            constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
+            error_message.clone(),
+        );
+
+        assert_eq!(status.formattedMessage.message, error_message);
+        assert_ne!(
+            status.formattedMessage.message, "Started ProxyAgent Extension Monitoring thread.",
+            "formattedMessage must not be the stale startup string"
+        );
+    }
+
+    #[test]
+    fn test_stale_status_updates_formatted_message() {
+        // After the fix, extension_substatus on a stale timestamp must update
+        // the top-level formattedMessage.message, not leave it as the startup string.
+        let stale_timestamp = "2024-01-01T00:00:00Z".to_string();
+        let toplevel_status = make_test_aggregate_status(stale_timestamp, "1.0.0");
+
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut status_state_obj = super::common::StatusState::new();
+        let proxy_agent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let mut service_state = super::service_state::ServiceState::default();
+
+        super::extension_substatus(
+            toplevel_status,
+            proxy_agent_file_version_in_extension,
+            &mut status,
+            &mut status_state_obj,
+            &mut service_state,
+        );
+
+        assert_ne!(status.status, constants::SUCCESS_STATUS);
+        assert!(
+            status.formattedMessage.message.contains("stale"),
+            "formattedMessage.message should describe the stale status, got: {}",
+            status.formattedMessage.message
+        );
+        assert_ne!(
+            status.formattedMessage.message, "Started ProxyAgent Extension Monitoring thread.",
+            "formattedMessage must not be the stale startup string"
+        );
     }
 }
