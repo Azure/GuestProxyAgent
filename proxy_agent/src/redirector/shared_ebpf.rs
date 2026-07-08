@@ -483,8 +483,9 @@ mod tests {
     /// Copies the raw bytes of an audit value into an Unknown entry's buffer.
     fn fill_unknown_buffer<T>(entry: &mut AuditValueEntry, value: &T, size: u32) {
         if let AuditValueEntry::Unknown(unknown) = entry {
-            let bytes =
-                unsafe { std::slice::from_raw_parts(value as *const T as *const u8, size as usize) };
+            let bytes = unsafe {
+                std::slice::from_raw_parts(value as *const T as *const u8, size as usize)
+            };
             unknown.buffer[..bytes.len()].copy_from_slice(bytes);
         } else {
             panic!("expected Unknown variant");
@@ -501,7 +502,10 @@ mod tests {
         // Legacy size -> Legacy.
         let legacy_entry = AuditValueEntry::empty(AuditValueEntry::VALUE_SIZE_LEGACY);
         assert!(matches!(legacy_entry, AuditValueEntry::Legacy(_)));
-        assert_eq!(legacy_entry.value_size(), AuditValueEntry::VALUE_SIZE_LEGACY);
+        assert_eq!(
+            legacy_entry.value_size(),
+            AuditValueEntry::VALUE_SIZE_LEGACY
+        );
 
         // Any other size -> Unknown, buffer allocated to the max value size.
         let odd_size = AuditValueEntry::VALUE_SIZE_NEW + 1;
@@ -584,7 +588,9 @@ mod tests {
             destination_ipv4: 0x0102_0304,
             destination_port: 8080,
         });
-        let audit = legacy_entry.to_audit_entry().expect("Legacy should convert");
+        let audit = legacy_entry
+            .to_audit_entry()
+            .expect("Legacy should convert");
         assert_eq!(audit.logon_id, 99);
         assert_eq!(audit.process_id, 100);
         assert_eq!(audit.is_admin, 1);
@@ -600,7 +606,11 @@ mod tests {
             destination_port: u32::from(53u16.to_be()),
         };
         let mut unknown_new = AuditValueEntry::empty(AuditValueEntry::VALUE_SIZE_NEW + 1);
-        fill_unknown_buffer(&mut unknown_new, &canonical, AuditValueEntry::VALUE_SIZE_NEW);
+        fill_unknown_buffer(
+            &mut unknown_new,
+            &canonical,
+            AuditValueEntry::VALUE_SIZE_NEW,
+        );
         unknown_new
             .set_value_size(AuditValueEntry::VALUE_SIZE_NEW)
             .expect("value size should be valid");
