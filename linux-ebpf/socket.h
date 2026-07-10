@@ -1,45 +1,31 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
+//
+// Linux-specific eBPF helpers and definitions
+// Includes shared audit event structures from gpa_audit_event.h
+
+#pragma once
+
+#include "../shared-ebpf/include/gpa_audit_event.h"
+#include "../shared-ebpf/include/gpa_libbpf_helpers.h"
+
+// Linux-specific verdicts
 #define BPF_SOCK_ADDR_VERDICT_PROCEED 1
+
+// Standard protocol constants
 #define IPPROTO_TCP 6
-#define AF_INET 2 
+#define IPPROTO_UDP 17
+#define AF_INET 2
+#define AF_INET6 10
 
-typedef struct _sock_addr_skip_process_entry
-{
-    __u32 pid;
-} sock_addr_skip_process_entry;
+// Type aliases for backward compatibility with existing code
+typedef struct gpa_skip_process_entry sock_addr_skip_process_entry;
+typedef struct gpa_destination_entry destination_entry;
+typedef struct gpa_audit_key sock_addr_audit_key;
+typedef struct gpa_audit_event sock_addr_audit_entry;
+typedef struct gpa_sock_addr_local_entry sock_addr_local_entry;
 
-typedef struct _ip_address
-{
-    union
-    {
-        __u32 ipv4;
-        __u32 ipv6[4];
-    };
-} ip_address;
-
-typedef struct _destination_entry
-{
-    ip_address destination_ip;
-    __u32 destination_port;
-    __u32 protocol;
-} destination_entry;
-
-typedef struct _sock_addr_audit_key
-{
-    __u32 protocol;
-    __u32 source_port;
-} sock_addr_audit_key;
-
-typedef struct _sock_addr_audit_entry
-{
-    __u32 logon_id;
-    __u32 process_id;
-    __u32 is_root;
-    __u32 destination_ipv4;
-    __u32 destination_port;
-} sock_addr_audit_entry;
-
+// IPv4 socket tuple (used for connection tracking)
 typedef struct _bpf_sock_tuple_ipv4
 {
     __be32 saddr;
@@ -48,66 +34,46 @@ typedef struct _bpf_sock_tuple_ipv4
     __be16 dport;
 } bpf_sock_tuple_ipv4;
 
-typedef struct _sock_addr_local_entry
-{
-    __u32 logon_id;
-    __u32 process_id;
-    __u32 is_root;
-    __u32 destination_ipv4;
-    __u32 destination_port;
-    __u32 protocol;
-} sock_addr_local_entry;
+// ============================================================================
+// CO-RE kernel struct definitions
+// ============================================================================
+// These minimal kernel struct definitions are marked with
+// __attribute__((preserve_access_index)) which is the CORE of CO-RE:
+// instead of hardcoding field offsets at compile time, the BPF loader
+// (libbpf/aya) relocates each field access to the TARGET kernel's actual
+// offset at load time, using the kernel's BTF (/sys/kernel/btf/vmlinux).
+//
+// This is what makes "Compile Once, Run Everywhere" work: the same .bpf.o
+// adapts to different kernel versions automatically.
 
-typedef __u32 __bitwise __portpair;
-typedef __u64 __bitwise __addrpair;
+#pragma clang attribute push(__attribute__((preserve_access_index)), apply_to = record)
 
-struct hlist_node
-{
-    struct hlist_node *next, **pprev;
-};
-
-struct sock_common
-{
-    union
-    {
-        __addrpair skc_addrpair;
-        struct
-        {
+// Minimal sock_common - only the fields we actually read.
+// Field offsets are relocated by CO-RE; we only need the names to match
+// the kernel's struct sock_common (verified against vmlinux BTF).
+struct sock_common {
+    union {
+        struct {
             __be32 skc_daddr;
             __be32 skc_rcv_saddr;
         };
     };
-    union
-    {
-        unsigned int skc_hash;
-        __u16 skc_u16hashes[2];
-    };
-    /* skc_dport && skc_num must be grouped as well */
-    union
-    {
-        __portpair skc_portpair;
-        struct
-        {
+    union {
+        struct {
             __be16 skc_dport;
             __u16 skc_num;
         };
     };
-
-    unsigned short skc_family;
-    volatile unsigned char skc_state;
-    unsigned char skc_reuse : 4;
-    unsigned char skc_reuseport : 1;
-    unsigned char skc_ipv6only : 1;
-    unsigned char skc_net_refcnt : 1;
-    int skc_bound_dev_if;
-    union
-    {
-        struct hlist_node skc_bind_node;
-        struct hlist_node skc_portaddr_node;
-    };
+    short unsigned int skc_family;
 };
 
-struct probe_sock
-{
+// Minimal sock wrapper - we only access __sk_common.
+// IMPORTANT: this must be named exactly "sock" (the kernel's type name) so the
+// CO-RE relocation against &sk->__sk_common resolves to struct sock in the
+// target kernel's BTF. A custom name (e.g. probe_sock) does not exist in
+// kernel BTF and makes the program fail to load.
+struct sock {
     struct sock_common __sk_common;
 };
+
+#pragma clang attribute pop

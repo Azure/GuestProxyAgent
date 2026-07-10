@@ -4,6 +4,11 @@
 
 use std::ffi::c_char;
 
+pub use crate::redirector::shared_ebpf::windows_types::{
+    destination_entry_t, sock_addr_audit_key_t, sock_addr_skip_process_entry,
+};
+pub(crate) use crate::redirector::shared_ebpf::AuditValueEntry;
+
 pub type ebpf_id_t = u32;
 pub type fd_t = i32;
 pub type ebpf_handle_t = i64;
@@ -221,76 +226,6 @@ pub struct bpf_object {
     execution_type: ebpf_execution_type_t,
 }
 
-#[repr(C)]
-pub struct _sock_addr_audit_key {
-    pub protocol: u32,
-    pub source_port: [u16; 2],
+pub fn bpf_map_value_size(map: *const bpf_map) -> u32 {
+    unsafe { (*map).map_definition.value_size }
 }
-pub type sock_addr_audit_key_t = _sock_addr_audit_key;
-impl sock_addr_audit_key_t {
-    pub fn from_source_port(port: u16) -> Self {
-        sock_addr_audit_key_t {
-            protocol: IPPROTO_TCP,
-            source_port: [port.to_be(), 0],
-        }
-    }
-}
-
-#[repr(C)]
-pub struct _ip_address {
-    //pub ipv4: u32,
-    pub ip: [u32; 4], // ipv4 uses the first element; ipv6 uses all 4 elements
-}
-impl _ip_address {
-    fn empty() -> Self {
-        _ip_address { ip: [0, 0, 0, 0] }
-    }
-
-    pub fn from_ipv4(ipv4: u32) -> Self {
-        let mut ip = Self::empty();
-        ip.ip[0] = ipv4;
-        ip
-    }
-
-    #[allow(dead_code)]
-    pub fn from_ipv6(ipv6: [u32; 4]) -> Self {
-        let mut ip = Self::empty();
-        ip.ip.copy_from_slice(&ipv6);
-        ip
-    }
-}
-pub type ip_address_t = _ip_address;
-
-#[repr(C)]
-pub struct _destination_entry {
-    pub destination_ip: ip_address_t,
-    pub destination_port: [u16; 2], // first element is the port number, second element is empty
-    pub protocol: u32,
-}
-impl _destination_entry {
-    pub fn empty() -> Self {
-        _destination_entry {
-            destination_ip: ip_address_t::empty(),
-            destination_port: [0, 0],
-            protocol: IPPROTO_TCP,
-        }
-    }
-
-    pub fn from_ipv4(ipv4: u32, port: u16) -> Self {
-        let mut entry = Self::empty();
-        entry.destination_ip = ip_address_t::from_ipv4(ipv4);
-        entry.destination_port[0] = port.to_be();
-        entry
-    }
-}
-
-pub type destination_entry_t = _destination_entry;
-pub const IPPROTO_TCP: u32 = 6;
-#[allow(dead_code)]
-pub const IPPROTO_UDP: u32 = 17;
-
-#[repr(C)]
-pub struct _sock_addr_skip_process_entry {
-    pub pid: u32,
-}
-pub type sock_addr_skip_process_entry = _sock_addr_skip_process_entry;
