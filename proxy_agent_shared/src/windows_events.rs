@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
-//! This module provides functionality for ETW (Event Tracing for Windows) logging.
 
-pub mod etw_writer;
+//! Windows eventing support: real-time ETW tracing plus the Windows Event Log
+//! (`Evt*`) reader, writer, and subscriber.
 
-/// This module provides functionality to read ETW events.
-/// Test quality only so far.
-#[cfg(test)]
-mod etw_reader;
+pub mod evt_listener;
+pub mod evt_query;
+pub mod evt_writer;
+pub mod models;
 
 use std::ffi::OsStr;
 use std::iter::once;

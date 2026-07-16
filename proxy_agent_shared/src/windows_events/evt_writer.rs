@@ -62,6 +62,10 @@ impl WindowsEventWriter {
     }
 
     pub fn write(&self, log_level: LoggerLevel, message: String) {
+        self.write_with_event_id(log_level, 0, message);
+    }
+
+    pub fn write_with_event_id(&self, log_level: LoggerLevel, event_id: u32, message: String) {
         let wide_message = super::to_wide(&message);
         let wide_message_ptrs: [PWSTR; 1] = [wide_message.as_ptr() as PWSTR];
 
@@ -70,7 +74,7 @@ impl WindowsEventWriter {
                 self.event_source,
                 to_event_level(log_level),
                 0,
-                0,
+                event_id,
                 std::ptr::null_mut(),
                 1,
                 0,
@@ -92,9 +96,12 @@ impl Drop for WindowsEventWriter {
 #[cfg(test)]
 mod tests {
     use super::WindowsEventWriter;
-    use crate::etw::etw_reader::WindowsEventReader;
     use crate::logger::LoggerLevel;
+    use crate::windows_events::evt_listener::{EvtListener, SourceFilter};
+    use crate::windows_events::evt_query::WindowsEventReader;
     use chrono::DateTime;
+    use std::sync::Arc;
+    use std::sync::Mutex;
 
     /// This test verifies that the WindowsEventWriter can write to the Windows Event Log
     /// and that the written log can be queried successfully.
@@ -116,9 +123,39 @@ mod tests {
 
         let event_log_name = "Application";
         let source_name = "Azure_GuestProxyAgent_TestApplication";
+        let event_id = 1001;
         let message = "This is a test log message";
         let event_writer = WindowsEventWriter::new(event_log_name, source_name).unwrap();
-        event_writer.write(LoggerLevel::Info, message.to_string());
+
+        let read_message: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let read_value = read_message.clone();
+        // start evt_listener
+        EvtListener::subscribe_by_sources_with_handler(
+            &event_log_name.to_string(),
+            &[SourceFilter {
+                name: source_name.to_string(),
+                event_ids: vec![event_id],
+            }],
+            false,
+            move |event| {
+                let read_message = read_message.clone();
+                let message = event.get_message();
+                let mut read_message = read_message.lock().unwrap();
+                *read_message = Some(message);
+            },
+        )
+        .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1)); // wait for the listener to start
+                                                               // write the event log
+        event_writer.write_with_event_id(LoggerLevel::Info, event_id, message.to_string());
+        std::thread::sleep(std::time::Duration::from_secs(1)); // wait for the event log to be written and the listener to receive it
+        println!("EvtListener received message is {:?}", read_value.lock().unwrap());
+        assert_eq!(
+            read_value.lock().unwrap().as_ref().unwrap(),
+            message,
+            "Event log data from listener does not match the expected message"
+        );
 
         println!("Verifying event log for source: {}", source_name);
         let data = query_windows_event(event_log_name, source_name, None, None);
@@ -190,7 +227,7 @@ mod tests {
                     .data
                     .unwrap()
                     .iter()
-                    .map(|d| d.to_string())
+                    .map(|d| d.value.clone().unwrap_or_default())
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| vec!["No data found".to_string()]);
