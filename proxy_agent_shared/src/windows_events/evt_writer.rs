@@ -150,7 +150,10 @@ mod tests {
                                                                // write the event log
         event_writer.write_with_event_id(LoggerLevel::Info, event_id, message.to_string());
         std::thread::sleep(std::time::Duration::from_secs(1)); // wait for the event log to be written and the listener to receive it
-        println!("EvtListener received message is {:?}", read_value.lock().unwrap());
+        println!(
+            "EvtListener received message is {:?}",
+            read_value.lock().unwrap()
+        );
         assert_eq!(
             read_value.lock().unwrap().as_ref().unwrap(),
             message,

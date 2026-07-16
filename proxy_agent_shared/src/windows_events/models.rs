@@ -59,7 +59,7 @@ impl WindowsEvent {
             }
         }
 
-        // Second use properites,
+        // Second use properties,
         // third use user_data
         // last return empty string
         self.message_from_properties()
