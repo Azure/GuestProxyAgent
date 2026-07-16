@@ -275,10 +275,7 @@ pub async fn raw_upstream_request(
         .map_err(|e| io::Error::new(e.kind(), format!("connect {addr}: {e}")))?;
 
     // ── Format and send the request ────────────────────────────────────────────
-    let path_and_query = uri
-        .path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or("/");
+    let path_and_query = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
     let mut req = format!("{method} {path_and_query} HTTP/1.1\r\n");
 
@@ -336,13 +333,13 @@ pub async fn raw_upstream_request(
     }
 
     // ── Parse status line ──────────────────────────────────────────────────────
-    let hdr_text = std::str::from_utf8(&hdr_buf)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let hdr_text =
+        std::str::from_utf8(&hdr_buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     let mut lines = hdr_text.lines();
-    let status_line = lines.next().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "empty HTTP response")
-    })?;
+    let status_line = lines
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty HTTP response"))?;
 
     // Expected: "HTTP/1.1 200 OK"
     let status_code: u16 = status_line
@@ -506,5 +503,3 @@ async fn buffered_response(
     *response.headers_mut() = headers;
     Ok(response)
 }
-
-

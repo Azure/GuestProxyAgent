@@ -1197,9 +1197,7 @@ impl ProxyServer {
                             LoggerLevel::Trace,
                             format!(
                                 "Zero-copy path served response for {} {} → {}",
-                                http_connection_context.method,
-                                http_connection_context.url,
-                                status
+                                http_connection_context.method, http_connection_context.url, status
                             ),
                         );
                         self.log_connection_summary(
