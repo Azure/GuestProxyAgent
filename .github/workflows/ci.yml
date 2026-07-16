@@ -18,6 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install eBPF build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev libbpfcc-dev clang llvm
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
         with:

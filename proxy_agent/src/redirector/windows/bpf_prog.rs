@@ -256,24 +256,21 @@ impl BpfObject {
 
         source_port - source local port.
 
-        entry - element from audit_map.
-
     Return Value:
 
-        0 on success. On failure appropriate RESULT is returned.
+        audit entry from audit_map on success. On failure appropriate RESULT is returned.
      */
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let map_name = "audit_map";
-        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let (map_fd, value_size) = self.get_bpf_map_fd_and_value_size(map_name)?;
 
         // query by source port.
         let key = sock_addr_audit_key_t::from_source_port(source_port);
-        let value = AuditEntry::empty();
-
+        let mut audit_value_entry = AuditValueEntry::empty(value_size);
         let result = bpf_map_lookup_elem(
             map_fd,
             &key as *const sock_addr_audit_key_t as *const c_void,
-            &value as *const AuditEntry as *mut c_void,
+            audit_value_entry.value_pointer_mut(),
         )
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
@@ -289,7 +286,7 @@ impl BpfObject {
             )));
         }
 
-        Ok(value)
+        audit_value_entry.to_audit_entry()
     }
 
     /**
@@ -396,6 +393,11 @@ impl BpfObject {
     }
 
     fn get_bpf_map_fd(&self, map_name: &str) -> Result<i32> {
+        let (map_fd, _) = self.get_bpf_map_fd_and_value_size(map_name)?;
+        Ok(map_fd)
+    }
+
+    fn get_bpf_map_fd_and_value_size(&self, map_name: &str) -> Result<(i32, u32)> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
@@ -410,6 +412,8 @@ impl BpfObject {
             )));
         }
 
-        bpf_map__fd(bpf_map).map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))
+        let map_fd = bpf_map__fd(bpf_map)
+            .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
+        Ok((map_fd, bpf_map_value_size(bpf_map)))
     }
 }

@@ -155,6 +155,7 @@ if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent failed with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
+
 if "%Target%"=="arm64" (
     echo ======= skip running proxy_agent arm64 tests on amd64 machine
 ) else (
