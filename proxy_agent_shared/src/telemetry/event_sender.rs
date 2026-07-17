@@ -164,6 +164,9 @@ impl EventSender {
                     logger_manager::write_warn(format!(
                         "Failed to send telemetry data to host with error: {e}"
                     ));
+                    // Dev debug log the telemetry data to help with troubleshooting
+                    logger_manager::write_log(LoggerLevel::Trace, telemetry_data.to_xml());
+
                     // wait 15 seconds and retry
                     tokio::time::sleep(Duration::from_secs(15)).await;
                 }

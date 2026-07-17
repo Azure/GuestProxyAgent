@@ -4,6 +4,7 @@
 //! Windows eventing support: real-time ETW tracing plus the Windows Event Log
 //! (`Evt*`) reader, writer, and subscriber.
 
+pub mod etw_listener;
 pub mod evt_listener;
 pub mod evt_query;
 pub mod evt_writer;
