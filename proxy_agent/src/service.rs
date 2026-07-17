@@ -109,9 +109,7 @@ fn start_etw_listener() {
     // We choose 3 (Warning) as the maximum level to reduce the amount of events captured and avoid overwhelming the system with too many events.
     const MAX_LEVEL: u8 = 3;
 
-    use proxy_agent_shared::windows_events::{
-        etw_listener::EtwListener, evt_listener::EvtListener, evt_listener::SourceFilter,
-    };
+    use proxy_agent_shared::windows_events::etw_listener::EtwListener;
 
     let mut etw_listener = EtwListener::new(WINDOWS_ETW_TRACE_SESSION_NAME);
     // start with the default providers, which includes the kernel provider and the Microsoft-Windows-Kernel-Network provider
