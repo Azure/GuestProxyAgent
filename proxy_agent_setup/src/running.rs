@@ -44,7 +44,7 @@ pub fn proxy_agent_version_target_folder(proxy_agent_exe: &Path) -> PathBuf {
             panic!("Failed to get proxy agent version with error: {e}");
         }
     };
-    logger::write(format!("Proxy agent version: {}", &proxy_agent_version));
+    logger::write(format!("Proxy agent version: {proxy_agent_version}",));
     #[cfg(windows)]
     {
         let path = proxy_agent_parent_folder();
