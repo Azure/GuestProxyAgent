@@ -130,7 +130,7 @@ impl ProxyServer {
 
     pub async fn start(&self) {
         let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, self.port);
-        logger::write_information(format!("Start proxy listener at '{}'.", &addr));
+        logger::write_information(format!("Start proxy listener at '{addr}'.",));
 
         let listener = match Self::start_listener_with_retry(
             &addr,
