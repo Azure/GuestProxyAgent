@@ -587,7 +587,7 @@ impl ProxyServer {
             );
         } else {
             return self
-                .handle_request_with_signature(http_connection_context, proxy_request, ip, port)
+                .handle_request_with_signature(http_connection_context, proxy_request)
                 .await;
         }
 
@@ -1058,13 +1058,7 @@ impl ProxyServer {
         &self,
         mut http_connection_context: HttpConnectionContext,
         request: Request<Limited<Incoming>>,
-        ip: std::net::Ipv4Addr,
-        port: u16,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
-        // `ip`/`port` are only consumed by the Linux zero-copy splice path below.
-        #[cfg(not(target_os = "linux"))]
-        let _ = (ip, port);
-
         let (head, body) = request.into_parts();
         http_connection_context.log(
             LoggerLevel::Trace,
@@ -1156,77 +1150,6 @@ impl ProxyServer {
                 http_connection_context.method, http_connection_context.url
             ),
         );
-
-        // Linux-only: for body-less, idempotent downloads (signed GET/HEAD such
-        // as the WireServer/IMDS goal-state and config blobs) try the zero-copy
-        // splice path for the *response* body.  Large responses are streamed
-        // through a kernel pipe (no upstream→user-space memcpy); small responses
-        // are read directly.  Any non-eligible response (chunked / no
-        // Content-Length) or hard IO error falls back to the pooled hyper path.
-        // The GET/HEAD restriction keeps the fallback re-send safe (idempotent).
-        #[cfg(target_os = "linux")]
-        {
-            use crate::proxy::splice_io;
-            use hyper::Method;
-
-            if matches!(*proxy_request.method(), Method::GET | Method::HEAD) {
-                let ip_str = ip.to_string();
-                let method = proxy_request.method().clone();
-                let uri = proxy_request.uri().clone();
-                // GET/HEAD carry no request body, so an empty slice is correct
-                // here (and `whole_body` has already been consumed by signing).
-                match splice_io::forward_via_raw_socket(
-                    &ip_str,
-                    port,
-                    &method,
-                    &uri,
-                    proxy_request.headers(),
-                    &[],
-                )
-                .await
-                {
-                    Ok(splice_io::RawOutcome::Response(mut response)) => {
-                        // Attach the GPA authorization header, mirroring
-                        // forward_response, then finish the connection here.
-                        response.headers_mut().insert(
-                            HeaderName::from_static(hyper_client::AUTHORIZATION_HEADER),
-                            HeaderValue::from_static("value"),
-                        );
-                        let status = response.status();
-                        http_connection_context.log(
-                            LoggerLevel::Trace,
-                            format!(
-                                "Zero-copy path served response for {} {} → {}",
-                                http_connection_context.method, http_connection_context.url, status
-                            ),
-                        );
-                        self.log_connection_summary(
-                            &mut http_connection_context,
-                            status,
-                            false,
-                            String::new(),
-                        )
-                        .await;
-                        return Ok(response);
-                    }
-                    Ok(splice_io::RawOutcome::FallBack) => {
-                        http_connection_context.log(
-                            LoggerLevel::Trace,
-                            "Zero-copy path not applicable (chunked / no Content-Length); \
-                             falling back to hyper path."
-                                .to_string(),
-                        );
-                    }
-                    Err(e) => {
-                        http_connection_context.log(
-                            LoggerLevel::Warn,
-                            format!("Zero-copy path failed ({e}); falling back to hyper path."),
-                        );
-                    }
-                }
-            }
-        }
-
         let proxy_response = http_connection_context.send_request(proxy_request).await;
         http_connection_context.log(
             LoggerLevel::Trace,

@@ -37,8 +37,6 @@ pub mod proxy_authorizer;
 pub mod proxy_connection;
 pub mod proxy_server;
 pub mod proxy_summary;
-#[cfg(target_os = "linux")]
-pub mod splice_io;
 
 #[cfg(windows)]
 mod windows;
