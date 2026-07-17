@@ -321,6 +321,42 @@ pub fn write_event_only(level: Level, message: String, method_name: &str, module
     };
 }
 
+/// Push a Windows event to the telemetry event queue.
+#[cfg(windows)]
+pub fn push_windows_event(windows_event: crate::windows_events::models::WindowsEvent) {
+    if let (Some(provider_name), Some(task_name)) =
+        (&windows_event.provider_name, &windows_event.task_name)
+    {
+        let event_message = {
+            let message = windows_event.get_message();
+            if message.len() > MAX_MESSAGE_LENGTH {
+                message[..MAX_MESSAGE_LENGTH].to_string()
+            } else {
+                message
+            }
+        };
+
+        match EVENT_QUEUE.push(Event {
+            EventLevel: windows_event.get_level_string(),
+            Message: event_message,
+            Version: crate::current_info::get_current_exe_version(),
+            TaskName: task_name.clone(),
+            EventPid: windows_event.process_id.to_string(),
+            EventTid: windows_event.thread_id.to_string(),
+            OperationId: provider_name.clone(),
+            TimeStamp: windows_event.timestamp.clone(),
+        }) {
+            Ok(()) => {}
+            Err(e) => {
+                logger_manager::write_log(
+                    Level::Warn,
+                    format!("Failed to push event to the queue with error: {e}"),
+                );
+            }
+        };
+    }
+}
+
 pub async fn report_extension_status_event(
     extension: crate::telemetry::Extension,
     operation_status: crate::telemetry::OperationStatus,
