@@ -11,9 +11,17 @@ pub fn proxy_agent_running_folder(_service_name: &str) -> PathBuf {
     let path;
     #[cfg(windows)]
     {
-        path = match service::query_service_executable_path(_service_name).parent() {
-            Some(p) => p.to_path_buf(),
-            None => proxy_agent_parent_folder().join("Package"),
+        path = match service::query_service_executable_path(_service_name) {
+            Ok(exe_path) => match exe_path.parent() {
+                Some(p) => p.to_path_buf(),
+                None => proxy_agent_parent_folder().join("Package"),
+            },
+            Err(e) => {
+                logger::write(format!(
+                    "query_service_executable_path failed for {_service_name}: {e}"
+                ));
+                proxy_agent_parent_folder().join("Package")
+            }
         };
     }
     #[cfg(not(windows))]
