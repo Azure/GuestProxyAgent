@@ -167,7 +167,15 @@ pub fn get_current_seq_no(exe_path: &Path) -> String {
 }
 
 pub fn get_proxy_agent_service_path() -> PathBuf {
-    service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME)
+    match service::query_service_executable_path(constants::PROXY_AGENT_SERVICE_NAME) {
+        Ok(path) => path,
+        Err(e) => {
+            logger::write(format!(
+                "get_proxy_agent_service_path: query failed with error: {e}"
+            ));
+            PathBuf::new()
+        }
+    }
 }
 
 pub fn get_proxy_agent_exe_path() -> PathBuf {

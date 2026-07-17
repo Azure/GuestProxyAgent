@@ -59,15 +59,20 @@ update_audit_map_entry(bpf_sock_addr_t *ctx)
 
     sock_addr_audit_entry_t entry = {0};
     entry.process_id = pid;
-    entry.logon_id = bpf_get_current_logon_id(ctx);
+    entry.logon_id = (uint32_t)bpf_get_current_logon_id(ctx);
     if (entry.logon_id == 0)
     {
         bpf_printk("Failed to get logon id.");
     }
-    entry.is_admin = bpf_is_current_admin(ctx);
-    if (entry.is_admin < 0)
+    int32_t is_admin = bpf_is_current_admin(ctx);
+    if (is_admin < 0)
     {
-        bpf_printk("Failed to get admin status %u.", entry.is_admin);
+        bpf_printk("Failed to get admin status %d.", is_admin);
+        entry.is_root = 0;
+    }
+    else
+    {
+        entry.is_root = (is_admin > 0) ? 1 : 0;
     }
     entry.destination_ipv4 = ctx->user_ip4; // we only support ipv4 so far.
     entry.destination_port = ctx->user_port;

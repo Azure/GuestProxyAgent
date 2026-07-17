@@ -798,12 +798,12 @@ pub async fn get_status(host: &str, port: u16) -> Result<KeyStatus> {
     .await?;
 
     if !response.status().is_success() {
-        return Err(proxy_agent_shared::error::Error::Hyper(
+        return Err(Error::Hyper(
             proxy_agent_shared::error::HyperErrorType::ServerError(
                 endpoint.to_string(),
                 response.status(),
             ),
-        ))?;
+        ));
     }
 
     if proxy_agent_shared::misc_helpers::host_time_sync_is_stale(HOST_DATE_TIME_DRIFT_MAX_AGE) {
