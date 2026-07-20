@@ -208,7 +208,7 @@ impl EtwListener {
 
         // `run_trace` blocks on `ProcessTrace` for the lifetime of the session,
         // so run it on a dedicated OS thread.
-        // Note: do not use tokio::spawn because the async block runs on a tokio worker thread. 
+        // Note: do not use tokio::spawn because the async block runs on a tokio worker thread.
         // Since run_trace blocks without ever yielding, it monopolizes that worker thread for the whole session.
         // Tokio's worker pool is small (roughly one per core), so, it permanently removes a worker from the pool,
         //  starving other async tasks and risking degradation/deadlock.
