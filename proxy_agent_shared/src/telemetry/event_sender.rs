@@ -148,9 +148,11 @@ impl EventSender {
         }
 
         let event_count = telemetry_data.event_count();
+        // convert telemetry data to xml before looping to avoid recomputing the xml payload multiple times
+        let xml_data = telemetry_data.to_xml();
         for _ in [0; 5] {
             match wire_server_client
-                .send_telemetry_data(telemetry_data.to_xml())
+                .send_telemetry_data(xml_data.clone())
                 .await
             {
                 Ok(()) => {
@@ -165,7 +167,7 @@ impl EventSender {
                         "Failed to send telemetry data to host with error: {e}"
                     ));
                     // Dev debug log the telemetry data to help with troubleshooting
-                    logger_manager::write_log(LoggerLevel::Trace, telemetry_data.to_xml());
+                    logger_manager::write_log(LoggerLevel::Trace, xml_data.clone());
 
                     // wait 15 seconds and retry
                     tokio::time::sleep(Duration::from_secs(15)).await;

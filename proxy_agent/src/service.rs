@@ -112,8 +112,8 @@ fn start_etw_listener() {
     use proxy_agent_shared::windows_events::etw_listener::EtwListener;
 
     let mut etw_listener = EtwListener::new(WINDOWS_ETW_TRACE_SESSION_NAME);
-    // start with the default providers, which includes the kernel provider and the Microsoft-Windows-Kernel-Network provider
-    //
+
+    // Add ETW providers relevant to eBPF-for-Windows tracing.
     if let Err(e) = etw_listener.add_provider(EBPF_FOR_WINDOWS_PROVIDER_ID, MAX_LEVEL) {
         logger::write_error(format!(
             "Failed to add ETW provider '{EBPF_FOR_WINDOWS_PROVIDER_ID}' with error: {:?}",

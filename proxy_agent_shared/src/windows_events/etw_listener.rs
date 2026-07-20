@@ -101,7 +101,7 @@ static TRACE_HANDLE: AtomicU64 = AtomicU64::new(INVALID_PROCESSTRACE_HANDLE);
 ///
 /// let mut listener = EtwListener::new("my_session");
 /// listener.add_provider("Microsoft-Windows-Kernel-Process", TRACE_LEVEL_VERBOSE as u8).unwrap();
-/// listener.run().unwrap(); // blocks until process stopped.
+/// listener.run().unwrap(); // spawns a background consumer thread; call `stop()` to end the session.
 /// ```
 pub struct EtwListener {
     session_name: String,
@@ -189,9 +189,9 @@ impl EtwListener {
     }
 
     /// Like [`EtwListener::run`], but delivers each decoded [`WindowsEvent`] to the
-    /// supplied `handler` instead of the telemetry logger. Blocks until
-    /// [`stop`] is called. The handler runs on the ETW consumer thread, so it
-    /// must be `Send + Sync`.
+    /// supplied `handler` instead of the telemetry logger. Spawns a dedicated
+    /// consumer thread and returns immediately; call [`stop`] to end the session.
+    /// The handler runs on the ETW consumer thread, so it must be `Send + Sync`.
     pub fn run_with_handler<F>(&self, handler: F) -> Result<()>
     where
         F: Fn(WindowsEvent) + Send + Sync + 'static,
@@ -229,7 +229,8 @@ type EtwEventHandler = Box<dyn Fn(WindowsEvent) + Send + Sync + 'static>;
 
 pub fn stop() {
     STOPPED.store(true, Ordering::SeqCst);
-    let handle = TRACE_HANDLE.load(Ordering::SeqCst);
+    // swap the trace handle to INVALID_PROCESSTRACE_HANDLE and close the old handle if it was valid
+    let handle = TRACE_HANDLE.swap(INVALID_PROCESSTRACE_HANDLE, Ordering::SeqCst);
     if handle != INVALID_PROCESSTRACE_HANDLE {
         unsafe {
             CloseTrace(PROCESSTRACE_HANDLE { Value: handle });
@@ -358,7 +359,11 @@ fn run_trace(
 
         // `stop()` may have run between the loop check and storing the handle.
         if STOPPED.load(Ordering::SeqCst) {
-            unsafe { CloseTrace(trace_handle) };
+            let handle = TRACE_HANDLE.swap(INVALID_PROCESSTRACE_HANDLE, Ordering::SeqCst);
+            // check before closing the handle because `stop()` may have already closed it
+            if handle == trace_handle.Value {
+                unsafe { CloseTrace(trace_handle) };
+            }
             break;
         }
 
@@ -1065,7 +1070,7 @@ mod tests {
         let epoch = 116_444_736_000_000_000i64;
         assert_eq!(
             format_filetime(epoch),
-            Value::String("1970-01-01T00:00:00.000Z".to_string())
+            "1970-01-01T00:00:00.000Z".to_string()
         );
     }
 }
