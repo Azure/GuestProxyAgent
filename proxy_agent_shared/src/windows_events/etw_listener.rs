@@ -126,17 +126,17 @@ impl EtwListener {
 
     /// Adds a provider specified as a GUID string or a registered provider name.
     pub fn add_provider(&mut self, provider_id: &str, max_level: u8) -> Result<()> {
-        if let Some(guid) = parse_guid_string(provider_id) {
+        if let Some(provider_guid) = parse_guid_string(provider_id) {
             self.providers.push(EtwProvider {
-                provider_id: guid,
+                provider_id: provider_guid,
                 level: max_level,
                 event_ids: Vec::new(),
             });
             return Ok(());
         }
-        if let Some(guid) = resolve_provider_name(provider_id) {
+        if let Some(provider_guid) = resolve_provider_name(provider_id) {
             self.providers.push(EtwProvider {
-                provider_id: guid,
+                provider_id: provider_guid,
                 level: max_level,
                 event_ids: Vec::new(),
             });
@@ -156,17 +156,17 @@ impl EtwListener {
         max_level: u8,
         event_ids: Vec<u16>,
     ) -> Result<()> {
-        if let Some(guid) = parse_guid_string(provider_id) {
+        if let Some(provider_guid) = parse_guid_string(provider_id) {
             self.providers.push(EtwProvider {
-                provider_id: guid,
+                provider_id: provider_guid,
                 level: max_level,
                 event_ids,
             });
             return Ok(());
         }
-        if let Some(guid) = resolve_provider_name(provider_id) {
+        if let Some(provider_guid) = resolve_provider_name(provider_id) {
             self.providers.push(EtwProvider {
-                provider_id: guid,
+                provider_id: provider_guid,
                 level: max_level,
                 event_ids,
             });
@@ -184,7 +184,8 @@ impl EtwListener {
     pub fn run(&self) -> Result<()> {
         self.run_with_handler(|event| {
             crate::telemetry::event_logger::push_windows_event(event);
-        })
+        })?; // Propagate any error
+        Ok(())
     }
 
     /// Like [`EtwListener::run`], but delivers each decoded [`WindowsEvent`] to the
@@ -204,9 +205,19 @@ impl EtwListener {
         TRACE_HANDLE.store(INVALID_PROCESSTRACE_HANDLE, Ordering::SeqCst);
 
         let session_name = self.session_name.clone();
-        tokio::spawn(async move {
+
+        // `run_trace` blocks on `ProcessTrace` for the lifetime of the session,
+        // so run it on a dedicated OS thread.
+        // Note: do not use tokio::spawn because the async block runs on a tokio worker thread. 
+        // Since run_trace blocks without ever yielding, it monopolizes that worker thread for the whole session.
+        // Tokio's worker pool is small (roughly one per core), so, it permanently removes a worker from the pool,
+        //  starving other async tasks and risking degradation/deadlock.
+        // This is exactly the "don't block the async runtime" anti-pattern.
+        std::thread::spawn(move || {
             let handler: EtwEventHandler = Box::new(handler);
-            run_trace(&session_name, &providers, &handler)
+            if let Err(e) = run_trace(&session_name, &providers, &handler) {
+                logger_manager::write_warn(format!("ETW trace ended with error: {e}"));
+            }
         });
 
         Ok(())
@@ -237,7 +248,6 @@ fn run_trace(
     handler: &EtwEventHandler,
 ) -> Result<()> {
     let name_wide = super::to_wide(session_name);
-
     // Allocate session properties: EVENT_TRACE_PROPERTIES followed by room for
     // the session name. Backed by a Vec<u64> to guarantee 8-byte alignment.
     let props_size = std::mem::size_of::<EVENT_TRACE_PROPERTIES>();
