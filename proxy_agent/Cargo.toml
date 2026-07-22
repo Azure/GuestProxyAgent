@@ -114,4 +114,5 @@ assets = [
     ["azure-proxy-agent", "usr/sbin/azure-proxy-agent", "755"],  # Binary
     ["proxy-agent.json", "etc/azure/proxy-agent.json", "644"],
     ["ebpf_cgroup.o", "usr/lib/azure-proxy-agent/ebpf_cgroup.o", "644"],
+    ["azure-proxy-agent.8", "usr/share/man/man8/azure-proxy-agent.8", "644"],  # Man page (cargo-deb gzips it)
 ]

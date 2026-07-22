@@ -2,15 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 //! This module contains the logic to send the telemetry event to the wire server.
-use std::time::Duration;
-
 use crate::common_state::CommonState;
+use crate::current_info;
 use crate::host_clients::imds_client::ImdsClient;
 use crate::host_clients::wire_server_client::WireServerClient;
 use crate::logger::{logger_manager, LoggerLevel};
-use crate::telemetry::telemetry_event::{TelemetryData, TelemetryEvent, TelemetryEventVMData};
+use crate::result::Result;
+use crate::telemetry::telemetry_event::{
+    TelemetryData, TelemetryEvent, TelemetryEventVMData, TelemetryExtensionEventsEvent,
+    TelemetryGenericLogsEvent,
+};
+use crate::telemetry::{Event, ExtensionStatusEvent};
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::Lazy;
+use std::time::Duration;
 
 static TELEMETRY_EVENT_QUEUE: Lazy<ConcurrentQueue<TelemetryEvent>> =
     Lazy::new(|| ConcurrentQueue::<TelemetryEvent>::bounded(1000));
@@ -143,9 +148,11 @@ impl EventSender {
         }
 
         let event_count = telemetry_data.event_count();
-        for _ in [0; 5] {
+        // convert telemetry data to xml before looping to avoid recomputing the xml payload multiple times
+        let xml_data = telemetry_data.to_xml();
+        for retry in 0..5 {
             match wire_server_client
-                .send_telemetry_data(telemetry_data.to_xml())
+                .send_telemetry_data(xml_data.clone())
                 .await
             {
                 Ok(()) => {
@@ -153,24 +160,57 @@ impl EventSender {
                         LoggerLevel::Trace,
                         format!("Successfully sent {event_count} telemetry events to wire server."),
                     );
-                    break;
+                    return;
                 }
                 Err(e) => {
                     logger_manager::write_warn(format!(
-                        "Failed to send telemetry data to host with error: {e}"
+                        "[Retry {retry}] Failed to send telemetry data to host with error: {e}"
                     ));
                     // wait 15 seconds and retry
                     tokio::time::sleep(Duration::from_secs(15)).await;
                 }
             }
         }
+        // Dev debug log the telemetry data to help with troubleshooting
+        // Log once after all the retries have failed to avoid spamming the logs with large telemetry data
+        // Note: This log must at Trace level, so the xml data will not send to telemetry event again.
+        logger_manager::write_log(LoggerLevel::Trace, xml_data.clone());
     }
 }
 
-pub(crate) fn enqueue_event(event: TelemetryEvent) {
-    if let Err(e) = TELEMETRY_EVENT_QUEUE.push(event) {
-        logger_manager::write_warn(format!("Failed to enqueue telemetry event with error: {e}"));
-    }
+/// Try to enqueue a generic log event into the in-memory telemetry queue.
+///
+/// Returns `Err` if the queue is full/closed.
+pub(crate) fn try_enqueue_generic_event(
+    event: &Event,
+    execution_mode: String,
+    event_name: String,
+    version: Option<String>,
+) -> Result<()> {
+    let telemetry_event =
+        TelemetryGenericLogsEvent::from_event_log(event, execution_mode, event_name, version);
+    let telemetry_event = TelemetryEvent::GenericLogsEvent(telemetry_event);
+    TELEMETRY_EVENT_QUEUE
+        .push(telemetry_event)
+        .map_err(|e| crate::error::Error::EnqueueEvent(format!("{e}")))
+}
+
+/// Try to enqueue an extension status event into the in-memory telemetry queue.
+///
+/// Returns `Err` if the queue is full/closed.
+pub(crate) fn try_enqueue_extension_event(
+    event: &ExtensionStatusEvent,
+    execution_mode: String,
+) -> Result<()> {
+    let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+        event,
+        execution_mode,
+        current_info::get_current_exe_version(),
+    );
+    let telemetry_event = TelemetryEvent::ExtensionEvent(telemetry_event);
+    TELEMETRY_EVENT_QUEUE
+        .push(telemetry_event)
+        .map_err(|e| crate::error::Error::EnqueueEvent(format!("{e}")))
 }
 
 #[cfg(test)]
@@ -194,6 +234,14 @@ mod tests {
             resource_group_name: "test-resource-group".to_string(),
             vm_id: "test-vm-id".to_string(),
             image_origin: 1,
+        }
+    }
+
+    fn enqueue_event(event: TelemetryEvent) {
+        if let Err(e) = TELEMETRY_EVENT_QUEUE.push(event) {
+            logger_manager::write_warn(format!(
+                "Failed to enqueue telemetry event with error: {e}"
+            ));
         }
     }
 

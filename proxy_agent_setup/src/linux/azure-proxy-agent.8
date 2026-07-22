@@ -1,0 +1,103 @@
+.\" Copyright (c) Microsoft Corporation
+.\" SPDX-License-Identifier: MIT
+.\"
+.\" Manual page for the Azure Guest Proxy Agent (GPA).
+.TH AZURE-PROXY-AGENT 8 "2026-06-25" "Azure Guest Proxy Agent" "System Administration Utilities"
+.SH NAME
+azure\-proxy\-agent \- Azure Guest Proxy Agent daemon
+.SH SYNOPSIS
+.B azure\-proxy\-agent
+.RB [ \-\-status " [" \-\-wait
+.IR seconds ]]
+.br
+.B azure\-proxy\-agent
+.B \-\-version
+.br
+.B azure\-proxy\-agent
+.B console
+.SH DESCRIPTION
+.B azure\-proxy\-agent
+is the Azure Guest Proxy Agent (GPA), a daemon that runs inside an Azure
+guest virtual machine. It transparently secures and authorizes the
+communication between the guest operating system and the Azure host
+endpoints (such as the Wire Server and the Instance Metadata Service),
+enforcing access policy on that traffic.
+.PP
+The agent is normally managed as a systemd service
+.RB ( azure\-proxy\-agent.service )
+and started automatically at boot. When invoked with no arguments it runs
+as a long\-lived background service. The options below are intended for
+manual inspection and troubleshooting.
+.SH OPTIONS
+.TP
+.BR \-s ", " \-\-status
+Print the provisioning status of the running GPA service and exit.
+.TP
+.BR \-w ", " \-\-wait " " \fIseconds\fR
+Wait up to
+.I seconds
+for provisioning to reach a terminal state before printing the status.
+Must be used together with
+.BR \-\-status .
+.TP
+.BR \-v ", " \-\-version
+Print the version of the GPA and exit.
+.TP
+.BR \-h ", " \-\-help
+Print a short usage message and exit.
+.SH COMMANDS
+.TP
+.B console
+Run the GPA in the foreground (console mode) instead of as a background
+service. Logs are written to standard output. This is primarily useful for
+debugging.
+.SH FILES
+.TP
+.I /usr/sbin/azure-proxy-agent
+The GPA daemon executable.
+.TP
+.I /etc/azure/proxy-agent.json
+Runtime configuration file for the GPA.
+.TP
+.I /usr/lib/systemd/system/azure-proxy-agent.service
+The systemd service unit for the GPA.
+.TP
+.I /usr/lib/azure-proxy-agent/ebpf_cgroup.o
+Compiled eBPF program loaded by the GPA on Linux.
+.TP
+.I /var/log/azure-proxy-agent/
+Log directory, including the provisioning status file
+.RI ( status.json ).
+.TP
+.I /var/lib/azure-proxy-agent/
+Runtime state directory.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B non-zero
+An error occurred.
+.SH EXAMPLES
+.TP
+Show the agent version:
+.B azure\-proxy\-agent \-\-version
+.TP
+Query provisioning status, waiting up to 30 seconds:
+.B azure\-proxy\-agent \-\-status \-\-wait 30
+.TP
+Inspect the service through systemd:
+.B systemctl status azure\-proxy\-agent.service
+.SH SEE ALSO
+.BR systemctl (1),
+.BR journalctl (1),
+.BR systemd.service (5)
+.SH BUGS
+Report bugs at
+.UR https://github.com/Azure/GuestProxyAgent/issues
+.UE .
+.SH AUTHOR
+Microsoft Azure RT ProxyAgent V Team
+.RB < ARTProxyAgentVTeam@microsoft.com >.
+.SH COPYRIGHT
+Copyright (c) Microsoft Corporation. Licensed under the MIT License.

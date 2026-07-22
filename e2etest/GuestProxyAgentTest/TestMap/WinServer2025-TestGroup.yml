@@ -6,7 +6,7 @@ vmImageVersion: latest
 scenarios:
   - className: GuestProxyAgentTest.TestScenarios.BVTScenario
     name: BVTScenario
-  - name: BugFixesScenario
-    className: GuestProxyAgentTest.TestScenarios.BugFixesScenario
+  - name: TCPPortScalabilityScenario
+    className: GuestProxyAgentTest.TestScenarios.TCPPortScalabilityScenario
   - name: ProxyAgentExtension 
     className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
