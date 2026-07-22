@@ -64,6 +64,9 @@ pub enum Error {
 
     #[error("Failed to enqueue telemetry event with error: {0}")]
     EnqueueEvent(String),
+
+    #[error("InvalidInput: {0}")]
+    InvalidInput(String),
 }
 
 #[derive(Debug, thiserror::Error)]
