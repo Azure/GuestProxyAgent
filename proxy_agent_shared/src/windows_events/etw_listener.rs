@@ -223,9 +223,7 @@ impl EtwListener {
                     logger_manager::write_warn(format!("ETW trace ended with error: {e}"));
                 }
             })
-            .map_err(|e| {
-                Error::WindowsApi("Failed to spawn ETW trace thread".to_string(), e)
-            })?;
+            .map_err(|e| Error::WindowsApi("Failed to spawn ETW trace thread".to_string(), e))?;
 
         Ok(())
     }
