@@ -213,12 +213,19 @@ impl EtwListener {
         // Tokio's worker pool is small (roughly one per core), so, it permanently removes a worker from the pool,
         //  starving other async tasks and risking degradation/deadlock.
         // This is exactly the "don't block the async runtime" anti-pattern.
-        std::thread::spawn(move || {
-            let handler: EtwEventHandler = Box::new(handler);
-            if let Err(e) = run_trace(&session_name, &providers, &handler) {
-                logger_manager::write_warn(format!("ETW trace ended with error: {e}"));
-            }
-        });
+        // Name the thread after the session so it's easy to identify in debuggers,
+        // panic messages, and OS thread listings.
+        std::thread::Builder::new()
+            .name(format!("etw-trace-{session_name}"))
+            .spawn(move || {
+                let handler: EtwEventHandler = Box::new(handler);
+                if let Err(e) = run_trace(&session_name, &providers, &handler) {
+                    logger_manager::write_warn(format!("ETW trace ended with error: {e}"));
+                }
+            })
+            .map_err(|e| {
+                Error::WindowsApi("Failed to spawn ETW trace thread".to_string(), e)
+            })?;
 
         Ok(())
     }
