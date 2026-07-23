@@ -490,4 +490,34 @@ mod rule_tests {
             assert_eq!(rule.matches(&r), *expected, "{label}");
         }
     }
+
+    #[test]
+    fn matches_query_value_case_insensitive() {
+        // KD-2 regression: ARM resource ids are case-insensitive. A rule
+        // value and a request value that differ ONLY in case must still
+        // match, because `canonicalize_query` ASCII-lowercases values on
+        // both the rule and request sides. Reproduces the exact shadow-mode
+        // divergence (legacy=allow / canon=deny) on a `mi_res_id`-scoped
+        // IMDS token request whose ARM id carries mixed case
+        // (`Microsoft.ManagedIdentity`, `userAssignedIdentities`).
+        let rule = CanonicalPattern::from_privilege(&priv_of(
+            "/metadata/identity/oauth2/token",
+            Some(&[(
+                "mi_res_id",
+                "/subscriptions/14784331-27fd-49a3-a6ec-840d707ebd4a/resourcegroups/xceuapbn1-rg/providers/microsoft.managedidentity/userassignedidentities/xceuapbn1-frontendrole-identity",
+            )]),
+        ))
+        .unwrap();
+        let req = req_of(
+            "http://169.254.169.254/metadata/identity/oauth2/token\
+             ?api-version=2018-02-01\
+             &resource=https://storage.azure.com/\
+             &mi_res_id=/subscriptions/14784331-27fd-49a3-a6ec-840d707ebd4a/resourceGroups/xceuapbn1-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/xceuapbn1-frontendrole-identity",
+            &Method::GET,
+        );
+        assert!(
+            rule.matches(&req),
+            "case-differing ARM id must match (KD-2)"
+        );
+    }
 }

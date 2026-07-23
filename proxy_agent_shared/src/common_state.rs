@@ -46,6 +46,7 @@ pub struct CommonState {
 impl CommonState {
     pub fn start_new(cancellation_token: CancellationToken) -> Self {
         let (sender, mut receiver) = mpsc::channel(100);
+        let cloned_cancellation_token = cancellation_token.clone();
         tokio::spawn(async move {
             let mut vm_meta_data: Option<VmMetaData> = None;
             let mut states: std::collections::HashMap<String, String> =
@@ -53,54 +54,62 @@ impl CommonState {
             let telemetry_event_notify = Arc::new(Notify::new());
 
             loop {
-                match receiver.recv().await {
-                    Some(CommonStateAction::SetVmMetaData {
-                        vm_meta_data: meta_data,
-                        response,
-                    }) => {
-                        vm_meta_data = meta_data.clone();
-                        if response.send(()).is_err() {
-                            logger_manager::write_warn(format!(
-                                "Failed to send response to CommonStateAction::SetVmMetaData '{meta_data:?}'"
-                            ));
-                        }
-                    }
-                    Some(CommonStateAction::GetVmMetaData { response }) => {
-                        if let Err(meta_data) = response.send(vm_meta_data.clone()) {
-                            logger_manager::write_warn(format!(
-                                "Failed to send response to CommonStateAction::GetVmMetaData '{meta_data:?}'"
-                            ));
-                        }
-                    }
-                    Some(CommonStateAction::SetState {
-                        key,
-                        value,
-                        response,
-                    }) => {
-                        states.insert(key.clone(), value.clone());
-                        if response.send(()).is_err() {
-                            logger_manager::write_warn(format!(
-                                "Failed to send response to CommonStateAction::SetState '{key}':'{value}'"
-                            ));
-                        }
-                    }
-                    Some(CommonStateAction::GetState { key, response }) => {
-                        let value = states.get(&key).cloned();
-                        if let Err(v) = response.send(value) {
-                            logger_manager::write_warn(format!(
-                                "Failed to send response to CommonStateAction::GetState '{key}':'{v:?}'"
-                            ));
-                        }
-                    }
-                    Some(CommonStateAction::GetTelemetryEventNotify { response }) => {
-                        if let Err(notify) = response.send(telemetry_event_notify.clone()) {
-                            logger_manager::write_warn(format!(
-                                "Failed to send response to CommonStateAction::GetTelemetryEventNotify '{notify:?}'"
-                            ));
-                        }
-                    }
-                    None => {
+                tokio::select! {
+                    // Cancel the task if the cancellation token is cancelled
+                    _ = cloned_cancellation_token.cancelled() => {
                         break;
+                    }
+                    msg = receiver.recv() => {
+                        match msg {
+                            Some(CommonStateAction::SetVmMetaData {
+                                vm_meta_data: meta_data,
+                                response,
+                            }) => {
+                                vm_meta_data = meta_data.clone();
+                                if response.send(()).is_err() {
+                                    logger_manager::write_warn(format!(
+                                        "Failed to send response to CommonStateAction::SetVmMetaData '{meta_data:?}'"
+                                    ));
+                                }
+                            }
+                            Some(CommonStateAction::GetVmMetaData { response }) => {
+                                if let Err(meta_data) = response.send(vm_meta_data.clone()) {
+                                    logger_manager::write_warn(format!(
+                                        "Failed to send response to CommonStateAction::GetVmMetaData '{meta_data:?}'"
+                                    ));
+                                }
+                            }
+                            Some(CommonStateAction::SetState {
+                                key,
+                                value,
+                                response,
+                            }) => {
+                                states.insert(key.clone(), value.clone());
+                                if response.send(()).is_err() {
+                                    logger_manager::write_warn(format!(
+                                        "Failed to send response to CommonStateAction::SetState '{key}':'{value}'"
+                                    ));
+                                }
+                            }
+                            Some(CommonStateAction::GetState { key, response }) => {
+                                let value = states.get(&key).cloned();
+                                if let Err(v) = response.send(value) {
+                                    logger_manager::write_warn(format!(
+                                        "Failed to send response to CommonStateAction::GetState '{key}':'{v:?}'"
+                                    ));
+                                }
+                            }
+                            Some(CommonStateAction::GetTelemetryEventNotify { response }) => {
+                                if let Err(notify) = response.send(telemetry_event_notify.clone()) {
+                                    logger_manager::write_warn(format!(
+                                        "Failed to send response to CommonStateAction::GetTelemetryEventNotify '{notify:?}'"
+                                    ));
+                                }
+                            }
+                            None => {
+                                break;
+                            }
+                        }
                     }
                 }
             }

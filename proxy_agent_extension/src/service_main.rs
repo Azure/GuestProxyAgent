@@ -7,7 +7,8 @@ use crate::structs::*;
 use proxy_agent_shared::current_info;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
-    self, GuestProxyAgentAggregateStatus, ProxyConnectionSummary,
+    self, GuestProxyAgentAggregateStatus, GuestProxyAgentAggregateStatusSource,
+    ProxyConnectionSummary,
 };
 use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::{misc_helpers, telemetry};
@@ -101,9 +102,7 @@ fn resolve_proxy_agent_file_version_in_extension(
                 e
             );
             logger::write(error_message.clone());
-            status.formattedMessage.message = error_message;
-            status.code = constants::STATUS_CODE_NOT_OK;
-            status.status = status_state_obj.update_state(false);
+            set_error(status, status_state_obj, error_message);
             None
         }
     }
@@ -126,9 +125,11 @@ fn get_proxy_agent_service_file_version() -> String {
 }
 
 /// Determines what update action (if any) is needed for the proxy agent service.
-fn determine_update_action(
+async fn determine_update_action(
     proxy_agent_in_extension_version: &str,
     proxy_agent_service_version: &str,
+    http_ip: Option<String>,
+    http_port: Option<u16>,
     status_file_path: Option<PathBuf>,
     logger_key: &str,
 ) -> Option<UpdateAction> {
@@ -145,10 +146,14 @@ fn determine_update_action(
             logger_key,
         );
         Some(UpdateAction::VersionMismatch)
-    } else if !check_version_in_proxy_agent_status_file(
+    } else if !check_version_in_proxy_agent_aggregate_status(
         proxy_agent_in_extension_version,
+        http_ip,
+        http_port,
         status_file_path,
-    ) {
+    )
+    .await
+    {
         telemetry::event_logger::write_event(
             LoggerLevel::Info,
             format!(
@@ -242,9 +247,13 @@ async fn monitor_thread() {
             if let Some(action) = determine_update_action(
                 &proxy_agent_file_version_in_extension,
                 &proxy_agent_service_version,
+                Some(proxy_agent_shared::constants::WIRE_SERVER_IP.to_string()), // HTTP IP
+                Some(proxy_agent_shared::constants::WIRE_SERVER_PORT),           // HTTP port
                 None,
                 logger_key,
-            ) {
+            )
+            .await
+            {
                 if matches!(action, UpdateAction::VersionMismatch) {
                     backup_proxy_agent(&misc_helpers::path_to_string(
                         &common::setup_tool_exe_path(),
@@ -283,7 +292,8 @@ async fn monitor_thread() {
             &mut status,
             &mut status_state_obj,
             &mut service_state,
-        );
+        )
+        .await;
 
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
@@ -457,19 +467,14 @@ fn backup_proxy_agent(setup_tool: &String) {
 /// Checks if the proxy agent service is running a different version than the files present in the extension,
 /// This can happen when a VM is force-restarted during a proxy agent service update, causing the new service to not start properly.
 /// Return true if the versions match, return false if the versions do not match or if not able to read the service status version at all.
-fn check_version_in_proxy_agent_status_file(
+async fn check_version_in_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &str,
+    http_ip: Option<String>,
+    http_port: Option<u16>,
     status_file_path: Option<PathBuf>,
 ) -> bool {
-    let aggregate_status_file_path = match status_file_path {
-        Some(path) => path,
-        None => proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
-            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
-    };
-    match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        &aggregate_status_file_path,
-    ) {
-        Ok(aggregate_status) => {
+    match get_proxy_agent_aggregate_status(http_ip, http_port, status_file_path).await {
+        Ok((aggregate_status, _)) => {
             let running_version = &aggregate_status.proxyAgentStatus.version;
             if running_version != proxy_agent_file_version_in_extension {
                 logger::write(format!(
@@ -481,41 +486,86 @@ fn check_version_in_proxy_agent_status_file(
             }
         }
         Err(e) => {
-            // Cannot read aggregate status — service may not be running at all.
+            // Cannot get aggregate status — service may not be running at all.
             // Treat this as an incomplete update so install is retried.
             logger::write(format!(
-                "Cannot read aggregate status file to verify running version: {e}.",
+                "Cannot get aggregate status to verify running version: {e}.",
             ));
             false
         }
     }
 }
 
-fn report_proxy_agent_aggregate_status(
+/// Get the proxy agent aggregate status from a specific port or file.
+/// If ip and port are provided, it will attempt to fetch the status from that port first and then specified status file.
+/// or, it will attempt to read the status from the specified file directly.
+async fn get_proxy_agent_aggregate_status(
+    http_ip: Option<String>,
+    http_port: Option<u16>,
+    status_file_path: Option<PathBuf>,
+) -> Result<
+    (
+        GuestProxyAgentAggregateStatus,
+        GuestProxyAgentAggregateStatusSource,
+    ),
+    proxy_agent_shared::error::Error,
+> {
+    let aggregate_status_file_path = match status_file_path {
+        Some(path) => path,
+        None => proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
+            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME),
+    };
+
+    if let (Some(http_ip), Some(http_port)) = (http_ip, http_port) {
+        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status(
+            &http_ip,
+            http_port,
+            &aggregate_status_file_path,
+        )
+        .await
+    } else {
+        Ok((
+            misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
+                &aggregate_status_file_path,
+            )?,
+            GuestProxyAgentAggregateStatusSource::FILE,
+        ))
+    }
+}
+
+async fn report_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
 ) {
-    let aggregate_status_file_path =
-        proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder()
-            .join(proxy_agent_aggregate_status::PROXY_AGENT_AGGREGATE_STATUS_FILE_NAME);
-
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
-    match misc_helpers::json_read_from_file::<GuestProxyAgentAggregateStatus>(
-        &aggregate_status_file_path,
-    ) {
-        Ok(ok) => {
+    // Attempt to get the proxy agent aggregate status from the GPA Proxy Server.
+    // If the GPA Proxy Server is not available, fall back to reading the status from the file.
+    // We used the WS IP and Port to let this http request go through eBPF and redirect to GPA proxy server,
+    // It utilizes the existing GPA claims as authorization signal
+    match get_proxy_agent_aggregate_status(
+        Some(proxy_agent_shared::constants::WIRE_SERVER_IP.to_string()),
+        Some(proxy_agent_shared::constants::WIRE_SERVER_PORT),
+        None,
+    )
+    .await
+    {
+        Ok((proxy_agent_aggregate_status, source)) => {
             write_state_event(
-                constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
-                constants::SUCCESS_STATUS,
-                "Successfully read proxy agent aggregate status file".to_string(),
+                constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
+                &format!(
+                    "{success}|{source:?}",
+                    success = constants::SUCCESS_STATUS,
+                    source = source
+                ),
+                format!("Successfully get proxy agent aggregate status from {source:?}"),
                 "report_proxy_agent_aggregate_status",
                 "service_main",
                 &logger::get_logger_key(),
                 service_state,
             );
-            proxy_agent_aggregate_status_top_level = ok;
+            proxy_agent_aggregate_status_top_level = proxy_agent_aggregate_status;
             extension_substatus(
                 proxy_agent_aggregate_status_top_level,
                 proxy_agent_file_version_in_extension,
@@ -525,9 +575,9 @@ fn report_proxy_agent_aggregate_status(
             );
         }
         Err(e) => {
-            let error_message = format!("Error in reading proxy agent aggregate status file: {e}");
+            let error_message = format!("{e}");
             write_state_event(
-                constants::STATE_KEY_READ_PROXY_AGENT_STATUS_FILE,
+                constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
                 constants::ERROR_STATUS,
                 error_message.to_string(),
                 "report_proxy_agent_aggregate_status",
@@ -535,8 +585,7 @@ fn report_proxy_agent_aggregate_status(
                 &logger::get_logger_key(),
                 service_state,
             );
-            status.status = status_state_obj.update_state(false);
-            status.configurationAppliedTime = misc_helpers::get_date_time_string();
+            set_error(status, status_state_obj, error_message.clone());
             status.substatus = {
                 vec![
                     SubStatus {
@@ -572,6 +621,35 @@ fn report_proxy_agent_aggregate_status(
     }
 }
 
+/// Updates `status` to reflect a failure, atomically setting `status.status`,
+/// `status.code`, `status.formattedMessage.message`, and `status.configurationAppliedTime`.
+///
+/// **Intentional behavior**: `code` is kept at `STATUS_CODE_OK` (0) while the state machine
+/// is still `"Transitioning"` (fewer than 20 consecutive failures). It is only set to
+/// `STATUS_CODE_NOT_OK` once `status` reaches `"Error"`. This couples `code` and `status`
+/// so that CRP/VMSS operators do not see a hard-failure signal for what may be a transient
+/// blip. Previously `code` was set to `STATUS_CODE_NOT_OK` immediately at some call sites
+/// and left at 0 at others — this helper makes the behavior uniform and intentional.
+fn set_error(status: &mut StatusObj, state: &mut common::StatusState, message: String) {
+    status.status = state.update_state(false);
+    status.code = if status.status == *constants::ERROR_STATUS {
+        constants::STATUS_CODE_NOT_OK
+    } else {
+        constants::STATUS_CODE_OK
+    };
+    status.formattedMessage.message = message;
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+}
+
+/// Updates `status` to reflect a success, atomically setting `status.status`,
+/// `status.code`, `status.formattedMessage.message`, and `status.configurationAppliedTime`.
+fn set_success(status: &mut StatusObj, state: &mut common::StatusState, message: String) {
+    status.status = state.update_state(true);
+    status.code = constants::STATUS_CODE_OK;
+    status.formattedMessage.message = message;
+    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+}
+
 fn report_error_status(
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
@@ -582,7 +660,7 @@ fn report_error_status(
     use proxy_agent_shared::logger::LoggerLevel;
     use proxy_agent_shared::telemetry::event_logger;
 
-    status.status = status_state_obj.update_state(false);
+    set_error(status, status_state_obj, error_message.clone());
     if service_state.update_service_state_entry(error_key, constants::ERROR_STATUS, MAX_STATE_COUNT)
     {
         event_logger::write_event(
@@ -593,7 +671,6 @@ fn report_error_status(
             &logger::get_logger_key(),
         );
     }
-    status.configurationAppliedTime = misc_helpers::get_date_time_string();
     status.substatus = {
         vec![
             SubStatus {
@@ -779,8 +856,11 @@ fn extension_substatus(
             },
         ]
     };
-    status.status = status_state_obj.update_state(true);
-    status.configurationAppliedTime = misc_helpers::get_date_time_string();
+    set_success(
+        status,
+        status_state_obj,
+        "ProxyAgent extension is reporting successful status.".to_string(),
+    );
     write_state_event(
         constants::STATE_KEY_FILE_VERSION,
         constants::SUCCESS_STATUS,
@@ -913,10 +993,7 @@ fn report_proxy_agent_service_status(
                 String::from_utf8_lossy(&output.stderr)
             ));
             if output.status.success() {
-                status.configurationAppliedTime = misc_helpers::get_date_time_string();
-                status.code = constants::STATUS_CODE_OK;
-                status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message = message;
+                set_success(status, status_state_obj, message);
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             } else {
@@ -931,13 +1008,12 @@ fn report_proxy_agent_service_status(
                     "service_main",
                     &logger::get_logger_key(),
                 );
-                status.configurationAppliedTime = misc_helpers::get_date_time_string();
+                set_error(status, status_state_obj, err_message.clone());
+                // Override code with the actual process exit code
                 status.code = output
                     .status
                     .code()
                     .unwrap_or(constants::STATUS_CODE_NOT_OK);
-                status.status = status_state_obj.update_state(false);
-                status.formattedMessage.message = err_message.clone();
                 status.substatus = Default::default();
                 common::report_status(status_folder, seq_no, status);
             }
@@ -954,10 +1030,7 @@ fn report_proxy_agent_service_status(
                 &logger::get_logger_key(),
             );
             // report proxyagent service update failed state
-            status.configurationAppliedTime = misc_helpers::get_date_time_string();
-            status.code = constants::STATUS_CODE_NOT_OK;
-            status.status = status_state_obj.update_state(false);
-            status.formattedMessage.message = err_message.clone();
+            set_error(status, status_state_obj, err_message.clone());
             status.substatus = Default::default();
             common::report_status(status_folder, seq_no, status);
         }
@@ -1532,7 +1605,10 @@ mod tests {
         );
 
         assert_eq!(result, None);
-        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+        // After set_error with a single failure, StatusState is Transitioning,
+        // so code stays STATUS_CODE_OK (0). It flips to STATUS_CODE_NOT_OK only
+        // once the state machine reaches ERROR_STATUS (after 20 consecutive failures).
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
         assert!(status
             .formattedMessage
             .message
@@ -1541,8 +1617,8 @@ mod tests {
         assert_eq!(status.status, constants::TRANSITIONING_STATUS.to_string());
     }
 
-    #[test]
-    fn test_determine_update_action() {
+    #[tokio::test]
+    async fn test_determine_update_action() {
         use std::env;
         use std::fs;
 
@@ -1555,8 +1631,15 @@ mod tests {
         let version_30 = "1.0.30";
 
         // Matching versions should return VersionMismatch
-        let result =
-            super::determine_update_action(version_39, version_30, None, "test_logger_key");
+        let result = super::determine_update_action(
+            version_39,
+            version_30,
+            None,
+            None,
+            None,
+            "test_logger_key",
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::VersionMismatch),
@@ -1567,9 +1650,12 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
+            None, // do not query from gpa server
             Some(PathBuf::from("nonexistent_path")),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::ResumeInterruptedUpdate),
@@ -1584,9 +1670,12 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
+            None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result,
             Some(super::UpdateAction::ResumeInterruptedUpdate),
@@ -1601,9 +1690,12 @@ mod tests {
         let result = super::determine_update_action(
             version_39,
             version_39,
+            None,
+            None, // do not query from gpa server
             Some(status_file.clone()),
             "test_logger_key",
-        );
+        )
+        .await;
         assert_eq!(
             result, None,
             "Expected None when status file exists and version matches"
@@ -1652,5 +1744,144 @@ mod tests {
         // restore_purge_proxy_agent should return false when status is TRANSITIONING
         let result = super::restore_purge_proxy_agent(&mut status);
         assert!(!result);
+    }
+
+    // --- Tests for set_error / set_success helpers ---
+
+    #[test]
+    fn test_set_error_updates_message_while_transitioning() {
+        // A single failure: StatusState starts at Transitioning and stays there.
+        // The key fix: formattedMessage.message must be updated (no longer stale).
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+
+        super::set_error(
+            &mut status,
+            &mut state,
+            "aggregate status file unreadable".to_string(),
+        );
+
+        assert_eq!(status.status, constants::TRANSITIONING_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "aggregate status file unreadable"
+        );
+        // code stays 0 (OK) while still Transitioning
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+    }
+
+    #[test]
+    fn test_set_error_sets_code_not_ok_when_reaches_error_state() {
+        // After 20 consecutive failures the state machine transitions to Error.
+        // code must flip to STATUS_CODE_NOT_OK at that point.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        let error_msg = "aggregate status file unreadable".to_string();
+
+        for _ in 0..20 {
+            super::set_error(&mut status, &mut state, error_msg.clone());
+        }
+
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert_eq!(status.formattedMessage.message, error_msg);
+        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+    }
+
+    #[test]
+    fn test_set_success_resets_message_and_code() {
+        // After a failure (Transitioning), a success call must reset the message.
+        let mut status = make_test_status_obj(
+            constants::TRANSITIONING_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        // Drive one failure first so the state is in Transitioning
+        super::set_error(&mut status, &mut state, "some error".to_string());
+
+        super::set_success(
+            &mut status,
+            &mut state,
+            "ProxyAgent extension is reporting successful status.".to_string(),
+        );
+
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+    }
+
+    #[test]
+    fn test_report_error_status_updates_formatted_message() {
+        // Regression test for the original bug:
+        // report_error_status must update formattedMessage.message with the real error.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut state = super::common::StatusState::new();
+        let mut service_state = super::service_state::ServiceState::default();
+        let error_message = "aggregate status file unreadable".to_string();
+
+        super::report_error_status(
+            &mut status,
+            &mut state,
+            &mut service_state,
+            constants::STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS,
+            error_message.clone(),
+        );
+
+        assert_eq!(status.formattedMessage.message, error_message);
+        assert_ne!(
+            status.formattedMessage.message, "Started ProxyAgent Extension Monitoring thread.",
+            "formattedMessage must not be the stale startup string"
+        );
+    }
+
+    #[test]
+    fn test_stale_status_updates_formatted_message() {
+        // After the fix, extension_substatus on a stale timestamp must update
+        // the top-level formattedMessage.message, not leave it as the startup string.
+        let stale_timestamp = "2024-01-01T00:00:00Z".to_string();
+        let toplevel_status = make_test_aggregate_status(stale_timestamp, "1.0.0");
+
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "Started ProxyAgent Extension Monitoring thread.",
+        );
+        let mut status_state_obj = super::common::StatusState::new();
+        let proxy_agent_file_version_in_extension: &String = &"1.0.0".to_string();
+        let mut service_state = super::service_state::ServiceState::default();
+
+        super::extension_substatus(
+            toplevel_status,
+            proxy_agent_file_version_in_extension,
+            &mut status,
+            &mut status_state_obj,
+            &mut service_state,
+        );
+
+        assert_ne!(status.status, constants::SUCCESS_STATUS);
+        assert!(
+            status.formattedMessage.message.contains("stale"),
+            "formattedMessage.message should describe the stale status, got: {}",
+            status.formattedMessage.message
+        );
+        assert_ne!(
+            status.formattedMessage.message, "Started ProxyAgent Extension Monitoring thread.",
+            "formattedMessage must not be the stale startup string"
+        );
     }
 }

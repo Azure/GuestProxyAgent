@@ -55,7 +55,7 @@ if "%Target%"=="arm64" (
 )
 
 echo ======= rustup update to a particular version of the Rust toolchain
-SET rustup_version=1.92.0
+SET rustup_version=1.95.0
 call rustup update %rustup_version%
 REM This command sets a specific Rust toolchain version for the current directory. 
 REM It means that whenever you are in this directory, Rust commands will use the specified toolchain version, regardless of the global default.
@@ -155,6 +155,7 @@ if  %ERRORLEVEL% NEQ 0 (
     echo call cargo build proxy_agent failed with exit-code: %errorlevel%
     exit /b %errorlevel%
 )
+
 if "%Target%"=="arm64" (
     echo ======= skip running proxy_agent arm64 tests on amd64 machine
 ) else (

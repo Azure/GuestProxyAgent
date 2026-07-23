@@ -339,6 +339,93 @@ The canonicalizer ships before the matcher cuts over.
 - p99 added latency \< 100 µs (measured during shadow mode).
 - One full release in **shadow** behind a feature flag before any region flips to **enforce**.
 
+### 9.4 Known divergences (triage log)
+
+The "zero divergences" cutover bar in §9.3 means **zero *unexplained* divergences**. As shadow mode runs against real fleet traffic it surfaces genuine differences between the legacy matcher and the canonical pipeline. Each one must be triaged to one of three dispositions before a region can flip to **enforce**:
+
+- **Canon-stricter-and-correct** — the canonical verdict is the intended secure behavior and legacy was the bug. These are tracked here, the root cause is fixed *at the source* (usually a misbehaving client), and the entry is closed once the divergence stops appearing.
+- **Canon-bug** — the canonical pipeline is wrong; fix the pipeline.
+- **Benign-formatting** — semantically identical decision, cosmetic delta only (e.g. trailing slash). Fold into a golden vector so it can't regress.
+
+Until a logged divergence is dispositioned, **do not enable enforce mode for the affected fleet**, because enforce mode acts on the canonical verdict and would change production behavior for that traffic.
+
+#### KD-1 · `%3F`-encoded query delimiter from `VmssRuntimeAgent` (`CANON_EMBQ`)
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-06-26 (shadow)                                                                                     |
+| Disposition      | **Canon-stricter-and-correct** — client-side defect; canon deny is the intended behavior                |
+| Legacy decision  | `allow`                                                                                                 |
+| Canon decision   | `deny` → `CANON_EMBQ` (`CanonError::EmbeddedQuery`, "embedded `?` after decoding")                       |
+| Emitter          | `VmssRuntimeAgent.exe` (external first-party agent; **not** in this repo), running as `SYSTEM`           |
+| Destination      | IMDS `169.254.169.254:80`                                                                               |
+
+**Divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id> legacy=allow canon=error:CANON_EMBQ \
+      uri="/metadata/scheduledevents%3Fapi-version=2019-08-01"
+
+**What happened.** The agent sends the IMDS *query delimiter* percent-encoded (`%3F`) instead of a literal `?`:
+
+    on the wire : /metadata/scheduledevents%3Fapi-version=2019-08-01   ← literal '?' in the PATH, empty query
+    intended    : /metadata/scheduledevents?api-version=2019-08-01     ← path + api-version query
+
+Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of the path*, not a delimiter — so the agent is technically requesting a path named `scheduledevents?api-version=2019-08-01` with no query string.
+
+**Why it currently succeeds.** Two layers absorb the malformed form, so production sees `200 OK`:
+
+1. **IMDS decodes-first** — it percent-decodes `%3F` → `?`, re-splits, and serves the real `scheduledevents` endpoint. Confirmed by a `200 OK` / 9 ms connection-log entry for `VmssRuntimeAgent.exe`.
+2. **Legacy matcher** — matches the raw, still-encoded string with a case-insensitive `starts_with`, so the permissive prefix rule allows it.
+
+**Why canon denies (and why that's right).** The canonical pipeline decodes once and finds a literal `?` embedded in the decoded **path** — the unambiguous signature of the `%3F` query-smuggling vector called out in §3.1 and pinned by the `A1.embedded_query` / `D1.embedded_query_*_hex` golden vectors. It fails closed (`CANON_EMBQ`). This is the rule/request asymmetry the canonical model exists to eliminate: legacy authorized an *opaque path string* while IMDS acted on a *decoded query*.
+
+**Why we do NOT "fix" this in canon by decode-and-splitting.** GPA forwards the **original bytes** to the upstream (§1.3; `proxy_server.rs` only adds headers, never rewrites the URI). So any decode-and-split in canon would merely be GPA *predicting* IMDS's parser — re-introducing the differential the moment the two parsers disagree on an edge case (`%23` fragment, repeated/encoded delimiters, `+`→space), and broadening `%3F`-as-delimiter acceptance to *every* endpoint. The clean, auditable fail-closed deny is preferable to a fragile parser-equivalence bet.
+
+**Resolution / action items.**
+
+- [ ] **Root cause (owner: VmssRuntimeAgent team):** fix the IMDS URL construction to emit a literal `?`; audit all IMDS call sites for the same pattern (typically caused by escaping the whole path+query string instead of building the query with a URI builder).
+- [ ] **GPA rollout gate:** keep the affected fleet in **shadow** (do not enable **enforce**) until the agent fix is deployed, to avoid blocking scheduled-events polling.
+- [ ] **Close-out:** entry is resolved when the divergence stops appearing in shadow telemetry post-deployment.
+
+#### KD-2 · Case-sensitive query-value match on `mi_res_id` ARM ids
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-06-26 (shadow)                                                                                     |
+| Disposition      | **Canon-bug** — canon compared query *values* case-sensitively; fixed in the pipeline                   |
+| Legacy decision  | `allow`                                                                                                 |
+| Canon decision   | `deny` (no error code — a plain "no rule matched" verdict, not a `CanonError`)                           |
+| Emitter          | IMDS managed-identity token client (user-assigned identity scoped by `mi_res_id`)                       |
+| Destination      | IMDS `169.254.169.254:80`, `/metadata/identity/oauth2/token`                                            |
+
+**Divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id> legacy=allow canon=deny \
+      uri="/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/\
+      &mi_res_id=/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<id>"
+
+**What happened.** A user-assigned managed-identity token request is scoped by an ARM resource id in the `mi_res_id` query value. The request carried the id in its natural mixed case (`resourceGroups`, `Microsoft.ManagedIdentity`, `userAssignedIdentities`), while the authorization rule stored it in a different case. Legacy allowed it; canon denied it — with **no** `CANON_*` error, meaning canon simply found no matching rule.
+
+**Root cause.** ARM resource ids are **case-insensitive** by spec, and the two matchers disagreed on how query values are folded:
+
+- **Legacy** (`key_keeper/key.rs::Privilege::is_match`, ~L284) lowercases *both* the rule value (at load) **and** the request value: `decoded_v.to_lowercase() == *value` → case-insensitive value match.
+- **Canon** (`proxy/canonical/query.rs::canonicalize_query`) lowercased only the **key** (`k.to_ascii_lowercase()`) and pushed the **value verbatim**. The rule side runs through the *same* function, so both sides preserved value case, and `rule.rs::CanonicalPattern::matches` does an exact `av == rv` comparison → case-**sensitive** value match. Any casing delta between rule and request on `mi_res_id` produced a spurious `deny`.
+
+**Fix.** ASCII-lowercase query **values** as well as keys in `canonicalize_query` (`.push(v.to_ascii_lowercase())`). Because rules and requests share that function, both sides fold symmetrically and the existing `av == rv` comparison becomes case-insensitive — matching legacy. ASCII folding is deliberate: it covers all real ARM-id casing (ASCII A–Z) while leaving the pipeline's allowed non-ASCII value bytes untouched, so no Unicode-casing length surprises. This does **not** weaken security: ARM ids are case-insensitive identifiers, so two casings denote the same resource.
+
+**Why a value, not a path, fix.** The differing token is in the *query* (`mi_res_id`), not the path, so it never touches the ASCII-only path pipeline. Lowercasing values is the minimal change that restores legacy parity; the path pipeline's stricter non-ASCII rejection is unchanged.
+
+**Regression coverage.**
+
+- `query.rs::value_ascii_lowercased` — a mixed-case `mi_res_id` is folded to lowercase.
+- `query.rs::value_non_ascii_preserved_under_ascii_fold` — ASCII folds, non-ASCII bytes survive.
+- `rule.rs::matches_query_value_case_insensitive` — reproduces the exact divergence: a rule value and request value that differ only in case still match.
+
+**Resolution / action items.**
+
+- [x] **Pipeline fix:** `canonicalize_query` ASCII-lowercases values; regression tests added (above).
+- [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry for managed-identity token traffic before flipping the affected fleet to **enforce**.
+
 ## 10. Test Strategy
 
 ### 10.1 Golden vectors

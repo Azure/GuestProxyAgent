@@ -9,4 +9,7 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    ProxyAgentShared(#[from] proxy_agent_shared::error::Error),
 }

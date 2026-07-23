@@ -7,10 +7,9 @@ mod bpf_prog;
 
 use crate::common::error::{BpfErrorType, Error, WindowsApiErrorType};
 use crate::common::{constants, logger, result::Result};
+use crate::redirector::windows::bpf_obj::AuditValueEntry;
 use crate::redirector::AuditEntry;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
-use core::ffi::c_void;
-use std::mem;
 use std::ptr;
 use windows_sys::Win32::Networking::WinSock;
 
@@ -106,9 +105,8 @@ pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) {
 }
 
 pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntry> {
-    // WSAIoctl - SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT
-    let value = AuditEntry::empty();
-    let redirect_context_size = mem::size_of::<AuditEntry>() as u32;
+    // We do not know the value size here, pass 0 to use its max_value_size
+    let mut audit_value_entry = AuditValueEntry::empty(0);
     let mut redirect_context_returned: u32 = 0;
     let result = unsafe {
         WinSock::WSAIoctl(
@@ -116,29 +114,25 @@ pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntr
             WinSock::SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT,
             ptr::null(),
             0,
-            &value as *const AuditEntry as *mut c_void,
-            redirect_context_size,
+            audit_value_entry.value_pointer_mut(),
+            audit_value_entry.value_size(), // large enough for either layout
             &mut redirect_context_returned,
             ptr::null_mut(),
             None,
         )
     };
+
     if result != 0 {
-        let error = unsafe { WinSock::WSAGetLastError() };
+        let wsa_error = unsafe { WinSock::WSAGetLastError() };
         return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT result: {result}, WSAGetLastError: {error}",
+            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT failed: result={result}, WSAGetLastError={wsa_error}",
         ))));
     }
 
-    // Need to check the returned size to ensure it matches the expected size,
-    // since the result is 0 even if there is no redirect context in this socket stream.
-    if redirect_context_returned != redirect_context_size {
-        return Err(Error::WindowsApi(WindowsApiErrorType::WSAIoctl(format!(
-            "SIO_QUERY_WFP_CONNECTION_REDIRECT_CONTEXT returned size: {redirect_context_returned}, expected size: {redirect_context_size}",
-        ))));
-    }
+    // The value size returned by WSAIoctl is the actual size of the data returned in the buffer.
+    audit_value_entry.set_value_size(redirect_context_returned)?;
 
-    Ok(value)
+    audit_value_entry.to_audit_entry()
 }
 
 pub async fn update_wire_server_redirect_policy(

@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check Spelling
-        uses: streetsidesoftware/cspell-action@v6
+        uses: streetsidesoftware/cspell-action@v8
         with:
           config: cspell.json
           # On pull requests, only check files changed in the PR.

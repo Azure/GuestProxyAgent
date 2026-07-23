@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.46"
+version = "1.0.47"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -47,12 +47,16 @@ features = [
   "Win32_Networking_WinSock",
   "Win32_System_IO",
   "Win32_Security",
+  "Win32_Security_Authorization",
   "Win32_System_EventLog",
   "Win32_System_WindowsProgramming",
   "Win32_Security_Cryptography",
   "Win32_Security_Authentication_Identity", 
   "Win32_System_Diagnostics_Debug",
+  "Win32_System_Diagnostics_Etw",
   "Win32_System_SystemInformation",
+  "Win32_System_Time",
+  "Win32_System_Console",
   "Win32_Storage_FileSystem",
   "Win32_System_JobObjects",
 ]

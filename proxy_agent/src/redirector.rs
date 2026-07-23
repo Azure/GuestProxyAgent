@@ -45,6 +45,8 @@ mod windows;
 #[cfg(not(windows))]
 mod linux;
 
+mod shared_ebpf;
+
 use crate::common::error::BpfErrorType;
 use crate::common::error::Error;
 use crate::common::helpers;

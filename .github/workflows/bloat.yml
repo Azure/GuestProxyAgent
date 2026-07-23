@@ -44,13 +44,13 @@ jobs:
             # Vendored OpenSSL (approved crypto) is structurally ~20% of text
             # for the agent on musl; HMAC-SHA256 in proxy_agent_shared pulls it.
             crate_share_overrides: "openssl_sys=0.25"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: ProxyAgentExt
-            max_binary_bytes: "9000000"   # ~9 MB
+            max_binary_bytes: "10000000"   # ~10 MB
             crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: x86_64-unknown-linux-musl
             runs_on: ubuntu-latest
             crate: proxy_agent_setup
@@ -58,7 +58,7 @@ jobs:
             # proxy_agent_setup is tiny (~1 MiB text after the openssl gate),
             # so a normal-sized clap derive parser is ~30% by share.
             crate_share_overrides: "clap_builder=0.35"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
 
           # -------- Linux aarch64 musl (native arm64 runner) --------
           - target: aarch64-unknown-linux-musl
@@ -66,19 +66,19 @@ jobs:
             crate: azure-proxy-agent
             max_binary_bytes: "20000000" 
             crate_share_overrides: "openssl_sys=0.15"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: ProxyAgentExt
-            max_binary_bytes: "16000000"
+            max_binary_bytes: "10000000"
             crate_share_overrides: "clap_builder=0.15 regex_automata=0.15"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
           - target: aarch64-unknown-linux-musl
             runs_on: ubuntu-24.04-arm
             crate: proxy_agent_setup
             max_binary_bytes: "11000000"
             crate_share_overrides: "clap_builder=0.35"
-            apt_packages: musl-tools
+            apt_packages: musl-tools libbpf-dev libbpfcc-dev clang llvm
 
           # -------- Windows x86_64 MSVC --------
           - target: x86_64-pc-windows-msvc
@@ -124,7 +124,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_packages }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: ${{ matrix.target }}
 

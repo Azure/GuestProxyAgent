@@ -60,7 +60,7 @@ echo "======= BuildEnvironment is $BuildEnvironment"
 
 
 echo "======= rustup update to a particular version"
-rustup_version=1.92.0
+rustup_version=1.95.0
 rustup update $rustup_version
 
 # This command sets a specific Rust toolchain version for the current directory. 
@@ -101,23 +101,12 @@ then
     exit $error_code
 fi
 
-echo "======= build ebpf program after the proxy_agent_shared is built to let $out_dir created."
-ebpf_path=$root_path/linux-ebpf
-
-if [ "$Target" == "arm64" ] 
-then 
-    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_arm64 -I/usr/include/aarch64-linux-gnu -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
-else
-    runthis clang -g -target bpf -Werror -O2 -D__TARGET_ARCH_x86 -c $ebpf_path/ebpf_cgroup.c -o $out_dir/ebpf_cgroup.o
-fi
-error_code=$?
-if [ $error_code -ne 0 ]
-then 
-    echo "call clang failed with exit-code: $error_code"
-    exit $error_code
-fi
-llvm-objdump -h $out_dir/ebpf_cgroup.o
-ls -l $out_dir/ebpf_cgroup.o
+echo "======= eBPF program is compiled by proxy_agent/build.rs during the cargo build below."
+# proxy_agent/build.rs compiles linux-ebpf/ebpf_cgroup.c with CO-RE relocations
+# for the selected target arch, errors out the build on any failure, and places
+# the freshly compiled object directly at $out_dir/ebpf_cgroup.o (and its deps/
+# subdir) so we never pick up a stale copy from another build-output directory.
+ebpf_obj_name=ebpf_cgroup.o
 
 echo "======= build proxy_agent"
 cargo_toml=$root_path/proxy_agent/Cargo.toml
@@ -129,6 +118,16 @@ then
     echo "cargo build proxy_agent failed with exit-code: $error_code"
     exit $error_code
 fi
+
+echo "======= verify ebpf object produced by proxy_agent/build.rs"
+if [ ! -f "$out_dir/$ebpf_obj_name" ]
+then
+    echo "$out_dir/$ebpf_obj_name was not produced by proxy_agent/build.rs"
+    exit 1
+fi
+llvm-objdump -h $out_dir/$ebpf_obj_name
+ls -l $out_dir/$ebpf_obj_name
+
 echo "======= copy config file for Linux platform"
 cp -f -T $root_path/proxy_agent/config/GuestProxyAgent.linux.json $out_dir/proxy-agent.json
 
@@ -198,6 +197,7 @@ fi
 echo "======= copy to package folder"
 cp -f $out_dir/proxy_agent_setup $out_package_dir/
 cp -f $out_dir/azure-proxy-agent.service $out_package_dir/
+cp -f $out_dir/azure-proxy-agent.8 $out_package_dir/
 
 out_package_proxyagent_dir=$out_package_dir/ProxyAgent
 if [ ! -d $out_package_proxyagent_dir ]; then
@@ -251,6 +251,7 @@ pushd debbuild
     cp -f $out_package_proxyagent_dir/azure-proxy-agent ./
     cp -f $out_package_proxyagent_dir/proxy-agent.json ./
     cp -f $out_package_proxyagent_dir/ebpf_cgroup.o ./
+    cp -f $out_package_dir/azure-proxy-agent.8 ./
     cp -f $out_package_dir/azure-proxy-agent.service ./DEBIAN/
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/control  # replace pkgversion with actual version
     sed -i "s/pkgversion/${pkgversion}/g" DEBIAN/postinst  # replace pkgversion with actual version

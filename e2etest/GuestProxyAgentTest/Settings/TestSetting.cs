@@ -27,6 +27,11 @@ namespace GuestProxyAgentTest.Settings
         internal string subscriptionId = "";
         internal AzureLocation location = AzureLocation.WestUS;
         internal string vmSize = "Standard_B4as_v2";
+        /// <summary>
+        /// Service Tag for public IP address, used to create public IP address in test
+        /// It must start with "/"
+        /// </summary>
+        internal string publicIPAddressServiceTag = "";
         internal string scriptsFolder = null!;
         internal string resourcesFolder = null!;
         internal string zipFilePath = null!;
@@ -67,6 +72,7 @@ namespace GuestProxyAgentTest.Settings
                 location = new AzureLocation(testConfig.Location),
                 subscriptionId = testConfig.SubscriptionId,
                 vmSize = testConfig.VmSize,
+                publicIPAddressServiceTag = testConfig.PublicIPAddressServiceTag,
                 scriptsFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, scriptsFolder),
                 resourcesFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Resources"),
                 sharedStorageAccountUrl = testConfig.SharedStorageAccountUrl,

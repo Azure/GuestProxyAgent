@@ -5,13 +5,9 @@
 //! //! The telemetry event files are written by the event_logger module.
 
 use crate::common_state::CommonState;
-use crate::current_info;
 use crate::logger::logger_manager;
 use crate::misc_helpers;
 use crate::telemetry::event_sender;
-use crate::telemetry::telemetry_event::TelemetryEvent;
-use crate::telemetry::telemetry_event::TelemetryExtensionEventsEvent;
-use crate::telemetry::telemetry_event::TelemetryGenericLogsEvent;
 use crate::telemetry::Event;
 use std::fs::remove_file;
 use std::path::PathBuf;
@@ -207,15 +203,19 @@ impl EventReader {
         while !events.is_empty() {
             match events.pop() {
                 Some(event) => {
-                    let telemetry_event = TelemetryGenericLogsEvent::from_event_log(
+                    if let Err(e) = event_sender::try_enqueue_generic_event(
                         &event,
                         self.execution_mode.clone(),
                         self.event_name.clone(),
                         self.limits.version.clone(),
-                    );
-                    let telemetry_event = TelemetryEvent::GenericLogsEvent(telemetry_event);
-                    event_sender::enqueue_event(telemetry_event);
-                    queued_event = true;
+                    ) {
+                        logger_manager::write_warn(format!(
+                            "Failed to enqueue generic event: {}",
+                            e
+                        ));
+                    } else {
+                        queued_event = true;
+                    }
                 }
                 None => {
                     break;
@@ -292,6 +292,14 @@ impl EventReader {
                 logger_manager::write_info( format!(
                     "Telemetry event reader sent {event_count} extension status events from {file_count} files"
                 ));
+
+                if event_count > 0 {
+                    if let Err(e) = self.common_state.notify_telemetry_event().await {
+                        logger_manager::write_warn(format!(
+                            "Failed to notify telemetry event with error: {e}"
+                        ));
+                    }
+                }
             }
             Err(e) => {
                 logger_manager::write_warn(format!(
@@ -305,22 +313,16 @@ impl EventReader {
     }
 
     async fn process_one_extension_status_event_file(&self, file: PathBuf) -> usize {
-        let mut num_events_logged = 0;
+        let mut num_events_processed = 0;
 
         match misc_helpers::json_read_from_file::<crate::telemetry::ExtensionStatusEvent>(&file) {
             Ok(event) => {
-                num_events_logged += 1;
-                let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
-                    &event,
-                    self.execution_mode.clone(),
-                    current_info::get_current_exe_version(),
-                );
-                let telemetry_event = TelemetryEvent::ExtensionEvent(telemetry_event);
-                event_sender::enqueue_event(telemetry_event);
-                if let Err(e) = self.common_state.notify_telemetry_event().await {
-                    logger_manager::write_warn(format!(
-                        "Failed to notify telemetry event with error: {e}"
-                    ));
+                if let Err(e) =
+                    event_sender::try_enqueue_extension_event(&event, self.execution_mode.clone())
+                {
+                    logger_manager::write_warn(format!("Failed to enqueue extension event: {}", e));
+                } else {
+                    num_events_processed += 1;
                 }
             }
             Err(e) => {
@@ -333,7 +335,7 @@ impl EventReader {
         }
 
         Self::clean_file(file);
-        num_events_logged
+        num_events_processed
     }
 }
 

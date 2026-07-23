@@ -62,7 +62,7 @@ pub const EXIT_CODE_WRITE_CURRENT_SEQ_NO_ERROR: i32 = 10;
 
 pub const MIN_SUPPORTED_OS_BUILD: u32 = 17763;
 
-pub const STATE_KEY_READ_PROXY_AGENT_STATUS_FILE: &str = "ReadProxyAgentStatusFile";
+pub const STATE_KEY_READ_PROXY_AGENT_AGGREGATE_STATUS: &str = "ReadProxyAgentAggregateStatus";
 pub const STATE_KEY_FILE_VERSION: &str = "FileVersion";
 pub const STATE_KEY_STALE_PROXY_AGENT_STATUS: &str = "StaleProxyAgentStatus";
 pub const STATE_KEY_PARSE_TIMESTAMP_ERROR: &str = "ParseTimestampError";
