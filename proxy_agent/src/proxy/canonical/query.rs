@@ -217,6 +217,12 @@ mod query_tests {
             canonicalize_query("k=%0A").unwrap_err(),
             CanonError::ControlChar
         );
+        // KD-3: a trailing carriage return (`%0D` -> `\r`) on a query value
+        // (observed as a contaminated `client_id`) must fail closed.
+        assert_eq!(
+            canonicalize_query("client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D").unwrap_err(),
+            CanonError::ControlChar
+        );
     }
 
     #[test]
