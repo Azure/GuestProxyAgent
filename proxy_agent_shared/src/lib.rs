@@ -5,8 +5,6 @@ pub mod common_state;
 pub mod constants;
 pub mod current_info;
 pub mod error;
-#[cfg(windows)]
-pub mod etw;
 pub mod host_clients;
 pub mod hyper_client;
 pub mod logger;
@@ -21,6 +19,8 @@ pub mod version;
 
 #[cfg(windows)]
 pub mod windows;
+#[cfg(windows)]
+pub mod windows_events;
 
 #[cfg(not(windows))]
 pub mod linux;

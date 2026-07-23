@@ -66,6 +66,8 @@ pub async fn start_service(shared_state: SharedState) {
     logger::write_information(start_message.clone());
     #[cfg(not(windows))]
     logger::write_serial_console_log(start_message);
+    #[cfg(windows)]
+    start_etw_listener();
 
     tokio::spawn({
         let key_keeper = KeyKeeper::new(
@@ -94,6 +96,39 @@ pub async fn start_service(shared_state: SharedState) {
             proxy_server.start().await;
         }
     });
+}
+
+#[cfg(windows)]
+fn start_etw_listener() {
+    const WINDOWS_ETW_TRACE_SESSION_NAME: &str = "WindowsEtwTraceSession";
+    const EBPF_FOR_WINDOWS_PROVIDER_ID: &str = "394f321c-5cf4-404c-aa34-4df1428a7f9c";
+    const NET_EBPF_EXT_PROVIDER_ID: &str = "f2f2ca01-ad02-4a07-9e90-95a2334f3692";
+
+    // The maximum level for ETW provider, 3 - Warning, 4 - Informational
+    // The level is used to filter events from the provider, only events with level less than or equal to the specified level will be captured.
+    // We choose 3 (Warning) as the maximum level to reduce the amount of events captured and avoid overwhelming the system with too many events.
+    const MAX_LEVEL: u8 = 3;
+
+    use proxy_agent_shared::windows_events::etw_listener::EtwListener;
+
+    let mut etw_listener = EtwListener::new(WINDOWS_ETW_TRACE_SESSION_NAME);
+
+    // Add ETW providers relevant to eBPF-for-Windows tracing.
+    if let Err(e) = etw_listener.add_provider(EBPF_FOR_WINDOWS_PROVIDER_ID, MAX_LEVEL) {
+        logger::write_error(format!(
+            "Failed to add ETW provider '{EBPF_FOR_WINDOWS_PROVIDER_ID}' with error: {:?}",
+            e
+        ));
+    }
+    if let Err(e) = etw_listener.add_provider(NET_EBPF_EXT_PROVIDER_ID, MAX_LEVEL) {
+        logger::write_error(format!(
+            "Failed to add ETW provider '{NET_EBPF_EXT_PROVIDER_ID}' with error: {:?}",
+            e
+        ));
+    }
+    if let Err(e) = etw_listener.run() {
+        logger::write_error(format!("Failed to run ETW listener with error: {:?}", e));
+    }
 }
 
 /// Start the service and wait until the service is stopped.
@@ -140,6 +175,9 @@ pub fn stop_service(shared_state: SharedState) {
             .await;
         }
     });
+
+    #[cfg(windows)]
+    proxy_agent_shared::windows_events::etw_listener::stop();
 
     event_logger::stop();
 }

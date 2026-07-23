@@ -8,6 +8,8 @@ use crate::misc_helpers;
 use crate::result::Result;
 use std::fs;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 
 pub fn stop_service(service_name: &str) -> Result<()> {
     let output = misc_helpers::execute_command("systemctl", vec!["stop", service_name], -1)?;
@@ -110,46 +112,59 @@ fn delete_service_config_file(service_name: &str) -> Result<()> {
 
 /// Queries the executable path of the specified service.
 /// It uses systemctl show command to get the ExecStart property.
-/// If the command fails or the output cannot be parsed, an Error is returned.
+/// If the command fails or the output cannot be parsed after all retries, an Error is returned.
 pub fn query_service_executable_path(service_name: &str) -> Result<PathBuf> {
-    let output = misc_helpers::execute_command(
-        "systemctl",
-        vec!["show", "--property=ExecStart", service_name],
-        -1,
-    )?;
+    const MAX_ATTEMPTS: u32 = 3;
+    const RETRY_DELAY: Duration = Duration::from_secs(1);
 
-    if !output.is_success() {
-        let error_message = format!(
-            "query_service_executable_path: {service_name} failed with error: {}",
-            output.message()
-        );
-        return Err(Error::Command(
-            CommandErrorType::CommandName("systemctl show --property=ExecStart".to_string()),
-            error_message,
-        ));
-    }
-
-    let stdout = output.stdout();
-    logger_manager::write_info(format!(
-        "query_service_executable_path: {service_name} result: {stdout}",
-    ));
-
-    // Parse ExecStart output
-    // Format: ExecStart={ path=/path/to/executable ; argv[]=/path/to/executable [args] ; ... }
-    if let Some(path_start) = stdout.find("path=") {
-        let path_str = &stdout[path_start + 5..];
-        if let Some(semicolon_pos) = path_str.find(" ;") {
-            let executable_path = path_str[..semicolon_pos].trim();
-            return Ok(PathBuf::from(executable_path));
+    let mut last_error_message = String::new();
+    for attempt in 1..=MAX_ATTEMPTS {
+        if attempt > 1 {
+            logger_manager::write_info(format!(
+                "query_service_executable_path: attempt {attempt}/{MAX_ATTEMPTS} for {service_name}",
+            ));
+            thread::sleep(RETRY_DELAY);
         }
+
+        let output = misc_helpers::execute_command(
+            "systemctl",
+            vec!["show", "--property=ExecStart", service_name],
+            -1,
+        )?;
+
+        if !output.is_success() {
+            last_error_message = format!(
+                "query_service_executable_path: {service_name} failed with error: {}",
+                output.message()
+            );
+            continue;
+        }
+
+        let stdout = output.stdout();
+        logger_manager::write_info(format!(
+            "query_service_executable_path: {service_name} result: {stdout}",
+        ));
+
+        // Parse ExecStart output
+        // Format: ExecStart={ path=/path/to/executable ; argv[]=/path/to/executable [args] ; ... }
+        // ExecStart={} means systemd has not yet loaded the unit (e.g. right after install);
+        // we retry to give systemd time to process the unit file.
+        if let Some(path_start) = stdout.find("path=") {
+            let path_str = &stdout[path_start + 5..];
+            if let Some(semicolon_pos) = path_str.find(" ;") {
+                let executable_path = path_str[..semicolon_pos].trim();
+                return Ok(PathBuf::from(executable_path));
+            }
+        }
+
+        last_error_message = format!(
+            "query_service_executable_path: {service_name} failed to parse ExecStart output: {stdout}"
+        );
     }
 
-    let error_message = format!(
-        "query_service_executable_path: {service_name} failed to parse ExecStart output: {stdout}"
-    );
     Err(Error::Command(
         CommandErrorType::CommandName("systemctl show --property=ExecStart".to_string()),
-        error_message,
+        last_error_message,
     ))
 }
 

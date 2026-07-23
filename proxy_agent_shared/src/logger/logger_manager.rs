@@ -5,9 +5,9 @@
 //! It uses a static `OnceCell` to ensure that the loggers are initialized only once.
 
 use super::rolling_logger::RollingLogger;
-#[cfg(windows)]
-use crate::etw::etw_writer::WindowsEventWriter;
 use crate::logger::LoggerLevel;
+#[cfg(windows)]
+use crate::windows_events::evt_writer::WindowsEventWriter;
 use std::collections::HashMap;
 
 // The loggers are stored in a static `OnceCell` to ensure they are initialized only once.
