@@ -381,6 +381,8 @@ Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of 
 
 **Why we do NOT "fix" this in canon by decode-and-splitting.** GPA forwards the **original bytes** to the upstream (§1.3; `proxy_server.rs` only adds headers, never rewrites the URI). So any decode-and-split in canon would merely be GPA *predicting* IMDS's parser — re-introducing the differential the moment the two parsers disagree on an edge case (`%23` fragment, repeated/encoded delimiters, `+`→space), and broadening `%3F`-as-delimiter acceptance to *every* endpoint. The clean, auditable fail-closed deny is preferable to a fragile parser-equivalence bet.
 
+**Security assessment.** *Medium latent severity; benign for this emitter.* This is a genuine authorization **differential**, not a cosmetic one: legacy authorizes an opaque, still-encoded path string while IMDS acts on the *decoded* query, so the bytes GPA approved and the request IMDS served are semantically different. For this caller it is harmless — `scheduledevents` is an allowed endpoint either way and the emitter is a first-party `SYSTEM` agent — but the *class* (path/query confusion via `%3F`) is exactly how a crafted request turns a permissive prefix rule into access to a query-gated or path-adjacent endpoint the rule never intended to allow. Canon closing it is real hardening, not tidiness. There is no wire-level smuggling: the `%3F` stays percent-encoded in the bytes GPA forwards, so the confusion lives purely at the authZ layer. Enforce impact is availability-only — scheduled-events polling for this agent is denied until the client emits a literal `?`.
+
 **Resolution / action items.**
 
 - [ ] **Root cause (owner: VmssRuntimeAgent team):** fix the IMDS URL construction to emit a literal `?`; audit all IMDS call sites for the same pattern (typically caused by escaping the whole path+query string instead of building the query with a URI builder).
@@ -421,10 +423,58 @@ Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of 
 - `query.rs::value_non_ascii_preserved_under_ascii_fold` — ASCII folds, non-ASCII bytes survive.
 - `rule.rs::matches_query_value_case_insensitive` — reproduces the exact divergence: a rule value and request value that differ only in case still match.
 
+**Security assessment.** *No security exposure; availability bug only.* The pre-fix canon was **over-restrictive** — it denied legitimate managed-identity token requests, so the failure mode was false-*deny* (availability), never over-grant. There is no confidentiality or integrity angle in either direction. The fix does not weaken authorization: ARM resource ids are case-insensitive identifiers by spec, so ASCII-folding a value cannot make two *distinct* resources collide — a folded rule value matches a folded request value iff they denote the same resource. The fold is ASCII-only, so it also can't merge distinct non-ASCII values. Had this reached enforce unfixed, the impact would have been denied token requests for user-assigned identities whose `mi_res_id` casing differed from the stored rule — an outage, not a breach.
+
 **Resolution / action items.**
 
 - [x] **Pipeline fix:** `canonicalize_query` ASCII-lowercases values; regression tests added (above).
 - [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry for managed-identity token traffic before flipping the affected fleet to **enforce**.
+
+#### KD-3 · Trailing carriage return (`%0D`) on a `client_id` query value (`CANON_CTRL`)
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-07-06 (shadow)                                                                                     |
+| Disposition      | **Canon-stricter-and-correct** — client-side defect; canon deny is the intended behavior                |
+| Legacy decision  | `allow`                                                                                                 |
+| Canon decision   | `deny` → `CANON_CTRL` (`CanonError::ControlChar`, control character in a decoded query component)       |
+| Emitter          | IMDS managed-identity token client (identity scoped by `client_id`)                                     |
+| Destination      | IMDS `169.254.169.254:80`, `/metadata/identity/oauth2/token`                                            |
+
+**Divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id> legacy=allow canon=error:CANON_CTRL \
+      uri="/metadata/identity/oauth2/token?api-version=2018-02-01\
+      &authority=https://login.microsoftonline.com/<tenant>&resource=https://vault.azure.net\
+      &client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D"
+
+**What happened.** A managed-identity token request carried a trailing `%0D` appended to the `client_id` value. `%0D` percent-decodes to `0x0D` — a carriage return (`\r`):
+
+    on the wire : client_id=292e4c16-...-52d441e9ee5b%0D   ← trailing CR after the GUID
+    intended    : client_id=292e4c16-...-52d441e9ee5b       ← bare GUID
+
+No legitimate caller puts a control character in a `client_id`. This is classic line-ending contamination: the GUID was sourced from something CRLF-terminated (a file read, an env var, `echo` without `-n`, a Windows text buffer, or `"$id\r\n"` string concatenation) and then percent-encoded into the query as `%0D`.
+
+**Why it currently succeeds.** The `client_id` is not *constrained* by the authorization rule (the rule matches on path + `api-version`), so:
+
+1. **Legacy matcher** — decodes the value to `...52d441e9ee5b\r`, lowercases it, and since nothing compares against `client_id`, the privilege still matches and identity resolves → `allow`. The stray `\r` just rides along.
+2. **IMDS** — tolerates or trims the trailing CR when resolving the identity, so production sees a token issued and the bug stays masked.
+
+**Why canon denies (and why that's right).** The canonical query pipeline (`proxy/canonical/query.rs::canonicalize_query` → `decode_query_component`) percent-decodes once, then rejects any decoded byte `< 0x20` or `== 0x7F` as `CanonError::ControlChar`. A `\r` in a request component is exactly the CRLF-injection / request-splitting vector the control-char guard exists to stop, and RFC 3986 query values are `pchar`-only — raw control octets are not allowed. Canon fails closed on the *whole* request (`CANON_CTRL`) rather than silently forwarding a `\r`. Legacy is the permissive, non-compliant side.
+
+**Why we do NOT "fix" this in canon by stripping the CR.** Silently trimming control characters would put GPA back in the business of *repairing* malformed client input and predicting how the upstream normalizes it — the same parser-equivalence trap called out in KD-1. Rejecting is auditable and safe under any upstream parser; the correct remedy is to stop emitting the CR at the source.
+
+**Regression coverage.**
+
+- `query.rs::control_char_rejected` — asserts a decoded control character in a query component yields `CanonError::ControlChar`, including the exact KD-3 vector (`client_id=...%0D`).
+
+**Security assessment.** *Low severity; availability consideration only.* No authorization bypass in either direction — `client_id` is not a rule constraint, so the trailing `\r` grants nothing extra (legacy) and denies no legitimate access on its merits (canon fails closed on hygiene, not scope). No wire-level CRLF injection: the control byte stays percent-encoded (`%0D`) in the bytes GPA forwards and is never decoded-then-reinserted into a header or request line. No log forging — the divergence line renders the URI with `{:?}`, which escapes `\r`. No cross-identity token leak — a CR-suffixed GUID collides with no other valid `client_id`; worst case IMDS trims it (intended token) or rejects it (client error). The only real risk is availability: flipping enforce before the client is fixed denies these malformed-but-currently-working token requests. Treat as data-hygiene / client-correctness and gate the enforce flip on the client fix; no hotfix or security escalation warranted.
+
+**Resolution / action items.**
+
+- [ ] **Root cause (owner: token-client team):** strip the trailing CR/LF from `client_id` (and audit all IMDS query values) at the source; the GUID should be trimmed before URL construction.
+- [ ] **GPA rollout gate:** keep the affected fleet in **shadow** (do not enable **enforce**) until the client fix is deployed, so the malformed-but-currently-working requests are not denied.
+- [ ] **Close-out:** entry is resolved when the divergence stops appearing in shadow telemetry post-deployment.
 
 ## 10. Test Strategy
 
