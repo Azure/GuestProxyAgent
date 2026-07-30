@@ -758,7 +758,7 @@ mod tests {
         // Latin-1 accent + CJK + an astral-plane emoji (a surrogate pair in
         // UTF-16) so multi-byte decoding and surrogate pairing are exercised,
         // not just the ASCII fast path. This is the exact `message` value
-        // stored in every fixture file under testdata/encodings.
+        // stored in every fixture file under test_data/encodings.
         const NON_ASCII_MESSAGE: &str = "caf\u{00e9} \u{6d4b}\u{8bd5} \u{1F600}";
 
         #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -769,8 +769,8 @@ mod tests {
             enabled: bool,
         }
 
-        let testdata_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata")
+        let test_data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
             .join("encodings");
 
         let expected = EncodingTestStruct {
@@ -798,7 +798,7 @@ mod tests {
         ];
 
         for file_name in fixtures {
-            let file_path = testdata_dir.join(file_name);
+            let file_path = test_data_dir.join(file_name);
             assert!(
                 file_path.exists(),
                 "missing encoding fixture file: {}",
