@@ -29,3 +29,8 @@ Cargo.lock eol=lf
 *.png binary
 *.wim binary
 *.zip binary
+
+# json_read_from_file encoding fixtures. These are UTF-16/UTF-32 and
+# BOM-prefixed files whose exact bytes are the thing under test, so they must
+# never be text-normalized despite the `*.json text` rule above.
+proxy_agent_shared/testdata/encodings/* binary

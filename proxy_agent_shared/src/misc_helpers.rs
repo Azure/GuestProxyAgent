@@ -8,6 +8,7 @@ use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::{
+    borrow::Cow,
     fs::{self, File},
     path::{Path, PathBuf},
     process::Command,
@@ -245,24 +246,132 @@ where
     Ok(())
 }
 
+/// Reads `file_path`, decodes it using the detected text encoding and
+/// deserializes the resulting JSON into `T`.
+///
+/// Supports UTF-8, UTF-16LE, UTF-16BE, UTF-32LE and UTF-32BE, each with or
+/// without a BOM - the 10 encodings a JSON file produced by an arbitrary
+/// editor or tool can realistically use. Any BOM is consumed while decoding and
+/// never reaches serde_json, which would fail if the json payload contains BOM prefix.
 pub fn json_read_from_file<T>(file_path: &Path) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    // Read the whole file to bytes so we can transparently skip an optional
-    // UTF-8 BOM (EF BB BF). serde_json does not strip a BOM and would otherwise
-    // fail the parse with "expected value at line 1 column 1" for any file
-    // produced by editors / tools that default to BOM-prefixed UTF-8 (e.g.
-    // Windows PowerShell 5.1's `Set-Content -Encoding UTF8`, Notepad, VS Code's
-    // "UTF-8 with BOM").
     let bytes = fs::read(file_path)?;
-    let payload = match bytes.as_slice() {
-        [0xEF, 0xBB, 0xBF, rest @ ..] => rest,
-        rest => rest,
-    };
-    let obj: T = serde_json::from_slice(payload)?;
+    let text = decode_json_text(&bytes, file_path)?;
+    let obj: T = serde_json::from_str(&text)?;
 
     Ok(obj)
+}
+
+/// Detects the text encoding of `bytes` and returns it as
+/// (code unit width in bytes, big endian, BOM length in bytes).
+/// width: 1 for UTF-8, 2 for UTF-16, 4 for UTF-32
+/// big_endian: true for BE, false for LE
+/// bom length length of bom
+///
+/// Wider BOMs must be tested first: the UTF-32LE BOM (FF FE 00 00) starts with
+/// the UTF-16LE BOM (FF FE), so a shortest-first scan would mis-detect a
+/// UTF-32LE file as UTF-16LE.
+fn detect_json_encoding(bytes: &[u8]) -> (usize, bool, usize) {
+    if bytes.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        (4, true, 4) // UTF-32BE with BOM
+    } else if bytes.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        (4, false, 4) // UTF-32LE with BOM
+    } else if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        (1, false, 3) // UTF-8 with BOM
+    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+        (2, true, 2) // UTF-16BE with BOM
+    } else if bytes.starts_with(&[0xFF, 0xFE]) {
+        (2, false, 2) // UTF-16LE with BOM
+    } else {
+        // No BOM. A JSON document always starts with an ASCII character (`[`,
+        // `{`, `"`, a digit or whitespace), so the NUL padding around the first
+        // code unit identifies both the width and the byte order. The 4-byte
+        // patterns are checked first because they are a superset of the 2-byte
+        // ones.
+        let is_nul = |i: usize| bytes.get(i) == Some(&0x00);
+        let is_text = |i: usize| matches!(bytes.get(i), Some(b) if *b != 0x00);
+
+        if is_nul(0) && is_nul(1) && is_nul(2) && is_text(3) {
+            (4, true, 0) // 00 00 00 xx -> UTF-32BE
+        } else if is_text(0) && is_nul(1) && is_nul(2) && is_nul(3) {
+            (4, false, 0) // xx 00 00 00 -> UTF-32LE
+        } else if is_nul(0) && is_text(1) {
+            (2, true, 0) // 00 xx -> UTF-16BE
+        } else if is_text(0) && is_nul(1) {
+            (2, false, 0) // xx 00 -> UTF-16LE
+        } else {
+            (1, false, 0) // anything else, including plain ASCII / UTF-8
+        }
+    }
+}
+
+/// Decodes `bytes` into UTF-8 text using the encoding detected by
+/// [`detect_json_encoding`], skipping the BOM when present.
+/// UTF-8 input is borrowed as-is, so the common case does not allocate.
+fn decode_json_text<'a>(bytes: &'a [u8], file_path: &Path) -> Result<Cow<'a, str>> {
+    let decode_error = |detail: String| Error::DecodeFile(path_to_string(file_path), detail);
+
+    let (code_unit_len, big_endian, bom_len) = detect_json_encoding(bytes);
+    let payload = &bytes[bom_len..];
+
+    match code_unit_len {
+        1 => std::str::from_utf8(payload)
+            .map(Cow::Borrowed)
+            .map_err(|e| decode_error(format!("content is not valid UTF-8: {e}"))),
+        2 => {
+            if !payload.len().is_multiple_of(2) {
+                return Err(decode_error(format!(
+                    "UTF-16 content is truncated: {} bytes is not a whole number of 16-bit code units",
+                    payload.len()
+                )));
+            }
+
+            let code_units = payload.chunks_exact(2).map(|chunk| {
+                let unit = [chunk[0], chunk[1]];
+                if big_endian {
+                    u16::from_be_bytes(unit)
+                } else {
+                    u16::from_le_bytes(unit)
+                }
+            });
+
+            // `decode_utf16` pairs surrogates, so astral-plane characters
+            // (emoji) are reassembled correctly; a lone surrogate is rejected
+            // rather than silently replaced.
+            char::decode_utf16(code_units)
+                .collect::<std::result::Result<String, _>>()
+                .map(Cow::Owned)
+                .map_err(|e| decode_error(format!("UTF-16 content has an unpaired surrogate: {e}")))
+        }
+        _ => {
+            if !payload.len().is_multiple_of(4) {
+                return Err(decode_error(format!(
+                    "UTF-32 content is truncated: {} bytes is not a whole number of 32-bit code units",
+                    payload.len()
+                )));
+            }
+
+            payload
+                .chunks_exact(4)
+                .map(|chunk| {
+                    let unit = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                    let scalar = if big_endian {
+                        u32::from_be_bytes(unit)
+                    } else {
+                        u32::from_le_bytes(unit)
+                    };
+                    char::from_u32(scalar).ok_or_else(|| {
+                        decode_error(format!(
+                            "UTF-32 content has an invalid scalar value: {scalar:#010X}"
+                        ))
+                    })
+                })
+                .collect::<Result<String>>()
+                .map(Cow::Owned)
+        }
+    }
 }
 
 pub fn json_clone<T>(obj: &T) -> Result<T>
@@ -642,6 +751,65 @@ mod tests {
         assert!(super::json_read_from_file::<Small>(&bom_only).is_err());
 
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn json_read_from_file_supports_all_ten_encodings_test() {
+        // Latin-1 accent + CJK + an astral-plane emoji (a surrogate pair in
+        // UTF-16) so multi-byte decoding and surrogate pairing are exercised,
+        // not just the ASCII fast path. This is the exact `message` value
+        // stored in every fixture file under testdata/encodings.
+        const NON_ASCII_MESSAGE: &str = "caf\u{00e9} \u{6d4b}\u{8bd5} \u{1F600}";
+
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct EncodingTestStruct {
+            name: String,
+            code: i32,
+            message: String,
+            enabled: bool,
+        }
+
+        let testdata_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata")
+            .join("encodings");
+
+        let expected = EncodingTestStruct {
+            name: "EncodingTest".to_string(),
+            code: 7,
+            message: NON_ASCII_MESSAGE.to_string(),
+            enabled: true,
+        };
+
+        // Pre-created fixture files, one per supported encoding. They hold the
+        // same JSON document, byte-for-byte encoded differently. The
+        // UTF-32LE-with-BOM file is the ambiguous one: its BOM starts with the
+        // UTF-16LE BOM.
+        let fixtures = [
+            "utf8_bom.json",
+            "utf8_no_bom.json",
+            "utf16le_bom.json",
+            "utf16le_no_bom.json",
+            "utf16be_bom.json",
+            "utf16be_no_bom.json",
+            "utf32le_bom.json",
+            "utf32le_no_bom.json",
+            "utf32be_bom.json",
+            "utf32be_no_bom.json",
+        ];
+
+        for file_name in fixtures {
+            let file_path = testdata_dir.join(file_name);
+            assert!(
+                file_path.exists(),
+                "missing encoding fixture file: {}",
+                file_path.display()
+            );
+
+            let actual = super::json_read_from_file::<EncodingTestStruct>(&file_path)
+                .unwrap_or_else(|e| panic!("{file_name}: {e}"));
+
+            assert_eq!(expected, actual, "{file_name}: decoded payload differs");
+        }
     }
 
     #[test]
