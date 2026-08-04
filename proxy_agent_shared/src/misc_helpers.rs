@@ -258,74 +258,108 @@ where
     T: DeserializeOwned,
 {
     let bytes = fs::read(file_path)?;
-    let text = decode_json_text(&bytes, file_path)?;
+    let text = decode_text(&bytes)
+        .map_err(|detail| Error::DecodeFile(path_to_string(file_path), detail))?;
     let obj: T = serde_json::from_str(&text)?;
 
     Ok(obj)
 }
 
-/// Detects the text encoding of `bytes` and returns it as
-/// (code unit width in bytes, big endian, BOM length in bytes).
-/// width: 1 for UTF-8, 2 for UTF-16, 4 for UTF-32
-/// big_endian: true for BE, false for LE
-/// bom length length of bom
+/// The Unicode transformation format of the detected encoding.
+#[derive(Clone, Copy)]
+enum TextEncoding {
+    /// UTF-8 (and plain ASCII) - 1 byte per code unit.
+    Utf8,
+    /// UTF-16 - 2 bytes per code unit.
+    Utf16,
+    /// UTF-32 - 4 bytes per code unit.
+    Utf32,
+}
+
+/// The text encoding detected from the leading bytes of a file.
+struct DetectedEncoding {
+    /// The Unicode transformation format.
+    text_encoding: TextEncoding,
+    /// True for big endian, false for little endian. Not meaningful for UTF-8.
+    big_endian: bool,
+    /// Length of the BOM in bytes, 0 when the file has no BOM.
+    bom_len: usize,
+}
+
+impl DetectedEncoding {
+    const fn new(text_encoding: TextEncoding, big_endian: bool, bom_len: usize) -> Self {
+        Self {
+            text_encoding,
+            big_endian,
+            bom_len,
+        }
+    }
+}
+
+/// Detects the text encoding of `bytes`.
+///
+/// A BOM is a Unicode construct rather than a JSON one, so BOM detection here is
+/// format agnostic. The BOM-less fallback, however, assumes the document starts
+/// with an ASCII character - true for JSON, XML and most text config formats.
 ///
 /// Wider BOMs must be tested first: the UTF-32LE BOM (FF FE 00 00) starts with
 /// the UTF-16LE BOM (FF FE), so a shortest-first scan would mis-detect a
 /// UTF-32LE file as UTF-16LE.
-fn detect_json_encoding(bytes: &[u8]) -> (usize, bool, usize) {
+fn detect_text_encoding(bytes: &[u8]) -> DetectedEncoding {
     if bytes.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
-        (4, true, 4) // UTF-32BE with BOM
+        DetectedEncoding::new(TextEncoding::Utf32, true, 4) // UTF-32BE with BOM
     } else if bytes.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
-        (4, false, 4) // UTF-32LE with BOM
+        DetectedEncoding::new(TextEncoding::Utf32, false, 4) // UTF-32LE with BOM
     } else if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        (1, false, 3) // UTF-8 with BOM
+        DetectedEncoding::new(TextEncoding::Utf8, false, 3) // UTF-8 with BOM
     } else if bytes.starts_with(&[0xFE, 0xFF]) {
-        (2, true, 2) // UTF-16BE with BOM
+        DetectedEncoding::new(TextEncoding::Utf16, true, 2) // UTF-16BE with BOM
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
-        (2, false, 2) // UTF-16LE with BOM
+        DetectedEncoding::new(TextEncoding::Utf16, false, 2) // UTF-16LE with BOM
     } else {
-        // No BOM. A JSON document always starts with an ASCII character (`[`,
-        // `{`, `"`, a digit or whitespace), so the NUL padding around the first
-        // code unit identifies both the width and the byte order. The 4-byte
-        // patterns are checked first because they are a superset of the 2-byte
-        // ones.
+        // No BOM. The document is expected to start with an ASCII character
+        // (for JSON that is `[`, `{`, `"`, a digit or whitespace), so the NUL
+        // padding around the first code unit identifies both the width and the
+        // byte order. The 4-byte patterns are checked first because they are a
+        // superset of the 2-byte ones.
         let is_nul = |i: usize| bytes.get(i) == Some(&0x00);
         let is_text = |i: usize| matches!(bytes.get(i), Some(b) if *b != 0x00);
 
         if is_nul(0) && is_nul(1) && is_nul(2) && is_text(3) {
-            (4, true, 0) // 00 00 00 xx -> UTF-32BE
+            DetectedEncoding::new(TextEncoding::Utf32, true, 0) // 00 00 00 xx -> UTF-32BE
         } else if is_text(0) && is_nul(1) && is_nul(2) && is_nul(3) {
-            (4, false, 0) // xx 00 00 00 -> UTF-32LE
+            DetectedEncoding::new(TextEncoding::Utf32, false, 0) // xx 00 00 00 -> UTF-32LE
         } else if is_nul(0) && is_text(1) {
-            (2, true, 0) // 00 xx -> UTF-16BE
+            DetectedEncoding::new(TextEncoding::Utf16, true, 0) // 00 xx -> UTF-16BE
         } else if is_text(0) && is_nul(1) {
-            (2, false, 0) // xx 00 -> UTF-16LE
+            DetectedEncoding::new(TextEncoding::Utf16, false, 0) // xx 00 -> UTF-16LE
         } else {
-            (1, false, 0) // anything else, including plain ASCII / UTF-8
+            DetectedEncoding::new(TextEncoding::Utf8, false, 0) // anything else, including plain ASCII / UTF-8
         }
     }
 }
 
 /// Decodes `bytes` into UTF-8 text using the encoding detected by
-/// [`detect_json_encoding`], skipping the BOM when present.
+/// [`detect_text_encoding`], skipping the BOM when present.
 /// UTF-8 input is borrowed as-is, so the common case does not allocate.
-fn decode_json_text<'a>(bytes: &'a [u8], file_path: &Path) -> Result<Cow<'a, str>> {
-    let decode_error = |detail: String| Error::DecodeFile(path_to_string(file_path), detail);
+///
+/// On failure it returns only a description of what made the content
+/// undecodable; the caller attaches the source of the bytes.
+fn decode_text(bytes: &[u8]) -> std::result::Result<Cow<'_, str>, String> {
+    let encoding = detect_text_encoding(bytes);
+    let big_endian = encoding.big_endian;
+    let payload = &bytes[encoding.bom_len..];
 
-    let (code_unit_len, big_endian, bom_len) = detect_json_encoding(bytes);
-    let payload = &bytes[bom_len..];
-
-    match code_unit_len {
-        1 => std::str::from_utf8(payload)
+    match encoding.text_encoding {
+        TextEncoding::Utf8 => std::str::from_utf8(payload)
             .map(Cow::Borrowed)
-            .map_err(|e| decode_error(format!("content is not valid UTF-8: {e}"))),
-        2 => {
+            .map_err(|e| format!("content is not valid UTF-8: {e}")),
+        TextEncoding::Utf16 => {
             if !payload.len().is_multiple_of(2) {
-                return Err(decode_error(format!(
+                return Err(format!(
                     "UTF-16 content is truncated: {} bytes is not a whole number of 16-bit code units",
                     payload.len()
-                )));
+                ));
             }
 
             let code_units = payload.chunks_exact(2).map(|chunk| {
@@ -343,14 +377,14 @@ fn decode_json_text<'a>(bytes: &'a [u8], file_path: &Path) -> Result<Cow<'a, str
             char::decode_utf16(code_units)
                 .collect::<std::result::Result<String, _>>()
                 .map(Cow::Owned)
-                .map_err(|e| decode_error(format!("UTF-16 content has an unpaired surrogate: {e}")))
+                .map_err(|e| format!("UTF-16 content has an unpaired surrogate: {e}"))
         }
-        _ => {
+        TextEncoding::Utf32 => {
             if !payload.len().is_multiple_of(4) {
-                return Err(decode_error(format!(
+                return Err(format!(
                     "UTF-32 content is truncated: {} bytes is not a whole number of 32-bit code units",
                     payload.len()
-                )));
+                ));
             }
 
             payload
@@ -363,12 +397,10 @@ fn decode_json_text<'a>(bytes: &'a [u8], file_path: &Path) -> Result<Cow<'a, str
                         u32::from_le_bytes(unit)
                     };
                     char::from_u32(scalar).ok_or_else(|| {
-                        decode_error(format!(
-                            "UTF-32 content has an invalid scalar value: {scalar:#010X}"
-                        ))
+                        format!("UTF-32 content has an invalid scalar value: {scalar:#010X}")
                     })
                 })
-                .collect::<Result<String>>()
+                .collect::<std::result::Result<String, String>>()
                 .map(Cow::Owned)
         }
     }
