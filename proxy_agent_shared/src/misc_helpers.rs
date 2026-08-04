@@ -757,8 +757,7 @@ mod tests {
     fn json_read_from_file_supports_all_ten_encodings_test() {
         // Latin-1 accent + CJK + an astral-plane emoji (a surrogate pair in
         // UTF-16) so multi-byte decoding and surrogate pairing are exercised,
-        // not just the ASCII fast path. This is the exact `message` value
-        // stored in every fixture file under test_data/encodings.
+        // not just the ASCII fast path.
         const NON_ASCII_MESSAGE: &str = "caf\u{00e9} \u{6d4b}\u{8bd5} \u{1F600}";
 
         #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -769,10 +768,65 @@ mod tests {
             enabled: bool,
         }
 
-        let test_data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("test_data")
-            .join("encodings");
+        #[derive(Clone, Copy)]
+        enum Encoding {
+            Utf8,
+            Utf16Le,
+            Utf16Be,
+            Utf32Le,
+            Utf32Be,
+        }
 
+        /// Encodes `text` into the raw bytes written to each test file.
+        fn encode(text: &str, encoding: Encoding, with_bom: bool) -> Vec<u8> {
+            let mut bytes = Vec::new();
+
+            if with_bom {
+                bytes.extend_from_slice(match encoding {
+                    Encoding::Utf8 => &[0xEF, 0xBB, 0xBF][..],
+                    Encoding::Utf16Le => &[0xFF, 0xFE][..],
+                    Encoding::Utf16Be => &[0xFE, 0xFF][..],
+                    Encoding::Utf32Le => &[0xFF, 0xFE, 0x00, 0x00][..],
+                    Encoding::Utf32Be => &[0x00, 0x00, 0xFE, 0xFF][..],
+                });
+            }
+
+            match encoding {
+                Encoding::Utf8 => bytes.extend_from_slice(text.as_bytes()),
+                Encoding::Utf16Le => {
+                    for unit in text.encode_utf16() {
+                        bytes.extend_from_slice(&unit.to_le_bytes());
+                    }
+                }
+                Encoding::Utf16Be => {
+                    for unit in text.encode_utf16() {
+                        bytes.extend_from_slice(&unit.to_be_bytes());
+                    }
+                }
+                Encoding::Utf32Le => {
+                    for ch in text.chars() {
+                        bytes.extend_from_slice(&(ch as u32).to_le_bytes());
+                    }
+                }
+                Encoding::Utf32Be => {
+                    for ch in text.chars() {
+                        bytes.extend_from_slice(&(ch as u32).to_be_bytes());
+                    }
+                }
+            }
+
+            bytes
+        }
+
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("json_read_from_file_supports_all_ten_encodings_test");
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+        super::try_create_folder(&temp_test_path).unwrap();
+
+        let json = format!(
+            r#"{{"name":"EncodingTest","code":7,"message":"{NON_ASCII_MESSAGE}","enabled":true}}"#
+        );
         let expected = EncodingTestStruct {
             name: "EncodingTest".to_string(),
             code: 7,
@@ -780,36 +834,53 @@ mod tests {
             enabled: true,
         };
 
-        // Pre-created fixture files, one per supported encoding. They hold the
-        // same JSON document, byte-for-byte encoded differently. The
-        // UTF-32LE-with-BOM file is the ambiguous one: its BOM starts with the
-        // UTF-16LE BOM.
-        let fixtures = [
-            "utf8_bom.json",
-            "utf8_no_bom.json",
-            "utf16le_bom.json",
-            "utf16le_no_bom.json",
-            "utf16be_bom.json",
-            "utf16be_no_bom.json",
-            "utf32le_bom.json",
-            "utf32le_no_bom.json",
-            "utf32be_bom.json",
-            "utf32be_no_bom.json",
+        // The same JSON document written 10 times, byte-for-byte encoded
+        // differently. The UTF-32LE-with-BOM case is the ambiguous one: its BOM
+        // starts with the UTF-16LE BOM.
+        let combinations = [
+            ("utf8_bom.json", Encoding::Utf8, true),
+            ("utf8_no_bom.json", Encoding::Utf8, false),
+            ("utf16le_bom.json", Encoding::Utf16Le, true),
+            ("utf16le_no_bom.json", Encoding::Utf16Le, false),
+            ("utf16be_bom.json", Encoding::Utf16Be, true),
+            ("utf16be_no_bom.json", Encoding::Utf16Be, false),
+            ("utf32le_bom.json", Encoding::Utf32Le, true),
+            ("utf32le_no_bom.json", Encoding::Utf32Le, false),
+            ("utf32be_bom.json", Encoding::Utf32Be, true),
+            ("utf32be_no_bom.json", Encoding::Utf32Be, false),
         ];
 
-        for file_name in fixtures {
-            let file_path = test_data_dir.join(file_name);
-            assert!(
-                file_path.exists(),
-                "missing encoding fixture file: {}",
-                file_path.display()
-            );
+        for (file_name, encoding, with_bom) in combinations {
+            let file_path = temp_test_path.join(file_name);
+            fs::write(&file_path, encode(&json, encoding, with_bom)).unwrap();
 
             let actual = super::json_read_from_file::<EncodingTestStruct>(&file_path)
                 .unwrap_or_else(|e| panic!("{file_name}: {e}"));
 
             assert_eq!(expected, actual, "{file_name}: decoded payload differs");
         }
+
+        // Odd byte count cannot be a whole number of UTF-16 code units.
+        let truncated = temp_test_path.join("truncated_utf16.json");
+        fs::write(&truncated, [0x7B, 0x00, 0x22]).unwrap();
+        let error = super::json_read_from_file::<EncodingTestStruct>(&truncated)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("truncated"), "{error}");
+
+        // 0x0011_0000 is one past the highest Unicode scalar value.
+        let bad_scalar = temp_test_path.join("bad_utf32_scalar.json");
+        fs::write(
+            &bad_scalar,
+            [0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00],
+        )
+        .unwrap();
+        let error = super::json_read_from_file::<EncodingTestStruct>(&bad_scalar)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("invalid scalar value"), "{error}");
+
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 
     #[test]
