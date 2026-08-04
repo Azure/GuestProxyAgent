@@ -916,6 +916,26 @@ mod tests {
     }
 
     #[test]
+    fn detect_text_encoding_short_input_test() {
+        use super::TextEncoding;
+
+        /// True when `bytes` is detected as plain UTF-8 with no BOM.
+        fn is_utf8_no_bom(bytes: &[u8]) -> bool {
+            let detected = super::detect_text_encoding(bytes);
+            matches!(detected.text_encoding, TextEncoding::Utf8)
+                && !detected.big_endian
+                && detected.bom_len == 0
+        }
+
+        // 1. An empty input is UTF-8 with no BOM.
+        assert!(is_utf8_no_bom(&[]), "empty input");
+        // 2. A single ASCII byte is UTF-8 with no BOM.
+        assert!(is_utf8_no_bom(&[0]), "single NUL byte");
+        // 3. Two bytes that are invalid
+        assert!(is_utf8_no_bom(&[1, 2]), "two invalid bytes");
+    }
+
+    #[test]
     fn path_to_string_test() {
         let path = "path_to_string_test";
         let path_str = super::path_to_string(&PathBuf::from(path));
