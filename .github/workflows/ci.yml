@@ -31,7 +31,7 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: cargo-audit
         run: | 
-          cargo install cargo-audit
+          cargo install cargo-audit --locked
           cargo-audit audit
 
   win_lint:
@@ -47,7 +47,7 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: cargo-audit
         run: | 
-          cargo install cargo-audit
+          cargo install cargo-audit --locked
           cargo-audit audit
 
   build:
