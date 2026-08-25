@@ -65,7 +65,7 @@ pub async fn start_service(shared_state: SharedState) {
     );
     logger::write_information(start_message.clone());
     #[cfg(not(windows))]
-    logger::write_serial_console_log(start_message);
+    logger::write_serial_console_log(start_message, None);
     #[cfg(windows)]
     start_etw_listener();
 

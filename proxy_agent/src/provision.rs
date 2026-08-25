@@ -465,9 +465,9 @@ async fn write_provision_state(
     #[cfg(not(windows))]
     {
         if failed_state_message.is_empty() {
-            logger::write_serial_console_log("Provision finished successfully".to_string());
+            logger::write_serial_console_log("Provision finished successfully".to_string(), None);
         } else {
-            logger::write_serial_console_log(failed_state_message.clone());
+            logger::write_serial_console_log(failed_state_message.clone(), None);
         }
     }
 
