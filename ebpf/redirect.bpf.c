@@ -174,6 +174,12 @@ get_ipv4_mapped_address(bpf_sock_addr_t *ctx, uint32_t *destination_ipv4)
 #pragma clang section text = "cgroup/connect6"
 int authorize_connect6(bpf_sock_addr_t *ctx)
 {
+    // Check if the destination address is an IPv4-mapped IPv6 address.
+    // While the current eBPF_for_Windows detects the IPv4-mapped address, 
+    // explicitly classify/convert dual-stack IPv4-mapped connections as IPv4.
+    // refer to https://github.com/microsoft/ebpf-for-windows/issues/5536
+    // We keep this logic here to support dual-stack IPv4-mapped connections in connect6,
+    // just in case windows eBPF may change the behavior to align with Linux eBPF.
     uint32_t destination_ipv4;
     if (get_ipv4_mapped_address(ctx, &destination_ipv4) == 0)
     {
