@@ -136,14 +136,22 @@ impl BpfObject {
     }
 
     pub fn attach_cgroup_program(&mut self, cgroup2_root_path: PathBuf) -> Result<()> {
-        let program_name = "connect4";
+        self.attach_cgroup_program_by_name(cgroup2_root_path.clone(), "connect4")?;
+        self.attach_cgroup_program_by_name(cgroup2_root_path, "connect6")
+    }
+
+    fn attach_cgroup_program_by_name(
+        &mut self,
+        cgroup2_root_path: PathBuf,
+        program_name: &str,
+    ) -> Result<()> {
         match std::fs::File::open(cgroup2_root_path.clone()) {
             Ok(cgroup) => match self.0.program_mut(program_name) {
                 Some(program) => match program.try_into() {
                     Ok(p) => {
                         let program: &mut CgroupSockAddr = p;
                         match program.load() {
-                            Ok(_) => logger::write("connect4 program loaded.".to_string()),
+                            Ok(_) => logger::write(format!("{program_name} program loaded.")),
                             Err(err) => {
                                 return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                     program_name.to_string(),
@@ -191,13 +199,13 @@ impl BpfObject {
     }
 
     pub fn attach_kprobe_program(&mut self) -> Result<()> {
-        let program_name = "tcp_v4_connect";
+        let program_name = "tcp_connect_probe";
         match self.0.program_mut(program_name) {
             Some(program) => match program.try_into() {
                 Ok(p) => {
                     let program: &mut KProbe = p;
                     match program.load() {
-                        Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
+                        Ok(_) => logger::write(format!("{program_name} program loaded.")),
                         Err(err) => {
                             return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                 program_name.to_string(),
@@ -208,7 +216,7 @@ impl BpfObject {
                     match program.attach("tcp_connect", 0) {
                         Ok(link_id) => {
                             logger::write(format!(
-                                "tcp_v4_connect program attached with id {link_id:?}."
+                                "{program_name} program attached with id {link_id:?}."
                             ));
                         }
                         Err(err) => {
