@@ -1088,6 +1088,7 @@ mod tests {
             userName: "test".to_string(),
             ip: "test".to_string(),
             port: 1,
+            addressFamily: "IPv4".to_string(),
             processCmdLine: "test".to_string(),
             responseStatus: "test".to_string(),
             count: 1,

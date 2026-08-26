@@ -67,7 +67,7 @@ check_skip_process_map_entry(__u32 pid)
     return 1 if pid found in the skip_process_map.
 */
 static __always_inline int
-update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4)
+update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4, __u32 address_family)
 {
     __u64 pid_tip = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tip >> 32);
@@ -85,6 +85,7 @@ update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4)
     entry.destination_ipv4 = destination_ipv4;
     entry.destination_port = ctx->user_port;
     entry.protocol = ctx->protocol;
+    entry.address_family = address_family;
 
     __u64 ret = bpf_map_update_elem(&local_map, &pid_tip, &entry, 0);
     if (ret != 0)
@@ -114,7 +115,7 @@ authorize_v4(struct bpf_sock_addr *ctx)
         bpf_printk("authorize_v4: Found v4 proxy entry value: %u, %u", policy->destination_ip.ipv4, policy->destination_port);
 
         // update to the audit map before changing the destination ip and port.
-        if (update_local_map_entry(ctx, ctx->user_ip4) == 1)
+        if (update_local_map_entry(ctx, ctx->user_ip4, GPA_ADDRESS_FAMILY_IPV4) == 1)
         {
             bpf_printk("authorize_v4: Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
@@ -183,7 +184,7 @@ int connect6(struct bpf_sock_addr *ctx)
     if (policy != NULL)
     {
         bpf_printk("connect6: Found IPv4-mapped proxy entry.");
-        if (update_local_map_entry(ctx, destination_ipv4) == 1)
+        if (update_local_map_entry(ctx, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6) == 1)
         {
             bpf_printk("connect6: Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
@@ -213,6 +214,7 @@ update_audit_map_entry_sk(__u32 local_port, struct gpa_sock_addr_local_entry *lo
     entry.is_root = local_entry->is_root;
     entry.destination_ipv4 = local_entry->destination_ipv4;
     entry.destination_port = local_entry->destination_port;
+    entry.address_family = local_entry->address_family;
 
     __u64 ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
     if (ret != 0)

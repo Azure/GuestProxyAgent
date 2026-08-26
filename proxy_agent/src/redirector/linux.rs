@@ -253,13 +253,7 @@ impl BpfObject {
                     match audit_map.get(&key.to_array(), 0) {
                         Ok(value) => {
                             let audit_value = sock_addr_audit_entry::from_array(value);
-                            Ok(AuditEntry {
-                                logon_id: audit_value.logon_id as u64,
-                                process_id: audit_value.process_id,
-                                is_admin: audit_value.is_root as i32,
-                                destination_ipv4: audit_value.destination_ipv4,
-                                destination_port: audit_value.destination_port as u16,
-                            })
+                            Ok(audit_value.to_audit_entry())
                         }
                         Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
                             source_port.to_string(),
@@ -580,11 +574,13 @@ mod tests {
             is_root: 1,
             destination_ipv4: 0x10813FA8,
             destination_port: 80,
+            address_family: crate::redirector::shared_ebpf::GPA_ADDRESS_FAMILY_IPV6,
+            reserved: 0,
         };
         {
             // drop map_mut("audit_map") within this scope
-            let mut audit_map: HashMap<&mut aya::maps::MapData, [u32; 2], [u32; 5]> =
-                HashMap::<&mut aya::maps::MapData, [u32; 2], [u32; 5]>::try_from(
+            let mut audit_map: HashMap<&mut aya::maps::MapData, [u32; 2], [u32; 7]> =
+                HashMap::<&mut aya::maps::MapData, [u32; 2], [u32; 7]>::try_from(
                     bpf.0.map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
@@ -612,6 +608,7 @@ mod tests {
                     entry.destination_port as u32, value.destination_port,
                     "destination_port is not equal"
                 );
+                assert_eq!(entry.address_family, crate::redirector::AddressFamily::IPv6);
             }
             Err(err) => {
                 println!("lookup_audit_internal error: {}", err);

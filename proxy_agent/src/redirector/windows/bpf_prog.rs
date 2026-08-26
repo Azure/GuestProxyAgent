@@ -22,10 +22,7 @@ impl BpfObject {
     }
 
     pub fn new() -> Self {
-        Self(
-            std::ptr::null::<bpf_object>().cast_mut(),
-            std::ptr::null::<ebpf_link_t>().cast_mut(),
-        )
+        Self(std::ptr::null::<bpf_object>().cast_mut(), Vec::new())
     }
 
     /**
@@ -94,7 +91,7 @@ impl BpfObject {
     /**
     Routine Description:
 
-        This routine attach authorize_connect4 to bpf.
+        This routine attaches the IPv4 and IPv6 connect programs to bpf.
 
     Arguments:
 
@@ -106,8 +103,12 @@ impl BpfObject {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
-        let program_name = "authorize_connect4";
-        let connect4_program = match bpf_object__find_program_by_name(self.0, program_name) {
+        self.attach_bpf_prog_by_name("authorize_connect4")?;
+        self.attach_bpf_prog_by_name("authorize_connect6")
+    }
+
+    fn attach_bpf_prog_by_name(&mut self, program_name: &str) -> Result<()> {
+        let program = match bpf_object__find_program_by_name(self.0, program_name) {
             Ok(p) => {
                 logger::write_information(format!("Found {program_name} program."));
                 p
@@ -119,7 +120,7 @@ impl BpfObject {
                 )));
             }
         };
-        if connect4_program.is_null() {
+        if program.is_null() {
             return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                 program_name.to_string(),
                 "bpf_object__find_program_by_name return null".to_string(),
@@ -129,9 +130,8 @@ impl BpfObject {
         let compartment_id = 1;
         let mut link: ebpf_link_t = ebpf_link_t::empty();
         let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
-        //let link: *mut *mut ebpf_link_t = &mut link as *mut *mut ebpf_link_t;
         match ebpf_prog_attach(
-            connect4_program,
+            program,
             std::ptr::null(),
             &compartment_id as *const i32 as *const c_void,
             size_of_val(&compartment_id),
@@ -144,10 +144,8 @@ impl BpfObject {
                         format!("ebpf_prog_attach return with error code '{r}'"),
                     )));
                 }
-                logger::write_information(
-                    "Success attached authorize_connect4 program.".to_string(),
-                );
-                self.1 = link;
+                logger::write_information(format!("Successfully attached {program_name} program."));
+                self.1.push(link);
             }
             Err(e) => {
                 return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
@@ -235,16 +233,17 @@ impl BpfObject {
         }
         self.0 = std::ptr::null::<bpf_object>().cast_mut();
 
-        if self.1.is_null() {
-            return;
+        for link in self.1.drain(..) {
+            if link.is_null() {
+                continue;
+            }
+            if let Err(e) = bpf_link_disconnect(link) {
+                logger::write_error(format!("bpf_link_disconnect with error: {e}"));
+            }
+            if let Err(e) = bpf_link_destroy(link) {
+                logger::write_error(format!("bpf_link_destroy with error: {e}"));
+            }
         }
-        if let Err(e) = bpf_link_disconnect(self.1) {
-            logger::write_error(format!("bpf_link_disconnect with error: {e}"));
-        }
-        if let Err(e) = bpf_link_destroy(self.1) {
-            logger::write_error(format!("bpf_link_destroy with error: {e}"));
-        }
-        self.1 = std::ptr::null::<ebpf_link_t>().cast_mut();
     }
 
     /**

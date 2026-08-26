@@ -265,6 +265,7 @@ mod tests {
             clientPort: 6080,
             ip: "127.0.0.1".to_string(),
             port: 8080,
+            addressFamily: "IPv4".to_string(),
             userId: 999,
             userName: "user1".to_string(),
             userGroups: vec!["group1".to_string()],
@@ -286,6 +287,15 @@ mod tests {
         assert_eq!(1, get_all_connection_summary.len());
         assert_eq!(1, get_all_connection_summary[0].count);
 
+        let mut ipv6_summary = connection_summary.clone();
+        ipv6_summary.addressFamily = "IPv6".to_string();
+        assert_ne!(
+            connection_summary.to_key_string(),
+            ipv6_summary.to_key_string()
+        );
+        let telemetry_json = serde_json::to_string(&ipv6_summary).unwrap();
+        assert!(telemetry_json.contains(r#""addressFamily":"IPv6""#));
+
         let failed_connection_summary = ProxySummary {
             id: 2,
             method: "GET".to_string(),
@@ -294,6 +304,7 @@ mod tests {
             clientPort: 6080,
             ip: "127.0.0.1".to_string(),
             port: 8080,
+            addressFamily: "IPv4".to_string(),
             userId: 999,
             userName: "user1".to_string(),
             userGroups: vec!["group1".to_string()],
