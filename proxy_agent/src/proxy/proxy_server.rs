@@ -910,7 +910,7 @@ impl ProxyServer {
             addressFamily: http_connection_context
                 .tcp_connection_context
                 .address_family
-                .map_or("Unknown", |family| family.as_str())
+                .map_or("IPv4", |family| family.as_str())
                 .to_string(),
             responseStatus: response_status.to_string(),
             elapsedTime: elapsed_time.as_millis(),

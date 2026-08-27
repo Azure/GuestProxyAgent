@@ -78,10 +78,11 @@ pub use linux::BpfObject;
 pub use windows::BpfObject;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(u32)]
 pub enum AddressFamily {
     #[default]
-    IPv4,
-    IPv6,
+    IPv4 = 4,
+    IPv6 = 6,
 }
 
 impl AddressFamily {

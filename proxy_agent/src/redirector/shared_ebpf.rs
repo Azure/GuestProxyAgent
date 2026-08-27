@@ -97,6 +97,8 @@ pub struct sock_addr_audit_key {
     pub protocol: u32,
     pub source_port: u32,
 }
+pub type AuditMapKey =
+    [u32; std::mem::size_of::<sock_addr_audit_key>() / std::mem::size_of::<u32>()];
 #[allow(dead_code)]
 impl sock_addr_audit_key {
     #[cfg(windows)]
@@ -115,11 +117,11 @@ impl sock_addr_audit_key {
         }
     }
 
-    pub fn to_array(&self) -> [u32; 2] {
+    pub fn to_array(&self) -> AuditMapKey {
         [self.protocol, self.source_port]
     }
 
-    pub fn from_array(array: [u32; 2]) -> Self {
+    pub fn from_array(array: AuditMapKey) -> Self {
         sock_addr_audit_key {
             protocol: array[0],
             source_port: array[1],
@@ -138,6 +140,8 @@ pub struct sock_addr_audit_entry {
     pub address_family: u32,
     pub reserved: u32,
 }
+pub type AuditMapValue =
+    [u32; std::mem::size_of::<sock_addr_audit_entry>() / std::mem::size_of::<u32>()];
 impl sock_addr_audit_entry {
     pub fn empty() -> Self {
         sock_addr_audit_entry {
@@ -151,7 +155,7 @@ impl sock_addr_audit_entry {
         }
     }
 
-    pub fn from_array(array: [u32; 7]) -> Self {
+    pub fn from_array(array: AuditMapValue) -> Self {
         sock_addr_audit_entry {
             logon_id: array[0],
             process_id: array[1],
@@ -164,7 +168,7 @@ impl sock_addr_audit_entry {
     }
 
     #[allow(dead_code)]
-    pub fn to_array(&self) -> [u32; 7] {
+    pub fn to_array(&self) -> AuditMapValue {
         [
             self.logon_id,
             self.process_id,
@@ -377,7 +381,8 @@ impl AuditValueEntry {
 #[cfg(not(windows))]
 pub mod linux_types {
     pub use super::{
-        destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
+        destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
+        sock_addr_skip_process_entry, AuditMapKey, AuditMapValue,
     };
 }
 

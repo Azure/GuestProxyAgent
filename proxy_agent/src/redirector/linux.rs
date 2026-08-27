@@ -8,6 +8,7 @@ use crate::common::{
 };
 use crate::redirector::shared_ebpf::linux_types::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
+    AuditMapKey, AuditMapValue,
 };
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
@@ -247,7 +248,7 @@ impl BpfObject {
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = "audit_map";
         match self.0.map(audit_map_name) {
-            Some(map) => match HashMap::try_from(map) {
+            Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
                     match audit_map.get(&key.to_array(), 0) {
@@ -357,7 +358,7 @@ impl BpfObject {
     pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
         let audit_map_name = "audit_map";
         match self.0.map_mut(audit_map_name) {
-            Some(map) => match HashMap::<&mut MapData, [u32; 2], [u32; 5]>::try_from(map) {
+            Some(map) => match HashMap::<&mut MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(mut audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
                     audit_map.remove(&key.to_array()).map_err(|err| {
@@ -488,7 +489,9 @@ pub async fn update_hostga_redirect_policy(
 mod tests {
     use crate::common::config;
     use crate::common::constants;
-    use crate::redirector::shared_ebpf::linux_types::{sock_addr_audit_entry, sock_addr_audit_key};
+    use crate::redirector::shared_ebpf::linux_types::{
+        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey, AuditMapValue,
+    };
     use aya::maps::HashMap;
     use proxy_agent_shared::misc_helpers;
     use std::env;
@@ -579,8 +582,8 @@ mod tests {
         };
         {
             // drop map_mut("audit_map") within this scope
-            let mut audit_map: HashMap<&mut aya::maps::MapData, [u32; 2], [u32; 7]> =
-                HashMap::<&mut aya::maps::MapData, [u32; 2], [u32; 7]>::try_from(
+            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, AuditMapValue> =
+                HashMap::<&mut aya::maps::MapData, AuditMapKey, AuditMapValue>::try_from(
                     bpf.0.map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
