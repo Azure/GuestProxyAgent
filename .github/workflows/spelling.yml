@@ -18,10 +18,10 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check Spelling
-        uses: streetsidesoftware/cspell-action@v8
+        uses: streetsidesoftware/cspell-action@de2a73e963e7443969755b648a1008f77033c5b2 # v8.4.0
         with:
           config: cspell.json
           # On pull requests, only check files changed in the PR.
