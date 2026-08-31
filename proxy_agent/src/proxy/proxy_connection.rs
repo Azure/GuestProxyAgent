@@ -7,7 +7,7 @@ use crate::common::config;
 use crate::common::error::Error;
 use crate::common::result::Result;
 use crate::proxy::Claims;
-use crate::redirector::{self, AuditEntry};
+use crate::redirector::{self, AddressFamily, AuditEntry};
 use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use hyper::body::Bytes;
@@ -56,6 +56,7 @@ pub struct TcpConnectionContext {
     pub claims: Option<Claims>,
     pub destination_ip: Option<Ipv4Addr>, // currently, we only support IPv4
     pub destination_port: u16,
+    pub address_family: Option<AddressFamily>,
     sender: std::result::Result<Arc<Mutex<Client>>, String>,
     logger: ConnectionLogger,
 }
@@ -72,67 +73,71 @@ impl TcpConnectionContext {
         let client_source_port = client_addr.port();
         let mut logger = ConnectionLogger::new(id, 0);
 
-        let (claims, destination_ip, destination_port, sender) = match Self::get_audit_entry(
-            &client_addr,
-            &redirector_shared_state,
-            &mut logger,
-            #[cfg(windows)]
-            raw_socket_id,
-        )
-        .await
-        {
-            Ok(audit_entry) => {
-                let claims = match Claims::from_audit_entry(
-                    &audit_entry,
-                    client_source_ip,
-                    client_source_port,
-                    proxy_server_shared_state,
-                )
-                .await
-                {
-                    Ok(claims) => Some(claims),
-                    Err(e) => {
-                        logger.write(
-                            LoggerLevel::Error,
-                            format!("Failed to get claims from audit entry: {e}"),
-                        );
-                        // return None for claims
-                        None
-                    }
-                };
+        let (claims, destination_ip, destination_port, address_family, sender) =
+            match Self::get_audit_entry(
+                &client_addr,
+                &redirector_shared_state,
+                &mut logger,
+                #[cfg(windows)]
+                raw_socket_id,
+            )
+            .await
+            {
+                Ok(audit_entry) => {
+                    let claims = match Claims::from_audit_entry(
+                        &audit_entry,
+                        client_source_ip,
+                        client_source_port,
+                        proxy_server_shared_state,
+                    )
+                    .await
+                    {
+                        Ok(claims) => Some(claims),
+                        Err(e) => {
+                            logger.write(
+                                LoggerLevel::Error,
+                                format!("Failed to get claims from audit entry: {e}"),
+                            );
+                            // return None for claims
+                            None
+                        }
+                    };
 
-                let host_ip = audit_entry.destination_ipv4_addr().to_string();
-                let host_port = audit_entry.destination_port_in_host_byte_order();
-                let mut cloned_logger = logger.clone();
-                let fun = move |message: String| {
-                    cloned_logger.write(LoggerLevel::Warn, message);
-                };
-                let sender = match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
-                    Ok(sender) => {
-                        logger.write(
-                            LoggerLevel::Trace,
-                            "Successfully created http sender".to_string(),
-                        );
-                        Ok(Arc::new(Mutex::new(Client { sender })))
-                    }
-                    Err(e) => Err(e.to_string()),
-                };
+                    let host_ip = audit_entry.destination_ipv4_addr().to_string();
+                    let host_port = audit_entry.destination_port_in_host_byte_order();
+                    let mut cloned_logger = logger.clone();
+                    let fun = move |message: String| {
+                        cloned_logger.write(LoggerLevel::Warn, message);
+                    };
+                    let sender =
+                        match hyper_client::build_http_sender(&host_ip, host_port, fun).await {
+                            Ok(sender) => {
+                                logger.write(
+                                    LoggerLevel::Trace,
+                                    "Successfully created http sender".to_string(),
+                                );
+                                Ok(Arc::new(Mutex::new(Client { sender })))
+                            }
+                            Err(e) => Err(e.to_string()),
+                        };
 
-                (
-                    claims,
-                    Some(audit_entry.destination_ipv4_addr()),
-                    host_port,
-                    sender,
-                )
-            }
-            Err(e) => {
-                logger.write(
-                    LoggerLevel::Warn,
-                    "This tcp connection may send to proxy agent tcp listener directly".to_string(),
-                );
-                (None, None, 0, Err(e.to_string()))
-            }
-        };
+                    (
+                        claims,
+                        Some(audit_entry.destination_ipv4_addr()),
+                        host_port,
+                        Some(audit_entry.address_family),
+                        sender,
+                    )
+                }
+                Err(e) => {
+                    logger.write(
+                        LoggerLevel::Warn,
+                        "This tcp connection may send to proxy agent tcp listener directly"
+                            .to_string(),
+                    );
+                    (None, None, 0, None, Err(e.to_string()))
+                }
+            };
 
         Self {
             id,
@@ -140,6 +145,7 @@ impl TcpConnectionContext {
             claims,
             destination_ip,
             destination_port,
+            address_family,
             sender,
             logger,
         }

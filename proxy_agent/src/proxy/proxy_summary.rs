@@ -9,6 +9,10 @@ use std::path::PathBuf;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
 use serde_derive::{Deserialize, Serialize};
 
+fn default_address_family() -> String {
+    "IPv4".to_string()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct ProxySummary {
@@ -19,6 +23,8 @@ pub struct ProxySummary {
     pub clientPort: u16,
     pub ip: String,
     pub port: u16,
+    #[serde(default = "default_address_family")]
+    pub addressFamily: String,
     pub userId: u64,
     pub userName: String,
     pub userGroups: Vec<String>,
@@ -33,11 +39,12 @@ pub struct ProxySummary {
 impl ProxySummary {
     pub fn to_key_string(&self) -> String {
         format!(
-            "{} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {}",
             self.userName,
             self.clientIp,
             self.ip,
             self.port,
+            self.addressFamily,
             self.processFullPath.to_string_lossy(),
             self.processCmdLine,
             self.responseStatus
@@ -52,6 +59,7 @@ impl From<ProxySummary> for ProxyConnectionSummary {
             userGroups: Some(proxy_summary.userGroups),
             ip: proxy_summary.ip,
             port: proxy_summary.port,
+            addressFamily: proxy_summary.addressFamily,
             processFullPath: Some(proxy_summary.processFullPath.to_string_lossy().to_string()),
             processCmdLine: proxy_summary.processCmdLine,
             responseStatus: proxy_summary.responseStatus,

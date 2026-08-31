@@ -907,6 +907,11 @@ impl ProxyServer {
             port: http_connection_context
                 .tcp_connection_context
                 .destination_port,
+            addressFamily: http_connection_context
+                .tcp_connection_context
+                .address_family
+                .map_or("IPv4", |family| family.as_str())
+                .to_string(),
             responseStatus: response_status.to_string(),
             elapsedTime: elapsed_time.as_millis(),
             errorDetails: error_details,

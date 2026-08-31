@@ -59,12 +59,18 @@ pub struct ProxyAgentStatus {
     pub proxyConnectionsCount: u128,
 }
 
+fn default_address_family() -> String {
+    "IPv4".to_string()
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct ProxyConnectionSummary {
     pub userName: String,
     pub ip: String,
     pub port: u16,
+    #[serde(default = "default_address_family")]
+    pub addressFamily: String,
     pub processCmdLine: String,
     pub responseStatus: String,
     pub count: u64,
@@ -79,6 +85,7 @@ impl Clone for ProxyConnectionSummary {
             userGroups: self.userGroups.clone(),
             ip: self.ip.clone(),
             port: self.port,
+            addressFamily: self.addressFamily.clone(),
             processFullPath: self.processFullPath.clone(),
             processCmdLine: self.processCmdLine.clone(),
             responseStatus: self.responseStatus.clone(),
