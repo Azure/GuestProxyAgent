@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
         working-directory: ${{env.GITHUB_WORKSPACE}}
@@ -39,10 +39,10 @@ jobs:
           choco install -y llvm --version 11.0.1 --allow-downgrade
 
       - name: setup-msbuild
-        uses: microsoft/setup-msbuild@1ff57057b5cfdc39105cd07a01d78e9b0ea0c14c # v1.3.1
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
 
       - name: rust-toolchain
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           toolchain: stable
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload debug amd64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-debug-windows-amd64.zip
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload release amd64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-release-windows-amd64.zip
@@ -146,7 +146,7 @@ jobs:
       - name: get current release
         id: get_current_release
         if: inputs.generate_release == true
-        uses: joutvhu/get-release@144629279c62511778ae157f397f35c358626160 # v1.0.2
+        uses: joutvhu/get-release@8c3531bba0d249f5e7c3d7e1954d34db9edf2a90 # v1.0.4
         with:
           # do not push two tags/releases at the same time
           latest: true
@@ -185,7 +185,7 @@ jobs:
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
         working-directory: ${{env.GITHUB_WORKSPACE}}
@@ -193,10 +193,10 @@ jobs:
           choco install -y llvm --version 11.0.1 --allow-downgrade
 
       - name: setup-msbuild
-        uses: microsoft/setup-msbuild@1ff57057b5cfdc39105cd07a01d78e9b0ea0c14c # v1.3.1
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
 
       - name: rust-toolchain
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           toolchain: stable
 
@@ -205,7 +205,7 @@ jobs:
 
       - name: Upload debug arm64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-debug-windows-arm64.zip
@@ -218,7 +218,7 @@ jobs:
         
       - name: Upload release arm64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-release-windows-arm64.zip
@@ -228,7 +228,7 @@ jobs:
       - name: get current release
         id: get_current_release
         if: inputs.generate_release == true
-        uses: joutvhu/get-release@144629279c62511778ae157f397f35c358626160 # v1.0.2
+        uses: joutvhu/get-release@8c3531bba0d249f5e7c3d7e1954d34db9edf2a90 # v1.0.4
         with:
           # do not push two tags/releases at the same time
           latest: true
@@ -267,13 +267,13 @@ jobs:
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
-        uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1.4
+        uses: egor-tensin/setup-clang@23bc15cd4207e45f1566447deb48f4ff3ef932cb # v2.3
 
       - name: rust-toolchain
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           toolchain: stable
 
@@ -304,7 +304,7 @@ jobs:
         run: ./build-linux.sh debug amd64
 
       - name: Upload debug build amd64 zip package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-debug-linux-amd64.zip
@@ -315,7 +315,7 @@ jobs:
         run: ./build-linux.sh release
 
       - name: Upload release amd64 build zip package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-release-linux-amd64.zip
@@ -403,7 +403,7 @@ jobs:
       - name: get current release
         id: get_current_release
         if: inputs.generate_release == true
-        uses: joutvhu/get-release@144629279c62511778ae157f397f35c358626160 # v1.0.2
+        uses: joutvhu/get-release@8c3531bba0d249f5e7c3d7e1954d34db9edf2a90 # v1.0.4
         with:
           # do not push two tags/releases at the same time
           latest: true
@@ -442,13 +442,13 @@ jobs:
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
-        uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1.4
+        uses: egor-tensin/setup-clang@23bc15cd4207e45f1566447deb48f4ff3ef932cb # v2.3
 
       - name: rust-toolchain
-        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           toolchain: stable
 
@@ -475,7 +475,7 @@ jobs:
         run: ./build-linux.sh debug arm64
 
       - name: Upload debug arm64 build zip package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-debug-linux-arm64.zip
@@ -486,7 +486,7 @@ jobs:
         run: ./build-linux.sh release arm64
 
       - name: Upload release arm64 build zip package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Artifact name
           name: build-release-linux-arm64.zip
@@ -496,7 +496,7 @@ jobs:
       - name: get current release
         id: get_current_release
         if: inputs.generate_release == true
-        uses: joutvhu/get-release@144629279c62511778ae157f397f35c358626160 # v1.0.2
+        uses: joutvhu/get-release@8c3531bba0d249f5e7c3d7e1954d34db9edf2a90 # v1.0.4
         with:
           # do not push two tags/releases at the same time
           latest: true
