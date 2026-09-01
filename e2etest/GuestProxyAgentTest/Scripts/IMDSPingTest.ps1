@@ -3,9 +3,11 @@
 
 param (
     [Parameter(Mandatory = $true, Position = 0)]
-    [string]$imdsSecureChannelEnabled
+    [string]$imdsSecureChannelEnabled, 
+    [string]$ipv6DualStackSupported
 )
 Write-Output "$((Get-Date).ToUniversalTime()) - imdsSecureChannelEnabled=$imdsSecureChannelEnabled"
+Write-Output "$((Get-Date).ToUniversalTime()) - ipv6DualStackSupported=$ipv6DualStackSupported"
 
 function Test-IsIpv6UnsupportedError {
     param (
