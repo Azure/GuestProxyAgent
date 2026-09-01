@@ -182,6 +182,51 @@ pub use windows_service::ServiceState;
 #[cfg(windows)]
 pub use windows_service::ServiceStatusInfo;
 
+/// Cross-platform runtime status of a system service (Windows SCM or Linux systemd),
+/// used for reporting service health that is meaningful on both platforms (e.g. the
+/// GuestProxyAgent service itself). Unlike `ServiceStatusInfo` (Windows-only, used for
+/// the Windows-specific eBPF driver/service substatus), this type has an implementation
+/// on every platform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceRuntimeStatus {
+    pub service_name: String,
+    pub is_installed: bool,
+    pub is_running: bool,
+    /// Human-readable running state, e.g. "Running", "Stopped", "Failed".
+    pub state_display: String,
+    /// Human-readable start type, e.g. "AutoStart", "OnDemand", "Disabled".
+    pub start_type_display: String,
+}
+
+impl ServiceRuntimeStatus {
+    /// Human-readable summary, e.g. "Running, AutoStart" or "NotInstalled".
+    pub fn summary(&self) -> String {
+        if self.is_installed {
+            format!("{}, {}", self.state_display, self.start_type_display)
+        } else {
+            "NotInstalled".to_string()
+        }
+    }
+
+    /// Log-friendly message including the service name and summary.
+    pub fn message(&self) -> String {
+        format!("service: {} status: {}", self.service_name, self.summary())
+    }
+}
+
+/// Checks the runtime status (running state + start type) of a service in a cross-platform
+/// way. Uses the Windows SCM on Windows and `systemctl` on Linux.
+pub fn check_service_run_status(service_name: &str) -> ServiceRuntimeStatus {
+    #[cfg(windows)]
+    {
+        windows_service::query_service_run_status(service_name)
+    }
+    #[cfg(not(windows))]
+    {
+        linux_service::check_service_run_status(service_name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -264,6 +309,46 @@ mod tests {
 
             // clean up
             _ = super::stop_and_delete_service(service_name).await.unwrap();
+        }
+    }
+
+    #[test]
+    fn test_check_service_run_status_not_installed() {
+        // Cross-platform: a service name that certainly does not exist should report
+        // not-installed/not-running on both Windows and Linux.
+        let status = super::check_service_run_status("gpa-test-service-that-does-not-exist");
+        assert!(!status.is_installed);
+        assert!(!status.is_running);
+        assert_eq!(status.summary(), "NotInstalled");
+        assert!(status.message().contains("NotInstalled"));
+    }
+
+    #[tokio::test]
+    async fn test_check_service_run_status_windows() {
+        #[cfg(windows)]
+        {
+            let service_name = "test_check_service_run_status";
+            // try delete the service if it exists
+            _ = super::stop_and_delete_service(service_name).await;
+
+            let exe_path = std::env::current_exe().unwrap();
+            let result = super::install_service(service_name, service_name, vec![], exe_path);
+            assert!(result.is_ok());
+
+            let status = super::check_service_run_status(service_name);
+            assert!(status.is_installed);
+            // The test exe cannot actually run as a service, so it should be reported as
+            // installed-but-not-running.
+            assert!(!status.is_running);
+            assert_eq!(status.state_display, "Stopped");
+            let summary = status.summary();
+            assert!(
+                summary.contains("AutoStart"),
+                "Expected summary to contain 'AutoStart', got: {summary}"
+            );
+
+            // clean up
+            super::stop_and_delete_service(service_name).await.unwrap();
         }
     }
 }

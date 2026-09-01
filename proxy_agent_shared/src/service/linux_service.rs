@@ -187,3 +187,134 @@ pub fn check_service_installed(service_name: &str) -> (bool, String) {
         (false, message)
     }
 }
+
+/// Maps the trimmed stdout of `systemctl is-active <service>` to (is_running, state_display).
+/// Pure function so it is unit-testable without shelling out to `systemctl`.
+fn map_is_active_output(output: &str) -> (bool, String) {
+    match output.trim() {
+        "active" => (true, "Running".to_string()),
+        "inactive" => (false, "Stopped".to_string()),
+        "failed" => (false, "Failed".to_string()),
+        "activating" => (false, "Activating".to_string()),
+        "deactivating" => (false, "Deactivating".to_string()),
+        other => (false, capitalize_first(other)),
+    }
+}
+
+/// Maps the trimmed stdout of `systemctl is-enabled <service>` to a start-type display string,
+/// using Windows-like vocabulary ("AutoStart"/"Disabled") so the reported message shape is
+/// consistent across platforms. Pure function so it is unit-testable without shelling out.
+fn map_is_enabled_output(output: &str) -> String {
+    match output.trim() {
+        "enabled" | "enabled-runtime" => "AutoStart".to_string(),
+        "disabled" => "Disabled".to_string(),
+        "masked" => "Disabled".to_string(),
+        "static" => "OnDemand".to_string(),
+        other => capitalize_first(other),
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    if s.is_empty() {
+        return "Unknown".to_string();
+    }
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => "Unknown".to_string(),
+    }
+}
+
+/// Checks a service's runtime status (running state + start type) using `systemctl`,
+/// in the cross-platform `ServiceRuntimeStatus` shape.
+pub fn check_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
+    let (is_installed, _) = check_service_installed(service_name);
+    if !is_installed {
+        return crate::service::ServiceRuntimeStatus {
+            service_name: service_name.to_string(),
+            is_installed: false,
+            is_running: false,
+            state_display: "NotInstalled".to_string(),
+            start_type_display: "NotInstalled".to_string(),
+        };
+    }
+
+    let (is_running, state_display) =
+        match misc_helpers::execute_command("systemctl", vec!["is-active", service_name], -1) {
+            Ok(output) => map_is_active_output(&output.stdout()),
+            Err(e) => {
+                logger_manager::write_info(format!(
+                    "check_service_run_status: failed to query is-active for {service_name}: {e}"
+                ));
+                (false, "Unknown".to_string())
+            }
+        };
+
+    let start_type_display =
+        match misc_helpers::execute_command("systemctl", vec!["is-enabled", service_name], -1) {
+            Ok(output) => map_is_enabled_output(&output.stdout()),
+            Err(e) => {
+                logger_manager::write_info(format!(
+                    "check_service_run_status: failed to query is-enabled for {service_name}: {e}"
+                ));
+                "Unknown".to_string()
+            }
+        };
+
+    crate::service::ServiceRuntimeStatus {
+        service_name: service_name.to_string(),
+        is_installed: true,
+        is_running,
+        state_display,
+        start_type_display,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_is_active_output_test() {
+        assert_eq!(
+            map_is_active_output("active\n"),
+            (true, "Running".to_string())
+        );
+        assert_eq!(
+            map_is_active_output("inactive\n"),
+            (false, "Stopped".to_string())
+        );
+        assert_eq!(
+            map_is_active_output("failed\n"),
+            (false, "Failed".to_string())
+        );
+        assert_eq!(
+            map_is_active_output("activating\n"),
+            (false, "Activating".to_string())
+        );
+        assert_eq!(
+            map_is_active_output("unknown\n"),
+            (false, "Unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn map_is_enabled_output_test() {
+        assert_eq!(map_is_enabled_output("enabled\n"), "AutoStart".to_string());
+        assert_eq!(map_is_enabled_output("disabled\n"), "Disabled".to_string());
+        assert_eq!(map_is_enabled_output("masked\n"), "Disabled".to_string());
+        assert_eq!(map_is_enabled_output("static\n"), "OnDemand".to_string());
+        assert_eq!(
+            map_is_enabled_output("some-other-state\n"),
+            "Some-other-state".to_string()
+        );
+    }
+
+    #[test]
+    fn check_service_run_status_not_installed_test() {
+        let status = check_service_run_status("gpa-test-service-that-does-not-exist");
+        assert!(!status.is_installed);
+        assert!(!status.is_running);
+        assert_eq!(status.summary(), "NotInstalled");
+    }
+}

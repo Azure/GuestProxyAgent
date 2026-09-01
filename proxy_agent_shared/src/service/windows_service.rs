@@ -221,6 +221,43 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
         .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
+/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
+/// re-mapping the same data already fetched by `check_service_status`/`query_service_config`.
+pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
+    match query_service_status(service_name) {
+        Ok(status) => {
+            let start_type_display = match query_service_config(service_name) {
+                Ok(config) => format!("{:?}", config.start_type),
+                Err(e) => {
+                    logger_manager::write_info(format!(
+                        "Failed to query config for service '{service_name}': {e}",
+                    ));
+                    "Unknown".to_string()
+                }
+            };
+            crate::service::ServiceRuntimeStatus {
+                service_name: service_name.to_string(),
+                is_installed: true,
+                is_running: status.current_state == ServiceState::Running,
+                state_display: format!("{:?}", status.current_state),
+                start_type_display,
+            }
+        }
+        Err(e) => {
+            logger_manager::write_info(format!(
+                "Failed to query status for service '{service_name}': {e}. Treating as not installed.",
+            ));
+            crate::service::ServiceRuntimeStatus {
+                service_name: service_name.to_string(),
+                is_installed: false,
+                is_running: false,
+                state_display: "NotInstalled".to_string(),
+                start_type_display: "NotInstalled".to_string(),
+            }
+        }
+    }
+}
+
 pub fn update_service(
     service_name: &str,
     service_display_name: &str,
