@@ -32,11 +32,25 @@ struct
 
 struct
 {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, struct gpa_config_entry);
+    __uint(max_entries, 1);
+} config_map SEC(".maps");
+
+struct
+{
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __type(key, struct gpa_audit_key);     // source port and protocol
     __type(value, struct gpa_audit_event); // audit event (canonical struct)
     __uint(max_entries, 200);              // LRU evicts oldest on overflow
 } audit_map SEC(".maps");
+
+struct
+{
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 256 * 1024);
+} audit_only_map SEC(".maps");
 
 struct
 {
@@ -61,13 +75,21 @@ check_skip_process_map_entry(__u32 pid)
     return (skip_entry != NULL) ? 1 : 0;
 }
 
+static __always_inline int
+local_ip_bind_monitor_only_enabled(void)
+{
+    __u32 key = GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY;
+    struct gpa_config_entry *entry = bpf_map_lookup_elem(&config_map, &key);
+    return entry != NULL && entry->enabled != 0;
+}
+
 /*
     update audit map entry if not skip redirecting.
     return 0 if the entry is updated, otherwise
     return 1 if pid found in the skip_process_map.
 */
 static __always_inline int
-update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4, __u32 address_family)
+update_local_map_entry(struct bpf_sock_addr *ctx, __u32 audit_only, __be32 destination_ipv4, __u32 address_family)
 {
     __u64 pid_tip = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tip >> 32);
@@ -85,6 +107,7 @@ update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4, __u32
     entry.destination_ipv4 = destination_ipv4;
     entry.destination_port = ctx->user_port;
     entry.protocol = ctx->protocol;
+    entry.audit_only = audit_only;
     entry.address_family = address_family;
 
     __u64 ret = bpf_map_update_elem(&local_map, &pid_tip, &entry, 0);
@@ -114,27 +137,30 @@ authorize_v4(struct bpf_sock_addr *ctx)
     {
         bpf_printk("authorize_v4: Found v4 proxy entry value: %u, %u", policy->destination_ip.ipv4, policy->destination_port);
 
+        // At connect4, msg_src_ip4 is not valid; it is only populated for
+        // UDP sendmsg hooks. A concrete address set by bind(2) is available
+        // from the socket before TCP performs automatic source selection.
+        __u32 source_ip = ctx->sk != NULL ? ctx->sk->src_ip4 : 0;
+        __u32 source_ip_host = bpf_ntohl(source_ip);
+        __u32 audit_only = local_ip_bind_monitor_only_enabled() &&
+                           source_ip != 0 &&
+                           (source_ip_host & 0xff000000) != 0x7f000000;
+
         // update to the audit map before changing the destination ip and port.
-        if (update_local_map_entry(ctx, ctx->user_ip4, GPA_ADDRESS_FAMILY_IPV4) == 1)
+        if (update_local_map_entry(ctx, audit_only, ctx->user_ip4, GPA_ADDRESS_FAMILY_IPV4) == 1)
         {
             bpf_printk("authorize_v4: Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
         }
 
-        // TODO: check if the local ip is set.
-        // __u32 local_ip;
-        // __u64 read = bpf_probe_read_kernel(&local_ip, sizeof(__u32), &ctx->msg_src_ip4);
-        // if (read == 0 && local_ip != 0)
-        // {
-        //     // read the local ip from the msg_src_ip4 successfully and ip is set.
-        //     ctx->user_ip4 = local_ip;
-        //     bpf_printk("authorize_v4: Local/source ip is set, redirect to source ip:%u.", local_ip);
-        // }
-        // else
+        if (audit_only)
         {
-            ctx->user_ip4 = policy->destination_ip.ipv4;
-            bpf_printk("authorize_v4: Local/source ip is not set, redirect to loopback ip.");
+            bpf_printk("authorize_v4: Source address is explicitly bound, audit without redirecting.");
+            return BPF_SOCK_ADDR_VERDICT_PROCEED;
         }
+
+        ctx->user_ip4 = policy->destination_ip.ipv4;
+        bpf_printk("authorize_v4: Local/source ip is not set, redirect to loopback ip.");
         ctx->user_port = policy->destination_port;
     }
 
@@ -184,7 +210,9 @@ int connect6(struct bpf_sock_addr *ctx)
     if (policy != NULL)
     {
         bpf_printk("connect6: Found IPv4-mapped proxy entry.");
-        if (update_local_map_entry(ctx, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6) == 1)
+        // TODO: check bind to IPv4 mapped address, if so, skip the redirection and update the audit map.
+        __u32 audit_only = 0;
+        if (update_local_map_entry(ctx, audit_only, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6) == 1)
         {
             bpf_printk("connect6: Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED;
@@ -202,7 +230,7 @@ int connect6(struct bpf_sock_addr *ctx)
 }
 
 static __always_inline int
-update_audit_map_entry_sk(__u32 local_port, struct gpa_sock_addr_local_entry *local_entry)
+update_audit_map_entry_sk(__u32 local_port, __u32 local_ipv4, struct gpa_sock_addr_local_entry *local_entry)
 {
     struct gpa_audit_key key = {0};
     key.protocol = local_entry->protocol;
@@ -216,7 +244,19 @@ update_audit_map_entry_sk(__u32 local_port, struct gpa_sock_addr_local_entry *lo
     entry.destination_port = local_entry->destination_port;
     entry.address_family = local_entry->address_family;
 
-    __u64 ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
+    __u64 ret;
+    if (local_entry->audit_only)
+    {
+        struct gpa_audit_only_event event = {0};
+        event.kernel_timestamp_ns = bpf_ktime_get_ns();
+        event.local_ipv4 = local_ipv4;
+        event.audit = entry;
+        ret = bpf_ringbuf_output(&audit_only_map, &event, sizeof(event), 0);
+    }
+    else
+    {
+        ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
+    }
     if (ret != 0)
     {
         bpf_printk("update_audit_map_entry_sk: Failed to update audit map entry with results:%u.", ret);
@@ -239,6 +279,15 @@ trace_tcp_connect(struct sock *sk)
     // local scalars (no preserve_access_index), so their offsets are NOT
     // relocated - this is required, otherwise the verifier rejects writes that
     // would land outside our local stack copy.
+    __u16 skc_family = BPF_CORE_READ(sk, __sk_common.skc_family);
+    if (skc_family != AF_INET)
+    {
+        // Only support IPv4.
+        return 0;
+    }
+    __be32 skc_daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    __be32 skc_rcv_saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+    __be16 skc_dport = BPF_CORE_READ(sk, __sk_common.skc_dport);
     __u16 skc_num = BPF_CORE_READ(sk, __sk_common.skc_num);
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -253,7 +302,7 @@ trace_tcp_connect(struct sock *sk)
     struct gpa_sock_addr_local_entry *local_entry = bpf_map_lookup_elem(&local_map, &pid_tgid);
     if (local_entry != NULL)
     {
-        update_audit_map_entry_sk(skc_num, local_entry);
+        update_audit_map_entry_sk(skc_num, skc_rcv_saddr, local_entry);
         __u64 ret = bpf_map_delete_elem(&local_map, &pid_tgid);
         if (ret != 0)
         {

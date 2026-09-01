@@ -79,6 +79,10 @@ pub fn get_enable_http_proxy_trace() -> bool {
     SYSTEM_CONFIG.enableHttpProxyTrace.unwrap_or(false)
 }
 
+pub fn get_local_ip_bind_monitor_only() -> bool {
+    SYSTEM_CONFIG.get_local_ip_bind_monitor_only()
+}
+
 /// Rollout flag for the Innovation 2.1 canonical request pipeline.
 ///
 /// Read from the optional `canonicalRequestMode` key in the GPA config
@@ -115,6 +119,8 @@ pub struct Config {
     /// This is an optional config, mainly for manual debugging purpose
     #[serde(skip_serializing_if = "Option::is_none")]
     enableHttpProxyTrace: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    localIPBindMonitorOnly: Option<bool>,
     /// Innovation 2.1 canonical request rollout flag.
     /// Optional; absent or unparseable values resolve to
     /// [`crate::proxy::canonical::CanonicalMode::Off`] so production
@@ -230,6 +236,10 @@ impl Config {
         None
     }
 
+    pub fn get_local_ip_bind_monitor_only(&self) -> bool {
+        self.localIPBindMonitorOnly.unwrap_or(false)
+    }
+
     /// Resolve the canonical-request rollout flag.
     ///
     /// Returns [`crate::proxy::canonical::CanonicalMode::Off`] when the
@@ -278,7 +288,7 @@ mod tests {
             Err(err) => panic!("Failed to create folder: {}", err),
         }
         let config_file_path = temp_test_path.join("test_config.json");
-        let config = create_config_file(config_file_path);
+        let mut config = create_config_file(config_file_path);
 
         assert_eq!(
             r#"C:\logFolderName"#,
@@ -331,6 +341,10 @@ mod tests {
             );
         }
 
+        assert!(config.get_local_ip_bind_monitor_only());
+        config.localIPBindMonitorOnly = None;
+        assert!(!config.get_local_ip_bind_monitor_only());
+
         assert_eq!(
             proxy_agent_shared::logger::LoggerLevel::Info,
             config.get_file_log_level_for_events().unwrap(),
@@ -364,6 +378,7 @@ mod tests {
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
             "ebpfProgramName": "ebpfProgramName",
+            "localIPBindMonitorOnly": true,
             "fileLogLevelForEvents": "Info",
             "fileLogLevelForSystemEvents": "Info"
         }"#
@@ -378,6 +393,7 @@ mod tests {
             "hostGAPluginSupport": 1,
             "imdsSupport": 1,
             "ebpfProgramName": "ebpfProgramName",
+            "localIPBindMonitorOnly": true,
             "fileLogLevelForEvents": "Info",
             "fileLogLevelForSystemEvents": "Info"
         }"#

@@ -9,5 +9,6 @@
     "fileLogLevel": "Trace",
     "fileLogLevelForEvents": "Info",
     "fileLogLevelForSystemEvents": "Info",
+    "localIPBindMonitorOnly": true,
     "canonicalRequestMode": "Shadow"
 }

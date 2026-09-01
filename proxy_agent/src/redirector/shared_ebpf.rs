@@ -55,7 +55,7 @@ impl _destination_entry {
         entry
     }
 
-    pub fn to_array(&self) -> [u32; 6] {
+    pub fn as_array(&self) -> [u32; 6] {
         let mut array: [u32; 6] = [0; 6];
         array[..4].copy_from_slice(&self.destination_ip.ip);
         array[4] = self.destination_port;
@@ -68,6 +68,7 @@ pub type destination_entry = _destination_entry;
 pub const IPPROTO_TCP: u32 = 6;
 #[allow(dead_code)]
 pub const IPPROTO_UDP: u32 = 17;
+pub const GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY: u32 = 0;
 pub const GPA_ADDRESS_FAMILY_IPV4: u32 = 4;
 pub const GPA_ADDRESS_FAMILY_IPV6: u32 = 6;
 
@@ -86,13 +87,13 @@ impl sock_addr_skip_process_entry {
         entry
     }
 
-    pub fn to_array(&self) -> [u32; 1] {
+    pub fn as_array(&self) -> [u32; 1] {
         [self.pid]
     }
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct sock_addr_audit_key {
     pub protocol: u32,
     pub source_port: u32,
@@ -117,7 +118,7 @@ impl sock_addr_audit_key {
         }
     }
 
-    pub fn to_array(&self) -> AuditMapKey {
+    pub fn as_array(&self) -> AuditMapKey {
         [self.protocol, self.source_port]
     }
 
@@ -139,6 +140,45 @@ pub struct sock_addr_audit_entry {
     pub destination_port: u32,
     pub address_family: u32,
     pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct audit_only_event {
+    pub kernel_timestamp_ns: u64,
+    pub local_ipv4: u32,
+    pub logon_id: u32,
+    pub process_id: u32,
+    pub is_root: u32,
+    pub destination_ipv4: u32,
+    pub destination_port: u32,
+}
+
+impl audit_only_event {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() != std::mem::size_of::<Self>() {
+            return Err(Error::Bpf(BpfErrorType::MapLookupElem(
+                "audit_only_map".to_string(),
+                format!(
+                    "Invalid ring-buffer record size: {}, expected {}",
+                    bytes.len(),
+                    std::mem::size_of::<Self>()
+                ),
+            )));
+        }
+        Ok(unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const Self) })
+    }
+
+    pub fn to_audit_entry(self) -> crate::redirector::AuditEntry {
+        crate::redirector::AuditEntry {
+            logon_id: u64::from(self.logon_id),
+            process_id: self.process_id,
+            is_admin: self.is_root as i32,
+            destination_ipv4: self.destination_ipv4,
+            destination_port: self.destination_port as u16,
+            address_family: crate::redirector::AddressFamily::IPv4, //TODO: audit_only_event does not include address_family, so we assume IPv4 for now.
+        }
+    }
 }
 pub type AuditMapValue =
     [u32; std::mem::size_of::<sock_addr_audit_entry>() / std::mem::size_of::<u32>()];
@@ -381,16 +421,18 @@ impl AuditValueEntry {
 #[cfg(not(windows))]
 pub mod linux_types {
     pub use super::{
-        destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
+        audit_only_event, destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
         sock_addr_skip_process_entry, AuditMapKey, AuditMapValue,
+        GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY,
     };
 }
 
 #[cfg(windows)]
 pub mod windows_types {
     pub use super::{
-        destination_entry as destination_entry_t, sock_addr_audit_key as sock_addr_audit_key_t,
-        sock_addr_skip_process_entry,
+        audit_only_event, destination_entry as destination_entry_t,
+        sock_addr_audit_key as sock_addr_audit_key_t, sock_addr_skip_process_entry,
+        GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY,
     };
 }
 
@@ -401,7 +443,7 @@ mod tests {
     #[test]
     fn destination_entry_ipv4_roundtrip_array_shape() {
         let entry = destination_entry::from_ipv4(0x1081_3FA8, 80);
-        let array = entry.to_array();
+        let array = entry.as_array();
 
         assert_eq!(
             array[0], 0x1081_3FA8,
@@ -418,7 +460,7 @@ mod tests {
     #[test]
     fn audit_key_array_roundtrip() {
         let key = sock_addr_audit_key::from_source_port(1234);
-        let array = key.to_array();
+        let array = key.as_array();
         let rebuilt = sock_addr_audit_key::from_array(array);
 
         assert_eq!(rebuilt.protocol, IPPROTO_TCP, "protocol mismatch");
@@ -440,7 +482,7 @@ mod tests {
         let key = sock_addr_skip_process_entry::from_pid(pid);
 
         assert_eq!(
-            key.to_array(),
+            key.as_array(),
             [pid],
             "pid should roundtrip through the map key layout"
         );
@@ -487,6 +529,36 @@ mod tests {
         assert_eq!(audit.destination_ipv4, 0x0102_0304);
         assert_eq!(audit.destination_port, 8080u16.to_be());
         assert_eq!(audit.address_family, crate::redirector::AddressFamily::IPv6);
+    }
+
+    #[test]
+    fn audit_only_event_binary_layout_and_decode() {
+        let event = audit_only_event {
+            kernel_timestamp_ns: 123,
+            local_ipv4: 0x0A00_0001,
+            logon_id: 42,
+            process_id: 1000,
+            is_root: 1,
+            destination_ipv4: 0x1081_3FA8,
+            destination_port: u32::from(80u16.to_be()),
+        };
+        assert_eq!(std::mem::size_of::<audit_only_event>(), 32);
+
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                &event as *const audit_only_event as *const u8,
+                std::mem::size_of::<audit_only_event>(),
+            )
+        };
+        let decoded = audit_only_event::from_bytes(bytes).expect("record should decode");
+        let audit = decoded.to_audit_entry();
+
+        assert_eq!(decoded.kernel_timestamp_ns, 123);
+        assert_eq!(decoded.local_ipv4, 0x0A00_0001);
+        assert_eq!(audit.logon_id, 42);
+        assert_eq!(audit.process_id, 1000);
+        assert_eq!(audit.destination_port, 80u16.to_be());
+        assert!(audit_only_event::from_bytes(&bytes[..bytes.len() - 1]).is_err());
     }
 
     #[test]

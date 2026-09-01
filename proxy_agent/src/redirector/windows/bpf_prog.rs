@@ -9,11 +9,39 @@ use crate::common::{
     error::{BpfErrorType, Error},
     result::Result,
 };
-use crate::redirector::AuditEntry;
+use crate::redirector::shared_ebpf::windows_types::{
+    audit_only_event, GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY,
+};
+use crate::redirector::{AuditEntry, AuditOnlyRecord};
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
 use std::mem::size_of_val;
 use std::path::Path;
+
+unsafe extern "C" fn audit_only_callback(
+    context: *mut c_void,
+    data: *mut c_void,
+    size: usize,
+) -> i32 {
+    let sender = &*(context as *const tokio::sync::mpsc::UnboundedSender<AuditOnlyRecord>);
+    let bytes = std::slice::from_raw_parts(data as *const u8, size);
+    match audit_only_event::from_bytes(bytes) {
+        Ok(event) => {
+            let record = AuditOnlyRecord {
+                entry: event.to_audit_entry(),
+                kernel_timestamp_ns: event.kernel_timestamp_ns,
+                timestamp_utc_ns: proxy_agent_shared::misc_helpers::get_date_time_unix_nano(),
+                local_ipv4: event.local_ipv4,
+            };
+            if sender.send(record).is_ok() {
+                0
+            } else {
+                -1
+            }
+        }
+        Err(_) => -1,
+    }
+}
 
 // This module contains the logic to interact with the windows eBPF program & maps.
 impl BpfObject {
@@ -331,6 +359,86 @@ impl BpfObject {
         }
 
         Ok(())
+    }
+
+    pub fn update_local_ip_bind_monitor_only(&self, enabled: bool) -> Result<()> {
+        let map_name = "config_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let key = GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY;
+        let value = [u32::from(enabled)];
+
+        let result = bpf_map_update_elem(
+            map_fd,
+            &key as *const u32 as *const c_void,
+            value.as_ptr() as *const c_void,
+            0,
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                "localIPBindMonitorOnly".to_string(),
+                e.to_string(),
+            ))
+        })?;
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                "localIPBindMonitorOnly".to_string(),
+                format!("bpf_map_update_elem returned error code {result}"),
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn subscribe_audit_only(
+        &self,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AuditOnlyRecord>> {
+        let map_name = "audit_only_map";
+        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let context = Box::into_raw(Box::new(sender));
+        let ring = match ring_buffer__new(map_fd, audit_only_callback, context.cast()) {
+            Ok(ring) => ring,
+            Err(err) => {
+                unsafe { drop(Box::from_raw(context)) };
+                return Err(err);
+            }
+        };
+        if ring.is_null() {
+            unsafe { drop(Box::from_raw(context)) };
+            return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                map_name.to_string(),
+                "ring_buffer__new returned null".to_string(),
+            )));
+        }
+        let ring_address = ring as usize;
+        let context_address = context as usize;
+        tokio::task::spawn_blocking(move || {
+            let ring = ring_address as *mut ring_buffer;
+            while !cancellation_token.is_cancelled() {
+                match ring_buffer__poll(ring, 250) {
+                    Ok(result) if result >= 0 => {}
+                    Ok(result) => {
+                        logger::write_warning(format!(
+                            "ring_buffer__poll failed with result {result}"
+                        ));
+                        break;
+                    }
+                    Err(err) => {
+                        logger::write_warning(format!("ring_buffer__poll failed: {err}"));
+                        break;
+                    }
+                }
+            }
+            let _ = ring_buffer__free(ring);
+            unsafe {
+                drop(Box::from_raw(
+                    context_address as *mut tokio::sync::mpsc::UnboundedSender<AuditOnlyRecord>,
+                ));
+            }
+        });
+        Ok(receiver)
     }
 
     /**
