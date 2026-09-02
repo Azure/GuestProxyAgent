@@ -176,6 +176,8 @@ pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatu
 }
 
 #[cfg(windows)]
+pub use windows_service::classify_service_state;
+#[cfg(windows)]
 pub use windows_service::set_default_failure_actions;
 #[cfg(windows)]
 pub use windows_service::ServiceState;
@@ -192,6 +194,12 @@ pub struct ServiceRuntimeStatus {
     pub service_name: String,
     pub is_installed: bool,
     pub is_running: bool,
+    /// True when the service is actively transitioning *toward* a running state (e.g.
+    /// Windows `StartPending`/`ContinuePending`, or systemd `activating`). This is a normal,
+    /// usually brief condition during boot or a service restart and is intentionally treated
+    /// as distinct from a confirmed failure (`is_running == false && is_transitioning ==
+    /// false`), so callers don't have to treat "still starting up" the same as "actually down".
+    pub is_transitioning: bool,
     /// Human-readable running state, e.g. "Running", "Stopped", "Failed".
     pub state_display: String,
     /// Human-readable start type, e.g. "AutoStart", "OnDemand", "Disabled".
@@ -319,6 +327,10 @@ mod tests {
         let status = super::check_service_run_status("gpa-test-service-that-does-not-exist");
         assert!(!status.is_installed);
         assert!(!status.is_running);
+        assert!(
+            !status.is_transitioning,
+            "A not-installed service must not be reported as transitioning"
+        );
         assert_eq!(status.summary(), "NotInstalled");
         assert!(status.message().contains("NotInstalled"));
     }
@@ -340,6 +352,8 @@ mod tests {
             // The test exe cannot actually run as a service, so it should be reported as
             // installed-but-not-running.
             assert!(!status.is_running);
+            // Stopped is a confirmed-down state, not a transitioning one.
+            assert!(!status.is_transitioning);
             assert_eq!(status.state_display, "Stopped");
             let summary = status.summary();
             assert!(

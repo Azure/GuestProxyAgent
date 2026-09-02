@@ -221,6 +221,23 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
         .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
+/// Classifies a Windows service state into (is_running, is_transitioning).
+/// `StartPending`/`ContinuePending` are transitioning *toward* Running - a normal, usually
+/// brief condition during boot or a service restart, distinct from a confirmed failure.
+/// `StopPending`/`PausePending`/`Paused`/`Stopped` (and no state at all) are treated as a
+/// confirmed down state, since they are heading away from - or already away from - Running.
+/// Pure function so it is unit-testable without a real SCM service. Takes `Option<&ServiceState>`
+/// (rather than owning it) so callers don't need `ServiceState` to implement `Copy`/`Clone`, and
+/// so it can be reused as-is by `proxy_agent_extension`'s eBPF substatus classification (see
+/// `pub use` re-export below).
+pub fn classify_service_state(state: Option<&ServiceState>) -> (bool, bool) {
+    match state {
+        Some(ServiceState::Running) => (true, false),
+        Some(ServiceState::StartPending) | Some(ServiceState::ContinuePending) => (false, true),
+        _ => (false, false),
+    }
+}
+
 /// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
 /// re-mapping the same data already fetched by `check_service_status`/`query_service_config`.
 pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
@@ -235,10 +252,13 @@ pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRu
                     "Unknown".to_string()
                 }
             };
+            let (is_running, is_transitioning) =
+                classify_service_state(Some(&status.current_state));
             crate::service::ServiceRuntimeStatus {
                 service_name: service_name.to_string(),
                 is_installed: true,
-                is_running: status.current_state == ServiceState::Running,
+                is_running,
+                is_transitioning,
                 state_display: format!("{:?}", status.current_state),
                 start_type_display,
             }
@@ -251,6 +271,7 @@ pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRu
                 service_name: service_name.to_string(),
                 is_installed: false,
                 is_running: false,
+                is_transitioning: false,
                 state_display: "NotInstalled".to_string(),
                 start_type_display: "NotInstalled".to_string(),
             }
@@ -372,6 +393,43 @@ pub fn set_default_failure_actions(service_name: &str) -> Result<()> {
 mod tests {
     use std::{path::PathBuf, process::Command};
     use windows_service::service::ServiceState;
+
+    #[test]
+    fn classify_service_state_test() {
+        // Running -> healthy
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::Running)),
+            (true, false)
+        );
+        // StartPending/ContinuePending -> transitioning toward Running, not a confirmed failure
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::StartPending)),
+            (false, true)
+        );
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::ContinuePending)),
+            (false, true)
+        );
+        // Stopped/StopPending/PausePending/Paused -> confirmed down, not transitioning
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::Stopped)),
+            (false, false)
+        );
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::StopPending)),
+            (false, false)
+        );
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::PausePending)),
+            (false, false)
+        );
+        assert_eq!(
+            super::classify_service_state(Some(&ServiceState::Paused)),
+            (false, false)
+        );
+        // No state (not installed / query failed) -> confirmed down, not transitioning
+        assert_eq!(super::classify_service_state(None), (false, false));
+    }
 
     #[tokio::test]
     async fn test_install_service() {

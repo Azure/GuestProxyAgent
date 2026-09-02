@@ -225,6 +225,12 @@ async fn monitor_thread() {
     // the immediate eBPF/GPA-service overrides below; kept from the previous iteration whenever
     // the current iteration's fetch fails outright.
     let mut last_known_status_timestamp = String::new();
+    // Tracks whether the aggregate-status check (Step 3) was successful on the previous
+    // iteration, so a fresh transition (success<->failure) can force an immediate recompute of
+    // the cached eBPF/GPA service substatus below, instead of waiting out the full poll
+    // interval - this avoids a stale cached Error substatus continuing to override a
+    // just-recovered aggregate status (or vice versa) for up to the poll interval.
+    let mut prev_aggregate_status_ok: Option<bool> = None;
     loop {
         let current_seq_no: String = common::get_current_seq_no(&exe_path);
 
@@ -311,6 +317,17 @@ async fn monitor_thread() {
             last_known_status_timestamp = status_timestamp;
         }
 
+        // Detect an aggregate-status success/failure transition since the previous iteration,
+        // so Step 6 can force an immediate recompute of the cached eBPF/GPA service substatus
+        // instead of waiting out the full poll interval. Without this, a stale cached Error
+        // substatus could keep overriding a just-recovered aggregate status (or a stale cached
+        // healthy substatus could keep masking a newly-broken service) for up to the poll
+        // interval.
+        let aggregate_status_ok = status.status == *constants::SUCCESS_STATUS;
+        let force_service_status_recompute =
+            should_force_recompute(prev_aggregate_status_ok, aggregate_status_ok);
+        prev_aggregate_status_ok = Some(aggregate_status_ok);
+
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
             restored_in_error = restore_purge_proxy_agent(&mut status);
@@ -330,14 +347,17 @@ async fn monitor_thread() {
         }
 
         // Step 6: Poll eBPF (Windows only) and GuestProxyAgent service (cross-platform) runtime
-        // status on a decoupled ~2-minute cadence, independent of loop_interval. The cached
-        // substatus values are re-appended every iteration so the status file (written every
-        // loop_interval) always reflects the latest known state.
+        // status on a decoupled ~2-minute cadence, independent of loop_interval (or immediately,
+        // regardless of cadence, when the aggregate-status result just transitioned - see
+        // `force_service_status_recompute` above). The cached substatus values are re-appended
+        // every iteration so the status file (written every loop_interval) always reflects the
+        // latest known state.
         if should_poll(
             last_service_status_poll,
             std::time::Instant::now(),
             Duration::from_secs(constants::SERVICE_STATUS_POLL_INTERVAL_SECS),
-        ) {
+        ) || force_service_status_recompute
+        {
             #[cfg(windows)]
             {
                 last_ebpf_substatus = Some(compute_ebpf_substatus());
@@ -405,6 +425,16 @@ fn should_poll(
     }
 }
 
+/// Returns true when `current` differs from the previously observed value, indicating the
+/// aggregate-status success/failure state has just changed since the prior iteration. Returns
+/// false on the very first call (when `prev` is `None`), since there is nothing yet to compare
+/// against. Pure/testable helper used to force an immediate eBPF/GPA-service-status recompute
+/// at meaningful transitions, without abandoning the steady-state decoupled polling cadence
+/// the rest of the time.
+fn should_force_recompute(prev: Option<bool>, current: bool) -> bool {
+    prev.is_some_and(|previous| previous != current)
+}
+
 fn write_state_event(
     state_key: &str,
     state_value: &str,
@@ -431,21 +461,36 @@ fn build_ebpf_substatus(
     ext: &proxy_agent_shared::service::ServiceStatusInfo,
     svc: &proxy_agent_shared::service::ServiceStatusInfo,
 ) -> SubStatus {
-    use proxy_agent_shared::service::ServiceState;
+    use proxy_agent_shared::service::classify_service_state;
 
-    let all_running = matches!(core.state, Some(ServiceState::Running))
-        && matches!(ext.state, Some(ServiceState::Running))
-        && matches!(svc.state, Some(ServiceState::Running));
+    let (core_running, core_transitioning) = classify_service_state(core.state.as_ref());
+    let (ext_running, ext_transitioning) = classify_service_state(ext.state.as_ref());
+    let (svc_running, svc_transitioning) = classify_service_state(svc.state.as_ref());
+
+    let all_running = core_running && ext_running && svc_running;
+    // "Down" means confirmed not-running and not actively transitioning toward Running.
+    let any_down = (!core_running && !core_transitioning)
+        || (!ext_running && !ext_transitioning)
+        || (!svc_running && !svc_transitioning);
 
     let (status, code) = if all_running {
         (
             constants::SUCCESS_STATUS.to_string(),
             constants::STATUS_CODE_OK,
         )
-    } else {
+    } else if any_down {
         (
             constants::ERROR_STATUS.to_string(),
             constants::STATUS_CODE_NOT_OK,
+        )
+    } else {
+        // None are confirmed down, but at least one is still starting up (StartPending /
+        // ContinuePending) - a normal, usually brief condition during boot or a restart.
+        // Report Transitioning instead of Error so the immediate top-level override
+        // (`apply_ebpf_status_override`) does not fire on this benign condition.
+        (
+            constants::TRANSITIONING_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
         )
     };
 
@@ -489,6 +534,15 @@ fn build_proxy_agent_service_substatus(
     let (status, code) = if info.is_running {
         (
             constants::SUCCESS_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
+        )
+    } else if info.is_transitioning {
+        // Actively starting up (Windows StartPending/ContinuePending, or systemd
+        // "activating") - a normal, usually brief condition during boot or a restart.
+        // Report Transitioning instead of Error so the immediate top-level override
+        // (`apply_gpa_service_status_override`) does not fire on this benign condition.
+        (
+            constants::TRANSITIONING_STATUS.to_string(),
             constants::STATUS_CODE_OK,
         )
     } else {
@@ -1440,9 +1494,47 @@ mod tests {
         );
         if ebpf_substatus.status == constants::SUCCESS_STATUS {
             assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
+        } else if ebpf_substatus.status == constants::TRANSITIONING_STATUS {
+            // A service could legitimately be caught mid-start on the test runner; code stays
+            // OK while Transitioning, consistent with the existing set_error/set_success
+            // code/status coupling convention used elsewhere in this file.
+            assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
         } else {
             assert_eq!(ebpf_substatus.status, constants::ERROR_STATUS);
             assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_NOT_OK);
+        }
+    }
+
+    #[test]
+    fn test_compute_gpa_service_substatus() {
+        // Cross-platform (unlike compute_ebpf_substatus, not gated to Windows): exercises the
+        // real check_service_run_status call (SCM on Windows, systemctl on Linux) against
+        // whatever GuestProxyAgent service state the test runner happens to have, and verifies
+        // the result is well-formed and internally consistent regardless of that state. This
+        // backfills test coverage for a function introduced in the prior commit that previously
+        // had no dedicated test (only its pure `build_proxy_agent_service_substatus` helper was
+        // tested).
+        let substatus = super::compute_gpa_service_substatus();
+        assert_eq!(
+            substatus.name,
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME
+        );
+        assert!(
+            substatus
+                .formattedMessage
+                .message
+                .starts_with(&format!("{}: ", constants::PROXY_AGENT_SERVICE_NAME)),
+            "Expected message to start with '{}: ', got: {}",
+            constants::PROXY_AGENT_SERVICE_NAME,
+            substatus.formattedMessage.message
+        );
+        if substatus.status == constants::SUCCESS_STATUS {
+            assert_eq!(substatus.code, constants::STATUS_CODE_OK);
+        } else if substatus.status == constants::TRANSITIONING_STATUS {
+            assert_eq!(substatus.code, constants::STATUS_CODE_OK);
+        } else {
+            assert_eq!(substatus.status, constants::ERROR_STATUS);
+            assert_eq!(substatus.code, constants::STATUS_CODE_NOT_OK);
         }
     }
 
@@ -1589,6 +1681,49 @@ mod tests {
         );
         assert_eq!(sub.status, constants::ERROR_STATUS, "All three stopped");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error.
+        // Regression test: a service mid-boot/mid-restart must not immediately flip the
+        // top-level extension status to Error (see apply_ebpf_status_override, which only
+        // fires on ERROR_STATUS).
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, running()),
+        );
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "Core starting up should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+
+        // 11. Svc resuming (ContinuePending), Core+Ext running → Transitioning, not Error.
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, Some(ServiceState::ContinuePending)),
+        );
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "Svc resuming should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+
+        // 12. Core starting up (StartPending) AND Ext confirmed stopped → Error wins over
+        // Transitioning, since at least one service is confirmed down.
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
+            &make_info(constants::EBPF_EXT, stopped()),
+            &make_info(constants::EBPF_SVC, running()),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "A confirmed-down service should still report Error even if another is transitioning"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
     }
 
     #[test]
@@ -1600,6 +1735,7 @@ mod tests {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
             is_installed: true,
             is_running: true,
+            is_transitioning: false,
             state_display: "Running".to_string(),
             start_type_display: "AutoStart".to_string(),
         };
@@ -1620,6 +1756,7 @@ mod tests {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
             is_installed: true,
             is_running: false,
+            is_transitioning: false,
             state_display: "Stopped".to_string(),
             start_type_display: "AutoStart".to_string(),
         };
@@ -1639,6 +1776,7 @@ mod tests {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
             is_installed: true,
             is_running: false,
+            is_transitioning: false,
             state_display: "Stopped".to_string(),
             start_type_display: "Disabled".to_string(),
         };
@@ -1651,6 +1789,7 @@ mod tests {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
             is_installed: false,
             is_running: false,
+            is_transitioning: false,
             state_display: "NotInstalled".to_string(),
             start_type_display: "NotInstalled".to_string(),
         };
@@ -1660,6 +1799,33 @@ mod tests {
         assert_eq!(
             sub.formattedMessage.message,
             format!("{}: NotInstalled", constants::PROXY_AGENT_SERVICE_NAME)
+        );
+
+        // Starting up (StartPending on Windows / "activating" on Linux) → Transitioning, not
+        // Error. Regression test: a service mid-boot/mid-restart must not immediately flip the
+        // top-level extension status to Error (see apply_gpa_service_status_override, which
+        // only fires on ERROR_STATUS).
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: true,
+            is_running: false,
+            is_transitioning: true,
+            state_display: "StartPending".to_string(),
+            start_type_display: "AutoStart".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "A service starting up should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+        assert_eq!(
+            sub.formattedMessage.message,
+            format!(
+                "{}: StartPending, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            )
         );
     }
 
@@ -1744,6 +1910,30 @@ mod tests {
             status.formattedMessage.message,
             "ProxyAgent extension is reporting successful status."
         );
+
+        // eBPF Transitioning (e.g. a service mid-boot/mid-restart) must NOT trigger the
+        // override - regression test for the reviewer finding that this override previously
+        // fired immediately on any non-Running state, including benign transitional ones.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let transitioning_ebpf_sub = make_ebpf_sub(
+            constants::TRANSITIONING_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: StartPending, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let overridden =
+            super::apply_ebpf_status_override(&mut status, &transitioning_ebpf_sub, "irrelevant");
+        assert!(
+            !overridden,
+            "Transitioning eBPF substatus must not trigger the immediate override"
+        );
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
     }
 
     #[test]
@@ -1814,6 +2004,36 @@ mod tests {
             status.formattedMessage.message,
             "ProxyAgent extension is reporting successful status."
         );
+
+        // GPA-service Transitioning (e.g. mid-boot/mid-restart) must NOT trigger the override -
+        // regression test for the reviewer finding that this override previously fired
+        // immediately on any non-Running state, including benign transitional ones.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let transitioning_gpa_sub = make_gpa_sub(
+            constants::TRANSITIONING_STATUS,
+            &format!(
+                "{}: StartPending, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
+        let overridden = super::apply_gpa_service_status_override(
+            &mut status,
+            &transitioning_gpa_sub,
+            "irrelevant",
+        );
+        assert!(
+            !overridden,
+            "Transitioning GPA-service substatus must not trigger the immediate override"
+        );
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
     }
 
     #[test]
@@ -1836,6 +2056,25 @@ mod tests {
         // Exactly at the interval boundary -> should poll (>=)
         let exactly_at_interval = now - interval;
         assert!(super::should_poll(Some(exactly_at_interval), now, interval));
+    }
+
+    #[test]
+    fn test_should_force_recompute() {
+        // First observation ever (no previous value) -> never force, nothing to compare against
+        assert!(!super::should_force_recompute(None, true));
+        assert!(!super::should_force_recompute(None, false));
+
+        // No change since previous iteration -> don't force
+        assert!(!super::should_force_recompute(Some(true), true));
+        assert!(!super::should_force_recompute(Some(false), false));
+
+        // Aggregate status just recovered (was failing, now succeeding) -> force recompute so
+        // a stale cached Error substatus doesn't keep overriding the fresh success.
+        assert!(super::should_force_recompute(Some(false), true));
+
+        // Aggregate status just broke (was succeeding, now failing) -> force recompute so a
+        // stale cached healthy substatus doesn't keep masking the new failure.
+        assert!(super::should_force_recompute(Some(true), false));
     }
 
     #[tokio::test]
