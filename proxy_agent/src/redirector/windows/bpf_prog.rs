@@ -115,10 +115,7 @@ impl BpfObject {
 
     fn attach_bpf_prog_by_name(&mut self, program_name: &str) -> Result<()> {
         let program = match bpf_object__find_program_by_name(self.0, program_name) {
-            Ok(p) => {
-                logger::write_information(format!("Found {program_name} program."));
-                p
-            }
+            Ok(p) => p,
             Err(e) => {
                 return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                     program_name.to_string(),
@@ -138,6 +135,8 @@ impl BpfObject {
                 program_name.to_string(),
                 "bpf_object__find_program_by_name return null".to_string(),
             )));
+        } else {
+            logger::write_information(format!("Found {program_name} program."));
         }
 
         let compartment_id = 1;
