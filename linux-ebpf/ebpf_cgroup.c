@@ -285,10 +285,6 @@ trace_tcp_connect(struct sock *sk)
         // Only support IPv4.
         return 0;
     }
-    __be32 skc_daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
-    __be32 skc_rcv_saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
-    __be16 skc_dport = BPF_CORE_READ(sk, __sk_common.skc_dport);
-    __u16 skc_num = BPF_CORE_READ(sk, __sk_common.skc_num);
 
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tgid >> 32);
@@ -302,7 +298,10 @@ trace_tcp_connect(struct sock *sk)
     struct gpa_sock_addr_local_entry *local_entry = bpf_map_lookup_elem(&local_map, &pid_tgid);
     if (local_entry != NULL)
     {
-        update_audit_map_entry_sk(skc_num, skc_rcv_saddr, local_entry);
+        __be32 local_ipv4 = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+        __u16 local_port = BPF_CORE_READ(sk, __sk_common.skc_num);
+
+        update_audit_map_entry_sk(local_port, local_ipv4, local_entry);
         __u64 ret = bpf_map_delete_elem(&local_map, &pid_tgid);
         if (ret != 0)
         {

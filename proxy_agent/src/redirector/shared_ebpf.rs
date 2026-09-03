@@ -131,7 +131,7 @@ impl sock_addr_audit_key {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct sock_addr_audit_entry {
     pub logon_id: u32,
     pub process_id: u32,
@@ -147,11 +147,7 @@ pub struct sock_addr_audit_entry {
 pub struct audit_only_event {
     pub kernel_timestamp_ns: u64,
     pub local_ipv4: u32,
-    pub logon_id: u32,
-    pub process_id: u32,
-    pub is_root: u32,
-    pub destination_ipv4: u32,
-    pub destination_port: u32,
+    pub audit_entry: sock_addr_audit_entry,
 }
 
 impl audit_only_event {
@@ -170,14 +166,7 @@ impl audit_only_event {
     }
 
     pub fn to_audit_entry(self) -> crate::redirector::AuditEntry {
-        crate::redirector::AuditEntry {
-            logon_id: u64::from(self.logon_id),
-            process_id: self.process_id,
-            is_admin: self.is_root as i32,
-            destination_ipv4: self.destination_ipv4,
-            destination_port: self.destination_port as u16,
-            address_family: crate::redirector::AddressFamily::IPv4, //TODO: audit_only_event does not include address_family, so we assume IPv4 for now.
-        }
+        self.audit_entry.to_audit_entry()
     }
 }
 pub type AuditMapValue =

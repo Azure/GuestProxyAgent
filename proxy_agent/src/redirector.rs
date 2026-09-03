@@ -312,48 +312,48 @@ async fn process_audit_only_events(
             record = receiver.recv() => {
                 let Some(record) = record else { return; };
                 let entry = record.entry;
-                            let destination_ip = entry.destination_ipv4_addr();
-                            let destination_port = entry.destination_port_in_host_byte_order();
-                            let message = match Claims::from_audit_entry(
-                                &entry,
-                                std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), // not used for audit-only, so just use unspecified
-                                0, // not used for audit-only, so just use 0
-                                proxy_server_shared_state.clone(),
-                            )
-                            .await
-                            {
-                                Ok(claims) => format!(
-                                    "eBPF audit-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userName={}, processId={}, processName={}, processFullPath={}, processCmdLine={}, runAsElevated={}, destination={}:{}",
-                                    record.timestamp_utc_ns,
-                                    record.kernel_timestamp_ns,
-                                    Ipv4Addr::from_bits(record.local_ipv4.to_be()),
-                                    claims.userName,
-                                    claims.processId,
-                                    claims.processName.to_string_lossy(),
-                                    claims.processFullPath.display(),
-                                    claims.processCmdLine,
-                                    claims.runAsElevated,
-                                    destination_ip,
-                                    destination_port,
-                                ),
-                                Err(err) => format!(
-                                    "eBPF audit-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userId={}, processId={}, processDetails=unavailable ({err}), destination={}:{}",
-                                    record.timestamp_utc_ns,
-                                    record.kernel_timestamp_ns,
-                                    Ipv4Addr::from_bits(record.local_ipv4.to_be()),
-                                    entry.logon_id,
-                                    entry.process_id,
-                                    destination_ip,
-                                    destination_port,
-                                ),
-                            };
-                            event_logger::write_event(
-                                LoggerLevel::Warn,
-                                message,
-                                "process_audit_only_events",
-                                "redirector",
-                                logger::AGENT_LOGGER_KEY,
-                            );
+                let destination_ip = entry.destination_ipv4_addr();
+                let destination_port = entry.destination_port_in_host_byte_order();
+                let message = match Claims::from_audit_entry(
+                    &entry,
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), // not used for audit-only, so just use unspecified
+                    0, // not used for audit-only, so just use 0
+                    proxy_server_shared_state.clone(),
+                )
+                .await
+                {
+                    Ok(claims) => format!(
+                        "eBPF audit-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userName={}, processId={}, processName={}, processFullPath={}, processCmdLine={}, runAsElevated={}, destination={}:{}",
+                        record.timestamp_utc_ns,
+                        record.kernel_timestamp_ns,
+                        Ipv4Addr::from_bits(record.local_ipv4.to_be()),
+                        claims.userName,
+                        claims.processId,
+                        claims.processName.to_string_lossy(),
+                        claims.processFullPath.display(),
+                        claims.processCmdLine,
+                        claims.runAsElevated,
+                        destination_ip,
+                        destination_port,
+                    ),
+                    Err(err) => format!(
+                        "eBPF audit-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userId={}, processId={}, processDetails=unavailable ({err}), destination={}:{}",
+                        record.timestamp_utc_ns,
+                        record.kernel_timestamp_ns,
+                        Ipv4Addr::from_bits(record.local_ipv4.to_be()),
+                        entry.logon_id,
+                        entry.process_id,
+                        destination_ip,
+                        destination_port,
+                    ),
+                };
+                event_logger::write_event(
+                    LoggerLevel::Warn,
+                    message,
+                    "process_audit_only_events",
+                    "redirector",
+                    logger::AGENT_LOGGER_KEY,
+                );
             }
         }
     }
