@@ -133,12 +133,9 @@ impl ProxyAgentStatusTask {
             extension_type: "Monitoring".to_string(),
         };
         loop {
-            #[cfg(not(windows))]
-            {
-                self.monitor_memory_usage();
-            }
-
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
+            self.monitor_memory_usage();
+
             // write proxyAgentStatus event
             if status_report_time.elapsed() >= status_report_duration {
                 let status = match serde_json::to_string(&aggregate_status.proxyAgentStatus) {
@@ -331,6 +328,30 @@ impl ProxyAgentStatusTask {
         }
     }
 
+    #[cfg(windows)]
+    fn monitor_memory_usage(&self) {
+        match proxy_agent_shared::windows::get_current_process_memory_status() {
+            Ok(memory) => {
+                const BYTES_PER_MB: usize = 1024 * 1024;
+                let private_bytes_in_mb = memory.private_bytes / BYTES_PER_MB; // primary OOM indicator
+                let working_set_in_mb = memory.working_set_bytes / BYTES_PER_MB; // current physical RAM
+                let peak_working_set_in_mb = memory.peak_working_set_bytes / BYTES_PER_MB;
+                let message = format!(
+                    "privateBytesMb={}, workingSetMb={}, peakWorkingSetMb={}",
+                    private_bytes_in_mb, working_set_in_mb, peak_working_set_in_mb,
+                );
+                if private_bytes_in_mb > 50 {
+                    logger::write_warning(message);
+                } else {
+                    logger::write(message);
+                }
+            }
+            Err(e) => {
+                logger::write_warning(format!("memoryError={e}"));
+            }
+        };
+    }
+
     /// Monitor the memory usage of the current process and log it.
     /// If the memory usage exceeds the limit, log a warning.
     /// If the memory usage exceeds the limits for multiple times, take action (e.g., restart the process).
@@ -341,9 +362,7 @@ impl ProxyAgentStatusTask {
             Ok(memory_status) => {
                 if let Some(vmrss_kb) = memory_status.vmrss_kb {
                     let ram_in_mb = vmrss_kb / 1024;
-                    logger::write_information(format!(
-                        "Current process memory usage: {ram_in_mb} MB",
-                    ));
+                    logger::write(format!("Current process memory usage: {ram_in_mb} MB",));
 
                     if ram_in_mb > RAM_LIMIT_IN_MB {
                         logger::write_warning(format!(
@@ -352,21 +371,19 @@ impl ProxyAgentStatusTask {
                         // take action if needed, e.g., restart the process
                     }
                 } else {
-                    logger::write_information("Current process memory usage: Unknown".to_string());
+                    logger::write("Current process memory usage: Unknown".to_string());
                 }
                 if let Some(vmhwm_kb) = memory_status.vmhwm_kb {
-                    logger::write_information(format!(
+                    logger::write(format!(
                         "Current process peak memory usage: {} MB",
                         vmhwm_kb / 1024
                     ));
                 } else {
-                    logger::write_information(
-                        "Current process peak memory usage: Unknown".to_string(),
-                    );
+                    logger::write_warning("Current process peak memory usage: Unknown".to_string());
                 }
             }
             Err(e) => {
-                logger::write_error(format!("Error reading process memory status: {e}"));
+                logger::write_warning(format!("Error reading process memory status: {e}"));
             }
         }
     }

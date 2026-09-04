@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use once_cell::sync::Lazy;
-use proxy_agent_shared::telemetry::span::SimpleSpan;
+use proxy_agent_shared::{current_info, telemetry::span::SimpleSpan};
 
 static START: Lazy<SimpleSpan> = Lazy::new(SimpleSpan::new);
 
@@ -20,4 +20,15 @@ pub fn write_startup_event(
     #[cfg(not(windows))]
     crate::common::logger::write_serial_console_log(message.clone(), None);
     message
+}
+
+/// Determine the number of worker threads for the tokio runtime
+/// Limit the number of worker threads to a maximum of 10 and minimum of 2  
+static TOKIO_RUNTIME_WORKER_THREADS: Lazy<usize> = Lazy::new(|| {
+    let cpu_count = current_info::get_cpu_count();
+    cpu_count.clamp(2, 10)
+});
+
+pub fn get_worker_threads() -> usize {
+    *TOKIO_RUNTIME_WORKER_THREADS
 }

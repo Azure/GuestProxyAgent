@@ -680,6 +680,24 @@ pub fn xml_escape(s: String) -> String {
         .replace('>', "&gt;")
 }
 
+/// Truncate the given string to the specified maximum number of bytes, ensuring that it does not cut off in the middle of a character.
+/// # Arguments
+/// * `text` - The string to be truncated
+/// * `max_bytes_size` - The maximum number of bytes the string should occupy
+/// # Notes
+/// This function ensures that the resulting string is valid UTF-8 by truncating at character boundaries.
+pub fn truncate_to_char_boundary(text: &mut String, max_bytes_size: usize) {
+    if text.len() <= max_bytes_size {
+        return;
+    }
+
+    let mut end = max_bytes_size;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+}
+
 #[cfg(test)]
 mod tests {
     use regex::Regex;

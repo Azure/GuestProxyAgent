@@ -81,7 +81,10 @@ impl EventSender {
             .await
         {
             Ok(()) => {
-                logger_manager::write_info("success updated the vm metadata.".to_string());
+                logger_manager::write_log(
+                    LoggerLevel::Trace,
+                    "success updated the vm metadata.".to_string(),
+                );
             }
             Err(e) => {
                 logger_manager::write_warn(format!("Failed to update vm metadata with error {e}."));
@@ -108,7 +111,11 @@ impl EventSender {
             let mut add_more_events = true;
             while !TELEMETRY_EVENT_QUEUE.is_empty() && add_more_events {
                 match TELEMETRY_EVENT_QUEUE.pop() {
-                    Ok(event) => {
+                    Ok(mut event) => {
+                        // Redact only in this sequential background consumer. Producers stay off the
+                        // blocking regex path, and the redactor's global lock also serializes other sinks.
+                        event.redact_secrets();
+
                         telemetry_data.add_event(event.clone());
 
                         if telemetry_data.get_size() >= MAX_MESSAGE_SIZE {

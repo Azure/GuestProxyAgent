@@ -232,8 +232,10 @@ impl Process {
             cmd = process_info.1;
         }
 
-        // redact the secrets in the command line
-        let cmd = proxy_agent_shared::secrets_redactor::redact_secrets_string(cmd);
+        // Do not redact the secrets in the command line at proxying time,
+        // because the command line is used for authorization and redacting it may break the authorization.
+        // Instead, redact the secrets in the command line already happened when sending telemetry events.
+        // let cmd = proxy_agent_shared::secrets_redactor::redact_secrets_string(cmd);
 
         let process_name = process_full_path
             .file_name()

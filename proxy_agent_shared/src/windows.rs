@@ -33,6 +33,9 @@ use windows_sys::Win32::System::JobObjects::{
     JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE,
     JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_WORKINGSET,
 };
+use windows_sys::Win32::System::ProcessStatus::{
+    K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
+};
 use windows_sys::Win32::System::SystemInformation::{
     GetSystemInfo,        // kernel32.dll
     GlobalMemoryStatusEx, // kernel32.dll
@@ -40,8 +43,8 @@ use windows_sys::Win32::System::SystemInformation::{
     SYSTEM_INFO,
 };
 use windows_sys::Win32::System::Threading::{
-    OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_INFORMATION, PROCESS_SET_QUOTA,
-    PROCESS_TERMINATE,
+    GetCurrentProcess, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_INFORMATION,
+    PROCESS_SET_QUOTA, PROCESS_TERMINATE,
 };
 use winreg::enums::*;
 use winreg::RegKey;
@@ -324,6 +327,37 @@ pub fn get_memory_in_mb() -> Result<u64> {
         let memory_in_mb = (*data).ullTotalPhys / 1024 / 1024;
         Ok(memory_in_mb)
     }
+}
+
+#[derive(Debug)]
+pub struct ProcessMemoryStatus {
+    pub private_bytes: usize,
+    pub working_set_bytes: usize,
+    pub peak_working_set_bytes: usize,
+}
+
+pub fn get_current_process_memory_status() -> Result<ProcessMemoryStatus> {
+    let mut counters = MaybeUninit::<PROCESS_MEMORY_COUNTERS_EX>::zeroed();
+    let result = unsafe {
+        K32GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            counters.as_mut_ptr().cast(),
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+        )
+    };
+    if result == 0 {
+        return Err(Error::WindowsApi(
+            "K32GetProcessMemoryInfo".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    let counters = unsafe { counters.assume_init() };
+    Ok(ProcessMemoryStatus {
+        private_bytes: counters.PrivateUsage,
+        working_set_bytes: counters.WorkingSetSize,
+        peak_working_set_bytes: counters.PeakWorkingSetSize,
+    })
 }
 
 pub fn ensure_service_running(service_name: &str) -> (bool, String) {
