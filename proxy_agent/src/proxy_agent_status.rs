@@ -135,10 +135,24 @@ impl ProxyAgentStatusTask {
 
         let mut memory_monitor_instant = Instant::now();
         const MEMORY_MONITOR_INTERVAL: Duration = Duration::from_secs(10 * 60);
+        let mut alert_count: usize = 0;
         loop {
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
             if memory_monitor_instant.elapsed() > MEMORY_MONITOR_INTERVAL {
-                self.monitor_memory_usage();
+                if self.monitor_memory_usage() {
+                    alert_count += 1;
+                } else {
+                    alert_count = 0;
+                }
+
+                if alert_count >= 3 {
+                    // write extra message if 3 alerts continously
+                    // Repeated overhead which may mean non-reclaimable memory and high possible real memory leak
+                    logger::write_warning(format!(
+                        "PossibleMemoryLeak::Monitor memory usage received {alert_count} alerts continously."
+                    ));
+                }
+
                 memory_monitor_instant = Instant::now();
             }
 
@@ -335,7 +349,8 @@ impl ProxyAgentStatusTask {
     }
 
     #[cfg(windows)]
-    fn monitor_memory_usage(&self) {
+    fn monitor_memory_usage(&self) -> bool {
+        let mut alert = false;
         match proxy_agent_shared::windows::get_current_process_memory_status() {
             Ok(memory) => {
                 const BYTES_PER_MB: usize = 1024 * 1024;
@@ -368,6 +383,7 @@ impl ProxyAgentStatusTask {
                             "Failed to optimize Windows heap resources: {e}"
                         )),
                     }
+                    alert = true;
                 } else {
                     logger::write(message);
                 }
@@ -375,15 +391,17 @@ impl ProxyAgentStatusTask {
             Err(e) => {
                 logger::write_warning(format!("memoryError={e}"));
             }
-        };
+        }
+        alert
     }
 
     /// Monitor the memory usage of the current process and log it.
     /// If the memory usage exceeds the limit, log a warning.
     /// If the memory usage exceeds the limits for multiple times, take action (e.g., restart the process).
     #[cfg(not(windows))]
-    fn monitor_memory_usage(&self) {
+    fn monitor_memory_usage(&self) -> bool {
         const RAM_LIMIT_IN_MB: u64 = 20;
+        let mut alert = false;
         match proxy_agent_shared::linux::read_proc_memory_status(std::process::id()) {
             Ok(memory_status) => {
                 if let Some(vmrss_kb) = memory_status.vmrss_kb {
@@ -395,6 +413,7 @@ impl ProxyAgentStatusTask {
                             "Current process memory usage {ram_in_mb} MB exceeds the limit of {RAM_LIMIT_IN_MB} MB.",
                         ));
                         // take action if needed, e.g., restart the process
+                        alert = true;
                     }
                 } else {
                     logger::write("Current process memory usage: Unknown".to_string());
@@ -412,6 +431,7 @@ impl ProxyAgentStatusTask {
                 logger::write_warning(format!("Error reading process memory status: {e}"));
             }
         }
+        alert
     }
 }
 
