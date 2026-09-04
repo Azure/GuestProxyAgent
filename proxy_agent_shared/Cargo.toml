@@ -60,6 +60,8 @@ features = [
   "Win32_Storage_FileSystem",
   "Win32_System_JobObjects",
   "Win32_System_ProcessStatus",
+  "Win32_System_Memory",
+  "Win32_System_SystemServices",
 ]
 
 [target.'cfg(not(windows))'.dependencies]

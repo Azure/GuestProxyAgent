@@ -33,6 +33,7 @@ use windows_sys::Win32::System::JobObjects::{
     JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE,
     JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_WORKINGSET,
 };
+use windows_sys::Win32::System::Memory::{HeapOptimizeResources, HeapSetInformation};
 use windows_sys::Win32::System::ProcessStatus::{
     K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
 };
@@ -42,6 +43,7 @@ use windows_sys::Win32::System::SystemInformation::{
     MEMORYSTATUSEX,
     SYSTEM_INFO,
 };
+use windows_sys::Win32::System::SystemServices::HEAP_OPTIMIZE_RESOURCES_INFORMATION;
 use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_INFORMATION,
     PROCESS_SET_QUOTA, PROCESS_TERMINATE,
@@ -358,6 +360,31 @@ pub fn get_current_process_memory_status() -> Result<ProcessMemoryStatus> {
         working_set_bytes: counters.WorkingSetSize,
         peak_working_set_bytes: counters.PeakWorkingSetSize,
     })
+}
+
+/// Requests that Windows flush caches for all low-fragmentation heaps in this process and
+/// decommit unused pages where possible. Success does not guarantee that private bytes decrease.
+pub fn optimize_process_heap_resources() -> Result<()> {
+    let information = HEAP_OPTIMIZE_RESOURCES_INFORMATION {
+        Version: 1,
+        Flags: 0,
+    };
+    let result = unsafe {
+        HeapSetInformation(
+            0,
+            HeapOptimizeResources,
+            (&information as *const HEAP_OPTIMIZE_RESOURCES_INFORMATION).cast(),
+            std::mem::size_of::<HEAP_OPTIMIZE_RESOURCES_INFORMATION>(),
+        )
+    };
+    if result == 0 {
+        return Err(Error::WindowsApi(
+            "HeapSetInformation(HeapOptimizeResources)".to_string(),
+            std::io::Error::last_os_error(),
+        ));
+    }
+
+    Ok(())
 }
 
 pub fn ensure_service_running(service_name: &str) -> (bool, String) {

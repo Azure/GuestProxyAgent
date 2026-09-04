@@ -132,9 +132,15 @@ impl ProxyAgentStatusTask {
             is_internal: true,
             extension_type: "Monitoring".to_string(),
         };
+
+        let mut memory_monitor_instant = Instant::now();
+        const MEMORY_MONITOR_INTERVAL: Duration = Duration::from_secs(10 * 60);
         loop {
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
-            self.monitor_memory_usage();
+            if memory_monitor_instant.elapsed() > MEMORY_MONITOR_INTERVAL {
+                self.monitor_memory_usage();
+                memory_monitor_instant = Instant::now();
+            }
 
             // write proxyAgentStatus event
             if status_report_time.elapsed() >= status_report_duration {
@@ -333,6 +339,8 @@ impl ProxyAgentStatusTask {
         match proxy_agent_shared::windows::get_current_process_memory_status() {
             Ok(memory) => {
                 const BYTES_PER_MB: usize = 1024 * 1024;
+                const PRIVATE_BYTES_MONITOR_LIMIT_MB: usize = 50;
+
                 let private_bytes_in_mb = memory.private_bytes / BYTES_PER_MB; // primary OOM indicator
                 let working_set_in_mb = memory.working_set_bytes / BYTES_PER_MB; // current physical RAM
                 let peak_working_set_in_mb = memory.peak_working_set_bytes / BYTES_PER_MB;
@@ -340,8 +348,26 @@ impl ProxyAgentStatusTask {
                     "privateBytesMb={}, workingSetMb={}, peakWorkingSetMb={}",
                     private_bytes_in_mb, working_set_in_mb, peak_working_set_in_mb,
                 );
-                if private_bytes_in_mb > 50 {
+                if private_bytes_in_mb > PRIVATE_BYTES_MONITOR_LIMIT_MB {
+                    // Memory usage exceeds the private bytes limit.
                     logger::write_warning(message);
+                    match proxy_agent_shared::windows::optimize_process_heap_resources() {
+                        Ok(()) => {
+                            match proxy_agent_shared::windows::get_current_process_memory_status() {
+                                Ok(memory_after) => logger::write_information(format!(
+                                    "Heap resources optimized: privateBytesMbBefore={}, privateBytesMbAfter={}",
+                                    private_bytes_in_mb,
+                                    memory_after.private_bytes / BYTES_PER_MB,
+                                )),
+                                Err(e) => logger::write_warning(format!(
+                                    "Heap resources optimized, but failed to read memory afterward: {e}"
+                                )),
+                            }
+                        }
+                        Err(e) => logger::write_warning(format!(
+                            "Failed to optimize Windows heap resources: {e}"
+                        )),
+                    }
                 } else {
                     logger::write(message);
                 }
