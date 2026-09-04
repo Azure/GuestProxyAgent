@@ -212,25 +212,10 @@ async fn monitor_thread() {
     let mut restored_in_error = false;
     let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
     let loop_interval = Duration::from_secs(15);
-    // Decoupled cache/cadence for the eBPF (Windows only) and GuestProxyAgent service
-    // (cross-platform) runtime status checks - these are (re)queried only every
-    // SERVICE_STATUS_POLL_INTERVAL_SECS (~2 minutes), independent of loop_interval, while the
-    // cached substatus is still re-appended to the status object (and written to the status
-    // file) on every loop_interval tick.
-    #[cfg(windows)]
-    let mut last_ebpf_substatus: Option<SubStatus> = None;
-    let mut last_gpa_service_substatus: Option<SubStatus> = None;
-    let mut last_service_status_poll: Option<std::time::Instant> = None;
     // Last known timestamp (as reported by the GPA aggregate status itself) used to annotate
     // the immediate eBPF/GPA-service overrides below; kept from the previous iteration whenever
     // the current iteration's fetch fails outright.
     let mut last_known_status_timestamp = String::new();
-    // Tracks whether the aggregate-status check (Step 3) was successful on the previous
-    // iteration, so a fresh transition (success<->failure) can force an immediate recompute of
-    // the cached eBPF/GPA service substatus below, instead of waiting out the full poll
-    // interval - this avoids a stale cached Error substatus continuing to override a
-    // just-recovered aggregate status (or vice versa) for up to the poll interval.
-    let mut prev_aggregate_status_ok: Option<bool> = None;
     loop {
         let current_seq_no: String = common::get_current_seq_no(&exe_path);
 
@@ -317,17 +302,6 @@ async fn monitor_thread() {
             last_known_status_timestamp = status_timestamp;
         }
 
-        // Detect an aggregate-status success/failure transition since the previous iteration,
-        // so Step 6 can force an immediate recompute of the cached eBPF/GPA service substatus
-        // instead of waiting out the full poll interval. Without this, a stale cached Error
-        // substatus could keep overriding a just-recovered aggregate status (or a stale cached
-        // healthy substatus could keep masking a newly-broken service) for up to the poll
-        // interval.
-        let aggregate_status_ok = status.status == *constants::SUCCESS_STATUS;
-        let force_service_status_recompute =
-            should_force_recompute(prev_aggregate_status_ok, aggregate_status_ok);
-        prev_aggregate_status_ok = Some(aggregate_status_ok);
-
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
             restored_in_error = restore_purge_proxy_agent(&mut status);
@@ -346,60 +320,39 @@ async fn monitor_thread() {
             proxy_agent_update_reported = None;
         }
 
-        // Step 6: Poll eBPF (Windows only) and GuestProxyAgent service (cross-platform) runtime
-        // status on a decoupled ~2-minute cadence, independent of loop_interval (or immediately,
-        // regardless of cadence, when the aggregate-status result just transitioned - see
-        // `force_service_status_recompute` above). The cached substatus values are re-appended
-        // every iteration so the status file (written every loop_interval) always reflects the
-        // latest known state.
-        if should_poll(
-            last_service_status_poll,
-            std::time::Instant::now(),
-            Duration::from_secs(constants::SERVICE_STATUS_POLL_INTERVAL_SECS),
-        ) || force_service_status_recompute
+        // Step 6: Report eBPF (Windows only) and GuestProxyAgent service (cross-platform)
+        // runtime status, computed fresh every loop_interval tick (same cadence as everything
+        // else in this loop, currently 15s) so the status file always reflects the current
+        // machine state.
+        //
+        // Step 7: Apply an immediate top-level status/message override when eBPF (Windows,
+        // highest priority) or the GuestProxyAgent service itself (both platforms) is
+        // unhealthy. This is still necessary even though the substatus data above is always
+        // fresh: the top-level status/message is derived from a *different* source (the GPA
+        // aggregate status file/wire-server response via Step 3), which has its own 5-minute
+        // staleness threshold and 20-iteration debounce designed to avoid flapping on transient
+        // network blips - it has no visibility into eBPF or the GuestProxyAgent service at all.
+        // Without this override, a locally-confirmed eBPF/service failure would still take
+        // several minutes to surface at the top level; see `apply_service_health_overrides`.
+        let gpa_service_substatus = compute_gpa_service_substatus();
+        #[cfg(windows)]
         {
-            #[cfg(windows)]
-            {
-                last_ebpf_substatus = Some(compute_ebpf_substatus());
-            }
-            last_gpa_service_substatus = Some(compute_gpa_service_substatus());
-            last_service_status_poll = Some(std::time::Instant::now());
-        }
-        #[cfg(windows)]
-        if let Some(ebpf_substatus) = &last_ebpf_substatus {
-            status.substatus.push(ebpf_substatus.clone());
-        }
-        if let Some(gpa_service_substatus) = &last_gpa_service_substatus {
-            status.substatus.push(gpa_service_substatus.clone());
-        }
-
-        // Step 7: Apply immediate overrides when eBPF (Windows only, highest priority - an
-        // unhealthy eBPF is frequently the root cause of the GuestProxyAgent service failing to
-        // start) or the GuestProxyAgent service itself (both platforms) is reporting Error.
-        // These bypass the debounce state machine and take priority over whatever status/message
-        // Steps 3-5 produced (stale/version-mismatch/connectivity-error/success), because a
-        // definitively-known local service failure is a complete, actionable, immediate answer
-        // on its own - there is no reason to wait for slower generic detection to catch up.
-        #[cfg(windows)]
-        let overridden = match &last_ebpf_substatus {
-            Some(ebpf_substatus) => apply_ebpf_status_override(
+            let ebpf_substatus = compute_ebpf_substatus();
+            apply_service_health_overrides(
                 &mut status,
-                ebpf_substatus,
+                &ebpf_substatus,
+                &gpa_service_substatus,
                 &last_known_status_timestamp,
-            ),
-            None => false,
-        };
-        #[cfg(not(windows))]
-        let overridden = false;
-        if !overridden {
-            if let Some(gpa_service_substatus) = &last_gpa_service_substatus {
-                apply_gpa_service_status_override(
-                    &mut status,
-                    gpa_service_substatus,
-                    &last_known_status_timestamp,
-                );
-            }
+            );
+            status.substatus.push(ebpf_substatus);
         }
+        #[cfg(not(windows))]
+        apply_gpa_service_status_override(
+            &mut status,
+            &gpa_service_substatus,
+            &last_known_status_timestamp,
+        );
+        status.substatus.push(gpa_service_substatus);
 
         // Step 8: Write the final status file and sleep
         common::report_status(
@@ -410,29 +363,6 @@ async fn monitor_thread() {
 
         tokio::time::sleep(loop_interval).await;
     }
-}
-
-/// Returns true when a poll is due: either no poll has happened yet, or at least `interval`
-/// has elapsed since the last one. Pure/testable helper for the decoupled service-status cadence.
-fn should_poll(
-    last: Option<std::time::Instant>,
-    now: std::time::Instant,
-    interval: Duration,
-) -> bool {
-    match last {
-        None => true,
-        Some(last) => now.duration_since(last) >= interval,
-    }
-}
-
-/// Returns true when `current` differs from the previously observed value, indicating the
-/// aggregate-status success/failure state has just changed since the prior iteration. Returns
-/// false on the very first call (when `prev` is `None`), since there is nothing yet to compare
-/// against. Pure/testable helper used to force an immediate eBPF/GPA-service-status recompute
-/// at meaningful transitions, without abandoning the steady-state decoupled polling cadence
-/// the rest of the time.
-fn should_force_recompute(prev: Option<bool>, current: bool) -> bool {
-    prev.is_some_and(|previous| previous != current)
 }
 
 fn write_state_event(
@@ -620,6 +550,26 @@ fn apply_gpa_service_status_override(
         misc_helpers::get_current_utc_time()
     );
     true
+}
+
+/// Applies the Windows-only priority ordering between the two immediate overrides: eBPF errors
+/// win over GuestProxyAgent-service errors, since an unhealthy eBPF is frequently the underlying
+/// reason the GuestProxyAgent service itself cannot start, making it the more specific/actionable
+/// signal. Only falls through to the GPA-service override when eBPF itself did not report Error.
+#[cfg(windows)]
+fn apply_service_health_overrides(
+    status: &mut StatusObj,
+    ebpf_substatus: &SubStatus,
+    gpa_service_substatus: &SubStatus,
+    last_known_status_timestamp: &str,
+) {
+    if !apply_ebpf_status_override(status, ebpf_substatus, last_known_status_timestamp) {
+        apply_gpa_service_status_override(
+            status,
+            gpa_service_substatus,
+            last_known_status_timestamp,
+        );
+    }
 }
 
 fn backup_proxy_agent(setup_tool: &String) {
@@ -2037,44 +1987,100 @@ mod tests {
     }
 
     #[test]
-    fn test_should_poll() {
-        use std::time::{Duration, Instant};
+    #[cfg(windows)]
+    fn test_apply_service_health_overrides_priority() {
+        let make_sub = |name: &str, status: &str, message: &str| SubStatus {
+            name: name.to_string(),
+            status: status.to_string(),
+            code: if status == constants::ERROR_STATUS {
+                constants::STATUS_CODE_NOT_OK
+            } else {
+                constants::STATUS_CODE_OK
+            },
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: message.to_string(),
+            },
+        };
 
-        let interval = Duration::from_secs(120);
-        let now = Instant::now();
+        let error_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            "EbpfCore: Stopped, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let healthy_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::SUCCESS_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let error_gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            &format!(
+                "{}: Stopped, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
+        let healthy_gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
+            constants::SUCCESS_STATUS,
+            &format!(
+                "{}: Running, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
 
-        // Never polled before -> should poll
-        assert!(super::should_poll(None, now, interval));
+        // Both unhealthy -> eBPF wins (message shows eBPF detail, not GPA-service detail)
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(&mut status, &error_ebpf_sub, &error_gpa_sub, "ts");
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("EbpfCore: Stopped"));
+        assert!(
+            !status
+                .formattedMessage
+                .message
+                .contains(constants::PROXY_AGENT_SERVICE_NAME),
+            "GPA-service detail should not appear when eBPF already overrode the message, got: {}",
+            status.formattedMessage.message
+        );
 
-        // Polled recently -> should not poll yet
-        assert!(!super::should_poll(Some(now), now, interval));
+        // eBPF healthy, GPA-service unhealthy -> falls through to the GPA-service override
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(&mut status, &healthy_ebpf_sub, &error_gpa_sub, "ts");
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("GuestProxyAgent: Stopped"));
 
-        // Polled long enough ago -> should poll again
-        let long_ago = now - Duration::from_secs(121);
-        assert!(super::should_poll(Some(long_ago), now, interval));
-
-        // Exactly at the interval boundary -> should poll (>=)
-        let exactly_at_interval = now - interval;
-        assert!(super::should_poll(Some(exactly_at_interval), now, interval));
-    }
-
-    #[test]
-    fn test_should_force_recompute() {
-        // First observation ever (no previous value) -> never force, nothing to compare against
-        assert!(!super::should_force_recompute(None, true));
-        assert!(!super::should_force_recompute(None, false));
-
-        // No change since previous iteration -> don't force
-        assert!(!super::should_force_recompute(Some(true), true));
-        assert!(!super::should_force_recompute(Some(false), false));
-
-        // Aggregate status just recovered (was failing, now succeeding) -> force recompute so
-        // a stale cached Error substatus doesn't keep overriding the fresh success.
-        assert!(super::should_force_recompute(Some(false), true));
-
-        // Aggregate status just broke (was succeeding, now failing) -> force recompute so a
-        // stale cached healthy substatus doesn't keep masking the new failure.
-        assert!(super::should_force_recompute(Some(true), false));
+        // Both healthy -> no override at all, message left untouched
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(
+            &mut status,
+            &healthy_ebpf_sub,
+            &healthy_gpa_sub,
+            "ts",
+        );
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
     }
 
     #[tokio::test]

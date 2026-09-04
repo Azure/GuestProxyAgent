@@ -77,10 +77,6 @@ pub const EBPF_SUBSTATUS_NAME: &str = "EbpfStatus";
 
 pub const PROXY_AGENT_SERVICE_SUBSTATUS_NAME: &str = "ProxyAgentServiceStatus";
 
-// Cadence for polling the eBPF (Windows) and GuestProxyAgent (cross-platform) service
-// runtime status, decoupled from the main monitor_thread loop_interval.
-pub const SERVICE_STATUS_POLL_INTERVAL_SECS: u64 = 2 * 60;
-
 pub const MAX_CONNECTION_SUMMARY_LEN: usize = 100;
 pub const MAX_FAILED_AUTH_SUMMARY_LEN: usize = 50;
 // Max KB of substatus string for connection summary and failed authentication summary
