@@ -59,6 +59,10 @@ pub fn get_max_active_tcp_connections() -> usize {
     SYSTEM_CONFIG.get_max_active_tcp_connections()
 }
 
+pub fn get_proxy_server_runtime_worker_threads() -> usize {
+    SYSTEM_CONFIG.get_proxy_server_runtime_worker_threads()
+}
+
 pub fn get_ebpf_file_full_path() -> Option<PathBuf> {
     SYSTEM_CONFIG.get_ebpf_file_full_path()
 }
@@ -105,6 +109,8 @@ pub struct Config {
     maxEventFileCount: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     maxActiveTcpConnections: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proxyServerRuntimeWorkerThreads: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ebpfFileFullPath: Option<String>,
     ebpfProgramName: String,
@@ -203,6 +209,12 @@ impl Config {
         self.maxActiveTcpConnections
             .unwrap_or(constants::DEFAULT_MAX_ACTIVE_TCP_CONNECTIONS)
             .max(1)
+    }
+
+    pub fn get_proxy_server_runtime_worker_threads(&self) -> usize {
+        self.proxyServerRuntimeWorkerThreads
+            .unwrap_or(constants::DEFAULT_PROXY_SERVER_RUNTIME_WORKER_THREADS)
+            .clamp(1, constants::MAX_PROXY_SERVER_RUNTIME_WORKER_THREADS)
     }
 
     pub fn get_ebpf_program_name(&self) -> &str {
@@ -335,6 +347,12 @@ mod tests {
         );
 
         assert_eq!(
+            constants::DEFAULT_PROXY_SERVER_RUNTIME_WORKER_THREADS,
+            config.get_proxy_server_runtime_worker_threads(),
+            "get_proxy_server_runtime_worker_threads mismatch"
+        );
+
+        assert_eq!(
             "ebpfProgramName",
             config.get_ebpf_program_name(),
             "get_ebpf_program_name mismatch"
@@ -368,6 +386,29 @@ mod tests {
 
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn proxy_server_runtime_worker_threads_are_bounded() {
+        let config_file_path = env::temp_dir().join("proxy_runtime_worker_config.json");
+        let mut config = create_config_file(config_file_path.clone());
+
+        config.proxyServerRuntimeWorkerThreads = Some(0);
+        assert_eq!(1, config.get_proxy_server_runtime_worker_threads());
+
+        config.proxyServerRuntimeWorkerThreads = Some(2);
+        assert_eq!(2, config.get_proxy_server_runtime_worker_threads());
+
+        config.proxyServerRuntimeWorkerThreads = Some(4);
+        assert_eq!(4, config.get_proxy_server_runtime_worker_threads());
+
+        config.proxyServerRuntimeWorkerThreads = Some(5);
+        assert_eq!(
+            constants::MAX_PROXY_SERVER_RUNTIME_WORKER_THREADS,
+            config.get_proxy_server_runtime_worker_threads()
+        );
+
+        _ = fs::remove_file(config_file_path);
     }
 
     fn create_config_file(file_path: PathBuf) -> Config {

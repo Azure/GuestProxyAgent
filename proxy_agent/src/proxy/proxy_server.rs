@@ -44,11 +44,11 @@ use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::error::HyperErrorType;
-use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
+use proxy_agent_shared::{current_info, hyper_client};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -186,6 +186,39 @@ impl ProxyServer {
             access_control_shared_state: shared_state.get_access_control_shared_state(),
             connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
         }
+    }
+
+    /// Starts the proxy server on an isolated Tokio runtime.
+    pub fn start_on_dedicated_runtime(self) -> std::io::Result<std::thread::JoinHandle<()>> {
+        let worker_threads = config::get_proxy_server_runtime_worker_threads();
+        let cpu_count = current_info::get_cpu_count();
+        let mut worker_threads = std::cmp::min(worker_threads, cpu_count);
+        if worker_threads == 0 {
+            worker_threads = 1;
+        }
+        std::thread::Builder::new()
+            .name("proxy-server-runtime".to_string())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(worker_threads)
+                    .thread_name("proxy-server-worker")
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        logger::write_error(format!(
+                            "Failed to create the proxy server Tokio runtime: {e}"
+                        ));
+                        return;
+                    }
+                };
+
+                logger::write_information(format!(
+                    "Started dedicated proxy server Tokio runtime with {worker_threads} worker threads."
+                ));
+                runtime.block_on(self.start());
+            })
     }
 
     /// start listener at the given address with retry logic if the address is in use
@@ -1370,6 +1403,18 @@ mod tests {
             .clone()
             .try_acquire_owned()
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn dedicated_runtime_stops_on_cancellation() {
+        let shared_state = shared_state::SharedState::start_all();
+        shared_state.cancel_cancellation_token();
+        let proxy_server = proxy_server::ProxyServer::new(0, &shared_state);
+
+        let runtime_thread = proxy_server.start_on_dedicated_runtime().unwrap();
+        tokio::task::spawn_blocking(move || runtime_thread.join().unwrap())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
