@@ -238,44 +238,24 @@ pub fn classify_service_state(state: Option<&ServiceState>) -> (bool, bool) {
     }
 }
 
-/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
-/// re-mapping the same data already fetched by `check_service_status`/`query_service_config`.
+/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape.
+/// Delegates the actual SCM query to `check_service_status` (the same function used for the
+/// Windows-only eBPF substatus) instead of re-implementing the query + config lookup a second
+/// time, so there is a single place that knows how to ask the SCM about a service.
 pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
-    match query_service_status(service_name) {
-        Ok(status) => {
-            let start_type_display = match query_service_config(service_name) {
-                Ok(config) => format!("{:?}", config.start_type),
-                Err(e) => {
-                    logger_manager::write_info(format!(
-                        "Failed to query config for service '{service_name}': {e}",
-                    ));
-                    "Unknown".to_string()
-                }
-            };
-            let (is_running, is_transitioning) =
-                classify_service_state(Some(&status.current_state));
-            crate::service::ServiceRuntimeStatus {
-                service_name: service_name.to_string(),
-                is_installed: true,
-                is_running,
-                is_transitioning,
-                state_display: format!("{:?}", status.current_state),
-                start_type_display,
-            }
-        }
-        Err(e) => {
-            logger_manager::write_info(format!(
-                "Failed to query status for service '{service_name}': {e}. Treating as not installed.",
-            ));
-            crate::service::ServiceRuntimeStatus {
-                service_name: service_name.to_string(),
-                is_installed: false,
-                is_running: false,
-                is_transitioning: false,
-                state_display: "NotInstalled".to_string(),
-                start_type_display: "NotInstalled".to_string(),
-            }
-        }
+    let info = crate::service::check_service_status(service_name);
+    let (is_running, is_transitioning) = classify_service_state(info.state.as_ref());
+    let state_display = match &info.state {
+        Some(state) => format!("{state:?}"),
+        None => "NotInstalled".to_string(),
+    };
+    crate::service::ServiceRuntimeStatus {
+        is_installed: info.state.is_some(),
+        is_running,
+        is_transitioning,
+        state_display,
+        start_type_display: info.start_type,
+        service_name: info.service_name,
     }
 }
 

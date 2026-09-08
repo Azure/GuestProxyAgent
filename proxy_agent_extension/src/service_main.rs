@@ -347,7 +347,7 @@ async fn monitor_thread() {
             status.substatus.push(ebpf_substatus);
         }
         #[cfg(not(windows))]
-        apply_gpa_service_status_override(
+        apply_sub_status_override_in_error(
             &mut status,
             &gpa_service_substatus,
             &last_known_status_timestamp,
@@ -385,6 +385,38 @@ fn write_state_event(
     }
 }
 
+/// Classifies the combined health of one or more services into an overall (status, code) pair,
+/// using the same rule everywhere a substatus reports on N services (eBPF's 3 services, or the
+/// GuestProxyAgent service's 1): Success only if every service is running; Error if any service
+/// is confirmed down (not running and not transitioning toward running); otherwise Transitioning
+/// (nothing is confirmed down, but at least one service is still starting up). Reporting
+/// Transitioning instead of Error for that last case is what keeps the immediate top-level
+/// override (`apply_sub_status_override_in_error`, which only fires on Error) from firing on a
+/// service that is simply mid-boot or mid-restart.
+fn combined_service_health(services: &[(bool, bool)]) -> (String, i32) {
+    let all_running = services.iter().all(|(is_running, _)| *is_running);
+    if all_running {
+        return (
+            constants::SUCCESS_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
+        );
+    }
+    let any_down = services
+        .iter()
+        .any(|(is_running, is_transitioning)| !is_running && !is_transitioning);
+    if any_down {
+        (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+        )
+    } else {
+        (
+            constants::TRANSITIONING_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
+        )
+    }
+}
+
 #[cfg(windows)]
 fn build_ebpf_substatus(
     core: &proxy_agent_shared::service::ServiceStatusInfo,
@@ -393,36 +425,11 @@ fn build_ebpf_substatus(
 ) -> SubStatus {
     use proxy_agent_shared::service::classify_service_state;
 
-    let (core_running, core_transitioning) = classify_service_state(core.state.as_ref());
-    let (ext_running, ext_transitioning) = classify_service_state(ext.state.as_ref());
-    let (svc_running, svc_transitioning) = classify_service_state(svc.state.as_ref());
-
-    let all_running = core_running && ext_running && svc_running;
-    // "Down" means confirmed not-running and not actively transitioning toward Running.
-    let any_down = (!core_running && !core_transitioning)
-        || (!ext_running && !ext_transitioning)
-        || (!svc_running && !svc_transitioning);
-
-    let (status, code) = if all_running {
-        (
-            constants::SUCCESS_STATUS.to_string(),
-            constants::STATUS_CODE_OK,
-        )
-    } else if any_down {
-        (
-            constants::ERROR_STATUS.to_string(),
-            constants::STATUS_CODE_NOT_OK,
-        )
-    } else {
-        // None are confirmed down, but at least one is still starting up (StartPending /
-        // ContinuePending) - a normal, usually brief condition during boot or a restart.
-        // Report Transitioning instead of Error so the immediate top-level override
-        // (`apply_ebpf_status_override`) does not fire on this benign condition.
-        (
-            constants::TRANSITIONING_STATUS.to_string(),
-            constants::STATUS_CODE_OK,
-        )
-    };
+    let (status, code) = combined_service_health(&[
+        classify_service_state(core.state.as_ref()),
+        classify_service_state(ext.state.as_ref()),
+        classify_service_state(svc.state.as_ref()),
+    ]);
 
     let message = format!(
         "EbpfCore: {}, NetEbpfExt: {}, eBPFSvc: {}",
@@ -461,26 +468,7 @@ fn compute_ebpf_substatus() -> SubStatus {
 fn build_proxy_agent_service_substatus(
     info: &proxy_agent_shared::service::ServiceRuntimeStatus,
 ) -> SubStatus {
-    let (status, code) = if info.is_running {
-        (
-            constants::SUCCESS_STATUS.to_string(),
-            constants::STATUS_CODE_OK,
-        )
-    } else if info.is_transitioning {
-        // Actively starting up (Windows StartPending/ContinuePending, or systemd
-        // "activating") - a normal, usually brief condition during boot or a restart.
-        // Report Transitioning instead of Error so the immediate top-level override
-        // (`apply_gpa_service_status_override`) does not fire on this benign condition.
-        (
-            constants::TRANSITIONING_STATUS.to_string(),
-            constants::STATUS_CODE_OK,
-        )
-    } else {
-        (
-            constants::ERROR_STATUS.to_string(),
-            constants::STATUS_CODE_NOT_OK,
-        )
-    };
+    let (status, code) = combined_service_health(&[(info.is_running, info.is_transitioning)]);
 
     SubStatus {
         name: constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME.to_string(),
@@ -504,48 +492,25 @@ fn compute_gpa_service_substatus() -> SubStatus {
     build_proxy_agent_service_substatus(&info)
 }
 
-/// If `ebpf_substatus` reports Error, unconditionally overrides `status`'s top-level
-/// status/code/message to surface the eBPF detail plus the last known status timestamp and the
-/// current time. Bypasses the debounce state machine intentionally. Returns true if it applied
-/// the override (used by the caller to give this priority over the GPA-service override).
-#[cfg(windows)]
-fn apply_ebpf_status_override(
+/// If `substatus` reports Error, unconditionally overrides `status`'s top-level
+/// status/code/message to surface the substatus detail plus the last known status timestamp and
+/// the current time. Bypasses the debounce state machine intentionally. Returns true if it
+/// applied the override. Shared by both the (Windows-only) eBPF substatus and the
+/// (cross-platform) GuestProxyAgent-service substatus - the override behavior itself does not
+/// depend on which substatus is being checked.
+fn apply_sub_status_override_in_error(
     status: &mut StatusObj,
-    ebpf_substatus: &SubStatus,
+    substatus: &SubStatus,
     last_known_status_timestamp: &str,
 ) -> bool {
-    if ebpf_substatus.status != constants::ERROR_STATUS {
+    if substatus.status != constants::ERROR_STATUS {
         return false;
     }
     status.status = constants::ERROR_STATUS.to_string();
     status.code = constants::STATUS_CODE_NOT_OK;
     status.formattedMessage.message = format!(
         "{}. Last status timestamp: {}, Current time: {}",
-        ebpf_substatus.formattedMessage.message,
-        last_known_status_timestamp,
-        misc_helpers::get_current_utc_time()
-    );
-    true
-}
-
-/// If `gpa_service_substatus` reports Error, unconditionally overrides `status`'s top-level
-/// status/code/message to surface the GuestProxyAgent service detail plus the last known status
-/// timestamp and the current time. Bypasses the debounce state machine intentionally, mirroring
-/// `apply_ebpf_status_override`. Cross-platform (Windows and Linux). Returns true if it applied
-/// the override.
-fn apply_gpa_service_status_override(
-    status: &mut StatusObj,
-    gpa_service_substatus: &SubStatus,
-    last_known_status_timestamp: &str,
-) -> bool {
-    if gpa_service_substatus.status != constants::ERROR_STATUS {
-        return false;
-    }
-    status.status = constants::ERROR_STATUS.to_string();
-    status.code = constants::STATUS_CODE_NOT_OK;
-    status.formattedMessage.message = format!(
-        "{}. Last status timestamp: {}, Current time: {}",
-        gpa_service_substatus.formattedMessage.message,
+        substatus.formattedMessage.message,
         last_known_status_timestamp,
         misc_helpers::get_current_utc_time()
     );
@@ -563,8 +528,8 @@ fn apply_service_health_overrides(
     gpa_service_substatus: &SubStatus,
     last_known_status_timestamp: &str,
 ) {
-    if !apply_ebpf_status_override(status, ebpf_substatus, last_known_status_timestamp) {
-        apply_gpa_service_status_override(
+    if !apply_sub_status_override_in_error(status, ebpf_substatus, last_known_status_timestamp) {
+        apply_sub_status_override_in_error(
             status,
             gpa_service_substatus,
             last_known_status_timestamp,
@@ -1489,6 +1454,72 @@ mod tests {
     }
 
     #[test]
+    fn test_combined_service_health() {
+        let running = (true, false);
+        let starting_up = (false, true);
+        let down = (false, false);
+
+        // All running -> Success
+        assert_eq!(
+            super::combined_service_health(&[running, running, running]),
+            (
+                constants::SUCCESS_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // Single service, running -> Success (covers the GuestProxyAgent-service call shape)
+        assert_eq!(
+            super::combined_service_health(&[running]),
+            (
+                constants::SUCCESS_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // Any confirmed down -> Error, regardless of how many other services are running
+        assert_eq!(
+            super::combined_service_health(&[running, down, running]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
+        assert_eq!(
+            super::combined_service_health(&[down]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
+
+        // Nothing confirmed down, but something is still starting up -> Transitioning
+        assert_eq!(
+            super::combined_service_health(&[running, starting_up, running]),
+            (
+                constants::TRANSITIONING_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+        assert_eq!(
+            super::combined_service_health(&[starting_up]),
+            (
+                constants::TRANSITIONING_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // A confirmed-down service takes priority over a transitioning one
+        assert_eq!(
+            super::combined_service_health(&[starting_up, down]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
+    }
+
+    #[test]
     #[cfg(windows)]
     fn test_build_ebpf_substatus() {
         use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
@@ -1634,8 +1665,8 @@ mod tests {
 
         // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error.
         // Regression test: a service mid-boot/mid-restart must not immediately flip the
-        // top-level extension status to Error (see apply_ebpf_status_override, which only
-        // fires on ERROR_STATUS).
+        // top-level extension status to Error (see apply_sub_status_override_in_error, which
+        // only fires on ERROR_STATUS).
         let sub = super::build_ebpf_substatus(
             &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
             &make_info(constants::EBPF_EXT, running()),
@@ -1753,7 +1784,7 @@ mod tests {
 
         // Starting up (StartPending on Windows / "activating" on Linux) → Transitioning, not
         // Error. Regression test: a service mid-boot/mid-restart must not immediately flip the
-        // top-level extension status to Error (see apply_gpa_service_status_override, which
+        // top-level extension status to Error (see apply_sub_status_override_in_error, which
         // only fires on ERROR_STATUS).
         let info = ServiceRuntimeStatus {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
@@ -1780,10 +1811,12 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
-    fn test_apply_ebpf_status_override() {
-        let make_ebpf_sub = |status: &str, message: &str| SubStatus {
-            name: constants::EBPF_SUBSTATUS_NAME.to_string(),
+    fn test_apply_sub_status_override_in_error() {
+        // The override behavior is identical regardless of which substatus (eBPF or
+        // GuestProxyAgent-service) is passed in, so a single test exercises the shared
+        // function with representative substatus shapes from both call sites.
+        let make_sub = |name: &str, status: &str, message: &str| SubStatus {
+            name: name.to_string(),
             status: status.to_string(),
             code: if status == constants::ERROR_STATUS {
                 constants::STATUS_CODE_NOT_OK
@@ -1796,17 +1829,19 @@ mod tests {
             },
         };
 
-        // eBPF Error overrides an otherwise-Success status
+        let ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: Stopped, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+
+        // Error substatus overrides an otherwise-Success status
         let mut status = make_test_status_obj(
             constants::SUCCESS_STATUS,
             constants::STATUS_CODE_OK,
             "ProxyAgent extension is reporting successful status.",
         );
-        let ebpf_sub = make_ebpf_sub(
-            constants::ERROR_STATUS,
-            "EbpfCore: Running, AutoStart, NetEbpfExt: Stopped, AutoStart, eBPFSvc: Running, AutoStart",
-        );
-        let overridden = super::apply_ebpf_status_override(
+        let overridden = super::apply_sub_status_override_in_error(
             &mut status,
             &ebpf_sub,
             "2026-08-21 8:13:38.104 +00:00:00",
@@ -1824,13 +1859,13 @@ mod tests {
             .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
         assert!(status.formattedMessage.message.contains("Current time:"));
 
-        // eBPF Error overrides an already-Error stale message too
+        // Error substatus overrides an already-Error stale message too
         let mut status = make_test_status_obj(
             constants::ERROR_STATUS,
             constants::STATUS_CODE_NOT_OK,
             "Proxy agent aggregate status file is stale. Status timestamp: ..., Current time: ...",
         );
-        let overridden = super::apply_ebpf_status_override(
+        let overridden = super::apply_sub_status_override_in_error(
             &mut status,
             &ebpf_sub,
             "2026-08-21 8:13:38.104 +00:00:00",
@@ -1842,18 +1877,19 @@ mod tests {
             .message
             .contains("NetEbpfExt: Stopped"));
 
-        // eBPF healthy leaves the existing message untouched
+        // Healthy substatus (eBPF-shaped) leaves the existing message untouched
         let mut status = make_test_status_obj(
             constants::SUCCESS_STATUS,
             constants::STATUS_CODE_OK,
             "ProxyAgent extension is reporting successful status.",
         );
-        let healthy_ebpf_sub = make_ebpf_sub(
+        let healthy_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
             constants::SUCCESS_STATUS,
             "EbpfCore: Running, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
         );
         let overridden =
-            super::apply_ebpf_status_override(&mut status, &healthy_ebpf_sub, "irrelevant");
+            super::apply_sub_status_override_in_error(&mut status, &healthy_ebpf_sub, "irrelevant");
         assert!(!overridden);
         assert_eq!(status.status, constants::SUCCESS_STATUS);
         assert_eq!(
@@ -1861,7 +1897,7 @@ mod tests {
             "ProxyAgent extension is reporting successful status."
         );
 
-        // eBPF Transitioning (e.g. a service mid-boot/mid-restart) must NOT trigger the
+        // Transitioning substatus (e.g. a service mid-boot/mid-restart) must NOT trigger the
         // override - regression test for the reviewer finding that this override previously
         // fired immediately on any non-Running state, including benign transitional ones.
         let mut status = make_test_status_obj(
@@ -1869,54 +1905,42 @@ mod tests {
             constants::STATUS_CODE_OK,
             "ProxyAgent extension is reporting successful status.",
         );
-        let transitioning_ebpf_sub = make_ebpf_sub(
+        let transitioning_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
             constants::TRANSITIONING_STATUS,
             "EbpfCore: Running, AutoStart, NetEbpfExt: StartPending, AutoStart, eBPFSvc: Running, AutoStart",
         );
-        let overridden =
-            super::apply_ebpf_status_override(&mut status, &transitioning_ebpf_sub, "irrelevant");
+        let overridden = super::apply_sub_status_override_in_error(
+            &mut status,
+            &transitioning_ebpf_sub,
+            "irrelevant",
+        );
         assert!(
             !overridden,
-            "Transitioning eBPF substatus must not trigger the immediate override"
+            "Transitioning substatus must not trigger the immediate override"
         );
         assert_eq!(status.status, constants::SUCCESS_STATUS);
         assert_eq!(
             status.formattedMessage.message,
             "ProxyAgent extension is reporting successful status."
         );
-    }
 
-    #[test]
-    fn test_apply_gpa_service_status_override() {
-        let make_gpa_sub = |status: &str, message: &str| SubStatus {
-            name: constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME.to_string(),
-            status: status.to_string(),
-            code: if status == constants::ERROR_STATUS {
-                constants::STATUS_CODE_NOT_OK
-            } else {
-                constants::STATUS_CODE_OK
-            },
-            formattedMessage: FormattedMessage {
-                lang: constants::LANG_EN_US.to_string(),
-                message: message.to_string(),
-            },
-        };
-
-        // GPA-service Error overrides an otherwise-Success status immediately (no gating on
-        // top-level already being Error)
+        // GuestProxyAgent-service-shaped substatus works identically (Error overrides, with
+        // its own message content and no gating on the top-level status already being Error)
         let mut status = make_test_status_obj(
             constants::SUCCESS_STATUS,
             constants::STATUS_CODE_OK,
             "ProxyAgent extension is reporting successful status.",
         );
-        let gpa_sub = make_gpa_sub(
+        let gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
             constants::ERROR_STATUS,
             &format!(
                 "{}: Stopped, AutoStart",
                 constants::PROXY_AGENT_SERVICE_NAME
             ),
         );
-        let overridden = super::apply_gpa_service_status_override(
+        let overridden = super::apply_sub_status_override_in_error(
             &mut status,
             &gpa_sub,
             "2026-08-21 8:13:38.104 +00:00:00",
@@ -1932,58 +1956,6 @@ mod tests {
             .formattedMessage
             .message
             .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
-        assert!(status.formattedMessage.message.contains("Current time:"));
-
-        // GPA-service healthy leaves the existing message untouched
-        let mut status = make_test_status_obj(
-            constants::SUCCESS_STATUS,
-            constants::STATUS_CODE_OK,
-            "ProxyAgent extension is reporting successful status.",
-        );
-        let healthy_gpa_sub = make_gpa_sub(
-            constants::SUCCESS_STATUS,
-            &format!(
-                "{}: Running, AutoStart",
-                constants::PROXY_AGENT_SERVICE_NAME
-            ),
-        );
-        let overridden =
-            super::apply_gpa_service_status_override(&mut status, &healthy_gpa_sub, "irrelevant");
-        assert!(!overridden);
-        assert_eq!(
-            status.formattedMessage.message,
-            "ProxyAgent extension is reporting successful status."
-        );
-
-        // GPA-service Transitioning (e.g. mid-boot/mid-restart) must NOT trigger the override -
-        // regression test for the reviewer finding that this override previously fired
-        // immediately on any non-Running state, including benign transitional ones.
-        let mut status = make_test_status_obj(
-            constants::SUCCESS_STATUS,
-            constants::STATUS_CODE_OK,
-            "ProxyAgent extension is reporting successful status.",
-        );
-        let transitioning_gpa_sub = make_gpa_sub(
-            constants::TRANSITIONING_STATUS,
-            &format!(
-                "{}: StartPending, AutoStart",
-                constants::PROXY_AGENT_SERVICE_NAME
-            ),
-        );
-        let overridden = super::apply_gpa_service_status_override(
-            &mut status,
-            &transitioning_gpa_sub,
-            "irrelevant",
-        );
-        assert!(
-            !overridden,
-            "Transitioning GPA-service substatus must not trigger the immediate override"
-        );
-        assert_eq!(status.status, constants::SUCCESS_STATUS);
-        assert_eq!(
-            status.formattedMessage.message,
-            "ProxyAgent extension is reporting successful status."
-        );
     }
 
     #[test]

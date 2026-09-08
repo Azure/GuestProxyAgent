@@ -188,22 +188,41 @@ pub fn check_service_installed(service_name: &str) -> (bool, String) {
     }
 }
 
-/// Maps the trimmed stdout of `systemctl is-active <service>` to
-/// (is_running, is_transitioning, state_display).
+/// The subset of a service's runtime state derived from `systemctl is-active` output. A named
+/// struct (rather than a bare tuple) so each field is self-documenting at every call site.
+#[derive(Debug, PartialEq)]
+struct ActiveState {
+    is_running: bool,
+    is_transitioning: bool,
+    state_display: String,
+}
+
+/// Maps the trimmed stdout of `systemctl is-active <service>` to an `ActiveState`.
 /// `activating` mirrors Windows `StartPending`/`ContinuePending`: the unit is heading *toward*
 /// active and this is a normal, usually brief condition during boot or a restart, so it is
 /// intentionally distinguished from a confirmed failure. `deactivating` mirrors Windows
 /// `StopPending`: the unit is heading *away* from active, which is treated as a confirmed down
 /// state (not transitioning), since it's actionable information worth surfacing immediately.
 /// Pure function so it is unit-testable without shelling out to `systemctl`.
-fn map_is_active_output(output: &str) -> (bool, bool, String) {
-    match output.trim() {
-        "active" => (true, false, "Running".to_string()),
-        "inactive" => (false, false, "Stopped".to_string()),
-        "failed" => (false, false, "Failed".to_string()),
-        "activating" => (false, true, "Activating".to_string()),
-        "deactivating" => (false, false, "Deactivating".to_string()),
-        other => (false, false, capitalize_first(other)),
+fn map_is_active_output(output: &str) -> ActiveState {
+    let (is_running, is_transitioning, state_display) = match output.trim() {
+        "active" => (true, false, "Running"),
+        "inactive" => (false, false, "Stopped"),
+        "failed" => (false, false, "Failed"),
+        "activating" => (false, true, "Activating"),
+        "deactivating" => (false, false, "Deactivating"),
+        other => {
+            return ActiveState {
+                is_running: false,
+                is_transitioning: false,
+                state_display: capitalize_first(other),
+            }
+        }
+    };
+    ActiveState {
+        is_running,
+        is_transitioning,
+        state_display: state_display.to_string(),
     }
 }
 
@@ -246,14 +265,18 @@ pub fn check_service_run_status(service_name: &str) -> crate::service::ServiceRu
         };
     }
 
-    let (is_running, is_transitioning, state_display) =
+    let active_state =
         match misc_helpers::execute_command("systemctl", vec!["is-active", service_name], -1) {
             Ok(output) => map_is_active_output(&output.stdout()),
             Err(e) => {
                 logger_manager::write_info(format!(
                     "check_service_run_status: failed to query is-active for {service_name}: {e}"
                 ));
-                (false, false, "Unknown".to_string())
+                ActiveState {
+                    is_running: false,
+                    is_transitioning: false,
+                    state_display: "Unknown".to_string(),
+                }
             }
         };
 
@@ -271,9 +294,9 @@ pub fn check_service_run_status(service_name: &str) -> crate::service::ServiceRu
     crate::service::ServiceRuntimeStatus {
         service_name: service_name.to_string(),
         is_installed: true,
-        is_running,
-        is_transitioning,
-        state_display,
+        is_running: active_state.is_running,
+        is_transitioning: active_state.is_transitioning,
+        state_display: active_state.state_display,
         start_type_display,
     }
 }
@@ -286,30 +309,54 @@ mod tests {
     fn map_is_active_output_test() {
         assert_eq!(
             map_is_active_output("active\n"),
-            (true, false, "Running".to_string())
+            ActiveState {
+                is_running: true,
+                is_transitioning: false,
+                state_display: "Running".to_string()
+            }
         );
         assert_eq!(
             map_is_active_output("inactive\n"),
-            (false, false, "Stopped".to_string())
+            ActiveState {
+                is_running: false,
+                is_transitioning: false,
+                state_display: "Stopped".to_string()
+            }
         );
         assert_eq!(
             map_is_active_output("failed\n"),
-            (false, false, "Failed".to_string())
+            ActiveState {
+                is_running: false,
+                is_transitioning: false,
+                state_display: "Failed".to_string()
+            }
         );
         // "activating" is transitioning toward Running - not a confirmed failure.
         assert_eq!(
             map_is_active_output("activating\n"),
-            (false, true, "Activating".to_string())
+            ActiveState {
+                is_running: false,
+                is_transitioning: true,
+                state_display: "Activating".to_string()
+            }
         );
         // "deactivating" is heading away from Running - treated as a confirmed down state,
         // consistent with Windows StopPending, since it's actionable to know immediately.
         assert_eq!(
             map_is_active_output("deactivating\n"),
-            (false, false, "Deactivating".to_string())
+            ActiveState {
+                is_running: false,
+                is_transitioning: false,
+                state_display: "Deactivating".to_string()
+            }
         );
         assert_eq!(
             map_is_active_output("unknown\n"),
-            (false, false, "Unknown".to_string())
+            ActiveState {
+                is_running: false,
+                is_transitioning: false,
+                state_display: "Unknown".to_string()
+            }
         );
     }
 
