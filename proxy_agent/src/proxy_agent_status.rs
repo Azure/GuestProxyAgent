@@ -354,7 +354,7 @@ impl ProxyAgentStatusTask {
         match proxy_agent_shared::windows::get_current_process_memory_status() {
             Ok(memory) => {
                 const BYTES_PER_MB: usize = 1024 * 1024;
-                const PRIVATE_BYTES_MONITOR_LIMIT_MB: usize = 50;
+                const PRIVATE_BYTES_MONITOR_LIMIT_MB: usize = 40;
 
                 let private_bytes_in_mb = memory.private_bytes / BYTES_PER_MB; // primary OOM indicator
                 let working_set_in_mb = memory.working_set_bytes / BYTES_PER_MB; // current physical RAM
