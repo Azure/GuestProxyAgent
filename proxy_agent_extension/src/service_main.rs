@@ -320,20 +320,9 @@ async fn monitor_thread() {
             proxy_agent_update_reported = None;
         }
 
-        // Step 6: Report eBPF (Windows only) and GuestProxyAgent service (cross-platform)
-        // runtime status, computed fresh every loop_interval tick (same cadence as everything
-        // else in this loop, currently 15s) so the status file always reflects the current
-        // machine state.
-        //
-        // Step 7: Apply an immediate top-level status/message override when eBPF (Windows,
-        // highest priority) or the GuestProxyAgent service itself (both platforms) is
-        // unhealthy. This is still necessary even though the substatus data above is always
-        // fresh: the top-level status/message is derived from a *different* source (the GPA
-        // aggregate status file/wire-server response via Step 3), which has its own 5-minute
-        // staleness threshold and 20-iteration debounce designed to avoid flapping on transient
-        // network blips - it has no visibility into eBPF or the GuestProxyAgent service at all.
-        // Without this override, a locally-confirmed eBPF/service failure would still take
-        // several minutes to surface at the top level; see `apply_service_health_overrides`.
+        // Step 6/7: report eBPF (Windows) + GuestProxyAgent service (cross-platform) status
+        // fresh every tick, then immediately override the top-level status/message on Error -
+        // the aggregate-status source (Step 3) has its own staleness/debounce and can't see these.
         let gpa_service_substatus = compute_gpa_service_substatus();
         #[cfg(windows)]
         {
@@ -385,14 +374,9 @@ fn write_state_event(
     }
 }
 
-/// Classifies the combined health of one or more services into an overall (status, code) pair,
-/// using the same rule everywhere a substatus reports on N services (eBPF's 3 services, or the
-/// GuestProxyAgent service's 1): Success only if every service is running; Error if any service
-/// is confirmed down (not running and not transitioning toward running); otherwise Transitioning
-/// (nothing is confirmed down, but at least one service is still starting up). Reporting
-/// Transitioning instead of Error for that last case is what keeps the immediate top-level
-/// override (`apply_sub_status_override_in_error`, which only fires on Error) from firing on a
-/// service that is simply mid-boot or mid-restart.
+/// Classifies combined health of N services: Success if all running, Error if any is
+/// confirmed down, else Transitioning (something is merely starting up). Transitioning
+/// prevents `apply_sub_status_override_in_error` from firing on a benign restart.
 fn combined_service_health(services: &[(bool, bool)]) -> (String, i32) {
     let all_running = services.iter().all(|(is_running, _)| *is_running);
     if all_running {
@@ -492,12 +476,9 @@ fn compute_gpa_service_substatus() -> SubStatus {
     build_proxy_agent_service_substatus(&info)
 }
 
-/// If `substatus` reports Error, unconditionally overrides `status`'s top-level
-/// status/code/message to surface the substatus detail plus the last known status timestamp and
-/// the current time. Bypasses the debounce state machine intentionally. Returns true if it
-/// applied the override. Shared by both the (Windows-only) eBPF substatus and the
-/// (cross-platform) GuestProxyAgent-service substatus - the override behavior itself does not
-/// depend on which substatus is being checked.
+/// If `substatus` is Error, overrides `status`'s top-level status/code/message with the
+/// substatus detail plus the last known timestamp and current time, bypassing the debounce
+/// state machine. Shared by the eBPF and GuestProxyAgent-service override call sites.
 fn apply_sub_status_override_in_error(
     status: &mut StatusObj,
     substatus: &SubStatus,
@@ -517,10 +498,8 @@ fn apply_sub_status_override_in_error(
     true
 }
 
-/// Applies the Windows-only priority ordering between the two immediate overrides: eBPF errors
-/// win over GuestProxyAgent-service errors, since an unhealthy eBPF is frequently the underlying
-/// reason the GuestProxyAgent service itself cannot start, making it the more specific/actionable
-/// signal. Only falls through to the GPA-service override when eBPF itself did not report Error.
+/// Windows-only priority: eBPF errors win over GuestProxyAgent-service errors, since an
+/// unhealthy eBPF is often the underlying cause. Falls through only if eBPF is healthy.
 #[cfg(windows)]
 fn apply_service_health_overrides(
     status: &mut StatusObj,
@@ -1422,13 +1401,9 @@ mod tests {
 
     #[test]
     fn test_compute_gpa_service_substatus() {
-        // Cross-platform (unlike compute_ebpf_substatus, not gated to Windows): exercises the
-        // real check_service_run_status call (SCM on Windows, systemctl on Linux) against
-        // whatever GuestProxyAgent service state the test runner happens to have, and verifies
-        // the result is well-formed and internally consistent regardless of that state. This
-        // backfills test coverage for a function introduced in the prior commit that previously
-        // had no dedicated test (only its pure `build_proxy_agent_service_substatus` helper was
-        // tested).
+        // Cross-platform (unlike compute_ebpf_substatus): exercises the real
+        // check_service_run_status call against whatever GuestProxyAgent service state the
+        // test runner has, and just checks the result is internally consistent.
         let substatus = super::compute_gpa_service_substatus();
         assert_eq!(
             substatus.name,
@@ -1663,10 +1638,8 @@ mod tests {
         assert_eq!(sub.status, constants::ERROR_STATUS, "All three stopped");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
 
-        // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error.
-        // Regression test: a service mid-boot/mid-restart must not immediately flip the
-        // top-level extension status to Error (see apply_sub_status_override_in_error, which
-        // only fires on ERROR_STATUS).
+        // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error
+        // (a mid-restart service must not immediately flip the top-level status to Error).
         let sub = super::build_ebpf_substatus(
             &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
             &make_info(constants::EBPF_EXT, running()),
@@ -1782,10 +1755,8 @@ mod tests {
             format!("{}: NotInstalled", constants::PROXY_AGENT_SERVICE_NAME)
         );
 
-        // Starting up (StartPending on Windows / "activating" on Linux) → Transitioning, not
-        // Error. Regression test: a service mid-boot/mid-restart must not immediately flip the
-        // top-level extension status to Error (see apply_sub_status_override_in_error, which
-        // only fires on ERROR_STATUS).
+        // Starting up (StartPending/"activating") → Transitioning, not Error (a mid-restart
+        // service must not immediately flip the top-level status to Error).
         let info = ServiceRuntimeStatus {
             service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
             is_installed: true,

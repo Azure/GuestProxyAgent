@@ -184,21 +184,17 @@ pub use windows_service::ServiceState;
 #[cfg(windows)]
 pub use windows_service::ServiceStatusInfo;
 
-/// Cross-platform runtime status of a system service (Windows SCM or Linux systemd),
-/// used for reporting service health that is meaningful on both platforms (e.g. the
-/// GuestProxyAgent service itself). Unlike `ServiceStatusInfo` (Windows-only, used for
-/// the Windows-specific eBPF driver/service substatus), this type has an implementation
-/// on every platform.
+/// Cross-platform runtime status of a system service (Windows SCM or Linux systemd), used for
+/// service health that's meaningful on both platforms. Unlike the Windows-only
+/// `ServiceStatusInfo`, this type has an implementation on every platform.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceRuntimeStatus {
     pub service_name: String,
     pub is_installed: bool,
     pub is_running: bool,
-    /// True when the service is actively transitioning *toward* a running state (e.g.
-    /// Windows `StartPending`/`ContinuePending`, or systemd `activating`). This is a normal,
-    /// usually brief condition during boot or a service restart and is intentionally treated
-    /// as distinct from a confirmed failure (`is_running == false && is_transitioning ==
-    /// false`), so callers don't have to treat "still starting up" the same as "actually down".
+    /// True when the service is actively starting (e.g. Windows `StartPending`/
+    /// `ContinuePending`, or systemd `activating`) - a normal transient state, distinct from a
+    /// confirmed failure (`is_running == false && is_transitioning == false`).
     pub is_transitioning: bool,
     /// Human-readable running state, e.g. "Running", "Stopped", "Failed".
     pub state_display: String,

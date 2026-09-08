@@ -221,15 +221,9 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
         .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
-/// Classifies a Windows service state into (is_running, is_transitioning).
-/// `StartPending`/`ContinuePending` are transitioning *toward* Running - a normal, usually
-/// brief condition during boot or a service restart, distinct from a confirmed failure.
-/// `StopPending`/`PausePending`/`Paused`/`Stopped` (and no state at all) are treated as a
-/// confirmed down state, since they are heading away from - or already away from - Running.
-/// Pure function so it is unit-testable without a real SCM service. Takes `Option<&ServiceState>`
-/// (rather than owning it) so callers don't need `ServiceState` to implement `Copy`/`Clone`, and
-/// so it can be reused as-is by `proxy_agent_extension`'s eBPF substatus classification (see
-/// `pub use` re-export below).
+/// Classifies a Windows service state into (is_running, is_transitioning). `StartPending`/
+/// `ContinuePending` are transitioning toward Running; every other state (including no state)
+/// is a confirmed down state. Takes `Option<&ServiceState>` so it's reusable without `Copy`.
 pub fn classify_service_state(state: Option<&ServiceState>) -> (bool, bool) {
     match state {
         Some(ServiceState::Running) => (true, false),
@@ -238,10 +232,8 @@ pub fn classify_service_state(state: Option<&ServiceState>) -> (bool, bool) {
     }
 }
 
-/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape.
-/// Delegates the actual SCM query to `check_service_status` (the same function used for the
-/// Windows-only eBPF substatus) instead of re-implementing the query + config lookup a second
-/// time, so there is a single place that knows how to ask the SCM about a service.
+/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
+/// delegating to `check_service_status` instead of re-querying the SCM a second time.
 pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
     let info = crate::service::check_service_status(service_name);
     let (is_running, is_transitioning) = classify_service_state(info.state.as_ref());

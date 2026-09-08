@@ -197,13 +197,9 @@ struct ActiveState {
     state_display: String,
 }
 
-/// Maps the trimmed stdout of `systemctl is-active <service>` to an `ActiveState`.
-/// `activating` mirrors Windows `StartPending`/`ContinuePending`: the unit is heading *toward*
-/// active and this is a normal, usually brief condition during boot or a restart, so it is
-/// intentionally distinguished from a confirmed failure. `deactivating` mirrors Windows
-/// `StopPending`: the unit is heading *away* from active, which is treated as a confirmed down
-/// state (not transitioning), since it's actionable information worth surfacing immediately.
-/// Pure function so it is unit-testable without shelling out to `systemctl`.
+/// Maps `systemctl is-active` output to an `ActiveState`. `activating` mirrors Windows
+/// `StartPending`/`ContinuePending` (transitioning, not a failure); `deactivating` mirrors
+/// `StopPending` (a confirmed down state). Pure function, unit-testable without `systemctl`.
 fn map_is_active_output(output: &str) -> ActiveState {
     let (is_running, is_transitioning, state_display) = match output.trim() {
         "active" => (true, false, "Running"),
