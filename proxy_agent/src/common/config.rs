@@ -17,8 +17,10 @@
 //! ```
 
 use crate::common::constants;
+use crate::common::helpers;
 use crate::common::logger;
 use once_cell::sync::Lazy;
+use proxy_agent_shared::current_info;
 use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -53,6 +55,10 @@ pub fn get_poll_key_status_duration() -> Duration {
 
 pub fn get_max_event_file_count() -> usize {
     SYSTEM_CONFIG.get_max_event_file_count()
+}
+
+pub fn get_proxy_server_runtime_worker_threads() -> usize {
+    SYSTEM_CONFIG.get_proxy_server_runtime_worker_threads()
 }
 
 pub fn get_ebpf_file_full_path() -> Option<PathBuf> {
@@ -99,6 +105,8 @@ pub struct Config {
     pollKeyStatusIntervalInSeconds: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     maxEventFileCount: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    proxyServerRuntimeWorkerThreads: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ebpfFileFullPath: Option<String>,
     ebpfProgramName: String,
@@ -193,6 +201,14 @@ impl Config {
             .unwrap_or(constants::DEFAULT_MAX_EVENT_FILE_COUNT)
     }
 
+    /// Gets the number of worker threads for the proxy server runtime.
+    /// The value is clamped between 1 and the number of CPU cores available.
+    pub fn get_proxy_server_runtime_worker_threads(&self) -> usize {
+        self.proxyServerRuntimeWorkerThreads
+            .unwrap_or(constants::DEFAULT_PROXY_SERVER_RUNTIME_WORKER_THREADS)
+            .clamp(1, current_info::get_cpu_count())
+    }
+
     pub fn get_ebpf_program_name(&self) -> &str {
         &self.ebpfProgramName
     }
@@ -262,11 +278,12 @@ impl Config {
 mod tests {
     use crate::common::config::Config;
     use crate::common::constants;
-    use proxy_agent_shared::misc_helpers;
+    use proxy_agent_shared::{current_info, misc_helpers};
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
     use std::{env, fs};
+    use sysinfo::Cpu;
 
     #[test]
     fn config_struct_test() {
@@ -317,6 +334,12 @@ mod tests {
         );
 
         assert_eq!(
+            constants::DEFAULT_PROXY_SERVER_RUNTIME_WORKER_THREADS,
+            config.get_proxy_server_runtime_worker_threads(),
+            "get_proxy_server_runtime_worker_threads mismatch"
+        );
+
+        assert_eq!(
             "ebpfProgramName",
             config.get_ebpf_program_name(),
             "get_ebpf_program_name mismatch"
@@ -350,6 +373,39 @@ mod tests {
 
         // clean up
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn proxy_server_runtime_worker_threads_are_bounded() {
+        let config_file_path = env::temp_dir().join("proxy_runtime_worker_config.json");
+        let mut config = create_config_file(config_file_path.clone());
+
+        config.proxyServerRuntimeWorkerThreads = Some(0);
+        assert_eq!(
+            1,
+            config.get_proxy_server_runtime_worker_threads(),
+            "proxy server runtime worker threads lower bound mismatch"
+        );
+
+        let cpu_count = current_info::get_cpu_count();
+        if cpu_count > 1 {
+            let value = cpu_count - 1;
+            config.proxyServerRuntimeWorkerThreads = Some(value);
+            assert_eq!(
+                value,
+                config.get_proxy_server_runtime_worker_threads(),
+                "proxy server runtime worker threads mismatch"
+            );
+        }
+
+        config.proxyServerRuntimeWorkerThreads = Some(cpu_count + 1);
+        assert_eq!(
+            cpu_count,
+            config.get_proxy_server_runtime_worker_threads(),
+            "proxy server runtime worker threads upper bound mismatch"
+        );
+
+        _ = fs::remove_file(config_file_path);
     }
 
     fn create_config_file(file_path: PathBuf) -> Config {

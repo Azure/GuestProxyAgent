@@ -91,12 +91,12 @@ pub async fn start_service(shared_state: SharedState) {
         }
     });
 
-    tokio::spawn({
-        let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
-        async move {
-            proxy_server.start().await;
-        }
-    });
+    let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
+    if let Err(e) = proxy_server.start_on_dedicated_runtime() {
+        logger::write_error(format!(
+            "Failed to start the proxy server runtime thread: {e}"
+        ));
+    }
 }
 
 #[cfg(windows)]
