@@ -7,8 +7,12 @@
 
 use crate::common::logger;
 use crate::common::result::Result;
+use crate::proxy::proxy_connection::ConnectionLogger;
 use crate::{common::error::Error, proxy::proxy_summary::ProxySummary};
+use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::ProxyConnectionSummary;
+use proxy_agent_shared::secrets_redactor;
+use proxy_agent_shared::telemetry::event_logger;
 use proxy_agent_shared::time_buckets::TimeBucketedItem;
 use std::collections::{hash_map, HashMap};
 use tokio::sync::{mpsc, oneshot};
@@ -19,11 +23,9 @@ const MAX_AGE_SECS: u64 = 4 * 3600; // 4 hours
 enum ConnectionSummaryAction {
     AddOneConnection {
         summary: ProxySummary,
-        response: oneshot::Sender<bool>,
     },
     AddOneFailedConnection {
         summary: ProxySummary,
-        response: oneshot::Sender<bool>,
     },
     GetAllConnection {
         response: oneshot::Sender<Vec<ProxyConnectionSummary>>,
@@ -56,30 +58,45 @@ impl ConnectionSummarySharedState {
 
             while let Some(action) = rx.recv().await {
                 match action {
-                    ConnectionSummaryAction::AddOneConnection { summary, response } => {
+                    ConnectionSummaryAction::AddOneConnection { mut summary } => {
+                        // redact possbile secrets from the process command line in background before storing it in the time-bucketed item
+                        summary.processCmdLine =
+                            secrets_redactor::redact_secrets_string(summary.processCmdLine.clone());
                         let mut is_new_bucket = true;
                         let key = summary.to_key_string();
                         if let hash_map::Entry::Vacant(e) = proxy_summary.entry(key.clone()) {
                             e.insert(TimeBucketedItem::new(
-                                summary.into(),
+                                summary.clone().into(),
                                 bucket_duration,
                                 max_age_duration,
                             ));
                         } else if let Some(connection_summary) = proxy_summary.get_mut(&key) {
                             is_new_bucket = connection_summary.add_one();
                         }
-                        if response.send(is_new_bucket).is_err() {
-                            logger::write_warning("Failed to send response to ConnectionSummaryAction::AddOneConnection".to_string());
+                        if is_new_bucket {
+                            // if it's a new bucket, we log it to event logger
+                            if let Ok(json) = serde_json::to_string(&summary) {
+                                event_logger::write_event(
+                                    LoggerLevel::Info,
+                                    json,
+                                    "log_connection_summary",
+                                    "proxy_server",
+                                    ConnectionLogger::CONNECTION_LOGGER_KEY,
+                                );
+                            };
                         }
                     }
-                    ConnectionSummaryAction::AddOneFailedConnection { summary, response } => {
+                    ConnectionSummaryAction::AddOneFailedConnection { mut summary } => {
+                        // redact possbile secrets from the process command line in background before storing it in the time-bucketed item
+                        summary.processCmdLine =
+                            secrets_redactor::redact_secrets_string(summary.processCmdLine.clone());
                         let mut is_new_bucket = true;
                         let key = summary.to_key_string();
                         if let hash_map::Entry::Vacant(e) =
                             failed_authenticate_summary.entry(key.clone())
                         {
                             e.insert(TimeBucketedItem::new(
-                                summary.into(),
+                                summary.clone().into(),
                                 bucket_duration,
                                 max_age_duration,
                             ));
@@ -88,8 +105,17 @@ impl ConnectionSummarySharedState {
                         {
                             is_new_bucket = connection_summary.add_one();
                         }
-                        if response.send(is_new_bucket).is_err() {
-                            logger::write_warning("Failed to send response to ConnectionSummaryAction::AddOneFailedConnection".to_string());
+                        if is_new_bucket {
+                            // if it's a new bucket, we log it to event logger
+                            if let Ok(json) = serde_json::to_string(&summary) {
+                                event_logger::write_event(
+                                    LoggerLevel::Info,
+                                    json,
+                                    "log_connection_summary",
+                                    "proxy_server",
+                                    ConnectionLogger::CONNECTION_LOGGER_KEY,
+                                );
+                            };
                         }
                     }
                     ConnectionSummaryAction::GetAllConnection { response } => {
@@ -137,15 +163,10 @@ impl ConnectionSummarySharedState {
     }
 
     /// Add one connection summary
-    /// Returns true if a new time-bucketed item was created.
     /// It does implicitly removes expired time-bucketed items
-    pub async fn add_one_connection_summary(&self, summary: ProxySummary) -> Result<bool> {
-        let (response_tx, response_rx) = oneshot::channel();
+    pub async fn add_one_connection_summary(&self, summary: ProxySummary) -> Result<()> {
         self.0
-            .send(ConnectionSummaryAction::AddOneConnection {
-                summary,
-                response: response_tx,
-            })
+            .send(ConnectionSummaryAction::AddOneConnection { summary })
             .await
             .map_err(|e| {
                 Error::SendError(
@@ -153,21 +174,14 @@ impl ConnectionSummarySharedState {
                     e.to_string(),
                 )
             })?;
-        response_rx.await.map_err(|e| {
-            Error::RecvError("ConnectionSummaryAction::AddOneConnection".to_string(), e)
-        })
+        Ok(())
     }
 
     /// Add one failed connection summary
-    /// Returns true if a new time bucket is created for this summary, false otherwise
     /// It does implicitly removes expired time-bucketed items
-    pub async fn add_one_failed_connection_summary(&self, summary: ProxySummary) -> Result<bool> {
-        let (response_tx, response_rx) = oneshot::channel();
+    pub async fn add_one_failed_connection_summary(&self, summary: ProxySummary) -> Result<()> {
         self.0
-            .send(ConnectionSummaryAction::AddOneFailedConnection {
-                summary,
-                response: response_tx,
-            })
+            .send(ConnectionSummaryAction::AddOneFailedConnection { summary })
             .await
             .map_err(|e| {
                 Error::SendError(
@@ -175,12 +189,7 @@ impl ConnectionSummarySharedState {
                     e.to_string(),
                 )
             })?;
-        response_rx.await.map_err(|e| {
-            Error::RecvError(
-                "ConnectionSummaryAction::AddOneFailedConnection".to_string(),
-                e,
-            )
-        })
+        Ok(())
     }
 
     /// Clear both connection summaries explicitly
