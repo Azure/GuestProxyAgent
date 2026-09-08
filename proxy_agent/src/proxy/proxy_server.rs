@@ -22,7 +22,7 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
-use crate::common::{constants, error::Error, helpers, logger, result::Result};
+use crate::common::{config, constants, error::Error, helpers, logger, result::Result};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
@@ -50,12 +50,13 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio::sync::watch;
+use tokio::sync::{watch, Semaphore};
 use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
@@ -156,6 +157,8 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for ActivityTrackedIo<T> {
 pub struct ProxyServer {
     port: u16,
     cancellation_token: CancellationToken,
+    max_active_connections: usize,
+    active_connection_limit: Arc<Semaphore>,
     key_keeper_shared_state: KeyKeeperSharedState,
     common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
@@ -168,9 +171,12 @@ pub struct ProxyServer {
 
 impl ProxyServer {
     pub fn new(port: u16, shared_state: &SharedState) -> Self {
+        let max_active_connections = config::get_max_active_tcp_connections();
         ProxyServer {
             port,
             cancellation_token: shared_state.get_cancellation_token(),
+            max_active_connections,
+            active_connection_limit: Arc::new(Semaphore::new(max_active_connections)),
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
             common_state: shared_state.get_common_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
@@ -321,6 +327,18 @@ impl ProxyServer {
         stream: TcpStream,
         client_addr: std::net::SocketAddr,
     ) {
+        let connection_permit = match self.active_connection_limit.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                logger::write_warning(format!(
+                    "Active TCP connection limit of {} reached; closing new connection from {client_addr}.",
+                    self.max_active_connections,
+                ));
+                return;
+            }
+        };
+        let active_connection = self.agent_status_shared_state.track_active_tcp_connection();
+
         let tcp_connection_id = match self
             .agent_status_shared_state
             .increase_tcp_connection_count()
@@ -344,6 +362,9 @@ impl ProxyServer {
         tokio::spawn({
             let cloned_proxy_server = self.clone();
             async move {
+                let _connection_permit = connection_permit;
+                let _active_connection = active_connection;
+
                 // Get raw socket ID before any conversion (Windows only)
                 #[cfg(windows)]
                 let raw_socket_id = Self::get_stream_raw_socket_id(&stream);
@@ -1309,7 +1330,7 @@ impl ProxyServer {
 #[cfg(test)]
 mod tests {
     use super::ActivityTrackedIo;
-    use crate::common::logger;
+    use crate::common::{config, logger};
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
@@ -1318,6 +1339,38 @@ mod tests {
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::watch;
+
+    #[tokio::test]
+    async fn active_connection_limit_is_shared_across_proxy_server_clones() {
+        let shared_state = shared_state::SharedState::start_all();
+        let proxy_server = proxy_server::ProxyServer::new(0, &shared_state);
+        let cloned_proxy_server = proxy_server.clone();
+        let max_connections = config::get_max_active_tcp_connections();
+
+        let mut permits = Vec::with_capacity(max_connections);
+        for _ in 0..max_connections {
+            permits.push(
+                proxy_server
+                    .active_connection_limit
+                    .clone()
+                    .try_acquire_owned()
+                    .unwrap(),
+            );
+        }
+
+        assert!(cloned_proxy_server
+            .active_connection_limit
+            .clone()
+            .try_acquire_owned()
+            .is_err());
+
+        permits.pop();
+        assert!(cloned_proxy_server
+            .active_connection_limit
+            .clone()
+            .try_acquire_owned()
+            .is_ok());
+    }
 
     #[tokio::test]
     async fn activity_tracked_io_notifies_on_reads_and_writes() {

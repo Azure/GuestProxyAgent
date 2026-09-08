@@ -28,7 +28,7 @@
 //! tokio::spawn(proxy_agent_status_task.start());
 //! ```
 
-use crate::common::{constants, logger};
+use crate::common::{config, constants, logger};
 use crate::key_keeper::UNKNOWN_STATE;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
 use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
@@ -137,6 +137,12 @@ impl ProxyAgentStatusTask {
         const MEMORY_MONITOR_INTERVAL: Duration = Duration::from_secs(10 * 60);
         let mut alert_count: usize = 0;
         loop {
+            logger::write_information(format!(
+                "Active TCP connections: {}/{}.",
+                self.agent_status_shared_state
+                    .get_active_tcp_connection_count(),
+                config::get_max_active_tcp_connections(),
+            ));
             let aggregate_status = self.guest_proxy_agent_aggregate_status_new().await;
             if memory_monitor_instant.elapsed() > MEMORY_MONITOR_INTERVAL {
                 if self.monitor_memory_usage() {

@@ -26,6 +26,7 @@ pub const NOTIFY_HEADER: &str = "x-ms-azure-notify";
 
 // Default Config Settings
 pub const DEFAULT_MAX_EVENT_FILE_COUNT: usize = 30;
+pub const DEFAULT_MAX_ACTIVE_TCP_CONNECTIONS: usize = 500;
 
 pub const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 

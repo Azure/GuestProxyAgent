@@ -55,6 +55,10 @@ pub fn get_max_event_file_count() -> usize {
     SYSTEM_CONFIG.get_max_event_file_count()
 }
 
+pub fn get_max_active_tcp_connections() -> usize {
+    SYSTEM_CONFIG.get_max_active_tcp_connections()
+}
+
 pub fn get_ebpf_file_full_path() -> Option<PathBuf> {
     SYSTEM_CONFIG.get_ebpf_file_full_path()
 }
@@ -99,6 +103,8 @@ pub struct Config {
     pollKeyStatusIntervalInSeconds: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     maxEventFileCount: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maxActiveTcpConnections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ebpfFileFullPath: Option<String>,
     ebpfProgramName: String,
@@ -191,6 +197,12 @@ impl Config {
     pub fn get_max_event_file_count(&self) -> usize {
         self.maxEventFileCount
             .unwrap_or(constants::DEFAULT_MAX_EVENT_FILE_COUNT)
+    }
+
+    pub fn get_max_active_tcp_connections(&self) -> usize {
+        self.maxActiveTcpConnections
+            .unwrap_or(constants::DEFAULT_MAX_ACTIVE_TCP_CONNECTIONS)
+            .max(1)
     }
 
     pub fn get_ebpf_program_name(&self) -> &str {
@@ -314,6 +326,12 @@ mod tests {
             constants::DEFAULT_MAX_EVENT_FILE_COUNT,
             config.get_max_event_file_count(),
             "get_max_event_file_count mismatch"
+        );
+
+        assert_eq!(
+            constants::DEFAULT_MAX_ACTIVE_TCP_CONNECTIONS,
+            config.get_max_active_tcp_connections(),
+            "get_max_active_tcp_connections mismatch"
         );
 
         assert_eq!(
