@@ -22,13 +22,13 @@ pub fn write_startup_event(
     message
 }
 
-/// Determine the number of worker threads for the tokio runtime
-/// Limit the number of worker threads to a maximum of 10 and minimum of 2  
-static TOKIO_RUNTIME_WORKER_THREADS: Lazy<usize> = Lazy::new(|| {
+/// Determine the number of worker threads for the tokio runtime in main
+/// Limit the number of worker threads to a maximum of 4 and minimum of 1  
+static TOKIO_MAIN_RUNTIME_WORKER_THREADS: Lazy<usize> = Lazy::new(|| {
     let cpu_count = current_info::get_cpu_count();
-    cpu_count.clamp(2, 10)
+    cpu_count.clamp(1, 4)
 });
 
-pub fn get_worker_threads() -> usize {
-    *TOKIO_RUNTIME_WORKER_THREADS
+pub fn get_tokio_main_worker_threads() -> usize {
+    *TOKIO_MAIN_RUNTIME_WORKER_THREADS
 }

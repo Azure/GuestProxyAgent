@@ -41,7 +41,7 @@ static ASYNC_RUNTIME_HANDLE: tokio::sync::OnceCell<tokio::runtime::Handle> =
 /// It also determines the number of worker threads for the tokio runtime
 fn main() {
     tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(helpers::get_worker_threads())
+        .worker_threads(helpers::get_tokio_main_worker_threads())
         .enable_all()
         .build()
         .unwrap()
