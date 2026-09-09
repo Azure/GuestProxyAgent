@@ -600,6 +600,7 @@
     "vmrcs",
     "vmrss",
     "vms",
+    "vmswap",
     "vns",
     "VTeam",
     "vtpm",
