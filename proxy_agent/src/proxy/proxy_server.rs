@@ -922,58 +922,26 @@ impl ProxyServer {
         );
 
         if log_authorize_failed {
-            match self
+            if let Err(e) = self
                 .connection_summary_shared_state
                 .add_one_failed_connection_summary(summary.clone())
                 .await
             {
-                Ok(is_new_bucket) => {
-                    if is_new_bucket {
-                        // if it's a new bucket, we don't need to add to failed connection summary again
-                        if let Ok(json) = serde_json::to_string(&summary) {
-                            event_logger::write_event(
-                                LoggerLevel::Info,
-                                json,
-                                "log_connection_summary",
-                                "proxy_server",
-                                ConnectionLogger::CONNECTION_LOGGER_KEY,
-                            );
-                        };
-                    }
-                }
-                Err(e) => {
-                    http_connection_context.log(
-                        LoggerLevel::Warn,
-                        format!("Failed to add failed connection summary: {e}"),
-                    );
-                }
+                http_connection_context.log(
+                    LoggerLevel::Warn,
+                    format!("Failed to add failed connection summary: {e}"),
+                );
             }
         } else {
-            match self
+            if let Err(e) = self
                 .connection_summary_shared_state
                 .add_one_connection_summary(summary.clone())
                 .await
             {
-                Ok(is_new_bucket) => {
-                    if is_new_bucket {
-                        // if it's a new bucket, we log it to event logger
-                        if let Ok(json) = serde_json::to_string(&summary) {
-                            event_logger::write_event(
-                                LoggerLevel::Info,
-                                json,
-                                "log_connection_summary",
-                                "proxy_server",
-                                ConnectionLogger::CONNECTION_LOGGER_KEY,
-                            );
-                        };
-                    }
-                }
-                Err(e) => {
-                    http_connection_context.log(
-                        LoggerLevel::Warn,
-                        format!("Failed to add connection summary: {e}"),
-                    );
-                }
+                http_connection_context.log(
+                    LoggerLevel::Warn,
+                    format!("Failed to add connection summary: {e}"),
+                );
             }
         }
 
