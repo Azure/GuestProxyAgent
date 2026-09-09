@@ -175,12 +175,52 @@ pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatu
     }
 }
 
+#[cfg(not(windows))]
+pub use linux_service::check_service_run_status;
+#[cfg(windows)]
+pub use windows_service::check_service_run_status;
+#[cfg(windows)]
+pub use windows_service::classify_service_state;
 #[cfg(windows)]
 pub use windows_service::set_default_failure_actions;
 #[cfg(windows)]
 pub use windows_service::ServiceState;
 #[cfg(windows)]
 pub use windows_service::ServiceStatusInfo;
+
+/// Cross-platform runtime status of a system service (Windows SCM or Linux systemd), used for
+/// service health that's meaningful on both platforms. Unlike the Windows-only
+/// `ServiceStatusInfo`, this type has an implementation on every platform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceRuntimeStatus {
+    pub service_name: String,
+    pub is_installed: bool,
+    pub is_running: bool,
+    /// True when the service is actively starting (e.g. Windows `StartPending`/
+    /// `ContinuePending`, or systemd `activating`) - a normal transient state, distinct from a
+    /// confirmed failure (`is_running == false && is_transitioning == false`).
+    pub is_transitioning: bool,
+    /// Human-readable running state, e.g. "Running", "Stopped", "Failed".
+    pub state_display: String,
+    /// Human-readable start type, e.g. "AutoStart", "OnDemand", "Disabled".
+    pub start_type_display: String,
+}
+
+impl ServiceRuntimeStatus {
+    /// Human-readable summary, e.g. "Running, AutoStart" or "NotInstalled".
+    pub fn summary(&self) -> String {
+        if self.is_installed {
+            format!("{}, {}", self.state_display, self.start_type_display)
+        } else {
+            "NotInstalled".to_string()
+        }
+    }
+
+    /// Log-friendly message including the service name and summary.
+    pub fn message(&self) -> String {
+        format!("service: {} status: {}", self.service_name, self.summary())
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -264,6 +304,52 @@ mod tests {
 
             // clean up
             _ = super::stop_and_delete_service(service_name).await.unwrap();
+        }
+    }
+
+    #[test]
+    fn test_check_service_run_status_not_installed() {
+        // Cross-platform: a service name that certainly does not exist should report
+        // not-installed/not-running on both Windows and Linux.
+        let status = super::check_service_run_status("gpa-test-service-that-does-not-exist");
+        assert!(!status.is_installed);
+        assert!(!status.is_running);
+        assert!(
+            !status.is_transitioning,
+            "A not-installed service must not be reported as transitioning"
+        );
+        assert_eq!(status.summary(), "NotInstalled");
+        assert!(status.message().contains("NotInstalled"));
+    }
+
+    #[tokio::test]
+    async fn test_check_service_run_status_windows() {
+        #[cfg(windows)]
+        {
+            let service_name = "test_check_service_run_status";
+            // try delete the service if it exists
+            _ = super::stop_and_delete_service(service_name).await;
+
+            let exe_path = std::env::current_exe().unwrap();
+            let result = super::install_service(service_name, service_name, vec![], exe_path);
+            assert!(result.is_ok());
+
+            let status = super::check_service_run_status(service_name);
+            assert!(status.is_installed);
+            // The test exe cannot actually run as a service, so it should be reported as
+            // installed-but-not-running.
+            assert!(!status.is_running);
+            // Stopped is a confirmed-down state, not a transitioning one.
+            assert!(!status.is_transitioning);
+            assert_eq!(status.state_display, "Stopped");
+            let summary = status.summary();
+            assert!(
+                summary.contains("AutoStart"),
+                "Expected summary to contain 'AutoStart', got: {summary}"
+            );
+
+            // clean up
+            super::stop_and_delete_service(service_name).await.unwrap();
         }
     }
 }
