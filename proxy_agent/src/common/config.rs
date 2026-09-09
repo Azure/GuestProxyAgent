@@ -17,7 +17,6 @@
 //! ```
 
 use crate::common::constants;
-use crate::common::helpers;
 use crate::common::logger;
 use once_cell::sync::Lazy;
 use proxy_agent_shared::current_info;
@@ -283,7 +282,6 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
     use std::{env, fs};
-    use sysinfo::Cpu;
 
     #[test]
     fn config_struct_test() {
