@@ -232,9 +232,9 @@ pub fn classify_service_state(state: Option<&ServiceState>) -> (bool, bool) {
     }
 }
 
-/// Queries a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
+/// Checks a service's runtime status in the cross-platform `ServiceRuntimeStatus` shape,
 /// delegating to `check_service_status` instead of re-querying the SCM a second time.
-pub fn query_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
+pub fn check_service_run_status(service_name: &str) -> crate::service::ServiceRuntimeStatus {
     let info = crate::service::check_service_status(service_name);
     let (is_running, is_transitioning) = classify_service_state(info.state.as_ref());
     let state_display = match &info.state {

@@ -175,6 +175,10 @@ pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatu
     }
 }
 
+#[cfg(not(windows))]
+pub use linux_service::check_service_run_status;
+#[cfg(windows)]
+pub use windows_service::check_service_run_status;
 #[cfg(windows)]
 pub use windows_service::classify_service_state;
 #[cfg(windows)]
@@ -215,19 +219,6 @@ impl ServiceRuntimeStatus {
     /// Log-friendly message including the service name and summary.
     pub fn message(&self) -> String {
         format!("service: {} status: {}", self.service_name, self.summary())
-    }
-}
-
-/// Checks the runtime status (running state + start type) of a service in a cross-platform
-/// way. Uses the Windows SCM on Windows and `systemctl` on Linux.
-pub fn check_service_run_status(service_name: &str) -> ServiceRuntimeStatus {
-    #[cfg(windows)]
-    {
-        windows_service::query_service_run_status(service_name)
-    }
-    #[cfg(not(windows))]
-    {
-        linux_service::check_service_run_status(service_name)
     }
 }
 
