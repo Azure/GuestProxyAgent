@@ -59,7 +59,7 @@ impl ConnectionSummarySharedState {
             while let Some(action) = rx.recv().await {
                 match action {
                     ConnectionSummaryAction::AddOneConnection { mut summary } => {
-                        // redact possbile secrets from the process command line in background before storing it in the time-bucketed item
+                        // redact possible secrets from the process command line in background before storing it in the time-bucketed item
                         summary.processCmdLine =
                             secrets_redactor::redact_secrets_string(summary.processCmdLine.clone());
                         let mut is_new_bucket = true;
@@ -87,7 +87,7 @@ impl ConnectionSummarySharedState {
                         }
                     }
                     ConnectionSummaryAction::AddOneFailedConnection { mut summary } => {
-                        // redact possbile secrets from the process command line in background before storing it in the time-bucketed item
+                        // redact possible secrets from the process command line in background before storing it in the time-bucketed item
                         summary.processCmdLine =
                             secrets_redactor::redact_secrets_string(summary.processCmdLine.clone());
                         let mut is_new_bucket = true;
