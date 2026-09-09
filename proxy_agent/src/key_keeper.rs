@@ -291,7 +291,7 @@ impl KeyKeeper {
             }
 
             // check and update the redirect policy if not updated successfully before, try again here
-            // this could happen when the eBPF/redirector module was not started yet before
+            // this could happen when the eBPF/redirector or proxy_server module was not started yet before
             if !redirect_policy_updated {
                 logger::write_warning(
                     "redirect policy was not update successfully before, retrying now".to_string(),
@@ -850,6 +850,13 @@ impl KeyKeeper {
     /// update the redirector/eBPF policy based on the secure channel status
     /// it should be called when the secure channel state is changed
     async fn update_redirector_policy(&self, status: &KeyStatus) -> bool {
+        if !provision::is_proxy_server_provisioned(&self.provision_shared_state).await {
+            logger::write_warning(
+                "Proxy server is not provisioned, skipping redirector policy update.".to_string(),
+            );
+            return false;
+        }
+
         // update the redirector policy map
         if !redirector::update_wire_server_redirect_policy(
             status.get_wire_server_mode() != DISABLE_STATE,
