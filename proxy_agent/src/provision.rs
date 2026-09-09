@@ -114,6 +114,17 @@ pub async fn listener_started(event_threads_shared_state: EventThreadsSharedStat
     .await;
 }
 
+/// Check if the proxy server is provisioned
+/// It checks if the listener module is ready, which indicates that the proxy server is provisioned.
+/// Returns true if the proxy server is provisioned, false otherwise.
+pub async fn is_proxy_server_provisioned(provision_shared_state: &ProvisionSharedState) -> bool {
+    if let Ok(provisioned) = provision_shared_state.get_state().await {
+        provisioned.contains(ProvisionFlags::LISTENER_READY)
+    } else {
+        false
+    }
+}
+
 /// Update provision state for each module to shared_state
 async fn update_provision_state(
     state: ProvisionFlags,
@@ -945,6 +956,12 @@ mod tests {
             event_threads_shared_state.clone(),
         )
         .await;
+        assert_eq!(
+            true,
+            super::is_proxy_server_provisioned(&provision_shared_state).await,
+            "Proxy server must be provisioned after listener is ready"
+        );
+
         super::update_provision_state(
             ProvisionFlags::KEY_LATCH_READY,
             Some(temp_test_path.clone()),
