@@ -81,7 +81,10 @@ impl EventSender {
             .await
         {
             Ok(()) => {
-                logger_manager::write_info("success updated the vm metadata.".to_string());
+                logger_manager::write_log(
+                    log::Level::Trace,
+                    "success updated the vm metadata.".to_string(),
+                );
             }
             Err(e) => {
                 logger_manager::write_warn(format!("Failed to update vm metadata with error {e}."));
