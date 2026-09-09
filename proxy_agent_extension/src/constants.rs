@@ -72,7 +72,10 @@ pub const MAX_TIME_BEFORE_STALE_STATUS_SECS: u64 = 5 * 60;
 
 pub const EBPF_CORE: &str = "EbpfCore";
 pub const EBPF_EXT: &str = "NetEbpfExt";
+pub const EBPF_SVC: &str = "eBPFSvc";
 pub const EBPF_SUBSTATUS_NAME: &str = "EbpfStatus";
+
+pub const PROXY_AGENT_SERVICE_SUBSTATUS_NAME: &str = "ProxyAgentServiceStatus";
 
 pub const MAX_CONNECTION_SUMMARY_LEN: usize = 100;
 pub const MAX_FAILED_AUTH_SUMMARY_LEN: usize = 50;
