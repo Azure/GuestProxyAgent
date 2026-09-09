@@ -4,6 +4,7 @@
     "latchKeyFolder": "%SYSTEMDRIVE%\\WindowsAzure\\ProxyAgent\\Keys",
     "monitorIntervalInSeconds": 60,
     "pollKeyStatusIntervalInSeconds": 15,
+    "proxyServerRuntimeWorkerThreads": 2,
     "hostGAPluginSupport": 1,
     "ebpfProgramName": "redirect.bpf.sys",
     "fileLogLevel": "Trace",
