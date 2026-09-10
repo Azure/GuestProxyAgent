@@ -8,6 +8,10 @@ use crate::{current_info, misc_helpers};
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
+// Keep telemetry messages bounded before secret redaction. Besides limiting the wire payload, this
+// prevents externally supplied extension status from causing disproportionate regex work or memory use.
+pub const MAX_TELEMETRY_MESSAGE_LENGTH: usize = 4 * 1024;
+
 const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
 const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
 
@@ -279,6 +283,22 @@ impl TelemetryEvent {
             TelemetryEvent::ExtensionEvent(event) => event.to_xml_event(vm_data),
         }
     }
+
+    /// Redact an event in the background telemetry-consumer path.
+    pub(crate) fn redact_secrets(&mut self) {
+        match self {
+            TelemetryEvent::GenericLogsEvent(event) => {
+                event.context1 = crate::secrets_redactor::redact_secrets_string(std::mem::take(
+                    &mut event.context1,
+                ));
+            }
+            TelemetryEvent::ExtensionEvent(event) => {
+                event.message = crate::secrets_redactor::redact_secrets_string(std::mem::take(
+                    &mut event.message,
+                ));
+            }
+        }
+    }
 }
 
 /// Struct to hold Generic Logs telemetry event data without VM metadata.
@@ -311,9 +331,10 @@ impl TelemetryGenericLogsEvent {
             Some(version) => (version, format!("{}-{}", event_name, event_log.Version)),
             None => (event_log.Version.clone(), event_name),
         };
-        // redact secrets in the message before sending to telemetry
-        let message = event_log.Message.clone();
-        let message = crate::secrets_redactor::redact_secrets_string(message);
+        // Bound producer work and queue memory here; redaction runs later in the background sender.
+        let mut message = event_log.Message.clone();
+        misc_helpers::truncate_to_char_boundary(&mut message, MAX_TELEMETRY_MESSAGE_LENGTH);
+
         TelemetryGenericLogsEvent {
             event_name,
             ga_version,
@@ -416,9 +437,10 @@ impl TelemetryExtensionEventsEvent {
         execution_mode: String,
         ga_version: String,
     ) -> Self {
-        // redact secrets in the message before sending to telemetry
-        let message = event.operation_status.message.clone();
-        let message = crate::secrets_redactor::redact_secrets_string(message);
+        // Bound producer work and queue memory here; redaction runs later in the background sender.
+        let mut message = event.operation_status.message.clone();
+        misc_helpers::truncate_to_char_boundary(&mut message, MAX_TELEMETRY_MESSAGE_LENGTH);
+
         TelemetryExtensionEventsEvent {
             ga_version,
             execution_mode,
@@ -830,6 +852,47 @@ mod tests {
         assert!(xml.contains("Installation successful"));
         assert!(xml.contains("Duration"));
         assert!(xml.contains("500"));
+    }
+
+    #[test]
+    fn test_extension_event_bounds_message_before_redaction() {
+        let mut extension_status_event = create_test_extension_status_event();
+        extension_status_event.operation_status.message = format!(
+            "Authorization: Bearer secret\n{}",
+            "x".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 16)
+        );
+
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+        let mut telemetry_event = TelemetryEvent::ExtensionEvent(telemetry_event);
+        telemetry_event.redact_secrets();
+
+        let TelemetryEvent::ExtensionEvent(telemetry_event) = telemetry_event else {
+            unreachable!();
+        };
+        assert!(telemetry_event.message.len() <= MAX_TELEMETRY_MESSAGE_LENGTH);
+        assert!(telemetry_event.message.starts_with("[REDACTED]\n"));
+        assert!(!telemetry_event.message.contains("secret"));
+    }
+
+    #[test]
+    fn test_extension_event_truncates_at_utf8_boundary() {
+        let mut extension_status_event = create_test_extension_status_event();
+        extension_status_event.operation_status.message = "é".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
+
+        let telemetry_event = TelemetryExtensionEventsEvent::from_extension_status_event(
+            &extension_status_event,
+            "production".to_string(),
+            "1.0.0".to_string(),
+        );
+
+        assert_eq!(telemetry_event.message.len(), MAX_TELEMETRY_MESSAGE_LENGTH);
+        assert!(telemetry_event
+            .message
+            .is_char_boundary(telemetry_event.message.len()));
     }
 
     /// Tests TelemetryExtensionEventsEvent with operation failure

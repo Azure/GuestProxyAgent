@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "bpf_helpers.h"
+#include "bpf_endian.h"
 #include "socket.h"
 
 // SEC("maps")
@@ -47,7 +48,7 @@ check_skip_process_map_entry(uint32_t pid)
     return 1 if pid found in the skip_process_map.
 */
 inline __attribute__((always_inline)) int
-update_audit_map_entry(bpf_sock_addr_t *ctx)
+update_audit_map_entry(bpf_sock_addr_t *ctx, uint32_t destination_ipv4, uint32_t address_family)
 {
     uint64_t pid_tip = bpf_get_current_pid_tgid();
     uint32_t pid = (uint32_t)(pid_tip >> 32);
@@ -74,8 +75,9 @@ update_audit_map_entry(bpf_sock_addr_t *ctx)
     {
         entry.is_root = (is_admin > 0) ? 1 : 0;
     }
-    entry.destination_ipv4 = ctx->user_ip4; // we only support ipv4 so far.
+    entry.destination_ipv4 = destination_ipv4;
     entry.destination_port = ctx->user_port;
+    entry.address_family = address_family;
     uint16_t source_port = ctx->msg_src_port;
     if (source_port == 0)
     {
@@ -122,7 +124,7 @@ authorize_v4(bpf_sock_addr_t *ctx)
         bpf_printk("Found v4 proxy entry value: %u, %u", policy->destination_ip.ipv4, policy->destination_port);
 
         // update to the audit map before changing the destination ip and port.
-        if (update_audit_map_entry(ctx) == 1)
+        if (update_audit_map_entry(ctx, ctx->user_ip4, GPA_ADDRESS_FAMILY_IPV4) == 1)
         {
             bpf_printk("Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
@@ -152,4 +154,60 @@ authorize_v4(bpf_sock_addr_t *ctx)
 int authorize_connect4(bpf_sock_addr_t *ctx)
 {
     return authorize_v4(ctx);
+}
+
+inline __attribute__((always_inline)) int
+get_ipv4_mapped_address(bpf_sock_addr_t *ctx, uint32_t *destination_ipv4)
+{
+    if (ctx->user_ip6[0] != 0 ||
+        ctx->user_ip6[1] != 0 ||
+        ctx->user_ip6[2] != bpf_htonl(0x0000ffff))
+    {
+        return 0;
+    }
+
+    *destination_ipv4 = ctx->user_ip6[3];
+    return 1;
+}
+
+// SEC("cgroup/connect6")
+#pragma clang section text = "cgroup/connect6"
+int authorize_connect6(bpf_sock_addr_t *ctx)
+{
+    // Check if the destination address is an IPv4-mapped IPv6 address.
+    // While the current eBPF_for_Windows detects the IPv4-mapped address, 
+    // explicitly classify/convert dual-stack IPv4-mapped connections as IPv4.
+    // refer to https://github.com/microsoft/ebpf-for-windows/issues/5536
+    // We keep this logic here to support dual-stack IPv4-mapped connections in connect6,
+    // just in case windows eBPF may change the behavior to align with Linux eBPF.
+    uint32_t destination_ipv4;
+    if (get_ipv4_mapped_address(ctx, &destination_ipv4) == 0)
+    {
+        // Native IPv6 destinations are not redirected by the IPv4 policy map.
+        return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
+    }
+
+    destination_entry_t entry = {0};
+    entry.destination_ip.ipv4 = destination_ipv4;
+    entry.destination_port = ctx->user_port;
+    entry.protocol = ctx->protocol;
+
+    destination_entry_t *policy = bpf_map_lookup_elem(&policy_map, &entry);
+    if (policy != NULL)
+    {
+        bpf_printk("Found IPv4-mapped proxy entry.");
+        if (update_audit_map_entry(ctx, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6) == 1)
+        {
+            bpf_printk("Found skip process entry, skip the redirection.");
+            return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
+        }
+
+        ctx->user_ip6[0] = 0;
+        ctx->user_ip6[1] = 0;
+        ctx->user_ip6[2] = bpf_htonl(0x0000ffff);
+        ctx->user_ip6[3] = policy->destination_ip.ipv4;
+        ctx->user_port = policy->destination_port;
+    }
+
+    return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
 }

@@ -124,10 +124,12 @@ impl EventReader {
             Ok(files) => {
                 let file_count = files.len();
                 event_count = self.process_events_and_clean(files).await;
-                let message = format!(
-                    "Telemetry event reader sent {event_count} events from {file_count} files"
+                logger_manager::write_log(
+                    log::Level::Trace,
+                    format!(
+                        "Telemetry event reader sent {event_count} events from {file_count} files"
+                    ),
                 );
-                logger_manager::write_info(message);
             }
             Err(e) => {
                 logger_manager::write_warn(format!(
@@ -289,9 +291,12 @@ impl EventReader {
                 for file in files {
                     event_count += self.process_one_extension_status_event_file(file).await;
                 }
-                logger_manager::write_info( format!(
-                    "Telemetry event reader sent {event_count} extension status events from {file_count} files"
-                ));
+                logger_manager::write_log(
+                    log::Level::Trace,
+                    format!(
+                        "Telemetry event reader sent {event_count} extension status events from {file_count} files"
+                    ),
+                );
 
                 if event_count > 0 {
                     if let Err(e) = self.common_state.notify_telemetry_event().await {

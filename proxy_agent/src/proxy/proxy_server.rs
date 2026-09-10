@@ -22,6 +22,7 @@
 
 use super::proxy_authorizer::AuthorizeResult;
 use super::proxy_connection::{ConnectionLogger, HttpConnectionContext, TcpConnectionContext};
+use crate::common::config;
 use crate::common::{constants, error::Error, helpers, logger, result::Result};
 use crate::proxy::{proxy_authorizer, proxy_summary::ProxySummary, Claims};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
@@ -90,6 +91,35 @@ impl ProxyServer {
             access_control_shared_state: shared_state.get_access_control_shared_state(),
             connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
         }
+    }
+
+    /// Starts the proxy server on an isolated Tokio runtime.
+    pub fn start_on_dedicated_runtime(self) -> std::io::Result<std::thread::JoinHandle<()>> {
+        let worker_threads = config::get_proxy_server_runtime_worker_threads();
+
+        std::thread::Builder::new()
+            .name("proxy-server-runtime".to_string())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(worker_threads)
+                    .thread_name("proxy-server-worker")
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        logger::write_error(format!(
+                            "Failed to create the proxy server Tokio runtime: {e}"
+                        ));
+                        return;
+                    }
+                };
+
+                logger::write_information(format!(
+                    "Started dedicated proxy server Tokio runtime with {worker_threads} worker threads."
+                ));
+                runtime.block_on(self.start());
+            })
     }
 
     /// start listener at the given address with retry logic if the address is in use
@@ -907,6 +937,11 @@ impl ProxyServer {
             port: http_connection_context
                 .tcp_connection_context
                 .destination_port,
+            addressFamily: http_connection_context
+                .tcp_connection_context
+                .address_family
+                .map_or("IPv4", |family| family.as_str())
+                .to_string(),
             responseStatus: response_status.to_string(),
             elapsedTime: elapsed_time.as_millis(),
             errorDetails: error_details,
@@ -917,58 +952,26 @@ impl ProxyServer {
         );
 
         if log_authorize_failed {
-            match self
+            if let Err(e) = self
                 .connection_summary_shared_state
                 .add_one_failed_connection_summary(summary.clone())
                 .await
             {
-                Ok(is_new_bucket) => {
-                    if is_new_bucket {
-                        // if it's a new bucket, we don't need to add to failed connection summary again
-                        if let Ok(json) = serde_json::to_string(&summary) {
-                            event_logger::write_event(
-                                LoggerLevel::Info,
-                                json,
-                                "log_connection_summary",
-                                "proxy_server",
-                                ConnectionLogger::CONNECTION_LOGGER_KEY,
-                            );
-                        };
-                    }
-                }
-                Err(e) => {
-                    http_connection_context.log(
-                        LoggerLevel::Warn,
-                        format!("Failed to add failed connection summary: {e}"),
-                    );
-                }
+                http_connection_context.log(
+                    LoggerLevel::Warn,
+                    format!("Failed to add failed connection summary: {e}"),
+                );
             }
         } else {
-            match self
+            if let Err(e) = self
                 .connection_summary_shared_state
                 .add_one_connection_summary(summary.clone())
                 .await
             {
-                Ok(is_new_bucket) => {
-                    if is_new_bucket {
-                        // if it's a new bucket, we log it to event logger
-                        if let Ok(json) = serde_json::to_string(&summary) {
-                            event_logger::write_event(
-                                LoggerLevel::Info,
-                                json,
-                                "log_connection_summary",
-                                "proxy_server",
-                                ConnectionLogger::CONNECTION_LOGGER_KEY,
-                            );
-                        };
-                    }
-                }
-                Err(e) => {
-                    http_connection_context.log(
-                        LoggerLevel::Warn,
-                        format!("Failed to add connection summary: {e}"),
-                    );
-                }
+                http_connection_context.log(
+                    LoggerLevel::Warn,
+                    format!("Failed to add connection summary: {e}"),
+                );
             }
         }
 
@@ -1199,6 +1202,18 @@ mod tests {
     use proxy_agent_shared::{hyper_client, proxy_agent_aggregate_status};
     use std::collections::HashMap;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn dedicated_runtime_stops_on_cancellation() {
+        let shared_state = shared_state::SharedState::start_all();
+        shared_state.cancel_cancellation_token();
+        let proxy_server = proxy_server::ProxyServer::new(0, &shared_state);
+
+        let runtime_thread = proxy_server.start_on_dedicated_runtime().unwrap();
+        tokio::task::spawn_blocking(move || runtime_thread.join().unwrap())
+            .await
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn direct_request_test() {

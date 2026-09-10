@@ -157,7 +157,11 @@ pub fn set_cpu_quota(service_name: &str, cpu_quota: u16) -> Result<()> {
 
 #[derive(Debug)]
 pub struct MemStatus {
+    /// virtual-memory pages currently resident in physical RAM in kilobytes.
     pub vmrss_kb: Option<u64>,
+    /// virtual-memory pages currently swapped out to disk in kilobytes.
+    pub vmswap_kb: Option<u64>,
+    /// peak virtual-memory pages currently resident in physical RAM in kilobytes.
     pub vmhwm_kb: Option<u64>,
 }
 
@@ -165,6 +169,7 @@ pub fn read_proc_memory_status(pid: u32) -> Result<MemStatus> {
     let s = fs::read_to_string(format!("/proc/{pid}/status"))?;
     let mut vmrss_kb = None;
     let mut vmhwm_kb = None;
+    let mut vmswap_kb = None;
     for line in s.lines() {
         if line.starts_with("VmRSS:") {
             // Format: "VmRSS:\t  12345 kB"
@@ -173,9 +178,16 @@ pub fn read_proc_memory_status(pid: u32) -> Result<MemStatus> {
         } else if line.starts_with("VmHWM:") {
             let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
             vmhwm_kb = val;
+        } else if line.starts_with("VmSwap:") {
+            let val = line.split_whitespace().nth(1).and_then(|x| x.parse().ok());
+            vmswap_kb = val;
         }
     }
-    Ok(MemStatus { vmrss_kb, vmhwm_kb })
+    Ok(MemStatus {
+        vmrss_kb,
+        vmswap_kb,
+        vmhwm_kb,
+    })
 }
 
 /// Set the file permissions for a file or directory.

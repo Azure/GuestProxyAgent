@@ -8,6 +8,7 @@ use crate::common::{
 };
 use crate::redirector::shared_ebpf::linux_types::{
     destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
+    AuditMapKey, AuditMapValue,
 };
 use crate::redirector::{ip_to_string, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
@@ -136,14 +137,22 @@ impl BpfObject {
     }
 
     pub fn attach_cgroup_program(&mut self, cgroup2_root_path: PathBuf) -> Result<()> {
-        let program_name = "connect4";
+        self.attach_cgroup_program_by_name(cgroup2_root_path.clone(), "connect4")?;
+        self.attach_cgroup_program_by_name(cgroup2_root_path, "connect6")
+    }
+
+    fn attach_cgroup_program_by_name(
+        &mut self,
+        cgroup2_root_path: PathBuf,
+        program_name: &str,
+    ) -> Result<()> {
         match std::fs::File::open(cgroup2_root_path.clone()) {
             Ok(cgroup) => match self.0.program_mut(program_name) {
                 Some(program) => match program.try_into() {
                     Ok(p) => {
                         let program: &mut CgroupSockAddr = p;
                         match program.load() {
-                            Ok(_) => logger::write("connect4 program loaded.".to_string()),
+                            Ok(_) => logger::write(format!("{program_name} program loaded.")),
                             Err(err) => {
                                 return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                     program_name.to_string(),
@@ -191,13 +200,13 @@ impl BpfObject {
     }
 
     pub fn attach_kprobe_program(&mut self) -> Result<()> {
-        let program_name = "tcp_v4_connect";
+        let program_name = "tcp_connect_probe";
         match self.0.program_mut(program_name) {
             Some(program) => match program.try_into() {
                 Ok(p) => {
                     let program: &mut KProbe = p;
                     match program.load() {
-                        Ok(_) => logger::write("tcp_v4_connect program loaded.".to_string()),
+                        Ok(_) => logger::write(format!("{program_name} program loaded.")),
                         Err(err) => {
                             return Err(Error::Bpf(BpfErrorType::LoadBpfProgram(
                                 program_name.to_string(),
@@ -208,7 +217,7 @@ impl BpfObject {
                     match program.attach("tcp_connect", 0) {
                         Ok(link_id) => {
                             logger::write(format!(
-                                "tcp_v4_connect program attached with id {link_id:?}."
+                                "{program_name} program attached with id {link_id:?}."
                             ));
                         }
                         Err(err) => {
@@ -239,19 +248,13 @@ impl BpfObject {
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = "audit_map";
         match self.0.map(audit_map_name) {
-            Some(map) => match HashMap::try_from(map) {
+            Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
                     match audit_map.get(&key.to_array(), 0) {
                         Ok(value) => {
                             let audit_value = sock_addr_audit_entry::from_array(value);
-                            Ok(AuditEntry {
-                                logon_id: audit_value.logon_id as u64,
-                                process_id: audit_value.process_id,
-                                is_admin: audit_value.is_root as i32,
-                                destination_ipv4: audit_value.destination_ipv4,
-                                destination_port: audit_value.destination_port as u16,
-                            })
+                            Ok(audit_value.to_audit_entry())
                         }
                         Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
                             source_port.to_string(),
@@ -355,7 +358,7 @@ impl BpfObject {
     pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
         let audit_map_name = "audit_map";
         match self.0.map_mut(audit_map_name) {
-            Some(map) => match HashMap::<&mut MapData, [u32; 2], [u32; 5]>::try_from(map) {
+            Some(map) => match HashMap::<&mut MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(mut audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
                     audit_map.remove(&key.to_array()).map_err(|err| {
@@ -486,7 +489,9 @@ pub async fn update_hostga_redirect_policy(
 mod tests {
     use crate::common::config;
     use crate::common::constants;
-    use crate::redirector::shared_ebpf::linux_types::{sock_addr_audit_entry, sock_addr_audit_key};
+    use crate::redirector::shared_ebpf::linux_types::{
+        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey, AuditMapValue,
+    };
     use aya::maps::HashMap;
     use proxy_agent_shared::misc_helpers;
     use std::env;
@@ -572,11 +577,13 @@ mod tests {
             is_root: 1,
             destination_ipv4: 0x10813FA8,
             destination_port: 80,
+            address_family: crate::redirector::shared_ebpf::GPA_ADDRESS_FAMILY_IPV6,
+            reserved: 0,
         };
         {
             // drop map_mut("audit_map") within this scope
-            let mut audit_map: HashMap<&mut aya::maps::MapData, [u32; 2], [u32; 5]> =
-                HashMap::<&mut aya::maps::MapData, [u32; 2], [u32; 5]>::try_from(
+            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, AuditMapValue> =
+                HashMap::<&mut aya::maps::MapData, AuditMapKey, AuditMapValue>::try_from(
                     bpf.0.map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
@@ -604,6 +611,7 @@ mod tests {
                     entry.destination_port as u32, value.destination_port,
                     "destination_port is not equal"
                 );
+                assert_eq!(entry.address_family, crate::redirector::AddressFamily::IPv6);
             }
             Err(err) => {
                 println!("lookup_audit_internal error: {}", err);
