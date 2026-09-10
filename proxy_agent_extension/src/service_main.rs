@@ -212,6 +212,10 @@ async fn monitor_thread() {
     let mut restored_in_error = false;
     let mut proxy_agent_update_reported: Option<telemetry::span::SimpleSpan> = None;
     let loop_interval = Duration::from_secs(15);
+    // Last known timestamp (as reported by the GPA aggregate status itself) used to annotate
+    // the immediate eBPF/GPA-service overrides below; kept from the previous iteration whenever
+    // the current iteration's fetch fails outright.
+    let mut last_known_status_timestamp = String::new();
     loop {
         let current_seq_no: String = common::get_current_seq_no(&exe_path);
 
@@ -287,13 +291,16 @@ async fn monitor_thread() {
         }
 
         // Step 3: Read and evaluate the proxy agent aggregate status
-        report_proxy_agent_aggregate_status(
+        if let Some(status_timestamp) = report_proxy_agent_aggregate_status(
             &proxy_agent_file_version_in_extension,
             &mut status,
             &mut status_state_obj,
             &mut service_state,
         )
-        .await;
+        .await
+        {
+            last_known_status_timestamp = status_timestamp;
+        }
 
         // Step 4: Restore (on error) or purge (on success) the backed-up proxy agent, once
         if !restored_in_error {
@@ -313,13 +320,30 @@ async fn monitor_thread() {
             proxy_agent_update_reported = None;
         }
 
-        // Step 6: Report eBPF driver status (Windows only)
+        // Step 6/7: report eBPF (Windows) + GuestProxyAgent service (cross-platform) status
+        // fresh every tick, then immediately override the top-level status/message on Error -
+        // the aggregate-status source (Step 3) has its own staleness/debounce and can't see these.
+        let gpa_service_substatus = compute_gpa_service_substatus();
         #[cfg(windows)]
         {
-            report_ebpf_status(&mut status);
+            let ebpf_substatus = compute_ebpf_substatus();
+            apply_service_health_overrides(
+                &mut status,
+                &ebpf_substatus,
+                &gpa_service_substatus,
+                &last_known_status_timestamp,
+            );
+            status.substatus.push(ebpf_substatus);
         }
+        #[cfg(not(windows))]
+        apply_sub_status_override_in_error(
+            &mut status,
+            &gpa_service_substatus,
+            &last_known_status_timestamp,
+        );
+        status.substatus.push(gpa_service_substatus);
 
-        // Step 7: Write the final status file and sleep
+        // Step 8: Write the final status file and sleep
         common::report_status(
             status_folder_path.to_path_buf(),
             &cache_seq_no.to_string(),
@@ -350,61 +374,53 @@ fn write_state_event(
     }
 }
 
+/// Classifies combined health of N services: Success if all running, Error if any is
+/// confirmed down, else Transitioning (something is merely starting up). Transitioning
+/// prevents `apply_sub_status_override_in_error` from firing on a benign restart.
+fn combined_service_health(services: &[(bool, bool)]) -> (String, i32) {
+    let all_running = services.iter().all(|(is_running, _)| *is_running);
+    if all_running {
+        return (
+            constants::SUCCESS_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
+        );
+    }
+    let any_down = services
+        .iter()
+        .any(|(is_running, is_transitioning)| !is_running && !is_transitioning);
+    if any_down {
+        (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+        )
+    } else {
+        (
+            constants::TRANSITIONING_STATUS.to_string(),
+            constants::STATUS_CODE_OK,
+        )
+    }
+}
+
 #[cfg(windows)]
 fn build_ebpf_substatus(
     core: &proxy_agent_shared::service::ServiceStatusInfo,
     ext: &proxy_agent_shared::service::ServiceStatusInfo,
+    svc: &proxy_agent_shared::service::ServiceStatusInfo,
 ) -> SubStatus {
-    use proxy_agent_shared::service::ServiceState;
+    use proxy_agent_shared::service::classify_service_state;
 
-    let (status, code, message) = match (&core.state, &ext.state) {
-        (Some(core_state), Some(ext_state)) => {
-            let both_running =
-                *core_state == ServiceState::Running && *ext_state == ServiceState::Running;
-            if both_running {
-                (
-                    constants::SUCCESS_STATUS.to_string(),
-                    constants::STATUS_CODE_OK,
-                    format!(
-                        "EbpfCore: {}, NetEbpfExt: {}",
-                        core.summary(),
-                        ext.summary()
-                    ),
-                )
-            } else {
-                (
-                    constants::ERROR_STATUS.to_string(),
-                    constants::STATUS_CODE_NOT_OK,
-                    format!(
-                        "EbpfCore: {}, NetEbpfExt: {}",
-                        core.summary(),
-                        ext.summary()
-                    ),
-                )
-            }
-        }
-        (None, None) => (
-            constants::ERROR_STATUS.to_string(),
-            constants::STATUS_CODE_NOT_OK,
-            "EbpfCore: unsuccessfully queried, NetEbpfExt: unsuccessfully queried.".to_string(),
-        ),
-        (None, _) => (
-            constants::ERROR_STATUS.to_string(),
-            constants::STATUS_CODE_NOT_OK,
-            format!(
-                "EbpfCore: unsuccessfully queried, NetEbpfExt: {}",
-                ext.summary()
-            ),
-        ),
-        (_, None) => (
-            constants::ERROR_STATUS.to_string(),
-            constants::STATUS_CODE_NOT_OK,
-            format!(
-                "EbpfCore: {}, NetEbpfExt: unsuccessfully queried.",
-                core.summary()
-            ),
-        ),
-    };
+    let (status, code) = combined_service_health(&[
+        classify_service_state(core.state.as_ref()),
+        classify_service_state(ext.state.as_ref()),
+        classify_service_state(svc.state.as_ref()),
+    ]);
+
+    let message = format!(
+        "EbpfCore: {}, NetEbpfExt: {}, eBPFSvc: {}",
+        core.summary(),
+        ext.summary(),
+        svc.summary()
+    );
 
     SubStatus {
         name: constants::EBPF_SUBSTATUS_NAME.to_string(),
@@ -418,16 +434,86 @@ fn build_ebpf_substatus(
 }
 
 #[cfg(windows)]
-fn report_ebpf_status(status_obj: &mut StatusObj) {
+fn compute_ebpf_substatus() -> SubStatus {
     let core_status = service::check_service_status(constants::EBPF_CORE);
     logger::write(format!("check_service_status: {}", core_status.message()));
 
     let ext_status = service::check_service_status(constants::EBPF_EXT);
     logger::write(format!("check_service_status: {}", ext_status.message()));
 
-    let mut substatus = status_obj.substatus.clone();
-    substatus.push(build_ebpf_substatus(&core_status, &ext_status));
-    status_obj.substatus = substatus;
+    let svc_status = service::check_service_status(constants::EBPF_SVC);
+    logger::write(format!("check_service_status: {}", svc_status.message()));
+
+    build_ebpf_substatus(&core_status, &ext_status, &svc_status)
+}
+
+/// Builds the cross-platform `ProxyAgentServiceStatus` substatus for the GuestProxyAgent
+/// service itself (Windows SCM service or Linux systemd unit).
+fn build_proxy_agent_service_substatus(
+    info: &proxy_agent_shared::service::ServiceRuntimeStatus,
+) -> SubStatus {
+    let (status, code) = combined_service_health(&[(info.is_running, info.is_transitioning)]);
+
+    SubStatus {
+        name: constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME.to_string(),
+        status,
+        code,
+        formattedMessage: FormattedMessage {
+            lang: constants::LANG_EN_US.to_string(),
+            message: format!(
+                "{}: {}",
+                constants::PROXY_AGENT_SERVICE_NAME,
+                info.summary()
+            ),
+        },
+    }
+}
+
+fn compute_gpa_service_substatus() -> SubStatus {
+    let info =
+        proxy_agent_shared::service::check_service_run_status(constants::PROXY_AGENT_SERVICE_NAME);
+    logger::write(format!("check_service_run_status: {}", info.message()));
+    build_proxy_agent_service_substatus(&info)
+}
+
+/// If `substatus` is Error, overrides `status`'s top-level status/code/message with the
+/// substatus detail plus the last known timestamp and current time, bypassing the debounce
+/// state machine. Shared by the eBPF and GuestProxyAgent-service override call sites.
+fn apply_sub_status_override_in_error(
+    status: &mut StatusObj,
+    substatus: &SubStatus,
+    last_known_status_timestamp: &str,
+) -> bool {
+    if substatus.status != constants::ERROR_STATUS {
+        return false;
+    }
+    status.status = constants::ERROR_STATUS.to_string();
+    status.code = constants::STATUS_CODE_NOT_OK;
+    status.formattedMessage.message = format!(
+        "{}. Last status timestamp: {}, Current time: {}",
+        substatus.formattedMessage.message,
+        last_known_status_timestamp,
+        misc_helpers::get_current_utc_time()
+    );
+    true
+}
+
+/// Windows-only priority: eBPF errors win over GuestProxyAgent-service errors, since an
+/// unhealthy eBPF is often the underlying cause. Falls through only if eBPF is healthy.
+#[cfg(windows)]
+fn apply_service_health_overrides(
+    status: &mut StatusObj,
+    ebpf_substatus: &SubStatus,
+    gpa_service_substatus: &SubStatus,
+    last_known_status_timestamp: &str,
+) {
+    if !apply_sub_status_override_in_error(status, ebpf_substatus, last_known_status_timestamp) {
+        apply_sub_status_override_in_error(
+            status,
+            gpa_service_substatus,
+            last_known_status_timestamp,
+        );
+    }
 }
 
 fn backup_proxy_agent(setup_tool: &String) {
@@ -533,12 +619,15 @@ async fn get_proxy_agent_aggregate_status(
     }
 }
 
+/// Reads and evaluates the proxy agent aggregate status, returning the raw status timestamp
+/// (formatted) it observed when the fetch succeeded at all, or `None` when the fetch failed
+/// outright (callers should keep whatever timestamp they last observed in that case).
 async fn report_proxy_agent_aggregate_status(
     proxy_agent_file_version_in_extension: &String,
     status: &mut StatusObj,
     status_state_obj: &mut common::StatusState,
     service_state: &mut ServiceState,
-) {
+) -> Option<String> {
     let proxy_agent_aggregate_status_top_level: GuestProxyAgentAggregateStatus;
     // Attempt to get the proxy agent aggregate status from the GPA Proxy Server.
     // If the GPA Proxy Server is not available, fall back to reading the status from the file.
@@ -566,6 +655,10 @@ async fn report_proxy_agent_aggregate_status(
                 service_state,
             );
             proxy_agent_aggregate_status_top_level = proxy_agent_aggregate_status;
+            let status_timestamp = proxy_agent_aggregate_status_top_level
+                .get_status_timestamp()
+                .ok()
+                .map(|ts| ts.to_string());
             extension_substatus(
                 proxy_agent_aggregate_status_top_level,
                 proxy_agent_file_version_in_extension,
@@ -573,6 +666,7 @@ async fn report_proxy_agent_aggregate_status(
                 status_state_obj,
                 service_state,
             );
+            status_timestamp
         }
         Err(e) => {
             let error_message = format!("{e}");
@@ -617,6 +711,7 @@ async fn report_proxy_agent_aggregate_status(
                     },
                 ]
             };
+            None
         }
     }
 }
@@ -1088,6 +1183,7 @@ mod tests {
             userName: "test".to_string(),
             ip: "test".to_string(),
             port: 1,
+            addressFamily: "IPv4".to_string(),
             processCmdLine: "test".to_string(),
             responseStatus: "test".to_string(),
             count: 1,
@@ -1219,7 +1315,7 @@ mod tests {
 
     #[tokio::test]
     #[cfg(windows)]
-    async fn test_report_ebpf_status() {
+    async fn test_compute_ebpf_substatus() {
         let mut status = make_test_status_obj(
             constants::SUCCESS_STATUS,
             constants::STATUS_CODE_OK,
@@ -1255,7 +1351,7 @@ mod tests {
             },
         ];
 
-        super::report_ebpf_status(&mut status);
+        status.substatus.push(super::compute_ebpf_substatus());
         assert_eq!(
             status.substatus[0].name,
             constants::PLUGIN_CONNECTION_NAME.to_string()
@@ -1273,43 +1369,129 @@ mod tests {
             constants::EBPF_SUBSTATUS_NAME.to_string()
         );
 
-        // Verify the eBPF substatus message includes service status info
+        // Verify the eBPF substatus message includes all three services, and that status/code
+        // are internally consistent (adaptive to whatever eBPF-for-Windows state the test
+        // runner happens to have installed).
         let ebpf_substatus = &status.substatus[3];
         let ebpf_message = &ebpf_substatus.formattedMessage.message;
-        if ebpf_message.contains("unsuccessfully queried") {
-            // At least one service not installed — status should be Error
-            assert_eq!(
-                ebpf_substatus.status,
-                constants::ERROR_STATUS,
-                "Expected Error status when a service is not installed"
-            );
+        assert!(
+            ebpf_message.contains("EbpfCore:"),
+            "Expected message to contain 'EbpfCore:', got: {ebpf_message}"
+        );
+        assert!(
+            ebpf_message.contains("NetEbpfExt:"),
+            "Expected message to contain 'NetEbpfExt:', got: {ebpf_message}"
+        );
+        assert!(
+            ebpf_message.contains("eBPFSvc:"),
+            "Expected message to contain 'eBPFSvc:', got: {ebpf_message}"
+        );
+        if ebpf_substatus.status == constants::SUCCESS_STATUS {
+            assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
+        } else if ebpf_substatus.status == constants::TRANSITIONING_STATUS {
+            // A service could legitimately be caught mid-start on the test runner; code stays
+            // OK while Transitioning, consistent with the existing set_error/set_success
+            // code/status coupling convention used elsewhere in this file.
+            assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
         } else {
-            // Both services found — message should contain status details for each driver
-            assert!(
-                ebpf_message.contains("EbpfCore:"),
-                "Expected message to contain 'EbpfCore:', got: {ebpf_message}"
-            );
-            assert!(
-                ebpf_message.contains("NetEbpfExt:"),
-                "Expected message to contain 'NetEbpfExt:', got: {ebpf_message}"
-            );
-            // Status depends on whether both services are running
-            if ebpf_message.contains("Running") && !ebpf_message.contains("Stopped") {
-                assert_eq!(
-                    ebpf_substatus.status,
-                    constants::SUCCESS_STATUS,
-                    "Expected Success when both services are running"
-                );
-                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
-            } else {
-                assert_eq!(
-                    ebpf_substatus.status,
-                    constants::ERROR_STATUS,
-                    "Expected Error when at least one service is not running"
-                );
-                assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_NOT_OK);
-            }
+            assert_eq!(ebpf_substatus.status, constants::ERROR_STATUS);
+            assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_NOT_OK);
         }
+    }
+
+    #[test]
+    fn test_compute_gpa_service_substatus() {
+        // Cross-platform (unlike compute_ebpf_substatus): exercises the real
+        // check_service_run_status call against whatever GuestProxyAgent service state the
+        // test runner has, and just checks the result is internally consistent.
+        let substatus = super::compute_gpa_service_substatus();
+        assert_eq!(
+            substatus.name,
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME
+        );
+        assert!(
+            substatus
+                .formattedMessage
+                .message
+                .starts_with(&format!("{}: ", constants::PROXY_AGENT_SERVICE_NAME)),
+            "Expected message to start with '{}: ', got: {}",
+            constants::PROXY_AGENT_SERVICE_NAME,
+            substatus.formattedMessage.message
+        );
+        if substatus.status == constants::SUCCESS_STATUS {
+            assert_eq!(substatus.code, constants::STATUS_CODE_OK);
+        } else if substatus.status == constants::TRANSITIONING_STATUS {
+            assert_eq!(substatus.code, constants::STATUS_CODE_OK);
+        } else {
+            assert_eq!(substatus.status, constants::ERROR_STATUS);
+            assert_eq!(substatus.code, constants::STATUS_CODE_NOT_OK);
+        }
+    }
+
+    #[test]
+    fn test_combined_service_health() {
+        let running = (true, false);
+        let starting_up = (false, true);
+        let down = (false, false);
+
+        // All running -> Success
+        assert_eq!(
+            super::combined_service_health(&[running, running, running]),
+            (
+                constants::SUCCESS_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // Single service, running -> Success (covers the GuestProxyAgent-service call shape)
+        assert_eq!(
+            super::combined_service_health(&[running]),
+            (
+                constants::SUCCESS_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // Any confirmed down -> Error, regardless of how many other services are running
+        assert_eq!(
+            super::combined_service_health(&[running, down, running]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
+        assert_eq!(
+            super::combined_service_health(&[down]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
+
+        // Nothing confirmed down, but something is still starting up -> Transitioning
+        assert_eq!(
+            super::combined_service_health(&[running, starting_up, running]),
+            (
+                constants::TRANSITIONING_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+        assert_eq!(
+            super::combined_service_health(&[starting_up]),
+            (
+                constants::TRANSITIONING_STATUS.to_string(),
+                constants::STATUS_CODE_OK
+            )
+        );
+
+        // A confirmed-down service takes priority over a transitioning one
+        assert_eq!(
+            super::combined_service_health(&[starting_up, down]),
+            (
+                constants::ERROR_STATUS.to_string(),
+                constants::STATUS_CODE_NOT_OK
+            )
+        );
     }
 
     #[test]
@@ -1330,23 +1512,61 @@ mod tests {
             }
         }
 
-        // 1. Both not installed
+        let running = || Some(ServiceState::Running);
+        let stopped = || Some(ServiceState::Stopped);
+
+        // 1. All three not installed
         let sub = super::build_ebpf_substatus(
             &make_info(constants::EBPF_CORE, None),
             &make_info(constants::EBPF_EXT, None),
+            &make_info(constants::EBPF_SVC, None),
         );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "Both not installed");
+        assert_eq!(sub.status, constants::ERROR_STATUS, "All not installed");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
         let msg = &sub.formattedMessage.message;
         assert!(
-            msg.contains(constants::EBPF_CORE) && msg.contains(constants::EBPF_EXT),
-            "Expected both driver names in message, got: {msg}"
+            msg.contains(constants::EBPF_CORE)
+                && msg.contains(constants::EBPF_EXT)
+                && msg.contains(constants::EBPF_SVC),
+            "Expected all three service names in message, got: {msg}"
         );
 
-        // 2. Core not installed, Ext running
+        // 2. Core+Ext running, eBPFSvc not installed → still Error (all three required)
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, None),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "eBPFSvc not installed should still be Error even if Core+Ext are healthy"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        let msg = &sub.formattedMessage.message;
+        assert!(
+            msg.contains("eBPFSvc: NotInstalled"),
+            "Expected eBPFSvc: NotInstalled in message, got: {msg}"
+        );
+
+        // 3. Core+Ext running, eBPFSvc stopped → Error
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, stopped()),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "eBPFSvc stopped should be Error even if Core+Ext are healthy"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // 4. Core not installed, Ext+Svc running → Error
         let sub = super::build_ebpf_substatus(
             &make_info(constants::EBPF_CORE, None),
-            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, running()),
         );
         assert_eq!(sub.status, constants::ERROR_STATUS, "Core not installed");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
@@ -1357,70 +1577,453 @@ mod tests {
         );
         assert!(
             msg.contains("Running"),
-            "Expected Ext summary (Running) in message, got: {msg}"
+            "Expected Ext/Svc summary (Running) in message, got: {msg}"
         );
 
-        // 3. Core running, Ext not installed
+        // 5. Ext not installed, Core+Svc running → Error
         let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_CORE, running()),
             &make_info(constants::EBPF_EXT, None),
+            &make_info(constants::EBPF_SVC, running()),
         );
         assert_eq!(sub.status, constants::ERROR_STATUS, "Ext not installed");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
-        let msg = &sub.formattedMessage.message;
-        assert!(
-            msg.contains("Running"),
-            "Expected Core summary (Running) in message, got: {msg}"
-        );
-        assert!(
-            msg.contains(constants::EBPF_EXT),
-            "Expected NetEbpfExt in message, got: {msg}"
-        );
 
-        // 4. Both running → success
+        // 6. All three running → Success
         let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
-            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, running()),
         );
-        assert_eq!(sub.status, constants::SUCCESS_STATUS, "Both running");
+        assert_eq!(sub.status, constants::SUCCESS_STATUS, "All three running");
         assert_eq!(sub.code, constants::STATUS_CODE_OK);
         let msg = &sub.formattedMessage.message;
         assert!(
-            msg.contains("EbpfCore:") && msg.contains("NetEbpfExt:"),
-            "Expected both driver labels in message, got: {msg}"
+            msg.contains("EbpfCore:") && msg.contains("NetEbpfExt:") && msg.contains("eBPFSvc:"),
+            "Expected all three driver labels in message, got: {msg}"
         );
 
-        // 5. Core stopped, Ext running → error
+        // 7. Core stopped, Ext+Svc running → Error
         let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::Stopped)),
-            &make_info(constants::EBPF_EXT, Some(ServiceState::Running)),
+            &make_info(constants::EBPF_CORE, stopped()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, running()),
         );
         assert_eq!(
             sub.status,
             constants::ERROR_STATUS,
-            "Core stopped, Ext running"
+            "Core stopped, Ext+Svc running"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
 
-        // 6. Core running, Ext stopped → error
+        // 8. Core running, Ext stopped, Svc running → Error
         let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::Running)),
-            &make_info(constants::EBPF_EXT, Some(ServiceState::Stopped)),
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, stopped()),
+            &make_info(constants::EBPF_SVC, running()),
         );
         assert_eq!(
             sub.status,
             constants::ERROR_STATUS,
-            "Core running, Ext stopped"
+            "Core running, Ext stopped, Svc running"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
 
-        // 7. Both stopped → error
+        // 9. All three stopped → Error
         let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::Stopped)),
-            &make_info(constants::EBPF_EXT, Some(ServiceState::Stopped)),
+            &make_info(constants::EBPF_CORE, stopped()),
+            &make_info(constants::EBPF_EXT, stopped()),
+            &make_info(constants::EBPF_SVC, stopped()),
         );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "Both stopped");
+        assert_eq!(sub.status, constants::ERROR_STATUS, "All three stopped");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error
+        // (a mid-restart service must not immediately flip the top-level status to Error).
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, running()),
+        );
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "Core starting up should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+
+        // 11. Svc resuming (ContinuePending), Core+Ext running → Transitioning, not Error.
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, running()),
+            &make_info(constants::EBPF_EXT, running()),
+            &make_info(constants::EBPF_SVC, Some(ServiceState::ContinuePending)),
+        );
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "Svc resuming should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+
+        // 12. Core starting up (StartPending) AND Ext confirmed stopped → Error wins over
+        // Transitioning, since at least one service is confirmed down.
+        let sub = super::build_ebpf_substatus(
+            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
+            &make_info(constants::EBPF_EXT, stopped()),
+            &make_info(constants::EBPF_SVC, running()),
+        );
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "A confirmed-down service should still report Error even if another is transitioning"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+    }
+
+    #[test]
+    fn test_build_proxy_agent_service_substatus() {
+        use proxy_agent_shared::service::ServiceRuntimeStatus;
+
+        // Running → Success
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: true,
+            is_running: true,
+            is_transitioning: false,
+            state_display: "Running".to_string(),
+            start_type_display: "AutoStart".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(sub.name, constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME);
+        assert_eq!(sub.status, constants::SUCCESS_STATUS);
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+        assert_eq!(
+            sub.formattedMessage.message,
+            format!(
+                "{}: Running, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            )
+        );
+
+        // Stopped → Error
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: true,
+            is_running: false,
+            is_transitioning: false,
+            state_display: "Stopped".to_string(),
+            start_type_display: "AutoStart".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(sub.status, constants::ERROR_STATUS);
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        assert_eq!(
+            sub.formattedMessage.message,
+            format!(
+                "{}: Stopped, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            )
+        );
+
+        // Disabled (installed but not running, start type Disabled) → Error
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: true,
+            is_running: false,
+            is_transitioning: false,
+            state_display: "Stopped".to_string(),
+            start_type_display: "Disabled".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(sub.status, constants::ERROR_STATUS);
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+
+        // Not installed → Error, "NotInstalled" summary
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: false,
+            is_running: false,
+            is_transitioning: false,
+            state_display: "NotInstalled".to_string(),
+            start_type_display: "NotInstalled".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(sub.status, constants::ERROR_STATUS);
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        assert_eq!(
+            sub.formattedMessage.message,
+            format!("{}: NotInstalled", constants::PROXY_AGENT_SERVICE_NAME)
+        );
+
+        // Starting up (StartPending/"activating") → Transitioning, not Error (a mid-restart
+        // service must not immediately flip the top-level status to Error).
+        let info = ServiceRuntimeStatus {
+            service_name: constants::PROXY_AGENT_SERVICE_NAME.to_string(),
+            is_installed: true,
+            is_running: false,
+            is_transitioning: true,
+            state_display: "StartPending".to_string(),
+            start_type_display: "AutoStart".to_string(),
+        };
+        let sub = super::build_proxy_agent_service_substatus(&info);
+        assert_eq!(
+            sub.status,
+            constants::TRANSITIONING_STATUS,
+            "A service starting up should be Transitioning, not Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
+        assert_eq!(
+            sub.formattedMessage.message,
+            format!(
+                "{}: StartPending, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            )
+        );
+    }
+
+    #[test]
+    fn test_apply_sub_status_override_in_error() {
+        // The override behavior is identical regardless of which substatus (eBPF or
+        // GuestProxyAgent-service) is passed in, so a single test exercises the shared
+        // function with representative substatus shapes from both call sites.
+        let make_sub = |name: &str, status: &str, message: &str| SubStatus {
+            name: name.to_string(),
+            status: status.to_string(),
+            code: if status == constants::ERROR_STATUS {
+                constants::STATUS_CODE_NOT_OK
+            } else {
+                constants::STATUS_CODE_OK
+            },
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: message.to_string(),
+            },
+        };
+
+        let ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: Stopped, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+
+        // Error substatus overrides an otherwise-Success status
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let overridden = super::apply_sub_status_override_in_error(
+            &mut status,
+            &ebpf_sub,
+            "2026-08-21 8:13:38.104 +00:00:00",
+        );
+        assert!(overridden);
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("NetEbpfExt: Stopped"));
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
+        assert!(status.formattedMessage.message.contains("Current time:"));
+
+        // Error substatus overrides an already-Error stale message too
+        let mut status = make_test_status_obj(
+            constants::ERROR_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Proxy agent aggregate status file is stale. Status timestamp: ..., Current time: ...",
+        );
+        let overridden = super::apply_sub_status_override_in_error(
+            &mut status,
+            &ebpf_sub,
+            "2026-08-21 8:13:38.104 +00:00:00",
+        );
+        assert!(overridden);
+        assert!(!status.formattedMessage.message.contains("stale"));
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("NetEbpfExt: Stopped"));
+
+        // Healthy substatus (eBPF-shaped) leaves the existing message untouched
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let healthy_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::SUCCESS_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let overridden =
+            super::apply_sub_status_override_in_error(&mut status, &healthy_ebpf_sub, "irrelevant");
+        assert!(!overridden);
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
+
+        // Transitioning substatus (e.g. a service mid-boot/mid-restart) must NOT trigger the
+        // override - regression test for the reviewer finding that this override previously
+        // fired immediately on any non-Running state, including benign transitional ones.
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let transitioning_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::TRANSITIONING_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: StartPending, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let overridden = super::apply_sub_status_override_in_error(
+            &mut status,
+            &transitioning_ebpf_sub,
+            "irrelevant",
+        );
+        assert!(
+            !overridden,
+            "Transitioning substatus must not trigger the immediate override"
+        );
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
+
+        // GuestProxyAgent-service-shaped substatus works identically (Error overrides, with
+        // its own message content and no gating on the top-level status already being Error)
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        let gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            &format!(
+                "{}: Stopped, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
+        let overridden = super::apply_sub_status_override_in_error(
+            &mut status,
+            &gpa_sub,
+            "2026-08-21 8:13:38.104 +00:00:00",
+        );
+        assert!(overridden);
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("Stopped, AutoStart"));
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_apply_service_health_overrides_priority() {
+        let make_sub = |name: &str, status: &str, message: &str| SubStatus {
+            name: name.to_string(),
+            status: status.to_string(),
+            code: if status == constants::ERROR_STATUS {
+                constants::STATUS_CODE_NOT_OK
+            } else {
+                constants::STATUS_CODE_OK
+            },
+            formattedMessage: FormattedMessage {
+                lang: constants::LANG_EN_US.to_string(),
+                message: message.to_string(),
+            },
+        };
+
+        let error_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            "EbpfCore: Stopped, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let healthy_ebpf_sub = make_sub(
+            constants::EBPF_SUBSTATUS_NAME,
+            constants::SUCCESS_STATUS,
+            "EbpfCore: Running, AutoStart, NetEbpfExt: Running, AutoStart, eBPFSvc: Running, AutoStart",
+        );
+        let error_gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
+            constants::ERROR_STATUS,
+            &format!(
+                "{}: Stopped, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
+        let healthy_gpa_sub = make_sub(
+            constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
+            constants::SUCCESS_STATUS,
+            &format!(
+                "{}: Running, AutoStart",
+                constants::PROXY_AGENT_SERVICE_NAME
+            ),
+        );
+
+        // Both unhealthy -> eBPF wins (message shows eBPF detail, not GPA-service detail)
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(&mut status, &error_ebpf_sub, &error_gpa_sub, "ts");
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("EbpfCore: Stopped"));
+        assert!(
+            !status
+                .formattedMessage
+                .message
+                .contains(constants::PROXY_AGENT_SERVICE_NAME),
+            "GPA-service detail should not appear when eBPF already overrode the message, got: {}",
+            status.formattedMessage.message
+        );
+
+        // eBPF healthy, GPA-service unhealthy -> falls through to the GPA-service override
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(&mut status, &healthy_ebpf_sub, &error_gpa_sub, "ts");
+        assert_eq!(status.status, constants::ERROR_STATUS);
+        assert!(status
+            .formattedMessage
+            .message
+            .contains("GuestProxyAgent: Stopped"));
+
+        // Both healthy -> no override at all, message left untouched
+        let mut status = make_test_status_obj(
+            constants::SUCCESS_STATUS,
+            constants::STATUS_CODE_OK,
+            "ProxyAgent extension is reporting successful status.",
+        );
+        super::apply_service_health_overrides(
+            &mut status,
+            &healthy_ebpf_sub,
+            &healthy_gpa_sub,
+            "ts",
+        );
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
     }
 
     #[tokio::test]

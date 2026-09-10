@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-const MAX_MESSAGE_LENGTH: usize = 1024 * 4; // 4KB
 static EVENT_QUEUE: Lazy<ConcurrentQueue<Event>> =
     Lazy::new(|| ConcurrentQueue::<Event>::bounded(1000));
 static SHUT_DOWN: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
@@ -300,11 +299,13 @@ pub fn write_event(
 /// Write event only without logging to file
 /// This event will send out as `TelemetryGenericLogsEvent`
 pub fn write_event_only(level: Level, message: String, method_name: &str, module_name: &str) {
-    let event_message = if message.len() > MAX_MESSAGE_LENGTH {
-        message[..MAX_MESSAGE_LENGTH].to_string()
-    } else {
-        message.to_string()
-    };
+    // Truncate the event message to the maximum allowed telemetry message length before sending it to the memory queue.
+    let mut event_message = message;
+    misc_helpers::truncate_to_char_boundary(
+        &mut event_message,
+        super::telemetry_event::MAX_TELEMETRY_MESSAGE_LENGTH,
+    );
+
     match EVENT_QUEUE.push(Event::new(
         level.to_string(),
         event_message,
@@ -327,14 +328,12 @@ pub fn push_windows_event(windows_event: crate::windows_events::models::WindowsE
     if let (Some(provider_name), Some(task_name)) =
         (&windows_event.provider_name, &windows_event.task_name)
     {
-        let event_message = {
-            let message = windows_event.get_message();
-            if message.len() > MAX_MESSAGE_LENGTH {
-                message[..MAX_MESSAGE_LENGTH].to_string()
-            } else {
-                message
-            }
-        };
+        // Truncate the event message to the maximum allowed telemetry message length before sending it to the memory queue.
+        let mut event_message = windows_event.get_message();
+        misc_helpers::truncate_to_char_boundary(
+            &mut event_message,
+            super::telemetry_event::MAX_TELEMETRY_MESSAGE_LENGTH,
+        );
 
         match EVENT_QUEUE.push(Event {
             EventLevel: windows_event.get_level_string(),

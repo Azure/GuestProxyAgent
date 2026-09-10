@@ -8,6 +8,7 @@ use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::{
+    borrow::Cow,
     fs::{self, File},
     path::{Path, PathBuf},
     process::Command,
@@ -245,24 +246,164 @@ where
     Ok(())
 }
 
+/// Reads `file_path`, decodes it using the detected text encoding and
+/// deserializes the resulting JSON into `T`.
+///
+/// Supports UTF-8, UTF-16LE, UTF-16BE, UTF-32LE and UTF-32BE, each with or
+/// without a BOM - the 10 encodings a JSON file produced by an arbitrary
+/// editor or tool can realistically use. Any BOM is consumed while decoding and
+/// never reaches serde_json, which would fail if the json payload contains BOM prefix.
 pub fn json_read_from_file<T>(file_path: &Path) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    // Read the whole file to bytes so we can transparently skip an optional
-    // UTF-8 BOM (EF BB BF). serde_json does not strip a BOM and would otherwise
-    // fail the parse with "expected value at line 1 column 1" for any file
-    // produced by editors / tools that default to BOM-prefixed UTF-8 (e.g.
-    // Windows PowerShell 5.1's `Set-Content -Encoding UTF8`, Notepad, VS Code's
-    // "UTF-8 with BOM").
     let bytes = fs::read(file_path)?;
-    let payload = match bytes.as_slice() {
-        [0xEF, 0xBB, 0xBF, rest @ ..] => rest,
-        rest => rest,
-    };
-    let obj: T = serde_json::from_slice(payload)?;
+    let text = decode_text(&bytes)
+        .map_err(|detail| Error::DecodeFile(path_to_string(file_path), detail))?;
+    let obj: T = serde_json::from_str(&text)?;
 
     Ok(obj)
+}
+
+/// The Unicode transformation format of the detected encoding.
+#[derive(Clone, Copy)]
+enum TextEncoding {
+    /// UTF-8 (and plain ASCII) - 1 byte per code unit.
+    Utf8,
+    /// UTF-16 - 2 bytes per code unit.
+    Utf16,
+    /// UTF-32 - 4 bytes per code unit.
+    Utf32,
+}
+
+/// The text encoding detected from the leading bytes of a file.
+struct DetectedEncoding {
+    /// The Unicode transformation format.
+    text_encoding: TextEncoding,
+    /// True for big endian, false for little endian. Not meaningful for UTF-8.
+    big_endian: bool,
+    /// Length of the BOM in bytes, 0 when the file has no BOM.
+    bom_len: usize,
+}
+
+impl DetectedEncoding {
+    const fn new(text_encoding: TextEncoding, big_endian: bool, bom_len: usize) -> Self {
+        Self {
+            text_encoding,
+            big_endian,
+            bom_len,
+        }
+    }
+}
+
+/// Detects the text encoding of `bytes`.
+///
+/// A BOM is a Unicode construct rather than a JSON one, so BOM detection here is
+/// format agnostic. The BOM-less fallback, however, assumes the document starts
+/// with an ASCII character - true for JSON, XML and most text config formats.
+///
+/// Wider BOMs must be tested first: the UTF-32LE BOM (FF FE 00 00) starts with
+/// the UTF-16LE BOM (FF FE), so a shortest-first scan would mis-detect a
+/// UTF-32LE file as UTF-16LE.
+fn detect_text_encoding(bytes: &[u8]) -> DetectedEncoding {
+    if bytes.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        DetectedEncoding::new(TextEncoding::Utf32, true, 4) // UTF-32BE with BOM
+    } else if bytes.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        DetectedEncoding::new(TextEncoding::Utf32, false, 4) // UTF-32LE with BOM
+    } else if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        DetectedEncoding::new(TextEncoding::Utf8, false, 3) // UTF-8 with BOM
+    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+        DetectedEncoding::new(TextEncoding::Utf16, true, 2) // UTF-16BE with BOM
+    } else if bytes.starts_with(&[0xFF, 0xFE]) {
+        DetectedEncoding::new(TextEncoding::Utf16, false, 2) // UTF-16LE with BOM
+    } else {
+        // No BOM. The document is expected to start with an ASCII character
+        // (for JSON that is `[`, `{`, `"`, a digit or whitespace), so the NUL
+        // padding around the first code unit identifies both the width and the
+        // byte order. The 4-byte patterns are checked first because they are a
+        // superset of the 2-byte ones.
+        let is_nul = |i: usize| bytes.get(i) == Some(&0x00);
+        let is_text = |i: usize| matches!(bytes.get(i), Some(b) if *b != 0x00);
+
+        if is_nul(0) && is_nul(1) && is_nul(2) && is_text(3) {
+            DetectedEncoding::new(TextEncoding::Utf32, true, 0) // 00 00 00 xx -> UTF-32BE
+        } else if is_text(0) && is_nul(1) && is_nul(2) && is_nul(3) {
+            DetectedEncoding::new(TextEncoding::Utf32, false, 0) // xx 00 00 00 -> UTF-32LE
+        } else if is_nul(0) && is_text(1) {
+            DetectedEncoding::new(TextEncoding::Utf16, true, 0) // 00 xx -> UTF-16BE
+        } else if is_text(0) && is_nul(1) {
+            DetectedEncoding::new(TextEncoding::Utf16, false, 0) // xx 00 -> UTF-16LE
+        } else {
+            DetectedEncoding::new(TextEncoding::Utf8, false, 0) // anything else, including plain ASCII / UTF-8
+        }
+    }
+}
+
+/// Decodes `bytes` into UTF-8 text using the encoding detected by
+/// [`detect_text_encoding`], skipping the BOM when present.
+/// UTF-8 input is borrowed as-is, so the common case does not allocate.
+///
+/// On failure it returns only a description of what made the content
+/// undecodable; the caller attaches the source of the bytes.
+fn decode_text(bytes: &[u8]) -> std::result::Result<Cow<'_, str>, String> {
+    let encoding = detect_text_encoding(bytes);
+    let big_endian = encoding.big_endian;
+    let payload = &bytes[encoding.bom_len..];
+
+    match encoding.text_encoding {
+        TextEncoding::Utf8 => std::str::from_utf8(payload)
+            .map(Cow::Borrowed)
+            .map_err(|e| format!("content is not valid UTF-8: {e}")),
+        TextEncoding::Utf16 => {
+            if !payload.len().is_multiple_of(2) {
+                return Err(format!(
+                    "UTF-16 content is truncated: {} bytes is not a whole number of 16-bit code units",
+                    payload.len()
+                ));
+            }
+
+            let code_units = payload.chunks_exact(2).map(|chunk| {
+                let unit = [chunk[0], chunk[1]];
+                if big_endian {
+                    u16::from_be_bytes(unit)
+                } else {
+                    u16::from_le_bytes(unit)
+                }
+            });
+
+            // `decode_utf16` pairs surrogates, so astral-plane characters
+            // (emoji) are reassembled correctly; a lone surrogate is rejected
+            // rather than silently replaced.
+            char::decode_utf16(code_units)
+                .collect::<std::result::Result<String, _>>()
+                .map(Cow::Owned)
+                .map_err(|e| format!("UTF-16 content has an unpaired surrogate: {e}"))
+        }
+        TextEncoding::Utf32 => {
+            if !payload.len().is_multiple_of(4) {
+                return Err(format!(
+                    "UTF-32 content is truncated: {} bytes is not a whole number of 32-bit code units",
+                    payload.len()
+                ));
+            }
+
+            payload
+                .chunks_exact(4)
+                .map(|chunk| {
+                    let unit = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                    let scalar = if big_endian {
+                        u32::from_be_bytes(unit)
+                    } else {
+                        u32::from_le_bytes(unit)
+                    };
+                    char::from_u32(scalar).ok_or_else(|| {
+                        format!("UTF-32 content has an invalid scalar value: {scalar:#010X}")
+                    })
+                })
+                .collect::<std::result::Result<String, String>>()
+                .map(Cow::Owned)
+        }
+    }
 }
 
 pub fn json_clone<T>(obj: &T) -> Result<T>
@@ -539,6 +680,24 @@ pub fn xml_escape(s: String) -> String {
         .replace('>', "&gt;")
 }
 
+/// Truncate the given string to the specified maximum number of bytes, ensuring that it does not cut off in the middle of a character.
+/// # Arguments
+/// * `text` - The string to be truncated
+/// * `max_bytes_size` - The maximum number of bytes the string should occupy
+/// # Notes
+/// This function ensures that the resulting string is valid UTF-8 by truncating at character boundaries.
+pub fn truncate_to_char_boundary(text: &mut String, max_bytes_size: usize) {
+    if text.len() <= max_bytes_size {
+        return;
+    }
+
+    let mut end = max_bytes_size;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+}
+
 #[cfg(test)]
 mod tests {
     use regex::Regex;
@@ -642,6 +801,156 @@ mod tests {
         assert!(super::json_read_from_file::<Small>(&bom_only).is_err());
 
         _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn json_read_from_file_supports_all_ten_encodings_test() {
+        // Latin-1 accent + CJK + an astral-plane emoji (a surrogate pair in
+        // UTF-16) so multi-byte decoding and surrogate pairing are exercised,
+        // not just the ASCII fast path.
+        const NON_ASCII_MESSAGE: &str = "caf\u{00e9} \u{6d4b}\u{8bd5} \u{1F600}";
+
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct EncodingTestStruct {
+            name: String,
+            code: i32,
+            message: String,
+            enabled: bool,
+        }
+
+        #[derive(Clone, Copy)]
+        enum Encoding {
+            Utf8,
+            Utf16Le,
+            Utf16Be,
+            Utf32Le,
+            Utf32Be,
+        }
+
+        /// Encodes `text` into the raw bytes written to each test file.
+        fn encode(text: &str, encoding: Encoding, with_bom: bool) -> Vec<u8> {
+            let mut bytes = Vec::new();
+
+            if with_bom {
+                bytes.extend_from_slice(match encoding {
+                    Encoding::Utf8 => &[0xEF, 0xBB, 0xBF][..],
+                    Encoding::Utf16Le => &[0xFF, 0xFE][..],
+                    Encoding::Utf16Be => &[0xFE, 0xFF][..],
+                    Encoding::Utf32Le => &[0xFF, 0xFE, 0x00, 0x00][..],
+                    Encoding::Utf32Be => &[0x00, 0x00, 0xFE, 0xFF][..],
+                });
+            }
+
+            match encoding {
+                Encoding::Utf8 => bytes.extend_from_slice(text.as_bytes()),
+                Encoding::Utf16Le => {
+                    for unit in text.encode_utf16() {
+                        bytes.extend_from_slice(&unit.to_le_bytes());
+                    }
+                }
+                Encoding::Utf16Be => {
+                    for unit in text.encode_utf16() {
+                        bytes.extend_from_slice(&unit.to_be_bytes());
+                    }
+                }
+                Encoding::Utf32Le => {
+                    for ch in text.chars() {
+                        bytes.extend_from_slice(&(ch as u32).to_le_bytes());
+                    }
+                }
+                Encoding::Utf32Be => {
+                    for ch in text.chars() {
+                        bytes.extend_from_slice(&(ch as u32).to_be_bytes());
+                    }
+                }
+            }
+
+            bytes
+        }
+
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("json_read_from_file_supports_all_ten_encodings_test");
+        // clean up and ignore the clean up errors
+        _ = fs::remove_dir_all(&temp_test_path);
+        super::try_create_folder(&temp_test_path).unwrap();
+
+        let json = format!(
+            r#"{{"name":"EncodingTest","code":7,"message":"{NON_ASCII_MESSAGE}","enabled":true}}"#
+        );
+        let expected = EncodingTestStruct {
+            name: "EncodingTest".to_string(),
+            code: 7,
+            message: NON_ASCII_MESSAGE.to_string(),
+            enabled: true,
+        };
+
+        // The same JSON document written 10 times, byte-for-byte encoded
+        // differently. The UTF-32LE-with-BOM case is the ambiguous one: its BOM
+        // starts with the UTF-16LE BOM.
+        let combinations = [
+            ("utf8_bom.json", Encoding::Utf8, true),
+            ("utf8_no_bom.json", Encoding::Utf8, false),
+            ("utf16le_bom.json", Encoding::Utf16Le, true),
+            ("utf16le_no_bom.json", Encoding::Utf16Le, false),
+            ("utf16be_bom.json", Encoding::Utf16Be, true),
+            ("utf16be_no_bom.json", Encoding::Utf16Be, false),
+            ("utf32le_bom.json", Encoding::Utf32Le, true),
+            ("utf32le_no_bom.json", Encoding::Utf32Le, false),
+            ("utf32be_bom.json", Encoding::Utf32Be, true),
+            ("utf32be_no_bom.json", Encoding::Utf32Be, false),
+        ];
+
+        for (file_name, encoding, with_bom) in combinations {
+            let file_path = temp_test_path.join(file_name);
+            fs::write(&file_path, encode(&json, encoding, with_bom)).unwrap();
+
+            let actual = super::json_read_from_file::<EncodingTestStruct>(&file_path)
+                .unwrap_or_else(|e| panic!("{file_name}: {e}"));
+
+            assert_eq!(expected, actual, "{file_name}: decoded payload differs");
+        }
+
+        // Odd byte count cannot be a whole number of UTF-16 code units.
+        let truncated = temp_test_path.join("truncated_utf16.json");
+        fs::write(&truncated, [0x7B, 0x00, 0x22]).unwrap();
+        let error = super::json_read_from_file::<EncodingTestStruct>(&truncated)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("truncated"), "{error}");
+
+        // 0x0011_0000 is one past the highest Unicode scalar value.
+        let bad_scalar = temp_test_path.join("bad_utf32_scalar.json");
+        fs::write(
+            &bad_scalar,
+            [0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00],
+        )
+        .unwrap();
+        let error = super::json_read_from_file::<EncodingTestStruct>(&bad_scalar)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("invalid scalar value"), "{error}");
+
+        _ = fs::remove_dir_all(&temp_test_path);
+    }
+
+    #[test]
+    fn detect_text_encoding_short_input_test() {
+        use super::TextEncoding;
+
+        /// True when `bytes` is detected as plain UTF-8 with no BOM.
+        fn is_utf8_no_bom(bytes: &[u8]) -> bool {
+            let detected = super::detect_text_encoding(bytes);
+            matches!(detected.text_encoding, TextEncoding::Utf8)
+                && !detected.big_endian
+                && detected.bom_len == 0
+        }
+
+        // 1. An empty input is UTF-8 with no BOM.
+        assert!(is_utf8_no_bom(&[]), "empty input");
+        // 2. A single ASCII byte is UTF-8 with no BOM.
+        assert!(is_utf8_no_bom(&[0]), "single NUL byte");
+        // 3. Two bytes that are invalid
+        assert!(is_utf8_no_bom(&[1, 2]), "two invalid bytes");
     }
 
     #[test]

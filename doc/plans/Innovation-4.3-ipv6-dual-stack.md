@@ -1,23 +1,23 @@
 ## Sections
 
-1.  [1. Overview](#overview)
-2.  [2. Today](#today)
-3.  [3. Design](#design)
-4.  [4. eBPF v6 programs](#ebpf)
-5.  [5. Listener](#listener)
-6.  [6. Canonical Destination v6](#canon)
-7.  [7. Integration](#integration)
-8.  [8. Tests](#tests)
-9.  [9. Risks](#risks)
-10. [10. Milestones](#milestones)
+1. [1. Overview](#1-overview--goals)
+2. [2. Implementation status](#2-implementation-status)
+3. [3. Address-family semantics](#3-address-family-semantics)
+4. [4. eBPF programs](#4-ebpf-programs)
+5. [5. Shared audit ABI and telemetry](#5-shared-audit-abi-and-telemetry)
+6. [6. Listener and forwarding](#6-listener-and-forwarding)
+7. [7. Tests](#7-tests)
+8. [8. Remaining native IPv6 work](#8-remaining-native-ipv6-work)
+9. [9. Risks](#9-risks)
+10. [10. Milestones](#10-milestones)
 
 **GPA** · **Direction 4.3** · **Network**
 
 # Detailed Design — IPv6 / Dual-stack Support
 
-Extend the redirect, listener, canonical model, and rule engine to handle IPv6 fabric endpoints uniformly with IPv4. Closes the gap on dual-stack VMs.
+Add dual-stack protection in two stages. The implemented first stage closes the IPv4-mapped IPv6 bypass (`::ffff:a.b.c.d`) while preserving the existing IPv4 policy and forwarding model. Native IPv6 fabric endpoints remain a later stage.
 
-**Files affected:** `linux-ebpf/sk_lookup.bpf.c`, `ebpf/redirect.bpf.c`, `proxy_agent/src/proxy/proxy_server.rs`, `proxy_agent/src/proxy/canonical/destination.rs`.
+**Primary files affected:** `linux-ebpf/ebpf_cgroup.c`, `ebpf/redirect.bpf.c`, `shared-ebpf/include/gpa_audit_event.h`, `proxy_agent/src/redirector/`, and `proxy_agent/src/proxy/`.
 
 > **Prerequisites:** [4.2 Core eBPF unification](Innovation-4.2-core-unify-ebpf.md)
 
@@ -27,84 +27,129 @@ Extend the redirect, listener, canonical model, and rule engine to handle IPv6 f
 |----------------------------|------------|---------|------------------|
 | **Medium** future-proofing | **Medium** | **Low** | **eBPF + agent** |
 
-### Goals
+### Current goals
 
-- IPv6 fabric link-local addresses (e.g. `fe80::a9fe:a9fe`) caught by eBPF and routed through agent.
-- Canonical destination enum unified across families; rule engine sees one `Destination::Imds` regardless of family.
-- Defeat IPv4-mapped IPv6 bypasses (pentest C7) at the kernel layer.
+- Intercept IPv4-mapped IPv6 destinations such as `::ffff:169.254.169.254`.
+- Reuse the existing IPv4 policy-map keys and original-destination forwarding path.
+- Attach both connect4 and connect6 programs on Linux and Windows.
+- Emit the connect address family in request and aggregate telemetry.
+- Keep existing IPv4 behavior and released Windows audit-layout compatibility.
 
-## 2. Today
+### Deferred goals
 
-Redirect handles IPv4 only. Dual-stack VMs that route fabric over v6 (uncommon today but increasing) bypass the agent. The canonical model in direction 2.1 already plans for v6 typed destinations; this direction wires it through the kernel.
+- Redirect native IPv6 fabric endpoints, including link-local addresses.
+- Store full 128-bit original destinations in the policy and audit models.
+- Forward requests to native IPv6 upstream endpoints.
+- Bind and expose a native IPv6 proxy listener where required.
 
-## 3. Design
+## 2. Implementation status
 
-- Add v6 sibling programs: `cgroup_connect6`, `sk_lookup_v6`.
-- Listener binds IPv6 socket with `IPV6_V6ONLY=0` dual-stack on Linux, or two sockets where dual-stack is unavailable.
-- Canonical `Destination` resolves IPv4-mapped IPv6 (`::ffff:a.b.c.d`) to the v4 destination — there is exactly one `Destination::Imds` regardless of family.
-- Per-destination address tables published to BPF programs via a `BPF_MAP_TYPE_HASH` keyed on a 16-byte normalized address.
+The current implementation supports IPv4-mapped IPv6 only:
 
-## 4. eBPF v6 Programs
+- Linux attaches `connect4` and `connect6` cgroup programs.
+- Windows loads `authorize_connect4` and `authorize_connect6` and retains both eBPF links for the object lifetime.
+- The connect6 programs recognize the `::ffff:0:0/96` prefix, extract the low-order IPv4 address, and look it up in the existing IPv4 policy map.
+- A matched connection is redirected to IPv4-mapped loopback while remaining usable by the originating dual-stack socket.
+- Native IPv6 addresses do not match the IPv4 policy map and pass through unchanged.
+- No new native IPv6 endpoint configuration is introduced in this stage.
 
-    SEC("cgroup/connect6")
-    int gpa_connect6(struct bpf_sock_addr *ctx) {
-        struct in6_addr dst;
-        __builtin_memcpy(&dst, ctx->user_ip6, sizeof(dst));
-        if (!is_fabric_dest6(&dst, bpf_ntohs(ctx->user_port))) return 1;
-        // Redirect: rewrite to agent's v6 listener
-        set_user_dest_v6(ctx, &agent_v6, agent_port);
-        return 1;
-    }
+## 3. Address-family semantics
 
-- `is_fabric_dest6` recognizes the v6 link-local equivalent (typically `fe80::a9fe:a9fe` if used) and IPv4-mapped forms.
-- SO_ORIGINAL_DST equivalent for v6 via `IP6T_SO_ORIGINAL_DST`; reachable from user space.
+The telemetry field describes the connect hook/API family observed by eBPF, not necessarily the packet transport used after mapped-address conversion.
 
-## 5. Listener
+| Platform | Application destination | Observed hook | Telemetry |
+|----------|-------------------------|---------------|-----------|
+| Linux | IPv4 `169.254.169.254` | `connect4` | `IPv4` |
+| Linux | Mapped `::ffff:169.254.169.254` passed as `sockaddr_in6` | `connect6` | `IPv6` |
+| Windows (current eBPF-for-Windows behavior) | IPv4 `169.254.169.254` | `authorize_connect4` | `IPv4` |
+| Windows (current eBPF-for-Windows behavior) | Mapped `::ffff:169.254.169.254` on a dual-mode socket | normalized to `authorize_connect4` | `IPv4` |
+| Either platform | Native IPv6 | connect6 path, no IPv4 policy match | not redirected |
 
-- Bind `[::1]:3080` in addition to `127.0.0.1:3080` (or single dual-stack socket).
-- Original destination read on accept via family-appropriate `getsockopt`.
-- Listener exposed via attestation endpoint (3.3) with all bound addresses.
+Linux hook selection follows the address family supplied to `connect()`. Windows currently classifies IPv4-mapped dual-stack connections as IPv4 before the GPA hook. The Windows connect6 mapped-address logic remains as a compatibility fallback if eBPF-for-Windows later aligns with Linux behavior. See [eBPF-for-Windows issue #5536](https://github.com/microsoft/ebpf-for-windows/issues/5536).
 
-## 6. Canonical Destination v6
+## 4. eBPF programs
 
-    impl Destination {
-        pub fn from_ip(ip: IpAddr, port: u16) -> Destination {
-            let v4 = match ip {
-                IpAddr::V4(v) => Some(v),
-                IpAddr::V6(v) => v.to_ipv4_mapped(),
-            };
-            match (v4, port) {
-                (Some(Ipv4Addr::new(169,254,169,254)), 80)   => Destination::Imds,
-                (Some(Ipv4Addr::new(168,63,129,16)), 80)     => Destination::WireServer,
-                (Some(Ipv4Addr::new(168,63,129,16)), 32526)  => Destination::HostGaPlugin,
-                _ => Destination::Unknown { /* ... */ },
-            }
-        }
-    }
+The Linux and Windows connect6 programs use the same decision model:
 
-## 7. Integration
+```c
+if (!get_ipv4_mapped_address(ctx, &destination_ipv4))
+    return PROCEED;
 
-- Loader (4.2) detects v6 enablement on the host and loads v6 programs only when needed.
-- PoP token (1.1) `dip` claim is always a 16-byte normalized form so signatures cover both families.
-- Telemetry: per-family labels on `gpa_requests_total`.
+key = { destination_ipv4, destination_port, protocol };
+policy = bpf_map_lookup_elem(&policy_map, &key);
+if (policy) {
+    record_original_destination_and_family();
+    redirect_to_ipv4_mapped_loopback(policy);
+}
+```
 
-## 8. Tests
+Linux carries the original destination and family through `local_map` until the TCP source port is available. Windows writes the same information to `audit_map` or the WFP redirect context.
 
-- Dual-stack pod test: v4 and v6 requests both reach the agent and produce identical `Destination`.
-- Pentest C7 v6 variants: all map to `Destination::Imds` after canonicalization.
-- Linkup test for hosts without v6 — programs not loaded; no warnings.
+## 5. Shared audit ABI and telemetry
+
+`gpa_audit_event` is shared by Linux and Windows and now contains:
+
+- Existing identity, process, original IPv4 destination, and port fields.
+- `address_family`, normalized to `GPA_ADDRESS_FAMILY_IPV4` (`4`) or `GPA_ADDRESS_FAMILY_IPV6` (`6`).
+- A reserved word for future ABI-compatible metadata.
+
+The canonical audit value is 28 bytes (`[u32; 7]`). The Rust decoder also accepts the officially released 24-byte legacy Windows layout and treats it as IPv4. The unreleased 20-byte intermediate layout is intentionally not supported.
+
+The family is propagated through `AuditEntry` and `TcpConnectionContext` into:
+
+- Per-request `ProxySummary` JSON as `addressFamily: "IPv4" | "IPv6"`.
+- `ProxyConnectionSummary` aggregate status.
+- The aggregation key, so IPv4 and IPv6 requests do not collapse into one bucket.
+
+Older serialized summaries that omit `addressFamily` default to `IPv4`.
+
+## 6. Listener and forwarding
+
+The current mapped-IPv6 stage keeps the existing IPv4 proxy listener and IPv4 upstream forwarding path. The audit record stores the extracted IPv4 destination, so authorization and forwarding remain unchanged.
+
+A native IPv6 listener, 128-bit original-destination storage, and native IPv6 upstream sender are not part of the current implementation.
+
+## 7. Tests
+
+Implemented validation includes:
+
+- Shared audit-layout round trips and IPv6 family decoding.
+- Released legacy Windows audit-layout decoding as IPv4.
+- Family-aware connection-summary aggregation and JSON serialization.
+- Windows-target Cargo checks and focused Rust tests.
+- Windows eBPF compilation with both `cgroup/connect4` and `cgroup/connect6` sections.
+
+Required environment tests:
+
+- Linux dual-mode client using `sockaddr_in6(::ffff:a.b.c.d)` reports `IPv6` and is redirected.
+- Windows dual-mode client may report `IPv4` because the platform normalizes the mapped address before the hook; it must still be redirected.
+- Native IPv6 destinations pass through unchanged until the next milestone.
+
+## 8. Remaining native IPv6 work
+
+1. Define production native IPv6 fabric endpoint addresses and configuration.
+2. Replace the IPv4-only policy key with a normalized 16-byte address plus family, port, and protocol.
+3. Expand audit and connection models to retain a full 128-bit original destination.
+4. Add native IPv6 listener and upstream forwarding support.
+5. Fold mapped and native representations into canonical endpoint identities.
+6. Add native IPv6 end-to-end and bypass tests.
 
 ## 9. Risks
 
-- **Fabric v6 endpoints not finalized** in some regions — make destinations data-driven via the BPF map so production can update without redeploying eBPF.
-- **Dual-stack socket semantics** vary on Windows — keep two sockets there.
+- **Telemetry interpretation:** `addressFamily` records the observed connect family, not guaranteed on-wire IP transport. Platform normalization makes mapped-address results differ between Linux and Windows.
+- **Kernel variation:** Linux cgroup connect hooks require kernel 4.17 or later; enterprise distributions may backport them. IPv6 or mapped-address support can also be disabled by host configuration.
+- **Windows behavior may change:** the connect6 fallback must remain tested even though current eBPF-for-Windows routes mapped connections through connect4.
+- **ABI coordination:** shared C map layouts and Rust `[u32; N]` representations must change together.
+- **Native endpoint uncertainty:** fabric IPv6 addresses are not finalized in all environments.
 
 ## 10. Milestones
 
-| M   | Deliverable                  | Exit                                        |
-|-----|------------------------------|---------------------------------------------|
-| M1  | v6 listener + canonical fold | v4 behavior unchanged                       |
-| M2  | connect6 + sk_lookup_v6      | v6 fabric traffic captured in dual-stack VM |
-| M3  | Data-driven dest table       | Region rollout without rebuild              |
+| M | Deliverable | Status / exit criteria |
+|---|-------------|------------------------|
+| M1 | Mapped-IPv6 interception on Linux | Implemented: connect6 maps `::ffff:a.b.c.d` to existing IPv4 policy and forwarding |
+| M2 | Mapped-IPv6 compatibility on Windows | Implemented: both links attached; current connect4 normalization and connect6 fallback supported |
+| M3 | Cross-platform family telemetry | Implemented: shared audit ABI and `addressFamily` request/aggregate telemetry |
+| M4 | Native IPv6 interception and forwarding | Planned: 128-bit policy, audit, listener, sender, and end-to-end tests |
+| M5 | Data-driven native endpoint table | Planned: region updates without eBPF redeployment |
 
 Detail design for direction 4.3. Parent: [Innovation-Directions.md](Innovation-Directions.md).

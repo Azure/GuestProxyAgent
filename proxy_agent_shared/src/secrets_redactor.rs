@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 use std::borrow::Cow;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
 const REDACTED_TEXT: &str = "[REDACTED]";
+// Each Regex keeps a lazy-DFA cache. Keep it small because this module has several expressions.
+// Starts with 1MB, but can be tuned down if needed.
+const REGEX_DFA_SIZE_LIMIT: usize = 1024 * 1024;
 /// Common substrings that indicate a secret might be present - for quick pre-filtering
 /// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
 const SECRET_INDICATORS: [&str; 15] = [
@@ -56,17 +60,44 @@ const CRED_PATTERNS: [&str; 17] = [
             "(?i)authorization[,\\[:= \"'\\s]+(value[,\\[:= \"'\\s]+)?(basic|digest|hoba|mutual|negotiate|oauth( oauth_token=)?|(http[^ ]+/saml\\d\\-)?bearer [^e\"'&]|scram\\-sha\\-1|scram\\-sha\\-256|vapid|aws4\\-hmac\\-sha256).*",
         ];
 
-static REGEX_PATTERNS: once_cell::sync::Lazy<Vec<regex::Regex>> =
-    once_cell::sync::Lazy::new(init_regex_patterns);
+struct RedactionRequest {
+    text: String,
+    response_sender: SyncSender<String>,
+}
+
+static REDACTION_SENDER: once_cell::sync::Lazy<SyncSender<RedactionRequest>> =
+    once_cell::sync::Lazy::new(|| {
+        let (sender, receiver) = sync_channel(0);
+        std::thread::Builder::new()
+            .name("secret-redactor".to_string())
+            .spawn(move || run_redaction_worker(receiver))
+            .expect("failed to start secret redaction thread");
+        sender
+    });
 
 fn init_regex_patterns() -> Vec<regex::Regex> {
     let mut patterns = Vec::new();
     for pattern in CRED_PATTERNS.iter() {
-        if let Ok(re) = regex::Regex::new(pattern) {
+        if let Ok(re) = regex::RegexBuilder::new(pattern)
+            .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
+            .build()
+        {
             patterns.push(re);
         }
     }
     patterns
+}
+
+fn run_redaction_worker(receiver: Receiver<RedactionRequest>) {
+    let patterns = init_regex_patterns();
+    while let Ok(request) = receiver.recv() {
+        let redacted_text = redact_secrets(&patterns, &request.text);
+        let response = match redacted_text {
+            Cow::Borrowed(_) => request.text,
+            Cow::Owned(text) => text,
+        };
+        let _ = request.response_sender.send(response);
+    }
 }
 
 /// Quick check if text might contain secrets (case-insensitive for most indicators)
@@ -85,13 +116,9 @@ fn might_contain_secrets(text: &str) -> bool {
 
 /// Redacts secrets from text. Returns the original text unchanged if no secrets found.
 /// Takes `&str` to avoid unnecessary ownership transfer.
-fn redact_secrets(text: &str) -> Cow<'_, str> {
-    if text.is_empty() || !might_contain_secrets(text) {
-        return Cow::Borrowed(text);
-    }
-
+fn redact_secrets<'a>(patterns: &[regex::Regex], text: &'a str) -> Cow<'a, str> {
     let mut redacted_text = Cow::Borrowed(text);
-    for pattern in REGEX_PATTERNS.iter() {
+    for pattern in patterns {
         if let Cow::Owned(s) = pattern.replace_all(&redacted_text, REDACTED_TEXT) {
             redacted_text = Cow::Owned(s);
         }
@@ -101,12 +128,26 @@ fn redact_secrets(text: &str) -> Cow<'_, str> {
 
 /// Convenience function that takes ownership and returns String
 /// Use this when you already have a String and need a String back
+///
+/// This function sends regex work to a dedicated thread and can therefore block briefly. Call it
+/// only from a non-critical logging or telemetry-consumer path, not while processing a proxied
+/// request.
 #[inline]
 pub fn redact_secrets_string(text: String) -> String {
-    match redact_secrets(&text) {
-        Cow::Borrowed(_) => text, // No changes, return original
-        Cow::Owned(s) => s,       // Changed, return new string
+    if text.is_empty() || !might_contain_secrets(&text) {
+        return text;
     }
+
+    let (response_sender, response_receiver) = sync_channel(1);
+    REDACTION_SENDER
+        .send(RedactionRequest {
+            text,
+            response_sender,
+        })
+        .expect("secret redaction thread stopped unexpectedly");
+    response_receiver
+        .recv()
+        .expect("secret redaction thread stopped before responding")
 }
 
 #[cfg(test)]
@@ -115,6 +156,7 @@ mod tests {
 
     #[test]
     fn test_redact_secrets() {
+        let patterns = init_regex_patterns();
         let test_strings = vec![
             (
                 "server=...database.windows.net;database=...;pwd=<dummyString>;user=...;",
@@ -171,14 +213,15 @@ authorization: aws4-hmac-sha256"#,
             ),
         ];
         for (input, expected) in test_strings {
-            assert_eq!(redact_secrets(input), expected);
+            assert_eq!(redact_secrets(&patterns, input), expected);
         }
     }
 
     #[test]
     fn test_no_secrets_no_allocation() {
+        let patterns = init_regex_patterns();
         let text = "This is a normal log message without any secrets";
-        let result = redact_secrets(text);
+        let result = redact_secrets(&patterns, text);
         // Should return Borrowed (no allocation) when no secrets found
         assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
         assert_eq!(result, text);
@@ -189,5 +232,24 @@ authorization: aws4-hmac-sha256"#,
         let text = "pwd=secret123;".to_string();
         let result = redact_secrets_string(text);
         assert_eq!(result, "[REDACTED];");
+    }
+
+    #[test]
+    fn test_redact_secrets_from_concurrent_callers() {
+        let callers: Vec<_> = (0..8)
+            .map(|index| {
+                std::thread::spawn(move || {
+                    let text = format!("request={index};password=secret{index};");
+                    redact_secrets_string(text)
+                })
+            })
+            .collect();
+
+        for (index, caller) in callers.into_iter().enumerate() {
+            assert_eq!(
+                caller.join().expect("redaction caller panicked"),
+                format!("request={index};[REDACTED];")
+            );
+        }
     }
 }

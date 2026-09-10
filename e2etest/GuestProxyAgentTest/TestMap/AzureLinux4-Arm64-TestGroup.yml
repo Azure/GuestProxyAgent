@@ -1,0 +1,14 @@
+groupName: AzureLinux4-Arm64
+vmImagePublisher: microsoftazurelinux
+vmImageOffer: azurelinux-4
+vmImageSku: 4-arm64
+vmImageVersion: latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: LinuxPackageScenario
+    className: GuestProxyAgentTest.TestScenarios.LinuxPackageScenario
+  - name: ProxyAgentExtension
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
+  - name: LinuxImplicitExtension
+    className: GuestProxyAgentTest.TestScenarios.LinuxImplicitExtension
