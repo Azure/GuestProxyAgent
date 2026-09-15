@@ -11,7 +11,7 @@ use regex_automata::Input;
 use crate::logger::logger_manager;
 
 const REDACTED_TEXT: &str = "[REDACTED]";
-const REGEX_CACHE_RESET_INTERVAL: Duration = Duration::from_hours(5); // reset every 5 hours
+const REGEX_CACHE_RESET_INTERVAL: Duration = Duration::from_hours(1); // reset every 1 hour
 /// Common substrings that indicate a secret might be present - for quick pre-filtering
 /// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
 const SECRET_INDICATORS: [&str; 15] = [

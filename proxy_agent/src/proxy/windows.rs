@@ -17,7 +17,6 @@ use windows_sys::Wdk::System::Threading::{
     PROCESSINFOCLASS,
 };
 use windows_sys::Win32::Foundation::{LUID, NTSTATUS, UNICODE_STRING};
-use windows_sys::Win32::NetworkManagement::NetManagement::NetApiBufferFree;
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::{
     LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
@@ -49,7 +48,7 @@ struct NetApiBuffer(*mut c_void);
 impl Drop for NetApiBuffer {
     fn drop(&mut self) {
         if !self.0.is_null() {
-            unsafe { NetApiBufferFree(self.0) };
+            _ = net_api_buffer_free(self.0);
         }
     }
 }
@@ -77,6 +76,8 @@ type NetUserGetLocalGroups = unsafe extern "system" fn(
     totalentries: *mut u32,
 ) -> u32;
 
+type NetApiBufferFree = unsafe extern "system" fn(buffer: *mut c_void) -> u32;
+
 #[allow(clippy::too_many_arguments)]
 fn net_user_get_local_groups(
     servername: windows_sys::core::PWSTR,
@@ -103,6 +104,18 @@ fn net_user_get_local_groups(
             entriesread,
             totalentries,
         );
+        Ok(status)
+    }
+}
+
+fn net_api_buffer_free(buffer: *mut c_void) -> Result<u32> {
+    unsafe {
+        let fun_name = "NetApiBufferFree\0";
+        let net_api_buffer_free: Symbol<NetApiBufferFree> =
+            NETAPI32_DLL
+                .get(fun_name.as_bytes())
+                .map_err(|e| Error::WindowsApi(WindowsApiErrorType::LoadNetApiBufferFree(e)))?;
+        let status = net_api_buffer_free(buffer);
         Ok(status)
     }
 }
