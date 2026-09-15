@@ -8,6 +8,7 @@ use crate::common::{
 };
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
+use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
@@ -16,6 +17,7 @@ use windows_sys::Wdk::System::Threading::{
     PROCESSINFOCLASS,
 };
 use windows_sys::Win32::Foundation::{LUID, NTSTATUS, UNICODE_STRING};
+use windows_sys::Win32::NetworkManagement::NetManagement::NetApiBufferFree;
 use windows_sys::Win32::Security::Authentication::Identity;
 use windows_sys::Win32::Security::Authentication::Identity::{
     LSA_UNICODE_STRING, SECURITY_LOGON_SESSION_DATA,
@@ -31,6 +33,27 @@ const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
 struct LocalgroupUsersInfo0 {
     pub lgrui0_name: windows_sys::core::PWSTR,
 }
+
+struct LsaBuffer(*mut c_void);
+
+impl Drop for LsaBuffer {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { Identity::LsaFreeReturnBuffer(self.0) };
+        }
+    }
+}
+
+struct NetApiBuffer(*mut c_void);
+
+impl Drop for NetApiBuffer {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { NetApiBufferFree(self.0) };
+        }
+    }
+}
+
 static NETAPI32_DLL: Lazy<Library> = Lazy::new(load_netapi32_dll);
 fn load_netapi32_dll() -> Library {
     let dll_name = "netapi32.dll\0";
@@ -126,7 +149,9 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
         ));
     }
 
-    let session_data = unsafe { *data.assume_init() };
+    let session_data_ptr = unsafe { data.assume_init() };
+    let _session_data_buffer = LsaBuffer(session_data_ptr.cast());
+    let session_data = unsafe { &*session_data_ptr };
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
     } else {
@@ -163,6 +188,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
         &mut group_count,
         &mut total_group_count,
     )?;
+    let _group_info_buffer = NetApiBuffer(group_info.cast());
     if status == 0 {
         let group_info = unsafe {
             std::slice::from_raw_parts(
