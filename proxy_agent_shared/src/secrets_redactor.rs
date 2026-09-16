@@ -12,6 +12,8 @@ use crate::logger::logger_manager;
 
 const REDACTED_TEXT: &str = "[REDACTED]";
 const REGEX_CACHE_RESET_INTERVAL: Duration = Duration::from_hours(1); // reset every 1 hour
+const REGEX_CACHE_SIZE_LIMIT: usize = 1024 * 1024; //  cache size limit
+
 /// Common substrings that indicate a secret might be present - for quick pre-filtering
 /// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
 const SECRET_INDICATORS: [&str; 15] = [
@@ -207,6 +209,13 @@ fn redact_secrets<'a>(patterns: &mut [RedactionPattern], text: &'a str) -> Cow<'
     for pattern in patterns {
         if let Cow::Owned(s) = pattern.replace_all(&redacted_text) {
             redacted_text = Cow::Owned(s);
+        }
+        if pattern.cache.memory_usage() >= REGEX_CACHE_SIZE_LIMIT {
+            logger_manager::write_warn(format!(
+                "Clearing regex cache due to memory usage exceeding limit: {} bytes",
+                pattern.cache.memory_usage()
+            ));
+            pattern.clear_cache();
         }
     }
     redacted_text
