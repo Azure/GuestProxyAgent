@@ -150,8 +150,11 @@ pub enum BpfErrorType {
 #[derive(Debug, thiserror::Error)]
 #[cfg(windows)]
 pub enum WindowsApiErrorType {
-    #[error("Loading NetUserGetLocalGroups failed with error: {0}")]
+    #[error("Loading function NetUserGetLocalGroups failed with error: {0}")]
     LoadNetUserGetLocalGroups(libloading::Error),
+
+    #[error("Loading function NetApiBufferFree failed with error: {0}")]
+    LoadNetApiBufferFree(libloading::Error),
 
     #[error("LsaGetLogonSessionData {0}")]
     LsaGetLogonSessionData(String),

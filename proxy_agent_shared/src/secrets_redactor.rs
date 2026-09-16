@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 use std::borrow::Cow;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
+use std::time::{Duration, Instant};
+
+use regex_automata::meta::{Cache, Regex};
+use regex_automata::Input;
+
+use crate::logger::logger_manager;
 
 const REDACTED_TEXT: &str = "[REDACTED]";
-// Each Regex keeps a lazy-DFA cache. Keep it small because this module has several expressions.
-// Starts with 1MB, but can be tuned down if needed.
-const REGEX_DFA_SIZE_LIMIT: usize = 1024 * 1024;
+const REGEX_CACHE_RESET_INTERVAL: Duration = Duration::from_hours(1); // reset every 1 hour
 /// Common substrings that indicate a secret might be present - for quick pre-filtering
 /// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
 const SECRET_INDICATORS: [&str; 15] = [
@@ -65,6 +69,62 @@ struct RedactionRequest {
     response_sender: SyncSender<String>,
 }
 
+struct RedactionPattern {
+    regex: Regex,
+    cache: Cache,
+}
+
+impl RedactionPattern {
+    fn new(pattern: &str) -> Option<Self> {
+        let regex = Regex::new(pattern).ok()?;
+        let cache = regex.create_cache();
+        Some(Self { regex, cache })
+    }
+
+    fn clear_cache(&mut self) {
+        self.cache = self.regex.create_cache();
+    }
+
+    fn replace_all<'a>(&mut self, text: &'a str) -> Cow<'a, str> {
+        let mut redacted = None;
+        let mut search_start = 0;
+        let mut last_end = 0;
+
+        while search_start <= text.len() {
+            let input = Input::new(text).range(search_start..text.len());
+            let Some(secret_match) = self.regex.search_with(&mut self.cache, &input) else {
+                break;
+            };
+
+            let output = redacted.get_or_insert_with(|| String::with_capacity(text.len()));
+            output.push_str(&text[last_end..secret_match.start()]);
+            output.push_str(REDACTED_TEXT);
+            last_end = secret_match.end();
+
+            if !secret_match.is_empty() {
+                search_start = secret_match.end();
+            } else if secret_match.end() == text.len() {
+                break;
+            } else {
+                search_start = secret_match.end()
+                    + text[secret_match.end()..]
+                        .chars()
+                        .next()
+                        .expect("non-terminal match has a following character")
+                        .len_utf8();
+            }
+        }
+
+        match redacted {
+            Some(mut output) => {
+                output.push_str(&text[last_end..]);
+                Cow::Owned(output)
+            }
+            None => Cow::Borrowed(text),
+        }
+    }
+}
+
 static REDACTION_SENDER: once_cell::sync::Lazy<SyncSender<RedactionRequest>> =
     once_cell::sync::Lazy::new(|| {
         let (sender, receiver) = sync_channel(0);
@@ -75,23 +135,49 @@ static REDACTION_SENDER: once_cell::sync::Lazy<SyncSender<RedactionRequest>> =
         sender
     });
 
-fn init_regex_patterns() -> Vec<regex::Regex> {
+fn init_regex_patterns() -> Vec<RedactionPattern> {
     let mut patterns = Vec::new();
     for pattern in CRED_PATTERNS.iter() {
-        if let Ok(re) = regex::RegexBuilder::new(pattern)
-            .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
-            .build()
-        {
-            patterns.push(re);
+        if let Some(pattern) = RedactionPattern::new(pattern) {
+            patterns.push(pattern);
         }
     }
     patterns
 }
 
 fn run_redaction_worker(receiver: Receiver<RedactionRequest>) {
-    let patterns = init_regex_patterns();
-    while let Ok(request) = receiver.recv() {
-        let redacted_text = redact_secrets(&patterns, &request.text);
+    let mut patterns = init_regex_patterns();
+    let mut last_cache_reset = Instant::now();
+    loop {
+        let reset_after = REGEX_CACHE_RESET_INTERVAL.saturating_sub(last_cache_reset.elapsed());
+        let request = match receiver.recv_timeout(reset_after) {
+            Ok(request) => request,
+            Err(RecvTimeoutError::Timeout) => {
+                for pattern in &mut patterns {
+                    pattern.clear_cache();
+                }
+                logger_manager::write_warn(format!(
+                    "Clearing regex cache due to interval expiration after {:?}",
+                    last_cache_reset.elapsed()
+                ));
+                last_cache_reset = Instant::now();
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
+
+        if last_cache_reset.elapsed() >= REGEX_CACHE_RESET_INTERVAL {
+            for pattern in &mut patterns {
+                logger_manager::write_warn(format!(
+                    "Clearing regex cache due to interval expiration after {:?}",
+                    last_cache_reset.elapsed()
+                ));
+                pattern.clear_cache();
+            }
+            last_cache_reset = Instant::now();
+        }
+
+        let redacted_text = redact_secrets(&mut patterns, &request.text);
         let response = match redacted_text {
             Cow::Borrowed(_) => request.text,
             Cow::Owned(text) => text,
@@ -116,10 +202,10 @@ fn might_contain_secrets(text: &str) -> bool {
 
 /// Redacts secrets from text. Returns the original text unchanged if no secrets found.
 /// Takes `&str` to avoid unnecessary ownership transfer.
-fn redact_secrets<'a>(patterns: &[regex::Regex], text: &'a str) -> Cow<'a, str> {
+fn redact_secrets<'a>(patterns: &mut [RedactionPattern], text: &'a str) -> Cow<'a, str> {
     let mut redacted_text = Cow::Borrowed(text);
     for pattern in patterns {
-        if let Cow::Owned(s) = pattern.replace_all(&redacted_text, REDACTED_TEXT) {
+        if let Cow::Owned(s) = pattern.replace_all(&redacted_text) {
             redacted_text = Cow::Owned(s);
         }
     }
@@ -156,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_redact_secrets() {
-        let patterns = init_regex_patterns();
+        let mut patterns = init_regex_patterns();
         let test_strings = vec![
             (
                 "server=...database.windows.net;database=...;pwd=<dummyString>;user=...;",
@@ -213,18 +299,30 @@ authorization: aws4-hmac-sha256"#,
             ),
         ];
         for (input, expected) in test_strings {
-            assert_eq!(redact_secrets(&patterns, input), expected);
+            assert_eq!(redact_secrets(&mut patterns, input), expected);
         }
     }
 
     #[test]
     fn test_no_secrets_no_allocation() {
-        let patterns = init_regex_patterns();
+        let mut patterns = init_regex_patterns();
         let text = "This is a normal log message without any secrets";
-        let result = redact_secrets(&patterns, text);
+        let result = redact_secrets(&mut patterns, text);
         // Should return Borrowed (no allocation) when no secrets found
         assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
         assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_redaction_after_cache_clear() {
+        let mut patterns = init_regex_patterns();
+        assert_eq!(redact_secrets(&mut patterns, "pwd=first;"), "[REDACTED];");
+
+        for pattern in &mut patterns {
+            pattern.clear_cache();
+        }
+
+        assert_eq!(redact_secrets(&mut patterns, "pwd=second;"), "[REDACTED];");
     }
 
     #[test]
