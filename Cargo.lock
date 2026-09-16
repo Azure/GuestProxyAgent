@@ -1006,6 +1006,7 @@ dependencies = [
  "openssl",
  "os_info",
  "regex",
+ "regex-automata",
  "serde",
  "serde-xml-rs",
  "serde_derive",
