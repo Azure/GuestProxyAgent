@@ -224,38 +224,49 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
 }
 
 /// Resolves a service's registered binary path to an absolute path. Kernel drivers commonly
+/// Resolves a service's registered binary path to an absolute path. Kernel drivers commonly
 /// register with the NT `\SystemRoot\` token or `\??\` device prefix instead of a drive-letter
 /// path; Win32 services may register a quoted path followed by arguments. This strips both to
-/// a clean, absolute path so file lookups (e.g. version) work.
+/// a clean, absolute path so file lookups (e.g. version) work. (These two conventions belong to
+/// different service types and aren't expected to be nested/combined.)
 pub fn normalize_service_binary_path(path: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
-    let raw = raw.strip_prefix(r"\??\").unwrap_or(&raw);
+    let raw = strip_quoted_arguments(&raw);
+    let raw = raw.strip_prefix(r"\??\").unwrap_or(raw);
 
-    // A quoted path may be followed by command-line arguments, e.g. `"C:\a.exe" -flag`.
-    let raw = match raw
-        .strip_prefix('"')
-        .and_then(|rest| rest.split('"').next())
-    {
-        Some(quoted) => quoted,
-        None => raw,
-    };
-
-    const SYSTEM_ROOT_PREFIX: &str = r"\SystemRoot\";
-    let system_root =
-        || PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()));
-
-    if raw.len() >= SYSTEM_ROOT_PREFIX.len()
-        && raw[..SYSTEM_ROOT_PREFIX.len()].eq_ignore_ascii_case(SYSTEM_ROOT_PREFIX)
-    {
-        return system_root().join(&raw[SYSTEM_ROOT_PREFIX.len()..]);
+    if let Some(rest) = strip_system_root_prefix(raw) {
+        return system_root_dir().join(rest);
     }
 
     let candidate = PathBuf::from(raw);
     if candidate.is_absolute() {
         candidate
     } else {
-        system_root().join(candidate)
+        system_root_dir().join(candidate)
     }
+}
+
+/// If `raw` is a quoted path (optionally followed by command-line arguments), returns just the
+/// path, e.g. `"C:\a.exe" -flag` -> `C:\a.exe`. Otherwise returns `raw` unchanged.
+fn strip_quoted_arguments(raw: &str) -> &str {
+    match raw.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => raw,
+    }
+}
+
+/// Case-insensitively strips the NT `\SystemRoot\` token, returning the remainder if present.
+/// Uses `str::get` rather than direct byte-index slicing so it can never panic on a string
+/// whose length happens to land mid-character for a non-ASCII path.
+fn strip_system_root_prefix(raw: &str) -> Option<&str> {
+    const PREFIX: &str = r"\SystemRoot\";
+    raw.get(..PREFIX.len())
+        .filter(|candidate| candidate.eq_ignore_ascii_case(PREFIX))
+        .map(|_| &raw[PREFIX.len()..])
+}
+
+fn system_root_dir() -> PathBuf {
+    PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()))
 }
 
 /// Classifies a Windows service state into (is_running, is_transitioning). `StartPending`/
@@ -476,6 +487,16 @@ mod tests {
             )),
             PathBuf::from(r"C:\Program Files\a.exe")
         );
+    }
+
+    #[test]
+    fn normalize_service_binary_path_non_ascii_no_panic_test() {
+        // Regression test: a path containing a multi-byte UTF-8 character positioned so that
+        // the "\SystemRoot\" prefix length (13 bytes) lands mid-character must not panic.
+        // "AAAAAAAAAAAA" is 12 ASCII bytes, so byte 13 falls inside the 2-byte 'é' that follows.
+        let path = std::path::Path::new("AAAAAAAAAAAAé.sys");
+        let result = super::normalize_service_binary_path(path);
+        assert!(result.to_string_lossy().contains("AAAAAAAAAAAAé.sys"));
     }
 
     #[tokio::test]
