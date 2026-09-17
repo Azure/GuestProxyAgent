@@ -74,6 +74,9 @@ pub const EBPF_CORE: &str = "EbpfCore";
 pub const EBPF_EXT: &str = "NetEbpfExt";
 pub const EBPF_SVC: &str = "eBPFSvc";
 pub const EBPF_SUBSTATUS_NAME: &str = "EbpfStatus";
+/// Displayed in the EbpfStatus substatus message when a service's product version can't be
+/// determined (e.g. no executable path known, or the file's version resource can't be read).
+pub const VERSION_UNKNOWN: &str = "VersionUnknown";
 
 pub const PROXY_AGENT_SERVICE_SUBSTATUS_NAME: &str = "ProxyAgentServiceStatus";
 
