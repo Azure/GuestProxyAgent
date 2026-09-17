@@ -12,6 +12,8 @@ use crate::logger::logger_manager;
 
 const REDACTED_TEXT: &str = "[REDACTED]";
 const REGEX_CACHE_RESET_INTERVAL: Duration = Duration::from_hours(1); // reset every 1 hour
+const REGEX_CACHE_SIZE_LIMIT: usize = 2_621_440; //  cache size limit 2.5 MB
+
 /// Common substrings that indicate a secret might be present - for quick pre-filtering
 /// These are not regex patterns, just simple substrings to check for before running the more expensive regexes.
 const SECRET_INDICATORS: [&str; 15] = [
@@ -91,7 +93,11 @@ impl RedactionPattern {
         let mut last_end = 0;
 
         while search_start <= text.len() {
-            let input = Input::new(text).range(search_start..text.len());
+            let input = if search_start == 0 {
+                Input::new(text)
+            } else {
+                Input::new(text).range(search_start..text.len())
+            };
             let Some(secret_match) = self.regex.search_with(&mut self.cache, &input) else {
                 break;
             };
@@ -189,6 +195,15 @@ fn run_redaction_worker(receiver: Receiver<RedactionRequest>) {
 /// Quick check if text might contain secrets (case-insensitive for most indicators)
 #[inline]
 fn might_contain_secrets(text: &str) -> bool {
+    if let Some(authority) = text.split_once("://").map(|(_, authority)| authority) {
+        if authority
+            .split_once('@')
+            .is_some_and(|(user_info, _)| user_info.contains(':'))
+        {
+            return true;
+        }
+    }
+
     let lower = text.to_ascii_lowercase();
     SECRET_INDICATORS.iter().any(|indicator| {
         if *indicator == "AzCa" || *indicator == "PRIVATE KEY" || *indicator == "eyJ" {
@@ -207,6 +222,13 @@ fn redact_secrets<'a>(patterns: &mut [RedactionPattern], text: &'a str) -> Cow<'
     for pattern in patterns {
         if let Cow::Owned(s) = pattern.replace_all(&redacted_text) {
             redacted_text = Cow::Owned(s);
+        }
+        if pattern.cache.memory_usage() >= REGEX_CACHE_SIZE_LIMIT {
+            logger_manager::write_warn(format!(
+                "Clearing regex cache due to memory usage exceeding limit, current memory_usage: {} bytes",
+                pattern.cache.memory_usage()
+            ));
+            pattern.clear_cache();
         }
     }
     redacted_text
@@ -311,6 +333,20 @@ authorization: aws4-hmac-sha256"#,
         // Should return Borrowed (no allocation) when no secrets found
         assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
         assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_redact_password_in_url() {
+        let mut pattern = RedactionPattern::new(CRED_PATTERNS[15]).unwrap();
+        let input = "https://testuser:testpassword@example.com/path";
+
+        assert!(pattern
+            .regex
+            .search_with(&mut pattern.cache, &Input::new(input))
+            .is_some());
+        pattern.clear_cache();
+        assert_eq!(pattern.replace_all(input), REDACTED_TEXT);
+        assert_eq!(redact_secrets_string(input.to_string()), REDACTED_TEXT);
     }
 
     #[test]
