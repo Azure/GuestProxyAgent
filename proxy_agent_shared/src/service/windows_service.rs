@@ -21,7 +21,7 @@ pub struct ServiceStatusInfo {
     pub service_name: String,
     pub state: Option<ServiceState>,
     pub start_type: String,
-    /// The service's registered executable path; `None` when not installed or unqueryable.
+    /// The service's registered executable path; `None` when not installed or unavailable.
     pub executable_path: Option<PathBuf>,
 }
 
