@@ -224,19 +224,12 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
 }
 
 /// Resolves a service's registered binary path to an absolute path. Kernel drivers commonly
-/// Resolves a service's registered binary path to an absolute path. Kernel drivers commonly
-/// register with the NT `\SystemRoot\` token or `\??\` device prefix instead of a drive-letter
-/// path; Win32 services may register a quoted path followed by arguments. This strips both to
-/// a clean, absolute path so file lookups (e.g. version) work. (These two conventions belong to
-/// different service types and aren't expected to be nested/combined.)
+/// register with the NT `\??\` device-namespace prefix instead of a drive-letter path; this
+/// strips it so file lookups (e.g. version) work. Falls back to resolving any other
+/// unrecognized/non-absolute path relative to the Windows directory.
 pub fn normalize_service_binary_path(path: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
-    let raw = strip_quoted_arguments(&raw);
-    let raw = raw.strip_prefix(r"\??\").unwrap_or(raw);
-
-    if let Some(rest) = strip_system_root_prefix(raw) {
-        return system_root_dir().join(rest);
-    }
+    let raw = raw.strip_prefix(r"\??\").unwrap_or(&raw);
 
     let candidate = PathBuf::from(raw);
     if candidate.is_absolute() {
@@ -244,25 +237,6 @@ pub fn normalize_service_binary_path(path: &Path) -> PathBuf {
     } else {
         system_root_dir().join(candidate)
     }
-}
-
-/// If `raw` is a quoted path (optionally followed by command-line arguments), returns just the
-/// path, e.g. `"C:\a.exe" -flag` -> `C:\a.exe`. Otherwise returns `raw` unchanged.
-fn strip_quoted_arguments(raw: &str) -> &str {
-    match raw.strip_prefix('"') {
-        Some(rest) => rest.split('"').next().unwrap_or(rest),
-        None => raw,
-    }
-}
-
-/// Case-insensitively strips the NT `\SystemRoot\` token, returning the remainder if present.
-/// Uses `str::get` rather than direct byte-index slicing so it can never panic on a string
-/// whose length happens to land mid-character for a non-ASCII path.
-fn strip_system_root_prefix(raw: &str) -> Option<&str> {
-    const PREFIX: &str = r"\SystemRoot\";
-    raw.get(..PREFIX.len())
-        .filter(|candidate| candidate.eq_ignore_ascii_case(PREFIX))
-        .map(|_| &raw[PREFIX.len()..])
 }
 
 fn system_root_dir() -> PathBuf {
@@ -459,41 +433,24 @@ mod tests {
             PathBuf::from(r"C:\Windows\a.exe")
         );
 
-        // NT device prefix -> stripped, leaving an absolute path
+        // NT device-namespace prefix -> stripped, leaving an absolute path (confirmed against
+        // real EbpfCore/NetEbpfExt driver registrations on a Windows test VM)
         assert_eq!(
             super::normalize_service_binary_path(std::path::Path::new(r"\??\C:\Windows\a.sys")),
             PathBuf::from(r"C:\Windows\a.sys")
         );
 
-        // "\SystemRoot\" token -> resolved against the real Windows directory
-        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-        assert_eq!(
-            super::normalize_service_binary_path(std::path::Path::new(
-                r"\SystemRoot\System32\drivers\a.sys"
-            )),
-            PathBuf::from(&system_root).join(r"System32\drivers\a.sys")
-        );
-
         // Bare relative path -> resolved relative to the Windows directory
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
         assert_eq!(
             super::normalize_service_binary_path(std::path::Path::new(r"System32\drivers\a.sys")),
             PathBuf::from(&system_root).join(r"System32\drivers\a.sys")
-        );
-
-        // Quoted path with trailing arguments -> quotes and arguments stripped
-        assert_eq!(
-            super::normalize_service_binary_path(std::path::Path::new(
-                r#""C:\Program Files\a.exe" -flag value"#
-            )),
-            PathBuf::from(r"C:\Program Files\a.exe")
         );
     }
 
     #[test]
     fn normalize_service_binary_path_non_ascii_no_panic_test() {
-        // Regression test: a path containing a multi-byte UTF-8 character positioned so that
-        // the "\SystemRoot\" prefix length (13 bytes) lands mid-character must not panic.
-        // "AAAAAAAAAAAA" is 12 ASCII bytes, so byte 13 falls inside the 2-byte 'é' that follows.
+        // A path with a non-ASCII character must never panic, regardless of length/byte layout.
         let path = std::path::Path::new("AAAAAAAAAAAAé.sys");
         let result = super::normalize_service_binary_path(path);
         assert!(result.to_string_lossy().contains("AAAAAAAAAAAAé.sys"));
