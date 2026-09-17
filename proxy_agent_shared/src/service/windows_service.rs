@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::logger::logger_manager;
 use crate::result::Result;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str;
 use std::time::Duration;
 pub use windows_service::service::ServiceState;
@@ -21,6 +21,8 @@ pub struct ServiceStatusInfo {
     pub service_name: String,
     pub state: Option<ServiceState>,
     pub start_type: String,
+    /// The service's registered executable path; `None` when not installed or unqueryable.
+    pub executable_path: Option<PathBuf>,
 }
 
 impl ServiceStatusInfo {
@@ -221,6 +223,41 @@ pub fn query_service_config(service_name: &str) -> Result<ServiceConfig> {
         .map_err(|e| Error::WindowsService(e, std::io::Error::last_os_error()))
 }
 
+/// Resolves a service's registered binary path to an absolute path. Kernel drivers commonly
+/// register with the NT `\SystemRoot\` token or `\??\` device prefix instead of a drive-letter
+/// path; Win32 services may register a quoted path followed by arguments. This strips both to
+/// a clean, absolute path so file lookups (e.g. version) work.
+pub fn normalize_service_binary_path(path: &Path) -> PathBuf {
+    let raw = path.to_string_lossy();
+    let raw = raw.strip_prefix(r"\??\").unwrap_or(&raw);
+
+    // A quoted path may be followed by command-line arguments, e.g. `"C:\a.exe" -flag`.
+    let raw = match raw
+        .strip_prefix('"')
+        .and_then(|rest| rest.split('"').next())
+    {
+        Some(quoted) => quoted,
+        None => raw,
+    };
+
+    const SYSTEM_ROOT_PREFIX: &str = r"\SystemRoot\";
+    let system_root =
+        || PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()));
+
+    if raw.len() >= SYSTEM_ROOT_PREFIX.len()
+        && raw[..SYSTEM_ROOT_PREFIX.len()].eq_ignore_ascii_case(SYSTEM_ROOT_PREFIX)
+    {
+        return system_root().join(&raw[SYSTEM_ROOT_PREFIX.len()..]);
+    }
+
+    let candidate = PathBuf::from(raw);
+    if candidate.is_absolute() {
+        candidate
+    } else {
+        system_root().join(candidate)
+    }
+}
+
 /// Classifies a Windows service state into (is_running, is_transitioning). `StartPending`/
 /// `ContinuePending` are transitioning toward Running; every other state (including no state)
 /// is a confirmed down state. Takes `Option<&ServiceState>` so it's reusable without `Copy`.
@@ -403,6 +440,44 @@ mod tests {
         assert_eq!(super::classify_service_state(None), (false, false));
     }
 
+    #[test]
+    fn normalize_service_binary_path_test() {
+        // Already an absolute drive-letter path -> unchanged
+        assert_eq!(
+            super::normalize_service_binary_path(std::path::Path::new(r"C:\Windows\a.exe")),
+            PathBuf::from(r"C:\Windows\a.exe")
+        );
+
+        // NT device prefix -> stripped, leaving an absolute path
+        assert_eq!(
+            super::normalize_service_binary_path(std::path::Path::new(r"\??\C:\Windows\a.sys")),
+            PathBuf::from(r"C:\Windows\a.sys")
+        );
+
+        // "\SystemRoot\" token -> resolved against the real Windows directory
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        assert_eq!(
+            super::normalize_service_binary_path(std::path::Path::new(
+                r"\SystemRoot\System32\drivers\a.sys"
+            )),
+            PathBuf::from(&system_root).join(r"System32\drivers\a.sys")
+        );
+
+        // Bare relative path -> resolved relative to the Windows directory
+        assert_eq!(
+            super::normalize_service_binary_path(std::path::Path::new(r"System32\drivers\a.sys")),
+            PathBuf::from(&system_root).join(r"System32\drivers\a.sys")
+        );
+
+        // Quoted path with trailing arguments -> quotes and arguments stripped
+        assert_eq!(
+            super::normalize_service_binary_path(std::path::Path::new(
+                r#""C:\Program Files\a.exe" -flag value"#
+            )),
+            PathBuf::from(r"C:\Program Files\a.exe")
+        );
+    }
+
     #[tokio::test]
     async fn test_install_service() {
         const TEST_SERVICE_NAME: &str = "test_nt_service";
@@ -518,6 +593,7 @@ mod tests {
             service_name: "TestSvc".to_string(),
             state: None,
             start_type: "NotInstalled".to_string(),
+            executable_path: None,
         };
         assert_eq!(info.summary(), "NotInstalled");
 
@@ -526,6 +602,7 @@ mod tests {
             service_name: "TestSvc".to_string(),
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
+            executable_path: None,
         };
         assert_eq!(info.summary(), "Running, AutoStart");
 
@@ -534,6 +611,7 @@ mod tests {
             service_name: "TestSvc".to_string(),
             state: Some(ServiceState::Stopped),
             start_type: "Disabled".to_string(),
+            executable_path: None,
         };
         assert_eq!(info.summary(), "Stopped, Disabled");
     }
@@ -545,6 +623,7 @@ mod tests {
             service_name: "TestSvc".to_string(),
             state: None,
             start_type: "NotInstalled".to_string(),
+            executable_path: None,
         };
         let msg = info.message();
         assert!(
@@ -561,6 +640,7 @@ mod tests {
             service_name: "TestSvc".to_string(),
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
+            executable_path: None,
         };
         let msg = info.message();
         assert!(
