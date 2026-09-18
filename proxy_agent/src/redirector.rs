@@ -53,15 +53,11 @@ use crate::common::helpers;
 use crate::common::result::Result;
 use crate::common::{config, logger};
 use crate::provision;
-use crate::shared_state::access_control_wrapper::AccessControlSharedState;
 use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSharedState};
-use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
-use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
-use crate::shared_state::provision_wrapper::ProvisionSharedState;
+use crate::shared_state::proxy_server_wrapper::ProxyServerSharedState;
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use crate::shared_state::EventThreadsSharedState;
 use crate::shared_state::SharedState;
-use proxy_agent_shared::common_state::CommonState;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -127,30 +123,23 @@ impl AuditEntry {
     }
 }
 
+pub struct AlertOnlyEntry {
+    pub kernel_timestamp_ns: u64,
+    pub local_ip_address: [u32; 4],
+    pub audit_entry: AuditEntry,
+    pub timestamp_utc_ns: i128, // in nanoseconds since Unix epoch
+}
+
 pub struct Redirector {
     local_port: u16,
-    redirector_shared_state: RedirectorSharedState,
-    key_keeper_shared_state: KeyKeeperSharedState,
-    agent_status_shared_state: AgentStatusSharedState,
-    cancellation_token: CancellationToken,
-    common_state: CommonState,
-    provision_shared_state: ProvisionSharedState,
-    access_control_shared_state: AccessControlSharedState,
-    connection_summary_shared_state: ConnectionSummarySharedState,
+    shared_state: SharedState,
 }
 
 impl Redirector {
     pub fn new(local_port: u16, shared_state: &SharedState) -> Self {
         Redirector {
             local_port,
-            cancellation_token: shared_state.get_cancellation_token(),
-            key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
-            common_state: shared_state.get_common_state(),
-            provision_shared_state: shared_state.get_provision_shared_state(),
-            agent_status_shared_state: shared_state.get_agent_status_shared_state(),
-            redirector_shared_state: shared_state.get_redirector_shared_state(),
-            access_control_shared_state: shared_state.get_access_control_shared_state(),
-            connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
+            shared_state: shared_state.clone(),
         }
     }
 
@@ -160,7 +149,8 @@ impl Redirector {
     pub async fn start(&self) {
         let message = "eBPF redirector is starting";
         if let Err(e) = self
-            .agent_status_shared_state
+            .shared_state
+            .get_agent_status_shared_state()
             .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
             .await
         {
@@ -221,15 +211,31 @@ impl Redirector {
         self.attach_bpf_prog(&mut bpf_object)?;
         logger::write_information("Success attached bpf prog.".to_string());
 
+        match bpf_object.subscribe_alert_only(self.shared_state.get_cancellation_token().clone()) {
+            Ok(receiver) => {
+                // Handle the received alert-only events here, spawn a task to process them
+                tokio::spawn(process_alert_only_events(
+                    receiver,
+                    self.shared_state.get_proxy_server_shared_state(),
+                    self.shared_state.get_cancellation_token(),
+                ));
+            }
+            Err(e) => {
+                logger::write_error(format!("Failed to subscribe to alert-only events: {e}"));
+            }
+        }
+
         if let Err(e) = self
-            .redirector_shared_state
+            .shared_state
+            .get_redirector_shared_state()
             .update_bpf_object(Arc::new(Mutex::new(bpf_object)))
             .await
         {
             logger::write_error(format!("Failed to update bpf object in shared state: {e}"));
         }
         if let Err(e) = self
-            .redirector_shared_state
+            .shared_state
+            .get_redirector_shared_state()
             .set_local_port(self.local_port)
             .await
         {
@@ -242,7 +248,8 @@ impl Redirector {
             logger::AGENT_LOGGER_KEY,
         );
         if let Err(e) = self
-            .agent_status_shared_state
+            .shared_state
+            .get_agent_status_shared_state()
             .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
             .await
         {
@@ -251,7 +258,8 @@ impl Redirector {
             ));
         }
         if let Err(e) = self
-            .agent_status_shared_state
+            .shared_state
+            .get_agent_status_shared_state()
             .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
             .await
         {
@@ -259,23 +267,14 @@ impl Redirector {
         }
 
         // report redirector ready for provision
-        provision::redirector_ready(EventThreadsSharedState {
-            cancellation_token: self.cancellation_token.clone(),
-            common_state: self.common_state.clone(),
-            access_control_shared_state: self.access_control_shared_state.clone(),
-            redirector_shared_state: self.redirector_shared_state.clone(),
-            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-            provision_shared_state: self.provision_shared_state.clone(),
-            agent_status_shared_state: self.agent_status_shared_state.clone(),
-            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
-        })
-        .await;
+        provision::redirector_ready(EventThreadsSharedState::new(&self.shared_state)).await;
 
         Ok(())
     }
 
     async fn get_status_message(&self) -> String {
-        self.agent_status_shared_state
+        self.shared_state
+            .get_agent_status_shared_state()
             .get_module_status(AgentStatusModule::Redirector)
             .await
             .message
@@ -283,7 +282,8 @@ impl Redirector {
 
     async fn set_error_status(&self, message: String) {
         if let Err(e) = self
-            .agent_status_shared_state
+            .shared_state
+            .get_agent_status_shared_state()
             .set_module_status_message(message.to_string(), AgentStatusModule::Redirector)
             .await
         {
@@ -297,6 +297,66 @@ impl Redirector {
 #[cfg(windows)]
 pub fn get_audit_from_stream_socket(raw_socket_id: usize) -> Result<AuditEntry> {
     windows::get_audit_from_redirect_context(raw_socket_id)
+}
+
+async fn process_alert_only_events(
+    mut receiver: tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>,
+    proxy_server_shared_state: ProxyServerSharedState,
+    cancellation_token: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => return,
+            record = receiver.recv() => {
+                let Some(record) = record else { return; };
+                let entry = record.audit_entry;
+                let destination_ip = entry.destination_ipv4_addr();
+                let destination_port = entry.destination_port_in_host_byte_order();
+                //TODO: handle IPv6 addresses as well
+                let local_ip = Ipv4Addr::from_bits(record.local_ip_address[0].to_be());
+                let message = match crate::proxy::Claims::from_audit_entry(
+                    &entry,
+                    local_ip.into(),
+                    0, // not used for alert-only, so just use 0
+                    proxy_server_shared_state.clone(),
+                )
+                .await
+                {
+                    Ok(claims) => format!(
+                        "eBPF alert-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userName={}, processId={}, processName={}, processFullPath={}, processCmdLine={}, runAsElevated={}, destination={}:{}",
+                        record.timestamp_utc_ns,
+                        record.kernel_timestamp_ns,
+                        local_ip,
+                        claims.userName,
+                        claims.processId,
+                        claims.processName.to_string_lossy(),
+                        claims.processFullPath.display(),
+                        claims.processCmdLine,
+                        claims.runAsElevated,
+                        destination_ip,
+                        destination_port,
+                    ),
+                    Err(err) => format!(
+                        "eBPF alert-only connection: timestampUtcNs={}, kernelTimestampNs={}, localIp={}, userId={}, processId={}, processDetails=unavailable ({err}), destination={}:{}",
+                        record.timestamp_utc_ns,
+                        record.kernel_timestamp_ns,
+                        local_ip,
+                        entry.logon_id,
+                        entry.process_id,
+                        destination_ip,
+                        destination_port,
+                    ),
+                };
+                event_logger::write_event(
+                    LoggerLevel::Warn,
+                    message,
+                    "process_alert_only_events",
+                    "redirector",
+                    logger::AGENT_LOGGER_KEY,
+                );
+            }
+        }
+    }
 }
 
 pub fn ip_to_string(ip: u32) -> String {
@@ -393,6 +453,21 @@ pub async fn remove_audit(
             .lock()
             .unwrap()
             .remove_audit_map_entry(source_port)
+    } else {
+        Err(Error::Bpf(BpfErrorType::NullBpfObject))
+    }
+}
+
+/// Update the local IP bind monitor only setting in the eBPF configuration map.
+pub async fn update_local_ip_bind_monitor_only(
+    enabled: bool,
+    redirector_shared_state: RedirectorSharedState,
+) -> Result<()> {
+    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
+        bpf_object
+            .lock()
+            .unwrap()
+            .update_local_ip_bind_monitor_only(enabled)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }

@@ -857,6 +857,17 @@ impl KeyKeeper {
             return false;
         }
 
+        // Update the local IP bind monitor only setting in the eBPF configuration map.
+        // TODO: Will read from the KeyStatus instead of hardcoding it to true.
+        if let Err(e) = redirector::update_local_ip_bind_monitor_only(
+            true,
+            self.redirector_shared_state.clone(),
+        )
+        .await
+        {
+            logger::write_warning(format!("Failed to update local IP bind monitor only: {e}"));
+        }
+
         // update the redirector policy map
         if !redirector::update_wire_server_redirect_policy(
             status.get_wire_server_mode() != DISABLE_STATE,
