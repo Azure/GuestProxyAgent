@@ -491,6 +491,7 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
                 )
             };
             if status != 0 {
+                _ = unsafe { BCryptDestroyHash(h_hash) };
                 return Err(Error::ComputeSignature(
                     "BCryptHashData".to_string(),
                     status,
@@ -502,6 +503,7 @@ pub fn compute_signature(hex_encoded_key: &str, input_to_sign: &[u8]) -> Result<
                 BCryptFinishHash(h_hash, signature.as_mut_ptr(), signature.len() as u32, 0)
             };
             if status != 0 {
+                _ = unsafe { BCryptDestroyHash(h_hash) };
                 return Err(Error::ComputeSignature(
                     "BCryptFinishHash".to_string(),
                     status,
@@ -605,10 +607,16 @@ pub fn set_resource_limits(process_id: u32, cpu_percent: u16, ram_in_mb: usize) 
 
     // Open the target process with sufficient rights
     // The handle must have the PROCESS_SET_QUOTA and PROCESS_TERMINATE access rights.
-    let process_handle = get_process_handler(
+    let process_handle = match get_process_handler(
         process_id,
         PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA | PROCESS_TERMINATE,
-    )?;
+    ) {
+        Ok(process_handle) => process_handle,
+        Err(error) => {
+            _ = close_handler(job_object);
+            return Err(error);
+        }
+    };
 
     // Check if process is already in a job
     let mut in_job: i32 = 0; // BOOL
@@ -636,6 +644,7 @@ pub fn set_resource_limits(process_id: u32, cpu_percent: u16, ram_in_mb: usize) 
     let err = std::io::Error::last_os_error();
     _ = close_handler(process_handle);
     if ok == 0 {
+        _ = close_handler(job_object);
         return Err(Error::WindowsApi(
             "AssignProcessToJobObject".to_string(),
             err,
@@ -684,7 +693,8 @@ pub fn get_process_handler(pid: u32, options: PROCESS_ACCESS_RIGHTS) -> Result<H
 pub fn close_handler(handler: HANDLE) -> Result<()> {
     if handler != 0 {
         // https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
-        if 0 != unsafe { CloseHandle(handler) } {
+        // If the function fails, the return value is zero. To get extended error information, call GetLastError.
+        if 0 == unsafe { CloseHandle(handler) } {
             return Err(Error::WindowsApi(
                 "CloseHandle".to_string(),
                 std::io::Error::last_os_error(),

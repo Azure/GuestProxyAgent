@@ -1,6 +1,6 @@
 [package]
 name = "proxy_agent_shared"
-version = "1.0.49"
+version = "1.0.50"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,6 +15,7 @@ serde_derive = "1.0.152"
 serde_json = "1.0.91"         # json Deserializer
 serde-xml-rs = "0.8.1"        # xml Deserializer with xml attribute
 regex = "1.11"                # match file name 
+regex-automata = { version = "0.4.9", default-features = false, features = ["std", "meta", "syntax", "perf"] }
 thiserror = "1.0.64"
 tokio = { version = "1", features = ["fs", "rt", "macros", "net", "sync", "time"] }
 tokio-util = "0.7.11"

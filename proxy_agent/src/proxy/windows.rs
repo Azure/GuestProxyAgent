@@ -8,6 +8,7 @@ use crate::common::{
 };
 use libloading::{Library, Symbol};
 use once_cell::sync::Lazy;
+use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::{collections::HashMap, ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
@@ -31,6 +32,27 @@ const MAX_PREFERRED_LENGTH: u32 = 4294967295u32;
 struct LocalgroupUsersInfo0 {
     pub lgrui0_name: windows_sys::core::PWSTR,
 }
+
+struct LsaBuffer(*mut c_void);
+
+impl Drop for LsaBuffer {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { Identity::LsaFreeReturnBuffer(self.0) };
+        }
+    }
+}
+
+struct NetApiBuffer(*mut c_void);
+
+impl Drop for NetApiBuffer {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            _ = net_api_buffer_free(self.0);
+        }
+    }
+}
+
 static NETAPI32_DLL: Lazy<Library> = Lazy::new(load_netapi32_dll);
 fn load_netapi32_dll() -> Library {
     let dll_name = "netapi32.dll\0";
@@ -53,6 +75,8 @@ type NetUserGetLocalGroups = unsafe extern "system" fn(
     entriesread: *mut u32,
     totalentries: *mut u32,
 ) -> u32;
+
+type NetApiBufferFree = unsafe extern "system" fn(buffer: *mut c_void) -> u32;
 
 #[allow(clippy::too_many_arguments)]
 fn net_user_get_local_groups(
@@ -80,6 +104,18 @@ fn net_user_get_local_groups(
             entriesread,
             totalentries,
         );
+        Ok(status)
+    }
+}
+
+fn net_api_buffer_free(buffer: *mut c_void) -> Result<u32> {
+    unsafe {
+        let fun_name = "NetApiBufferFree\0";
+        let net_api_buffer_free: Symbol<NetApiBufferFree> =
+            NETAPI32_DLL
+                .get(fun_name.as_bytes())
+                .map_err(|e| Error::WindowsApi(WindowsApiErrorType::LoadNetApiBufferFree(e)))?;
+        let status = net_api_buffer_free(buffer);
         Ok(status)
     }
 }
@@ -126,7 +162,9 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
         ));
     }
 
-    let session_data = unsafe { *data.assume_init() };
+    let session_data_ptr = unsafe { data.assume_init() };
+    let _session_data_buffer = LsaBuffer(session_data_ptr.cast());
+    let session_data = unsafe { &*session_data_ptr };
     if session_data.UserName.Length != 0 {
         user_name = from_unicode_string(&session_data.UserName);
     } else {
@@ -163,6 +201,7 @@ pub fn get_user(logon_id: u64) -> Result<(String, Vec<String>)> {
         &mut group_count,
         &mut total_group_count,
     )?;
+    let _group_info_buffer = NetApiBuffer(group_info.cast());
     if status == 0 {
         let group_info = unsafe {
             std::slice::from_raw_parts(
