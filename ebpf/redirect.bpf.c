@@ -248,7 +248,7 @@ int authorize_connect6(bpf_sock_addr_t *ctx)
         // TODO: handle bind to Local IPv6 address before redirecting.
 
         bpf_printk("Found IPv4-mapped proxy entry.");
-        if (update_audit_map_entry(ctx, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6) == 1)
+        if (update_audit_map_entry(ctx, destination_ipv4, GPA_ADDRESS_FAMILY_IPV6, 0) == 1)
         {
             bpf_printk("Found skip process entry, skip the redirection.");
             return BPF_SOCK_ADDR_VERDICT_PROCEED_SOFT;
