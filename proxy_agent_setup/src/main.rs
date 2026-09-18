@@ -391,6 +391,7 @@ mod tests {
                 service_name: name.to_string(),
                 state,
                 start_type: "AutoStart".to_string(),
+                executable_path: None,
             }
         }
 

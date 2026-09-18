@@ -415,12 +415,7 @@ fn build_ebpf_substatus(
         classify_service_state(svc.state.as_ref()),
     ]);
 
-    let message = format!(
-        "EbpfCore: {}, NetEbpfExt: {}, eBPFSvc: {}",
-        core.summary(),
-        ext.summary(),
-        svc.summary()
-    );
+    let message = [core, ext, svc].map(format_ebpf_service).join(" | ");
 
     SubStatus {
         name: constants::EBPF_SUBSTATUS_NAME.to_string(),
@@ -431,6 +426,33 @@ fn build_ebpf_substatus(
             message,
         },
     }
+}
+
+/// Formats one eBPF-related service for the `EbpfStatus` message, e.g.
+/// "EbpfCore: Running (1.5.0.0), AutoStart" or "eBPFSvc: NotInstalled".
+#[cfg(windows)]
+fn format_ebpf_service(info: &proxy_agent_shared::service::ServiceStatusInfo) -> String {
+    match &info.state {
+        Some(state) => {
+            let version = ebpf_service_version_display(info);
+            format!(
+                "{}: {state:?} ({version}), {}",
+                info.service_name, info.start_type
+            )
+        }
+        None => format!("{}: {}", info.service_name, info.summary()),
+    }
+}
+
+/// Resolves a service's product version for display, using its registered executable path.
+/// Returns `constants::VERSION_UNKNOWN` when the path is unknown or the version can't be read.
+#[cfg(windows)]
+fn ebpf_service_version_display(info: &proxy_agent_shared::service::ServiceStatusInfo) -> String {
+    info.executable_path
+        .as_deref()
+        .and_then(|path| proxy_agent_shared::windows::get_file_product_version(path).ok())
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| constants::VERSION_UNKNOWN.to_string())
 }
 
 #[cfg(windows)]
@@ -1509,6 +1531,7 @@ mod tests {
                 service_name: name.to_string(),
                 state,
                 start_type,
+                executable_path: None,
             }
         }
 
@@ -1602,6 +1625,14 @@ mod tests {
             msg.contains("EbpfCore:") && msg.contains("NetEbpfExt:") && msg.contains("eBPFSvc:"),
             "Expected all three driver labels in message, got: {msg}"
         );
+        assert!(
+            msg.matches(" | ").count() == 2,
+            "Expected the three services separated by ' | ', got: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("({})", constants::VERSION_UNKNOWN)),
+            "Expected VersionUnknown in parens when no executable path is set, got: {msg}"
+        );
 
         // 7. Core stopped, Ext+Svc running → Error
         let sub = super::build_ebpf_substatus(
@@ -1678,6 +1709,61 @@ mod tests {
             "A confirmed-down service should still report Error even if another is transitioning"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_ebpf_service_version_display() {
+        use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
+
+        // No executable path known → VersionUnknown
+        let info = ServiceStatusInfo {
+            service_name: constants::EBPF_CORE.to_string(),
+            state: Some(ServiceState::Running),
+            start_type: "AutoStart".to_string(),
+            executable_path: None,
+        };
+        assert_eq!(
+            super::ebpf_service_version_display(&info),
+            constants::VERSION_UNKNOWN
+        );
+
+        // Executable path doesn't exist → VersionUnknown (get_file_product_version fails gracefully)
+        let info = ServiceStatusInfo {
+            service_name: constants::EBPF_CORE.to_string(),
+            state: Some(ServiceState::Running),
+            start_type: "AutoStart".to_string(),
+            executable_path: Some(std::path::PathBuf::from("C:\\does-not-exist\\missing.exe")),
+        };
+        assert_eq!(
+            super::ebpf_service_version_display(&info),
+            constants::VERSION_UNKNOWN
+        );
+
+        // Real executable path → the actual product version is resolved and rendered
+        let system_path = std::env::var("SystemRoot").unwrap_or("C:\\Windows".to_string());
+        let kernel32 = std::path::Path::new(&system_path)
+            .join("System32")
+            .join("kernel32.dll");
+        let info = ServiceStatusInfo {
+            service_name: constants::EBPF_CORE.to_string(),
+            state: Some(ServiceState::Running),
+            start_type: "AutoStart".to_string(),
+            executable_path: Some(kernel32),
+        };
+        let version = super::ebpf_service_version_display(&info);
+        assert_ne!(
+            version,
+            constants::VERSION_UNKNOWN,
+            "Expected a real product version for kernel32.dll, got: {version}"
+        );
+
+        let message = super::format_ebpf_service(&info);
+        assert_eq!(
+            message,
+            format!("EbpfCore: Running ({version}), AutoStart"),
+            "Expected version rendered in parens between state and start type, got: {message}"
+        );
     }
 
     #[test]

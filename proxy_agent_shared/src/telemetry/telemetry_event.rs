@@ -14,6 +14,8 @@ pub const MAX_TELEMETRY_MESSAGE_LENGTH: usize = 4 * 1024;
 
 const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
 const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
+const TELEMETRY_DATA_PREFIX: &str = "<?xml version=\"1.0\"?><TelemetryData version=\"1.0\">";
+const TELEMETRY_DATA_SUFFIX: &str = "</TelemetryData>";
 
 /// VmMetaData contains the metadata of the VM.
 /// The metadata is used to identify the VM and the image origin.
@@ -178,6 +180,7 @@ impl TelemetryProvider {
 pub struct TelemetryData {
     providers: Vec<TelemetryProvider>,
     vm_data: TelemetryEventVMData,
+    serialized_size: usize,
 }
 
 impl TelemetryData {
@@ -186,6 +189,7 @@ impl TelemetryData {
         TelemetryData {
             providers: Vec::new(),
             vm_data,
+            serialized_size: TELEMETRY_DATA_PREFIX.len() + TELEMETRY_DATA_SUFFIX.len(),
         }
     }
 
@@ -194,35 +198,38 @@ impl TelemetryData {
     pub fn to_xml(&self) -> String {
         let mut xml: String = String::new();
 
-        xml.push_str("<?xml version=\"1.0\"?><TelemetryData version=\"1.0\">");
+        xml.push_str(TELEMETRY_DATA_PREFIX);
 
         for provider in &self.providers {
             xml.push_str(&provider.to_xml(&self.vm_data));
         }
 
-        xml.push_str("</TelemetryData>");
+        xml.push_str(TELEMETRY_DATA_SUFFIX);
         xml
     }
 
     /// Get the size of the telemetry data in bytes.
     pub fn get_size(&self) -> usize {
-        self.to_xml().len()
+        self.serialized_size
     }
 
     /// Add a telemetry event to the telemetry data.
     /// It will be added to the corresponding provider.
     pub fn add_event(&mut self, event: TelemetryEvent) {
+        let event_size = event.to_xml_event(&self.vm_data).len();
         for provider in &mut self.providers {
             match &event {
                 TelemetryEvent::GenericLogsEvent(_) => {
                     if provider.id == METRICS_PROVIDER_ID {
                         provider.add_event(event);
+                        self.serialized_size += event_size;
                         return;
                     }
                 }
                 TelemetryEvent::ExtensionEvent(_) => {
                     if provider.id == STATUS_PROVIDER_ID {
                         provider.add_event(event);
+                        self.serialized_size += event_size;
                         return;
                     }
                 }
@@ -232,6 +239,7 @@ impl TelemetryData {
             TelemetryEvent::GenericLogsEvent(_) => METRICS_PROVIDER_ID.to_string(),
             TelemetryEvent::ExtensionEvent(_) => STATUS_PROVIDER_ID.to_string(),
         });
+        self.serialized_size += p.to_xml(&self.vm_data).len() + event_size;
         p.add_event(event);
         self.providers.push(p);
     }
@@ -243,12 +251,20 @@ impl TelemetryData {
             match &last_event {
                 TelemetryEvent::GenericLogsEvent(_) => {
                     if provider.id == METRICS_PROVIDER_ID {
-                        return provider.remove_event(last_event);
+                        let removed = provider.remove_event(last_event);
+                        if let Some(event) = &removed {
+                            self.serialized_size -= event.to_xml_event(&self.vm_data).len();
+                        }
+                        return removed;
                     }
                 }
                 TelemetryEvent::ExtensionEvent(_) => {
                     if provider.id == STATUS_PROVIDER_ID {
-                        return provider.remove_event(last_event);
+                        let removed = provider.remove_event(last_event);
+                        if let Some(event) = &removed {
+                            self.serialized_size -= event.to_xml_event(&self.vm_data).len();
+                        }
+                        return removed;
                     }
                 }
             }
@@ -690,6 +706,7 @@ mod tests {
 
         let initial_size = telemetry_data.get_size();
         assert!(initial_size > 0);
+        assert_eq!(initial_size, telemetry_data.to_xml().len());
 
         // Add events
         let event1 = create_test_telemetry_event("Test message 1");
@@ -698,10 +715,12 @@ mod tests {
 
         telemetry_data.add_event(event1);
         assert_eq!(telemetry_data.event_count(), 1);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
 
         telemetry_data.add_event(event2);
         telemetry_data.add_event(event3.clone());
         assert_eq!(telemetry_data.event_count(), 3);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
 
         // Size should increase after adding events
         let new_size = telemetry_data.get_size();
@@ -711,6 +730,7 @@ mod tests {
         let removed = telemetry_data.remove_last_event(event3);
         assert!(removed.is_some());
         assert_eq!(telemetry_data.event_count(), 2);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
 
         // Test XML with events
         let xml = telemetry_data.to_xml();
@@ -985,6 +1005,7 @@ mod tests {
         let extension_event2 = TelemetryEvent::ExtensionEvent(extension_telemetry_event2);
         telemetry_data.add_event(extension_event2);
         assert_eq!(telemetry_data.event_count(), 3);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
 
         // Verify XML contains both provider types
         let xml = telemetry_data.to_xml();
@@ -998,6 +1019,7 @@ mod tests {
         let removed = telemetry_data.remove_last_event(extension_event);
         assert!(removed.is_some());
         assert_eq!(telemetry_data.event_count(), 2);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
     }
 
     /// Tests TelemetryProvider with extension events

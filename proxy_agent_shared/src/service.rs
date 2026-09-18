@@ -143,35 +143,43 @@ pub fn check_service_installed(service_name: &str) -> (bool, String) {
 /// or `None` when the service is not installed.
 #[cfg(windows)]
 pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatusInfo {
-    let (state, start_type) = match windows_service::query_service_status(service_name) {
-        Ok(status) => {
-            let start_type = match windows_service::query_service_config(service_name) {
-                Ok(config) => format!("{:?}", config.start_type),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to query config for service '{}': {}",
-                        service_name,
-                        e
-                    );
-                    "Unknown".to_string()
-                }
-            };
-            (Some(status.current_state), start_type)
-        }
-        Err(e) => {
-            log::debug!(
-                "Failed to query status for service '{}': {}. Treating as not installed.",
-                service_name,
-                e
-            );
-            (None, "NotInstalled".to_string())
-        }
-    };
+    let (state, start_type, executable_path) =
+        match windows_service::query_service_status(service_name) {
+            Ok(status) => {
+                let (start_type, executable_path) =
+                    match windows_service::query_service_config(service_name) {
+                        Ok(config) => (
+                            format!("{:?}", config.start_type),
+                            Some(windows_service::normalize_service_binary_path(
+                                &config.executable_path,
+                            )),
+                        ),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to query config for service '{}': {}",
+                                service_name,
+                                e
+                            );
+                            ("Unknown".to_string(), None)
+                        }
+                    };
+                (Some(status.current_state), start_type, executable_path)
+            }
+            Err(e) => {
+                log::debug!(
+                    "Failed to query status for service '{}': {}. Treating as not installed.",
+                    service_name,
+                    e
+                );
+                (None, "NotInstalled".to_string(), None)
+            }
+        };
 
     windows_service::ServiceStatusInfo {
         service_name: service_name.to_string(),
         state,
         start_type,
+        executable_path,
     }
 }
 
