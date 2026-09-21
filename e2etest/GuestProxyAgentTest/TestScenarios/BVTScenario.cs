@@ -33,7 +33,7 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", secureChannelEnabled));
             if (!Constants.IS_WINDOWS())
             {
-                // windows VM does not support binding local IP until we have the offical signed sys eBPF file,
+                // windows VM does not support binding local IP until we have the official signed sys eBPF file,
                 // so skip this test case for windows VM fro now
                 AddTestCase(new LocalIPBindingCase("LocalIPBindingCaseBeforeReboot"));
             }
