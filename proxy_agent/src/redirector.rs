@@ -63,10 +63,14 @@ use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
+
+const ALERT_ONLY_EVENT_LOG_INTERVAL: Duration = Duration::from_secs(60 * 15); // 15 minutes
 
 #[cfg(not(windows))]
 pub use linux::BpfObject;
@@ -128,6 +132,59 @@ pub struct AlertOnlyEntry {
     pub local_ip_address: [u32; 4],
     pub audit_entry: AuditEntry,
     pub timestamp_utc_ns: i128, // in nanoseconds since Unix epoch
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+struct AlertOnlyEventKey {
+    logon_id: u64,
+    process_id: u32,
+    destination_ipv4: u32,
+    destination_port: u16,
+    address_family: u32,
+}
+
+impl From<&AuditEntry> for AlertOnlyEventKey {
+    fn from(entry: &AuditEntry) -> Self {
+        Self {
+            logon_id: entry.logon_id,
+            process_id: entry.process_id,
+            destination_ipv4: entry.destination_ipv4,
+            destination_port: entry.destination_port,
+            address_family: entry.address_family as u32,
+        }
+    }
+}
+
+struct AlertOnlyEventRateLimiter {
+    last_event_log_times: HashMap<AlertOnlyEventKey, Instant>,
+}
+
+impl AlertOnlyEventRateLimiter {
+    fn new() -> Self {
+        Self {
+            last_event_log_times: HashMap::new(),
+        }
+    }
+
+    fn should_log(&mut self, key: AlertOnlyEventKey, now: Instant) -> bool {
+        // clean up old entries that have exceeded the log interval
+        self.last_event_log_times.retain(|_, last_log_time| {
+            now.saturating_duration_since(*last_log_time) < ALERT_ONLY_EVENT_LOG_INTERVAL
+        });
+
+        if self
+            .last_event_log_times
+            .get(&key)
+            .is_some_and(|last_log_time| {
+                now.saturating_duration_since(*last_log_time) < ALERT_ONLY_EVENT_LOG_INTERVAL
+            })
+        {
+            return false;
+        }
+
+        self.last_event_log_times.insert(key, now);
+        true
+    }
 }
 
 pub struct Redirector {
@@ -304,11 +361,16 @@ async fn process_alert_only_events(
     proxy_server_shared_state: ProxyServerSharedState,
     cancellation_token: CancellationToken,
 ) {
+    let mut rate_limiter = AlertOnlyEventRateLimiter::new();
     loop {
         tokio::select! {
             _ = cancellation_token.cancelled() => return,
             record = receiver.recv() => {
                 let Some(record) = record else { return; };
+                if !rate_limiter.should_log((&record.audit_entry).into(), Instant::now()) {
+                    continue;
+                }
+
                 let entry = record.audit_entry;
                 let destination_ip = entry.destination_ipv4_addr();
                 let destination_port = entry.destination_port_in_host_byte_order();
@@ -347,6 +409,7 @@ async fn process_alert_only_events(
                         destination_port,
                     ),
                 };
+
                 event_logger::write_event(
                     LoggerLevel::Warn,
                     message,
@@ -506,6 +569,47 @@ pub use windows::update_hostga_redirect_policy;
 
 #[cfg(test)]
 mod tests {
+    use super::{AlertOnlyEventKey, AlertOnlyEventRateLimiter, ALERT_ONLY_EVENT_LOG_INTERVAL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn alert_only_event_logging_is_rate_limited_per_identity() {
+        let start = Instant::now();
+        let mut rate_limiter = AlertOnlyEventRateLimiter::new();
+        let key = AlertOnlyEventKey {
+            logon_id: 1,
+            process_id: 2,
+            destination_ipv4: 3,
+            destination_port: 4,
+            address_family: 4,
+        };
+
+        assert!(rate_limiter.should_log(key, start));
+        assert!(!rate_limiter.should_log(
+            key,
+            start + ALERT_ONLY_EVENT_LOG_INTERVAL - Duration::from_nanos(1)
+        ));
+
+        let different_process = AlertOnlyEventKey {
+            process_id: 5,
+            ..key
+        };
+        let different_user = AlertOnlyEventKey { logon_id: 6, ..key };
+        let different_destination_ip = AlertOnlyEventKey {
+            destination_ipv4: 7,
+            ..key
+        };
+        let different_destination_port = AlertOnlyEventKey {
+            destination_port: 8,
+            ..key
+        };
+        assert!(rate_limiter.should_log(different_process, start));
+        assert!(rate_limiter.should_log(different_user, start));
+        assert!(rate_limiter.should_log(different_destination_ip, start));
+        assert!(rate_limiter.should_log(different_destination_port, start));
+        assert!(rate_limiter.should_log(key, start + ALERT_ONLY_EVENT_LOG_INTERVAL));
+    }
+
     #[tokio::test]
     async fn ip_to_string_test() {
         let ip = 0x10813FA8u32;

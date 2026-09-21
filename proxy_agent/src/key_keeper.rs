@@ -858,6 +858,7 @@ impl KeyKeeper {
         }
 
         // Update the local IP bind monitor only setting in the eBPF configuration map.
+        // By default, we enable the local IP bind monitor only mode.
         // TODO: Will read from the KeyStatus instead of hardcoding it to true.
         if let Err(e) = redirector::update_local_ip_bind_monitor_only(
             true,

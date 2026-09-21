@@ -29,6 +29,8 @@ namespace GuestProxyAgentTest.Utilities
         public static readonly string SETUP_CGROUP2_SCRIPT_NAME;
         public static readonly string GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME;
         public static readonly string INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME;
+        public static readonly string PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME;
+
         static Constants()
         {
             if (IS_WINDOWS())
@@ -39,6 +41,7 @@ namespace GuestProxyAgentTest.Utilities
                 IMDS_PING_TEST_SCRIPT_NAME = "IMDSPingTest.ps1";
                 GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME = "GuestProxyAgentExtensionValidation.ps1";
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.ps1";
+                PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.ps1";
             }
             else
             {
@@ -49,6 +52,7 @@ namespace GuestProxyAgentTest.Utilities
                 SETUP_CGROUP2_SCRIPT_NAME = "SetupCGroup2.sh";
                 GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME = "GuestProxyAgentExtensionValidation.sh";
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.sh";
+                PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.sh";
             }
         }
 
