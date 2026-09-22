@@ -24,6 +24,10 @@ pub mod service_state;
 pub mod windows_main;
 #[cfg(windows)]
 use proxy_agent_shared::service;
+#[cfg(windows)]
+use proxy_agent_shared::service::ServiceStatusInfo;
+#[cfg(windows)]
+use proxy_agent_shared::version::Version;
 
 const MAX_STATE_COUNT: u32 = 120;
 
@@ -401,21 +405,65 @@ fn combined_service_health(services: &[(bool, bool)]) -> (String, i32) {
     }
 }
 
+/// Returns the matched EbpfCore/NetEbpfExt version when both are known and equal, or `None`
+/// when they differ or either is unreadable.
+#[cfg(windows)]
+fn matched_ebpf_version(core: &ServiceStatusInfo, ext: &ServiceStatusInfo) -> Option<Version> {
+    match (&core.version, &ext.version) {
+        (Some(core_version), Some(ext_version)) if core_version == ext_version => {
+            Some(core_version.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Builds the `EbpfStatus` substatus. EbpfCore/NetEbpfExt versions must match; eBPFSvc is only
+/// required (queried and included) when they match and are >= 1.0, per the eBPF-for-Windows
+/// packaging change that split it into its own service starting at that version.
 #[cfg(windows)]
 fn build_ebpf_substatus(
-    core: &proxy_agent_shared::service::ServiceStatusInfo,
-    ext: &proxy_agent_shared::service::ServiceStatusInfo,
-    svc: &proxy_agent_shared::service::ServiceStatusInfo,
+    core: &ServiceStatusInfo,
+    ext: &ServiceStatusInfo,
+    svc: Option<&ServiceStatusInfo>,
 ) -> SubStatus {
     use proxy_agent_shared::service::classify_service_state;
 
-    let (status, code) = combined_service_health(&[
-        classify_service_state(core.state.as_ref()),
-        classify_service_state(ext.state.as_ref()),
-        classify_service_state(svc.state.as_ref()),
-    ]);
+    let core_health = classify_service_state(core.state.as_ref());
+    let ext_health = classify_service_state(ext.state.as_ref());
 
-    let message = [core, ext, svc].map(format_ebpf_service).join(" | ");
+    let (status, code, message) = match matched_ebpf_version(core, ext) {
+        None => (
+            constants::ERROR_STATUS.to_string(),
+            constants::STATUS_CODE_NOT_OK,
+            format!(
+                "{} | {} | EbpfCore and NetEbpfExt versions must match, got {} and {}",
+                format_ebpf_service(core),
+                format_ebpf_service(ext),
+                version_display(&core.version),
+                version_display(&ext.version)
+            ),
+        ),
+        Some(version) if version.major_at_least(1) => {
+            let svc_health = svc
+                .map(|s| classify_service_state(s.state.as_ref()))
+                .unwrap_or((false, false));
+            let (status, code) = combined_service_health(&[core_health, ext_health, svc_health]);
+            let message = format!(
+                "{} | {} | {}",
+                format_ebpf_service(core),
+                format_ebpf_service(ext),
+                svc.map(format_ebpf_service)
+                    .unwrap_or_else(|| format!("{}: NotInstalled", constants::EBPF_SVC))
+            );
+            (status, code, message)
+        }
+        Some(_) => {
+            // eBPFSvc isn't required below version 1.0 - omit it even if the caller supplied one.
+            let (status, code) = combined_service_health(&[core_health, ext_health]);
+            let message = [core, ext].map(format_ebpf_service).join(" | ");
+            (status, code, message)
+        }
+    };
 
     SubStatus {
         name: constants::EBPF_SUBSTATUS_NAME.to_string(),
@@ -431,26 +479,23 @@ fn build_ebpf_substatus(
 /// Formats one eBPF-related service for the `EbpfStatus` message, e.g.
 /// "EbpfCore: Running (1.5.0.0), AutoStart" or "eBPFSvc: NotInstalled".
 #[cfg(windows)]
-fn format_ebpf_service(info: &proxy_agent_shared::service::ServiceStatusInfo) -> String {
+fn format_ebpf_service(info: &ServiceStatusInfo) -> String {
     match &info.state {
-        Some(state) => {
-            let version = ebpf_service_version_display(info);
-            format!(
-                "{}: {state:?} ({version}), {}",
-                info.service_name, info.start_type
-            )
-        }
+        Some(state) => format!(
+            "{}: {state:?} ({}), {}",
+            info.service_name,
+            version_display(&info.version),
+            info.start_type
+        ),
         None => format!("{}: {}", info.service_name, info.summary()),
     }
 }
 
-/// Resolves a service's product version for display, using its registered executable path.
-/// Returns `constants::VERSION_UNKNOWN` when the path is unknown or the version can't be read.
+/// Renders a cached product version for display, or `VERSION_UNKNOWN` when absent.
 #[cfg(windows)]
-fn ebpf_service_version_display(info: &proxy_agent_shared::service::ServiceStatusInfo) -> String {
-    info.executable_path
-        .as_deref()
-        .and_then(|path| proxy_agent_shared::windows::get_file_product_version(path).ok())
+fn version_display(version: &Option<Version>) -> String {
+    version
+        .as_ref()
         .map(|v| v.to_string())
         .unwrap_or_else(|| constants::VERSION_UNKNOWN.to_string())
 }
@@ -463,10 +508,16 @@ fn compute_ebpf_substatus() -> SubStatus {
     let ext_status = service::check_service_status(constants::EBPF_EXT);
     logger::write(format!("check_service_status: {}", ext_status.message()));
 
-    let svc_status = service::check_service_status(constants::EBPF_SVC);
-    logger::write(format!("check_service_status: {}", svc_status.message()));
+    let svc_status = match matched_ebpf_version(&core_status, &ext_status) {
+        Some(version) if version.major_at_least(1) => {
+            let status = service::check_service_status(constants::EBPF_SVC);
+            logger::write(format!("check_service_status: {}", status.message()));
+            Some(status)
+        }
+        _ => None,
+    };
 
-    build_ebpf_substatus(&core_status, &ext_status, &svc_status)
+    build_ebpf_substatus(&core_status, &ext_status, svc_status.as_ref())
 }
 
 /// Builds the cross-platform `ProxyAgentServiceStatus` substatus for the GuestProxyAgent
@@ -1404,10 +1455,21 @@ mod tests {
             ebpf_message.contains("NetEbpfExt:"),
             "Expected message to contain 'NetEbpfExt:', got: {ebpf_message}"
         );
-        assert!(
-            ebpf_message.contains("eBPFSvc:"),
-            "Expected message to contain 'eBPFSvc:', got: {ebpf_message}"
+
+        // Independently re-derive whether eBPFSvc should be required, mirroring
+        // compute_ebpf_substatus's own decision, so this stays correct on any runner.
+        let core_status = proxy_agent_shared::service::check_service_status(constants::EBPF_CORE);
+        let ext_status = proxy_agent_shared::service::check_service_status(constants::EBPF_EXT);
+        let svc_required = matches!(
+            super::matched_ebpf_version(&core_status, &ext_status),
+            Some(v) if v.major_at_least(1)
         );
+        assert_eq!(
+            ebpf_message.contains("eBPFSvc:"),
+            svc_required,
+            "Expected eBPFSvc presence in message to match svc_required={svc_required}, got: {ebpf_message}"
+        );
+
         if ebpf_substatus.status == constants::SUCCESS_STATUS {
             assert_eq!(ebpf_substatus.code, constants::STATUS_CODE_OK);
         } else if ebpf_substatus.status == constants::TRANSITIONING_STATUS {
@@ -1520,8 +1582,13 @@ mod tests {
     #[cfg(windows)]
     fn test_build_ebpf_substatus() {
         use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
+        use proxy_agent_shared::version::Version;
 
-        fn make_info(name: &str, state: Option<ServiceState>) -> ServiceStatusInfo {
+        fn make_info(
+            name: &str,
+            state: Option<ServiceState>,
+            version: Option<Version>,
+        ) -> ServiceStatusInfo {
             let start_type = if state.is_some() {
                 "AutoStart".to_string()
             } else {
@@ -1532,93 +1599,82 @@ mod tests {
                 state,
                 start_type,
                 executable_path: None,
+                version,
             }
         }
 
         let running = || Some(ServiceState::Running);
         let stopped = || Some(ServiceState::Stopped);
+        let v = |major: u32, minor: u32| Some(Version::from_major_minor(major, minor));
 
-        // 1. All three not installed
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, None),
-            &make_info(constants::EBPF_EXT, None),
-            &make_info(constants::EBPF_SVC, None),
-        );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "All not installed");
+        // 1. Core/Ext versions differ -> Error, explains the mismatch, no eBPFSvc shown.
+        let core = make_info(constants::EBPF_CORE, running(), v(1, 5));
+        let ext = make_info(constants::EBPF_EXT, running(), v(1, 4));
+        let sub = super::build_ebpf_substatus(&core, &ext, None);
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Version mismatch");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
         let msg = &sub.formattedMessage.message;
         assert!(
-            msg.contains(constants::EBPF_CORE)
-                && msg.contains(constants::EBPF_EXT)
-                && msg.contains(constants::EBPF_SVC),
-            "Expected all three service names in message, got: {msg}"
+            msg.contains("must match"),
+            "Expected a version-mismatch explanation, got: {msg}"
+        );
+        assert!(
+            !msg.contains("eBPFSvc"),
+            "eBPFSvc should not appear when Core/Ext versions mismatch, got: {msg}"
         );
 
-        // 2. Core+Ext running, eBPFSvc not installed → still Error (all three required)
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, None),
-        );
+        // 2. Core/Ext versions both unreadable (None) -> treated as a mismatch (can't confirm
+        // equality), per the "unreadable version is an error" rule.
+        let core = make_info(constants::EBPF_CORE, running(), None);
+        let ext = make_info(constants::EBPF_EXT, running(), None);
+        let sub = super::build_ebpf_substatus(&core, &ext, None);
         assert_eq!(
             sub.status,
             constants::ERROR_STATUS,
-            "eBPFSvc not installed should still be Error even if Core+Ext are healthy"
+            "Unreadable versions must be treated as an error, not silently ignored"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
-        let msg = &sub.formattedMessage.message;
-        assert!(
-            msg.contains("eBPFSvc: NotInstalled"),
-            "Expected eBPFSvc: NotInstalled in message, got: {msg}"
-        );
 
-        // 3. Core+Ext running, eBPFSvc stopped → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, stopped()),
-        );
+        // 3. Core/Ext match, both < 1.0 -> eBPFSvc not required; running -> Success, and eBPFSvc
+        // is omitted from the message even if the caller passed one in.
+        let core = make_info(constants::EBPF_CORE, running(), v(0, 9));
+        let ext = make_info(constants::EBPF_EXT, running(), v(0, 9));
+        let extra_svc = make_info(constants::EBPF_SVC, running(), v(0, 9));
+        let sub = super::build_ebpf_substatus(&core, &ext, Some(&extra_svc));
         assert_eq!(
             sub.status,
-            constants::ERROR_STATUS,
-            "eBPFSvc stopped should be Error even if Core+Ext are healthy"
+            constants::SUCCESS_STATUS,
+            "Both <1.0 and running"
         );
-        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
-
-        // 4. Core not installed, Ext+Svc running → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, None),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, running()),
-        );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "Core not installed");
-        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
+        assert_eq!(sub.code, constants::STATUS_CODE_OK);
         let msg = &sub.formattedMessage.message;
         assert!(
-            msg.contains(constants::EBPF_CORE),
-            "Expected EbpfCore in message, got: {msg}"
+            msg.contains("EbpfCore:") && msg.contains("NetEbpfExt:"),
+            "Expected Core/Ext in message, got: {msg}"
         );
         assert!(
-            msg.contains("Running"),
-            "Expected Ext/Svc summary (Running) in message, got: {msg}"
+            !msg.contains("eBPFSvc"),
+            "eBPFSvc must be omitted below version 1.0 even if supplied, got: {msg}"
+        );
+        assert_eq!(
+            msg.matches(" | ").count(),
+            1,
+            "Expected exactly two services separated by one ' | ', got: {msg}"
         );
 
-        // 5. Ext not installed, Core+Svc running → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, None),
-            &make_info(constants::EBPF_SVC, running()),
-        );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "Ext not installed");
+        // 4. Core/Ext match, both <1.0, Ext stopped -> Error (2-way health).
+        let core = make_info(constants::EBPF_CORE, running(), v(0, 9));
+        let ext = make_info(constants::EBPF_EXT, stopped(), v(0, 9));
+        let sub = super::build_ebpf_substatus(&core, &ext, None);
+        assert_eq!(sub.status, constants::ERROR_STATUS, "Ext stopped, <1.0");
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
 
-        // 6. All three running → Success
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, running()),
-        );
-        assert_eq!(sub.status, constants::SUCCESS_STATUS, "All three running");
+        // 5. Core/Ext match, >=1.0 -> eBPFSvc required; all three running -> Success, all shown.
+        let core = make_info(constants::EBPF_CORE, running(), v(1, 5));
+        let ext = make_info(constants::EBPF_EXT, running(), v(1, 5));
+        let svc = make_info(constants::EBPF_SVC, running(), v(1, 5));
+        let sub = super::build_ebpf_substatus(&core, &ext, Some(&svc));
+        assert_eq!(sub.status, constants::SUCCESS_STATUS, "All three, >=1.0");
         assert_eq!(sub.code, constants::STATUS_CODE_OK);
         let msg = &sub.formattedMessage.message;
         assert!(
@@ -1626,83 +1682,74 @@ mod tests {
             "Expected all three driver labels in message, got: {msg}"
         );
         assert!(
-            msg.matches(" | ").count() == 2,
-            "Expected the three services separated by ' | ', got: {msg}"
+            msg.contains("(1.5)"),
+            "Expected the matched version rendered in the message, got: {msg}"
         );
+        assert_eq!(
+            msg.matches(" | ").count(),
+            2,
+            "Expected three services separated by two ' | ', got: {msg}"
+        );
+
+        // 6. Core/Ext match, >=1.0, eBPFSvc not supplied (e.g. caller failed to query it) ->
+        // Error, with a synthetic "NotInstalled" entry so the message still explains why.
+        let sub = super::build_ebpf_substatus(&core, &ext, None);
+        assert_eq!(
+            sub.status,
+            constants::ERROR_STATUS,
+            "eBPFSvc required but missing should be Error"
+        );
+        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
         assert!(
-            msg.contains(&format!("({})", constants::VERSION_UNKNOWN)),
-            "Expected VersionUnknown in parens when no executable path is set, got: {msg}"
+            sub.formattedMessage
+                .message
+                .contains("eBPFSvc: NotInstalled"),
+            "Expected synthetic eBPFSvc: NotInstalled in message, got: {}",
+            sub.formattedMessage.message
         );
 
-        // 7. Core stopped, Ext+Svc running → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, stopped()),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, running()),
-        );
+        // 7. Core/Ext match, >=1.0, eBPFSvc installed but stopped -> Error.
+        let svc_stopped = make_info(constants::EBPF_SVC, stopped(), v(1, 5));
+        let sub = super::build_ebpf_substatus(&core, &ext, Some(&svc_stopped));
         assert_eq!(
             sub.status,
             constants::ERROR_STATUS,
-            "Core stopped, Ext+Svc running"
+            "eBPFSvc stopped, >=1.0"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
 
-        // 8. Core running, Ext stopped, Svc running → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, stopped()),
-            &make_info(constants::EBPF_SVC, running()),
+        // 8. Core/Ext match, >=1.0, eBPFSvc resuming (ContinuePending) -> Transitioning.
+        let svc_transitioning = make_info(
+            constants::EBPF_SVC,
+            Some(ServiceState::ContinuePending),
+            v(1, 5),
         );
-        assert_eq!(
-            sub.status,
-            constants::ERROR_STATUS,
-            "Core running, Ext stopped, Svc running"
-        );
-        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
-
-        // 9. All three stopped → Error
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, stopped()),
-            &make_info(constants::EBPF_EXT, stopped()),
-            &make_info(constants::EBPF_SVC, stopped()),
-        );
-        assert_eq!(sub.status, constants::ERROR_STATUS, "All three stopped");
-        assert_eq!(sub.code, constants::STATUS_CODE_NOT_OK);
-
-        // 10. Core starting up (StartPending), Ext+Svc running → Transitioning, not Error
-        // (a mid-restart service must not immediately flip the top-level status to Error).
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, running()),
-        );
+        let sub = super::build_ebpf_substatus(&core, &ext, Some(&svc_transitioning));
         assert_eq!(
             sub.status,
             constants::TRANSITIONING_STATUS,
-            "Core starting up should be Transitioning, not Error"
+            "eBPFSvc resuming should be Transitioning, not Error"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_OK);
 
-        // 11. Svc resuming (ContinuePending), Core+Ext running → Transitioning, not Error.
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, running()),
-            &make_info(constants::EBPF_EXT, running()),
-            &make_info(constants::EBPF_SVC, Some(ServiceState::ContinuePending)),
+        // 9. Core starting up (StartPending), Ext running, matched <1.0 -> Transitioning (2-way).
+        let core_pending = make_info(
+            constants::EBPF_CORE,
+            Some(ServiceState::StartPending),
+            v(0, 9),
         );
+        let ext_running = make_info(constants::EBPF_EXT, running(), v(0, 9));
+        let sub = super::build_ebpf_substatus(&core_pending, &ext_running, None);
         assert_eq!(
             sub.status,
             constants::TRANSITIONING_STATUS,
-            "Svc resuming should be Transitioning, not Error"
+            "Core starting up, <1.0, should be Transitioning"
         );
         assert_eq!(sub.code, constants::STATUS_CODE_OK);
 
-        // 12. Core starting up (StartPending) AND Ext confirmed stopped → Error wins over
-        // Transitioning, since at least one service is confirmed down.
-        let sub = super::build_ebpf_substatus(
-            &make_info(constants::EBPF_CORE, Some(ServiceState::StartPending)),
-            &make_info(constants::EBPF_EXT, stopped()),
-            &make_info(constants::EBPF_SVC, running()),
-        );
+        // 10. Confirmed-down wins over transitioning: Core StartPending + Ext stopped, <1.0.
+        let ext_stopped = make_info(constants::EBPF_EXT, stopped(), v(0, 9));
+        let sub = super::build_ebpf_substatus(&core_pending, &ext_stopped, None);
         assert_eq!(
             sub.status,
             constants::ERROR_STATUS,
@@ -1713,56 +1760,50 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn test_ebpf_service_version_display() {
+    fn test_version_display() {
         use proxy_agent_shared::service::{ServiceState, ServiceStatusInfo};
+        use proxy_agent_shared::version::Version;
 
-        // No executable path known → VersionUnknown
+        // No cached version -> VersionUnknown
+        assert_eq!(super::version_display(&None), constants::VERSION_UNKNOWN);
+
+        // Cached version -> rendered via its Display impl
+        let version = Version::from_major_minor_build_revision(1, 5, Some(0), Some(0));
+        assert_eq!(super::version_display(&Some(version)), "1.5.0.0");
+
+        // format_ebpf_service renders the cached version in parens between state and start type,
+        // with no disk access involved (the version is already cached on the struct).
         let info = ServiceStatusInfo {
             service_name: constants::EBPF_CORE.to_string(),
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
             executable_path: None,
+            version: Some(Version::from_major_minor_build_revision(
+                1,
+                5,
+                Some(0),
+                Some(0),
+            )),
         };
         assert_eq!(
-            super::ebpf_service_version_display(&info),
-            constants::VERSION_UNKNOWN
+            super::format_ebpf_service(&info),
+            "EbpfCore: Running (1.5.0.0), AutoStart"
         );
 
-        // Executable path doesn't exist → VersionUnknown (get_file_product_version fails gracefully)
-        let info = ServiceStatusInfo {
+        // No cached version -> VersionUnknown rendered in the message
+        let info_no_version = ServiceStatusInfo {
             service_name: constants::EBPF_CORE.to_string(),
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
-            executable_path: Some(std::path::PathBuf::from("C:\\does-not-exist\\missing.exe")),
+            executable_path: None,
+            version: None,
         };
         assert_eq!(
-            super::ebpf_service_version_display(&info),
-            constants::VERSION_UNKNOWN
-        );
-
-        // Real executable path → the actual product version is resolved and rendered
-        let system_path = std::env::var("SystemRoot").unwrap_or("C:\\Windows".to_string());
-        let kernel32 = std::path::Path::new(&system_path)
-            .join("System32")
-            .join("kernel32.dll");
-        let info = ServiceStatusInfo {
-            service_name: constants::EBPF_CORE.to_string(),
-            state: Some(ServiceState::Running),
-            start_type: "AutoStart".to_string(),
-            executable_path: Some(kernel32),
-        };
-        let version = super::ebpf_service_version_display(&info);
-        assert_ne!(
-            version,
-            constants::VERSION_UNKNOWN,
-            "Expected a real product version for kernel32.dll, got: {version}"
-        );
-
-        let message = super::format_ebpf_service(&info);
-        assert_eq!(
-            message,
-            format!("EbpfCore: Running ({version}), AutoStart"),
-            "Expected version rendered in parens between state and start type, got: {message}"
+            super::format_ebpf_service(&info_no_version),
+            format!(
+                "EbpfCore: Running ({}), AutoStart",
+                constants::VERSION_UNKNOWN
+            )
         );
     }
 

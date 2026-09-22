@@ -175,11 +175,17 @@ pub fn check_service_status(service_name: &str) -> windows_service::ServiceStatu
             }
         };
 
+    // Cache the product version alongside the path, so callers never need to re-read the file.
+    let version = executable_path
+        .as_deref()
+        .and_then(|path| crate::windows::get_file_product_version(path).ok());
+
     windows_service::ServiceStatusInfo {
         service_name: service_name.to_string(),
         state,
         start_type,
         executable_path,
+        version,
     }
 }
 
