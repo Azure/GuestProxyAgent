@@ -1201,30 +1201,7 @@ mod tests {
     use http::Method;
     use proxy_agent_shared::{hyper_client, proxy_agent_aggregate_status};
     use std::collections::HashMap;
-    use std::net::{Ipv4Addr, TcpListener as StdTcpListener};
     use std::time::Duration;
-
-    fn available_local_port() -> u16 {
-        StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
-    }
-
-    async fn wait_for_listener(host: &str, port: u16) {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if tokio::net::TcpStream::connect((host, port)).await.is_ok() {
-                return;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "proxy listener did not start on {host}:{port}"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
 
     #[tokio::test]
     async fn dedicated_runtime_stops_on_cancellation() {
@@ -1240,8 +1217,9 @@ mod tests {
 
     #[tokio::test]
     async fn direct_request_test() {
+        // start listener, the port must different from the one used in production code
         let host = "127.0.0.1";
-        let port = available_local_port();
+        let port: u16 = 8091;
         let shared_state = shared_state::SharedState::start_all();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
         let cancellation_token = shared_state.get_cancellation_token();
@@ -1254,7 +1232,9 @@ mod tests {
             }
         });
 
-        wait_for_listener(host, port).await;
+        // give some time to let the listener started
+        let sleep_duration = Duration::from_millis(100);
+        tokio::time::sleep(sleep_duration).await;
 
         // test /gpa-aggregated-status endpoint is forbidden for unauthenticated direct callers
         match proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_from_server(host, port)
@@ -1378,7 +1358,7 @@ mod tests {
         use std::time::Duration as StdDuration;
 
         let host = "127.0.0.1";
-        let port = available_local_port();
+        let port: u16 = 8092; // distinct from other tests
         let shared_state = shared_state::SharedState::start_all();
         let cancellation_token = shared_state.get_cancellation_token();
         let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
@@ -1389,7 +1369,7 @@ mod tests {
                 proxy_server.start().await;
             }
         });
-        wait_for_listener(host, port).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         async fn first_status_line(host: &'static str, port: u16, raw: &'static str) -> String {
             tokio::task::spawn_blocking(move || {
