@@ -2105,7 +2105,7 @@ mod tests {
             !status
                 .formattedMessage
                 .message
-                .contains(constants::PROXY_AGENT_SERVICE_NAME),
+                .contains(&error_gpa_sub.formattedMessage.message),
             "GPA-service detail should not appear when eBPF already overrode the message, got: {}",
             status.formattedMessage.message
         );
