@@ -789,7 +789,6 @@ mod tests {
         AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
     };
     use base64::{engine::general_purpose, Engine as _};
-    use proxy_agent_shared::misc_helpers;
     use std::collections::HashSet;
     use std::env;
     use std::fs;
@@ -880,7 +879,6 @@ mod tests {
         test_name: &str,
         content: &str,
     ) -> crate::common::result::Result<LocalAuthorizationRulesFile> {
-        ensure_test_config_in_exe_dir();
         let rules_dir = create_temp_rules_dir(test_name);
         let rules_file = write_wireserver_rules_file(&rules_dir, content);
         let result = read_local_rules_file(&rules_file, LocalRuleTarget::WireServer).await;
@@ -895,7 +893,6 @@ mod tests {
         remote_rules: Option<AccessControlRules>,
         remote_rule_changed: bool,
     ) -> (Option<AuthorizationItem>, bool, LocalRuleMonitorState) {
-        ensure_test_config_in_exe_dir();
         let rules_dir = create_temp_rules_dir(test_name);
         if let Some(content) = local_file_content {
             _ = write_wireserver_rules_file(&rules_dir, content);
@@ -920,28 +917,6 @@ mod tests {
 
         _ = fs::remove_dir_all(&rules_dir);
         (result.0, result.1, tracker)
-    }
-
-    fn ensure_test_config_in_exe_dir() {
-        let mut config_target = misc_helpers::get_current_exe_dir();
-        #[cfg(windows)]
-        config_target.push("GuestProxyAgent.json");
-        #[cfg(not(windows))]
-        config_target.push("proxy-agent.json");
-
-        if config_target.exists() {
-            return;
-        }
-
-        let mut config_source = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        config_source.push("config");
-        #[cfg(windows)]
-        config_source.push("GuestProxyAgent.windows.json");
-        #[cfg(not(windows))]
-        config_source.push("GuestProxyAgent.linux.json");
-
-        let config_content = fs::read_to_string(config_source).unwrap();
-        fs::write(config_target, config_content).unwrap();
     }
 
     #[test]

@@ -25,9 +25,9 @@ use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{path::PathBuf, time::Duration};
 
-#[cfg(not(windows))]
+#[cfg(all(not(test), not(windows)))]
 const CONFIG_FILE_NAME: &str = "proxy-agent.json";
-#[cfg(windows)]
+#[cfg(all(not(test), windows))]
 const CONFIG_FILE_NAME: &str = "GuestProxyAgent.json";
 
 static SYSTEM_CONFIG: Lazy<Config> = Lazy::new(Config::default);
@@ -133,22 +133,37 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let mut config_file_full_path = PathBuf::new();
-        #[cfg(not(windows))]
+        #[cfg(test)]
         {
-            if !config_file_full_path.exists() {
-                // linux config file default to /etc/azure folder
-                config_file_full_path = PathBuf::from(format!("/etc/azure/{CONFIG_FILE_NAME}"));
+            let mut config_file_full_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            config_file_full_path.push("config");
+            #[cfg(windows)]
+            config_file_full_path.push("GuestProxyAgent.windows.json");
+            #[cfg(not(windows))]
+            config_file_full_path.push("GuestProxyAgent.linux.json");
+
+            Config::from_json_file(config_file_full_path)
+        }
+
+        #[cfg(not(test))]
+        {
+            let mut config_file_full_path = PathBuf::new();
+            #[cfg(not(windows))]
+            {
+                if !config_file_full_path.exists() {
+                    // linux config file default to /etc/azure folder
+                    config_file_full_path = PathBuf::from(format!("/etc/azure/{CONFIG_FILE_NAME}"));
+                }
             }
-        }
 
-        if !config_file_full_path.exists() {
-            // default to current exe folder
-            config_file_full_path = misc_helpers::get_current_exe_dir();
-            config_file_full_path.push(CONFIG_FILE_NAME);
-        }
+            if !config_file_full_path.exists() {
+                // default to current exe folder
+                config_file_full_path = misc_helpers::get_current_exe_dir();
+                config_file_full_path.push(CONFIG_FILE_NAME);
+            }
 
-        Config::from_json_file(config_file_full_path)
+            Config::from_json_file(config_file_full_path)
+        }
     }
 }
 

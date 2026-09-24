@@ -559,7 +559,7 @@ fn apply_sub_status_override_in_error(
         return false;
     }
     status.formattedMessage.message = format!(
-        "{}. Last status timestamp: {}, Current time: {}",
+        "{}. Last GuestProxyAgent reported status timestamp: {}, Current time: {}",
         substatus.formattedMessage.message,
         last_known_status_timestamp,
         misc_helpers::get_current_utc_time()
@@ -2040,10 +2040,9 @@ mod tests {
             .formattedMessage
             .message
             .contains("Stopped, AutoStart"));
-        assert!(status
-            .formattedMessage
-            .message
-            .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
+        assert!(status.formattedMessage.message.contains(
+            "Last GuestProxyAgent reported status timestamp: 2026-08-21 8:13:38.104 +00:00:00"
+        ));
     }
 
     #[test]
