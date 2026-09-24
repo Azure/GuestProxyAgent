@@ -4,7 +4,7 @@ use crate::error::{Error, ParseVersionErrorType};
 use crate::result::Result;
 use std::fmt::{Display, Formatter};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Version {
     pub major: u32,
     pub minor: u32,
@@ -13,6 +13,12 @@ pub struct Version {
 }
 
 impl Version {
+    /// True when this version's major component is at least `major`, e.g. useful for "is this
+    /// version >= 1.0" checks where only the major component is significant.
+    pub fn major_at_least(&self, major: u32) -> bool {
+        self.major >= major
+    }
+
     pub fn from_major_minor(major: u32, minor: u32) -> Self {
         Version::from_major_minor_build_revision(major, minor, None, None)
     }
@@ -116,5 +122,12 @@ mod tests {
 
         let version = Version::from_string("0".to_string());
         assert!(version.is_err());
+    }
+
+    #[test]
+    fn test_major_at_least() {
+        assert!(Version::from_major_minor(1, 0).major_at_least(1));
+        assert!(Version::from_major_minor(2, 3).major_at_least(1));
+        assert!(!Version::from_major_minor(0, 9).major_at_least(1));
     }
 }

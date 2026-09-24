@@ -99,7 +99,9 @@ update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4, __u32
         return 1;
     }
 
-    __u32 uid = (__u32)(bpf_get_current_uid_gid() >> 32);
+    // Get the current user's UID and determine if the process is running as root.
+    // bpf_get_current_uid_gid returns 1) lower 32 bits: UID; 2) upper 32 bits: GID.
+    __u32 uid = (__u32)bpf_get_current_uid_gid();
     struct gpa_audit_event audit = {0};
     audit.process_id = pid;
     audit.logon_id = uid;
