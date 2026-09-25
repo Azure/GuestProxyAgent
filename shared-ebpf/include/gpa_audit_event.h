@@ -15,6 +15,11 @@
 #define GPA_ADDRESS_FAMILY_IPV4 4
 #define GPA_ADDRESS_FAMILY_IPV6 6
 
+/// Configuration keys for the GPA config map.
+// Key for enabling local IP bind monitoring only.
+// Value: 1 (enabled), 0 (disabled)
+#define GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY 0
+
 // IP address - union allows IPv4 (first element) or IPv6 (all 4 elements)
 // Size: 16 bytes (4 x u32) - matches Rust _ip_address { ip: [u32; 4] }
 struct gpa_ip_address
@@ -61,6 +66,24 @@ struct gpa_audit_event
     __u32 reserved;
 };
 
+// Alert-only Ring-Buffer record. The kernel timestamp is monotonic; user mode
+// adds UTC at receipt because eBPF does not expose a UTC clock on all platforms.
+struct gpa_alert_only_event
+{
+    __u64 kernel_timestamp_ns;
+    // Bind to Local IP address (IPv4 or IPv6) - matches gpa_ip_address union
+    // Size: 16 bytes (4 x u32) - matches gpa_ip_address union
+    // if IPv4 address family via audit.address_family, only the first element (local_ip_address[0]) is used, other elements are ignored.
+    __u32 local_ip_address[4];
+    struct gpa_audit_event audit;
+};
+
+// Runtime configuration passed from GPA user mode to the eBPF program.
+struct gpa_config_entry
+{
+    __u32 enabled;
+};
+
 // Skip process entry - processes in this map bypass audit/redirect
 // Size: 4 bytes - matches Rust sock_addr_skip_process_entry -> [u32; 1]
 struct gpa_skip_process_entry
@@ -72,14 +95,8 @@ struct gpa_skip_process_entry
 // Size: 32 bytes (8 x u32)
 struct gpa_sock_addr_local_entry
 {
-    __u32 logon_id; // uid
-    __u32 process_id;
-    __u32 is_root;
-    __u32 destination_ipv4;
-    __u32 destination_port;
     __u32 protocol;
-    __u32 address_family;
-    __u32 reserved;
+    struct gpa_audit_event audit;
 };
 
 // Compile-time layout assertions to guarantee binary compatibility with Rust loader.
@@ -90,3 +107,5 @@ _Static_assert(sizeof(struct gpa_audit_key) == 8, "audit_key must be 8 bytes ([u
 _Static_assert(sizeof(struct gpa_audit_event) == 28, "audit_event must be 28 bytes ([u32; 7])");
 _Static_assert(sizeof(struct gpa_skip_process_entry) == 4, "skip_process_entry must be 4 bytes ([u32; 1])");
 _Static_assert(sizeof(struct gpa_sock_addr_local_entry) == 32, "sock_addr_local_entry must be 32 bytes ([u32; 8])");
+_Static_assert(sizeof(struct gpa_alert_only_event) == 56, "alert_only_event must be 56 bytes ([u32; 14])");
+_Static_assert(sizeof(struct gpa_config_entry) == 4, "config_entry must be 4 bytes ([u32; 1])");
