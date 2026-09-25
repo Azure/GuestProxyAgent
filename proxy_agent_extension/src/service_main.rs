@@ -325,8 +325,7 @@ async fn monitor_thread() {
         }
 
         // Step 6/7: report eBPF (Windows) + GuestProxyAgent service (cross-platform) status
-        // fresh every tick, then immediately override the top-level status/message on Error -
-        // the aggregate-status source (Step 3) has its own staleness/debounce and can't see these.
+        // fresh every tick, replacing the top-level message only after it reaches Error.
         let gpa_service_substatus = compute_gpa_service_substatus();
         #[cfg(windows)]
         {
@@ -549,21 +548,18 @@ fn compute_gpa_service_substatus() -> SubStatus {
     build_proxy_agent_service_substatus(&info)
 }
 
-/// If `substatus` is Error, overrides `status`'s top-level status/code/message with the
-/// substatus detail plus the last known timestamp and current time, bypassing the debounce
-/// state machine. Shared by the eBPF and GuestProxyAgent-service override call sites.
+/// If both statuses are Error, replaces the top-level message with the substatus detail plus
+/// the last known timestamp and current time.
 fn apply_sub_status_override_in_error(
     status: &mut StatusObj,
     substatus: &SubStatus,
     last_known_status_timestamp: &str,
 ) -> bool {
-    if substatus.status != constants::ERROR_STATUS {
+    if status.status != constants::ERROR_STATUS || substatus.status != constants::ERROR_STATUS {
         return false;
     }
-    status.status = constants::ERROR_STATUS.to_string();
-    status.code = constants::STATUS_CODE_NOT_OK;
     status.formattedMessage.message = format!(
-        "{}. Last status timestamp: {}, Current time: {}",
+        "{}. Last GuestProxyAgent reported status timestamp: {}, Current time: {}",
         substatus.formattedMessage.message,
         last_known_status_timestamp,
         misc_helpers::get_current_utc_time()
@@ -1933,7 +1929,7 @@ mod tests {
             "EbpfCore: Running, AutoStart, NetEbpfExt: Stopped, AutoStart, eBPFSvc: Running, AutoStart",
         );
 
-        // Error substatus overrides an otherwise-Success status
+        // An error substatus does not bypass the top-level debounce.
         let mut status = make_test_status_obj(
             constants::SUCCESS_STATUS,
             constants::STATUS_CODE_OK,
@@ -1944,18 +1940,13 @@ mod tests {
             &ebpf_sub,
             "2026-08-21 8:13:38.104 +00:00:00",
         );
-        assert!(overridden);
-        assert_eq!(status.status, constants::ERROR_STATUS);
-        assert_eq!(status.code, constants::STATUS_CODE_NOT_OK);
-        assert!(status
-            .formattedMessage
-            .message
-            .contains("NetEbpfExt: Stopped"));
-        assert!(status
-            .formattedMessage
-            .message
-            .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
-        assert!(status.formattedMessage.message.contains("Current time:"));
+        assert!(!overridden);
+        assert_eq!(status.status, constants::SUCCESS_STATUS);
+        assert_eq!(status.code, constants::STATUS_CODE_OK);
+        assert_eq!(
+            status.formattedMessage.message,
+            "ProxyAgent extension is reporting successful status."
+        );
 
         // Error substatus overrides an already-Error stale message too
         let mut status = make_test_status_obj(
@@ -2023,12 +2014,11 @@ mod tests {
             "ProxyAgent extension is reporting successful status."
         );
 
-        // GuestProxyAgent-service-shaped substatus works identically (Error overrides, with
-        // its own message content and no gating on the top-level status already being Error)
+        // GuestProxyAgent-service-shaped substatus works identically.
         let mut status = make_test_status_obj(
-            constants::SUCCESS_STATUS,
-            constants::STATUS_CODE_OK,
-            "ProxyAgent extension is reporting successful status.",
+            constants::ERROR_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Proxy agent aggregate status file is stale.",
         );
         let gpa_sub = make_sub(
             constants::PROXY_AGENT_SERVICE_SUBSTATUS_NAME,
@@ -2050,10 +2040,9 @@ mod tests {
             .formattedMessage
             .message
             .contains("Stopped, AutoStart"));
-        assert!(status
-            .formattedMessage
-            .message
-            .contains("Last status timestamp: 2026-08-21 8:13:38.104 +00:00:00"));
+        assert!(status.formattedMessage.message.contains(
+            "Last GuestProxyAgent reported status timestamp: 2026-08-21 8:13:38.104 +00:00:00"
+        ));
     }
 
     #[test]
@@ -2102,9 +2091,9 @@ mod tests {
 
         // Both unhealthy -> eBPF wins (message shows eBPF detail, not GPA-service detail)
         let mut status = make_test_status_obj(
-            constants::SUCCESS_STATUS,
-            constants::STATUS_CODE_OK,
-            "ProxyAgent extension is reporting successful status.",
+            constants::ERROR_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Proxy agent aggregate status file is stale.",
         );
         super::apply_service_health_overrides(&mut status, &error_ebpf_sub, &error_gpa_sub, "ts");
         assert_eq!(status.status, constants::ERROR_STATUS);
@@ -2116,16 +2105,16 @@ mod tests {
             !status
                 .formattedMessage
                 .message
-                .contains(constants::PROXY_AGENT_SERVICE_NAME),
+                .contains(&error_gpa_sub.formattedMessage.message),
             "GPA-service detail should not appear when eBPF already overrode the message, got: {}",
             status.formattedMessage.message
         );
 
         // eBPF healthy, GPA-service unhealthy -> falls through to the GPA-service override
         let mut status = make_test_status_obj(
-            constants::SUCCESS_STATUS,
-            constants::STATUS_CODE_OK,
-            "ProxyAgent extension is reporting successful status.",
+            constants::ERROR_STATUS,
+            constants::STATUS_CODE_NOT_OK,
+            "Proxy agent aggregate status file is stale.",
         );
         super::apply_service_health_overrides(&mut status, &healthy_ebpf_sub, &error_gpa_sub, "ts");
         assert_eq!(status.status, constants::ERROR_STATUS);
