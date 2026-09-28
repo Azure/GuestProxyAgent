@@ -2,23 +2,25 @@
 // SPDX-License-Identifier: MIT
 using GuestProxyAgentTest.Extensions;
 using GuestProxyAgentTest.TestScenarios;
+using GuestProxyAgentTest.Utilities;
 
 namespace GuestProxyAgentTest.TestCases
 {
     public class LocalIPBindingCase : TestCaseBase
     {
-        public LocalIPBindingCase(bool imdsSecureChannelEnabled) : base("LocalIPBindingCase")
+        public LocalIPBindingCase() : base("LocalIPBindingCase")
         {
-            ImdsSecureChannelEnabled = imdsSecureChannelEnabled;
         }
 
-        private bool ImdsSecureChannelEnabled { get; set; }
+        public LocalIPBindingCase(string testCaseName) : base(testCaseName)
+        {
+        }
+
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
             List<(string, string)> parameterList = new List<(string, string)>();
-            parameterList.Add(("imdsSecureChannelEnabled", ImdsSecureChannelEnabled.ToString()));
-            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, "PingTestOnBindingLocalIP.ps1", parameterList, false)).ToTestResultDetails(context.Logger);
+            context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME, parameterList, false)).ToTestResultDetails(context.Logger);
         }
     }
 }

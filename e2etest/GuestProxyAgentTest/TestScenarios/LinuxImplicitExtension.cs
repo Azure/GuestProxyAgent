@@ -24,8 +24,10 @@ namespace GuestProxyAgentTest.TestScenarios
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeReboot", true));
-            AddTestCase(new RebootVMCase("RebootVMCaseAfterUpdateGuestProxyAgentExtension"));
+            AddTestCase(new LocalIPBindingCase("LocalIPBindingCaseBeforeReboot"));
+            AddTestCase(new RebootVMCase("RebootVMCaseAfterInstallOrUpdateGuestProxyAgent"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestAfterReboot", true));
+            AddTestCase(new LocalIPBindingCase("LocalIPBindingCaseAfterReboot"));
         }
     }
 }
