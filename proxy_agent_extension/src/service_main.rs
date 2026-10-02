@@ -1243,6 +1243,7 @@ mod tests {
             ebpfProgramStatus: make_detail_status(),
             proxyListenerStatus: make_detail_status(),
             telemetryLoggerStatus: make_detail_status(),
+            auditFallback: None,
             proxyConnectionsCount: 1,
         }
     }

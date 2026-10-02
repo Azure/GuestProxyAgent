@@ -11,7 +11,7 @@ use crate::common::result::Result;
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 const MAX_STATUS_MESSAGE_LENGTH: usize = 1024;
 
@@ -43,6 +43,20 @@ enum AgentStatusAction {
     IncreaseTcpConnectionCount {
         response: oneshot::Sender<u128>,
     },
+    SetSoftAuditMode {
+        enable_soft_audit: bool,
+        response: oneshot::Sender<bool>,
+    },
+    GetSoftAuditMode {
+        response: oneshot::Sender<bool>,
+    },
+    SetFallbackReason {
+        reason: Option<String>,
+        response: oneshot::Sender<Option<String>>,
+    },
+    GetFallbackReason {
+        response: oneshot::Sender<Option<String>>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -55,12 +69,50 @@ pub enum AgentStatusModule {
     ProxyAgentStatus,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeStatusSnapshot {
+    pub soft_audit_enabled: bool,
+    pub proxy_server_state: ModuleState,
+    pub redirector_state: ModuleState,
+}
+
+impl Default for RuntimeStatusSnapshot {
+    fn default() -> Self {
+        Self {
+            soft_audit_enabled: false,
+            proxy_server_state: ModuleState::UNKNOWN,
+            redirector_state: ModuleState::UNKNOWN,
+        }
+    }
+}
+
+impl RuntimeStatusSnapshot {
+    pub fn both_running(&self) -> bool {
+        self.proxy_server_state == ModuleState::RUNNING
+            && self.redirector_state == ModuleState::RUNNING
+    }
+
+    pub fn either_stopped(&self) -> bool {
+        self.proxy_server_state == ModuleState::STOPPED
+            || self.redirector_state == ModuleState::STOPPED
+    }
+
+    pub fn both_at_ultimate_state(&self) -> bool {
+        self.proxy_server_state.is_ultimate_state() && self.redirector_state.is_ultimate_state()
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct AgentStatusSharedState(mpsc::Sender<AgentStatusAction>);
+pub struct AgentStatusSharedState(
+    mpsc::Sender<AgentStatusAction>,
+    watch::Receiver<RuntimeStatusSnapshot>,
+);
 
 impl AgentStatusSharedState {
     pub fn start_new() -> Self {
         let (tx, mut rx) = mpsc::channel(100);
+        let (runtime_status_tx, runtime_status_rx) =
+            watch::channel(RuntimeStatusSnapshot::default());
         tokio::spawn(async move {
             let mut key_keeper_state: ModuleState = ModuleState::UNKNOWN;
             let mut key_keeper_status_message: String = super::UNKNOWN_STATUS_MESSAGE.to_string();
@@ -74,6 +126,8 @@ impl AgentStatusSharedState {
             let mut proxy_server_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
             let mut proxy_agent_status_state = ModuleState::UNKNOWN;
             let mut proxy_agent_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
+            let mut soft_audit_mode_enabled: bool = false;
+            let mut fallback_reason: Option<String> = None;
 
             // The proxied connection count for the listener
             let mut tcp_connection_count: u128 = 0;
@@ -181,6 +235,19 @@ impl AgentStatusSharedState {
                                 proxy_agent_status_state = state.clone();
                             }
                         }
+                        runtime_status_tx.send_if_modified(|snapshot| {
+                            let updated = RuntimeStatusSnapshot {
+                                soft_audit_enabled: soft_audit_mode_enabled,
+                                proxy_server_state: proxy_server_state.clone(),
+                                redirector_state: redirector_state.clone(),
+                            };
+                            if *snapshot == updated {
+                                false
+                            } else {
+                                *snapshot = updated;
+                                true
+                            }
+                        });
                         if let Err(state) = response.send(state) {
                             logger::write_warning(format!("Failed to send response to AgentStatusAction::SetState '{state:?}' for module '{module:?}'"));
                         }
@@ -225,11 +292,81 @@ impl AgentStatusSharedState {
                             ));
                         }
                     }
+                    AgentStatusAction::SetSoftAuditMode {
+                        enable_soft_audit,
+                        response,
+                    } => {
+                        if soft_audit_mode_enabled != enable_soft_audit {
+                            logger::write_warning(format!("enableSoftAudit value changed from {soft_audit_mode_enabled} to {enable_soft_audit} "));
+                            soft_audit_mode_enabled = enable_soft_audit;
+                            runtime_status_tx.send_if_modified(|snapshot| {
+                                let updated = RuntimeStatusSnapshot {
+                                    soft_audit_enabled: soft_audit_mode_enabled,
+                                    proxy_server_state: proxy_server_state.clone(),
+                                    redirector_state: redirector_state.clone(),
+                                };
+                                if *snapshot == updated {
+                                    false
+                                } else {
+                                    *snapshot = updated;
+                                    true
+                                }
+                            });
+                        }
+                        if !soft_audit_mode_enabled && fallback_reason.is_some() {
+                            logger::write_warning(
+                                "Soft audit mode has been disabled, reset fallback reason."
+                                    .to_string(),
+                            );
+                            fallback_reason = None;
+                        }
+                        if let Err(value) = response.send(soft_audit_mode_enabled) {
+                            logger::write_warning(format!("Failed to send response to AgentStatusAction::SetSoftAuditMode with value '{value}'"));
+                        }
+                    }
+                    AgentStatusAction::GetSoftAuditMode { response } => {
+                        if let Err(value) = response.send(soft_audit_mode_enabled) {
+                            logger::write_warning(format!("Failed to send response to AgentStatusAction::GetSoftAuditMode with value '{value}'"));
+                        }
+                    }
+                    AgentStatusAction::SetFallbackReason { reason, response } => {
+                        if !soft_audit_mode_enabled {
+                            // telemetry events only and no actual fallback reason should be set.
+                            logger::write_warning(
+                                "SetFallbackReason called while soft audit mode is disabled."
+                                    .to_string(),
+                            );
+                            if let Err(value) = response.send(None) {
+                                logger::write_warning(format!("Failed to send response to AgentStatusAction::SetFallbackReason with value '{value:?}'"));
+                            }
+                        } else {
+                            fallback_reason = reason;
+                            if let Err(value) = response.send(fallback_reason.clone()) {
+                                logger::write_warning(format!("Failed to send response to AgentStatusAction::SetFallbackReason with value '{value:?}'"));
+                            }
+                        }
+                    }
+                    AgentStatusAction::GetFallbackReason { response } => {
+                        if let Err(value) = {
+                            if !soft_audit_mode_enabled {
+                                // if soft audit mode is disabled, always return None as the fallback reason.
+                                response.send(None)
+                            } else {
+                                response.send(fallback_reason.clone())
+                            }
+                        } {
+                            logger::write_warning(format!("Failed to send response to AgentStatusAction::GetFallbackReason with value '{value:?}'"));
+                        }
+                    }
                 }
             }
         });
 
-        AgentStatusSharedState(tx)
+        AgentStatusSharedState(tx, runtime_status_rx)
+    }
+
+    pub fn subscribe_runtime_status(&self) -> watch::Receiver<RuntimeStatusSnapshot> {
+        self.1.clone()
     }
 
     async fn get_module_state(&self, module: AgentStatusModule) -> Result<ModuleState> {
@@ -436,6 +573,82 @@ impl AgentStatusSharedState {
             )
         })
     }
+
+    pub async fn set_soft_audit_mode(&self, enabled: bool) -> Result<()> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::SetSoftAuditMode {
+                enable_soft_audit: enabled,
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::SetSoftAuditMode".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx
+            .await
+            .map_err(|e| Error::RecvError("AgentStatusAction::SetSoftAuditMode".to_string(), e))?;
+        Ok(())
+    }
+
+    pub async fn get_soft_audit_mode(&self) -> Result<bool> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::GetSoftAuditMode {
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::GetSoftAuditMode".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx
+            .await
+            .map_err(|e| Error::RecvError("AgentStatusAction::GetSoftAuditMode".to_string(), e))
+    }
+
+    pub async fn get_fallback_reason(&self) -> Result<Option<String>> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::GetFallbackReason {
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::GetFallbackReason".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx
+            .await
+            .map_err(|e| Error::RecvError("AgentStatusAction::GetFallbackReason".to_string(), e))
+    }
+
+    pub async fn set_fallback_reason(&self, reason: Option<String>) -> Result<()> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::SetFallbackReason {
+                reason,
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::SetFallbackReason".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx
+            .await
+            .map_err(|e| Error::RecvError("AgentStatusAction::SetFallbackReason".to_string(), e))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -447,6 +660,11 @@ mod tests {
     #[tokio::test]
     async fn test_agent_status_shared_state() {
         let agent_status_shared_state = AgentStatusSharedState::start_new();
+        let mut runtime_status_rx = agent_status_shared_state.subscribe_runtime_status();
+        assert_eq!(
+            RuntimeStatusSnapshot::default(),
+            runtime_status_rx.borrow().clone()
+        );
 
         let modules = vec![
             AgentStatusModule::KeyKeeper,
@@ -490,6 +708,14 @@ mod tests {
             assert_eq!(state, get_state);
             assert_eq!(status_message, get_status_message);
         }
+        assert_eq!(
+            ModuleState::RUNNING,
+            runtime_status_rx.borrow().proxy_server_state.clone()
+        );
+        assert_eq!(
+            ModuleState::RUNNING,
+            runtime_status_rx.borrow().redirector_state.clone()
+        );
 
         let tcp_id = agent_status_shared_state
             .increase_tcp_connection_count()
@@ -513,5 +739,90 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(2, connection_id);
+
+        assert!(!agent_status_shared_state
+            .get_soft_audit_mode()
+            .await
+            .unwrap());
+        agent_status_shared_state
+            .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        runtime_status_rx.changed().await.unwrap();
+        assert!(runtime_status_rx.borrow().soft_audit_enabled);
+        assert!(agent_status_shared_state
+            .get_soft_audit_mode()
+            .await
+            .unwrap());
+        agent_status_shared_state
+            .set_soft_audit_mode(false)
+            .await
+            .unwrap();
+        assert!(!agent_status_shared_state
+            .get_soft_audit_mode()
+            .await
+            .unwrap());
+
+        assert_eq!(
+            None,
+            agent_status_shared_state
+                .get_fallback_reason()
+                .await
+                .unwrap()
+        );
+        agent_status_shared_state
+            .set_fallback_reason(Some("ignored while disabled".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            None,
+            agent_status_shared_state
+                .get_fallback_reason()
+                .await
+                .unwrap()
+        );
+
+        agent_status_shared_state
+            .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_fallback_reason(Some("test fallback".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            Some("test fallback".to_string()),
+            agent_status_shared_state
+                .get_fallback_reason()
+                .await
+                .unwrap()
+        );
+        agent_status_shared_state
+            .set_fallback_reason(None)
+            .await
+            .unwrap();
+        assert_eq!(
+            None,
+            agent_status_shared_state
+                .get_fallback_reason()
+                .await
+                .unwrap()
+        );
+
+        agent_status_shared_state
+            .set_fallback_reason(Some("reset on disable".to_string()))
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_soft_audit_mode(false)
+            .await
+            .unwrap();
+        assert_eq!(
+            None,
+            agent_status_shared_state
+                .get_fallback_reason()
+                .await
+                .unwrap()
+        );
     }
 }
