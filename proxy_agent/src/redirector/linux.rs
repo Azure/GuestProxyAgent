@@ -304,7 +304,7 @@ impl BpfObject {
 
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = AUDIT_MAP_NAME;
-        match self.ebpf_mut()?.map(audit_map_name) {
+        match self.ebpf()?.map(audit_map_name) {
             Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
