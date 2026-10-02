@@ -61,7 +61,11 @@ impl BpfObject {
     }
 
     pub fn new() -> Self {
-        Self(std::ptr::null::<bpf_object>().cast_mut(), Vec::new())
+        Self(
+            std::ptr::null::<bpf_object>().cast_mut(),
+            Vec::new(),
+            super::super::EventTaskRuntime::default(),
+        )
     }
 
     /**
@@ -466,7 +470,7 @@ impl BpfObject {
     }
 
     pub fn subscribe_alert_only(
-        &self,
+        &mut self,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>> {
         let map_name = ALERT_ONLY_MAP_NAME;
@@ -489,7 +493,7 @@ impl BpfObject {
         }
         let ring_address = ring as usize;
         let context_address = context as usize;
-        tokio::task::spawn_blocking(move || {
+        let event_reader_task = tokio::task::spawn_blocking(move || {
             let ring = ring_address as *mut ring_buffer;
             while !cancellation_token.is_cancelled() {
                 match ring_buffer__poll(ring, 250) {
@@ -513,6 +517,7 @@ impl BpfObject {
                 ));
             }
         });
+        self.2.add_task(event_reader_task);
         Ok(receiver)
     }
 

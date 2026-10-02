@@ -24,16 +24,38 @@ use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
-pub struct BpfObject(Ebpf);
+pub struct BpfObject {
+    ebpf: Option<Ebpf>,
+    event_runtime: super::EventTaskRuntime,
+}
 
 // BpfObject is a wrapper around Bpf object to interact with Linux eBPF programs and maps
 impl BpfObject {
     pub fn new(ebpf: Ebpf) -> Self {
-        BpfObject(ebpf)
+        BpfObject {
+            ebpf: Some(ebpf),
+            event_runtime: super::EventTaskRuntime::default(),
+        }
     }
 
-    pub fn get_bpf(&self) -> &Ebpf {
-        &self.0
+    fn ebpf(&self) -> Result<&Ebpf> {
+        self.ebpf
+            .as_ref()
+            .ok_or(Error::Bpf(BpfErrorType::NullBpfObject))
+    }
+
+    fn ebpf_mut(&mut self) -> Result<&mut Ebpf> {
+        self.ebpf
+            .as_mut()
+            .ok_or(Error::Bpf(BpfErrorType::NullBpfObject))
+    }
+
+    pub(crate) fn event_runtime_mut(&mut self) -> &mut super::EventTaskRuntime {
+        &mut self.event_runtime
+    }
+
+    fn take_resources(&mut self) -> (Option<Ebpf>, super::EventTaskRuntime) {
+        (self.ebpf.take(), std::mem::take(&mut self.event_runtime))
     }
 
     pub fn from_ebpf_file(bpf_file_path: &PathBuf) -> Result<BpfObject> {
@@ -60,7 +82,7 @@ impl BpfObject {
 
     pub fn update_skip_process_map(&mut self, pid: u32) -> Result<()> {
         let skip_process_map_name = SKIP_PROCESS_MAP_NAME;
-        match self.0.map_mut(skip_process_map_name) {
+        match self.ebpf_mut()?.map_mut(skip_process_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
                 Ok(mut skip_process_map) => {
                     let key = sock_addr_skip_process_entry::from_pid(pid);
@@ -95,7 +117,7 @@ impl BpfObject {
 
     pub fn update_local_ip_bind_monitor_only(&mut self, enabled: bool) -> Result<()> {
         let config_map_name = CONFIG_MAP_NAME;
-        match self.0.map_mut(config_map_name) {
+        match self.ebpf_mut()?.map_mut(config_map_name) {
             Some(map) => match HashMap::<&mut MapData, u32, [u32; 1]>::try_from(map) {
                 Ok(mut config_map) => config_map
                     .insert(
@@ -135,7 +157,7 @@ impl BpfObject {
         dest_port: u16,
     ) -> Result<()> {
         let policy_map_name = POLICY_MAP_NAME;
-        match self.0.map_mut(policy_map_name) {
+        match self.ebpf_mut()?.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let local_ip = super::string_to_ip(constants::PROXY_AGENT_IP);
@@ -182,7 +204,7 @@ impl BpfObject {
         program_name: &str,
     ) -> Result<()> {
         match std::fs::File::open(cgroup2_root_path.clone()) {
-            Ok(cgroup) => match self.0.program_mut(program_name) {
+            Ok(cgroup) => match self.ebpf_mut()?.program_mut(program_name) {
                 Some(program) => match program.try_into() {
                     Ok(p) => {
                         let program: &mut CgroupSockAddr = p;
@@ -236,7 +258,7 @@ impl BpfObject {
 
     pub fn attach_kprobe_program(&mut self) -> Result<()> {
         let program_name = "tcp_connect_probe";
-        match self.0.program_mut(program_name) {
+        match self.ebpf_mut()?.program_mut(program_name) {
             Some(program) => match program.try_into() {
                 Ok(p) => {
                     let program: &mut KProbe = p;
@@ -282,7 +304,7 @@ impl BpfObject {
 
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = AUDIT_MAP_NAME;
-        match self.0.map(audit_map_name) {
+        match self.ebpf_mut()?.map(audit_map_name) {
             Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
@@ -317,7 +339,10 @@ impl BpfObject {
         redirect: bool,
     ) -> bool {
         let policy_map_name = POLICY_MAP_NAME;
-        match self.0.map_mut(policy_map_name) {
+        let Ok(ebpf) = self.ebpf_mut() else {
+            return false;
+        };
+        match ebpf.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
@@ -392,7 +417,7 @@ impl BpfObject {
 
     pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
         let audit_map_name = AUDIT_MAP_NAME;
-        match self.0.map_mut(audit_map_name) {
+        match self.ebpf_mut()?.map_mut(audit_map_name) {
             Some(map) => match HashMap::<&mut MapData, AuditMapKey, AuditMapValue>::try_from(map) {
                 Ok(mut audit_map) => {
                     let key = sock_addr_audit_key::from_source_port(source_port);
@@ -427,7 +452,7 @@ impl BpfObject {
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>> {
         let audit_map_name = ALERT_ONLY_MAP_NAME;
-        let map = self.0.take_map(audit_map_name).ok_or_else(|| {
+        let map = self.ebpf_mut()?.take_map(audit_map_name).ok_or_else(|| {
             Error::Bpf(BpfErrorType::GetBpfMap(
                 audit_map_name.to_string(),
                 "Map does not exist".to_string(),
@@ -446,7 +471,7 @@ impl BpfObject {
             ))
         })?;
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
+        let event_reader_task = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => return,
@@ -475,6 +500,7 @@ impl BpfObject {
                 }
             }
         });
+        self.event_runtime.add_task(event_reader_task);
         Ok(receiver)
     }
 }
@@ -520,6 +546,28 @@ impl super::Redirector {
         }
         Ok(())
     }
+}
+
+pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) -> Result<()> {
+    let Some(bpf_object) = redirector_shared_state.take_bpf_object().await? else {
+        return Ok(());
+    };
+
+    let (ebpf, event_runtime) = {
+        let mut bpf_object = bpf_object.lock().map_err(|e| {
+            Error::Bpf(BpfErrorType::CloseBpfObject(format!(
+                "BPF object lock is poisoned: {e}"
+            )))
+        })?;
+        bpf_object.take_resources()
+    };
+
+    // Aya detaches managed links and closes program/map file descriptors when Ebpf is dropped.
+    drop(ebpf);
+    event_runtime.shutdown().await?;
+
+    logger::write("Successfully closed Linux BPF object.".to_string());
+    Ok(())
 }
 
 pub async fn update_wire_server_redirect_policy(
@@ -677,7 +725,7 @@ mod tests {
             // drop map_mut("audit_map") within this scope
             let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, AuditMapValue> =
                 HashMap::<&mut aya::maps::MapData, AuditMapKey, AuditMapValue>::try_from(
-                    bpf.0.map_mut("audit_map").unwrap(),
+                    bpf.ebpf_mut().unwrap().map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
             audit_map
