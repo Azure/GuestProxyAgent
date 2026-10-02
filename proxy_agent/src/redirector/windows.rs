@@ -20,6 +20,7 @@ use windows_sys::Win32::Networking::WinSock;
 pub struct BpfObject(
     pub *mut bpf_obj::bpf_object,
     pub Vec<*mut bpf_obj::ebpf_link_t>,
+    super::EventTaskRuntime,
 );
 // Safety: bpf_object, which is a reference to an eBPF object, has no dependencies on thread-local storage and can
 // safely be sent to another thread. This is not explicitly documented in the Windows eBPF library, but the library does
@@ -29,6 +30,16 @@ pub struct BpfObject(
 // [0] https://github.com/microsoft/ebpf-for-windows/tree/Release-v0.17.1#2-does-this-provide-app-compatibility-with-ebpf-programs-written-for-linux
 // [1] https://libbpf.readthedocs.io/en/v1.4.5/api.html#error-handling
 unsafe impl Send for BpfObject {}
+
+impl BpfObject {
+    pub(crate) fn event_runtime_mut(&mut self) -> &mut super::EventTaskRuntime {
+        &mut self.2
+    }
+
+    fn take_event_runtime(&mut self) -> super::EventTaskRuntime {
+        std::mem::take(&mut self.2)
+    }
+}
 
 impl Default for BpfObject {
     fn default() -> Self {
@@ -100,11 +111,33 @@ impl super::Redirector {
     }
 }
 
-pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) {
-    if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object.lock().unwrap().close_bpf_object();
-        logger::write("Success closed bpf object.".to_string());
-    }
+pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) -> Result<()> {
+    let Some(bpf_object) = redirector_shared_state.take_bpf_object().await? else {
+        return Ok(());
+    };
+
+    let event_runtime = {
+        let mut bpf_object = bpf_object.lock().map_err(|e| {
+            Error::Bpf(BpfErrorType::CloseBpfObject(format!(
+                "BPF object lock is poisoned: {e}"
+            )))
+        })?;
+        bpf_object.take_event_runtime()
+    };
+    let shutdown_result = event_runtime.shutdown().await;
+
+    bpf_object
+        .lock()
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::CloseBpfObject(format!(
+                "BPF object lock is poisoned: {e}"
+            )))
+        })?
+        .close_bpf_object();
+
+    shutdown_result?;
+    logger::write("Success closed bpf object.".to_string());
+    Ok(())
 }
 
 pub fn get_audit_from_redirect_context(raw_socket_id: usize) -> Result<AuditEntry> {
