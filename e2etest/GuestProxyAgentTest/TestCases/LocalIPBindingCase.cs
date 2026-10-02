@@ -16,10 +16,18 @@ namespace GuestProxyAgentTest.TestCases
         {
         }
 
+        public LocalIPBindingCase(string testCaseName, string imdsMode) : base(testCaseName)
+        {
+            ImdsMode = imdsMode;
+        }
+
+        private string ImdsMode { get; set; } = "enforce";
+
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
             List<(string, string)> parameterList = new List<(string, string)>();
+            parameterList.Add(("imdsMode", ImdsMode));
             context.TestResultDetails = (await RunScriptViaRunCommandV2Async(context, Constants.PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME, parameterList, false)).ToTestResultDetails(context.Logger);
         }
     }
