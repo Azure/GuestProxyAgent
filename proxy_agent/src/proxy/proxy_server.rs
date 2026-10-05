@@ -1117,9 +1117,7 @@ impl ProxyServer {
                             Err(e) => {
                                 http_connection_context.log(
                                     LoggerLevel::Error,
-                                    format!(
-                                        "Failed to add authorization header with error: {e}"
-                                    ),
+                                    format!("Failed to add authorization header with error: {e}"),
                                 );
                                 return Ok(Self::closed_response(StatusCode::BAD_GATEWAY));
                             }
