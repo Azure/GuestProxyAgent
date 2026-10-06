@@ -22,6 +22,9 @@ The following must be installed in order to build this project:
 
    - `"MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated libs (latest)"`
 
+   The selected Windows SDK must include `makecat.exe`, which the build uses to generate the Windows extension catalog.
+   If the tool is installed outside the standard Windows SDK location, set `MAKECAT_PATH` to its full path before building.
+
 3. [WDK for Windows 11, version 22H2](https://go.microsoft.com/fwlink/?linkid=2196230) (version **10.0.22621.x**), including the
  "*Windows Driver Kit Visual Studio extension*" (make sure the "*Install Windows Driver Kit Visual Studio Extension*"
   check box is checked before completing the installer).
@@ -49,6 +52,10 @@ By default this will clone the project under the `GuestProxyAgent` directory.
 1. Launch `Developer Command Prompt for VS 2022` with administrators permission.
 2. Navigate to this repo root folder.
 3. ```build.cmd```
+
+The Windows build output includes an unsigned `GuestProxyAgentExtension.cat` generated from the extension handler scripts.
+Microsoft production signing is applied later by the official release pipeline; catalogs from local and public CI builds
+are not trusted production artifacts.
 
 ## Building with Docker
 
