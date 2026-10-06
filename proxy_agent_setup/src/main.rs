@@ -392,6 +392,7 @@ mod tests {
                 state,
                 start_type: "AutoStart".to_string(),
                 executable_path: None,
+                version: None,
             }
         }
 

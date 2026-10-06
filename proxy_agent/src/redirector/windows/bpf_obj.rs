@@ -15,6 +15,11 @@ pub type ebpf_handle_t = i64;
 pub type ebpf_program_type_t = uuid::Uuid;
 pub type ebpf_attach_type_t = uuid::Uuid;
 
+#[repr(C)]
+pub struct ring_buffer {
+    _private: [u8; 0],
+}
+
 // Type aliases used by libbpf headers.
 pub type __s32 = i32;
 pub type __s64 = i64;

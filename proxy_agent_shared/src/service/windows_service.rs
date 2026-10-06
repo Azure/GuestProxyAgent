@@ -3,6 +3,7 @@
 use crate::error::Error;
 use crate::logger::logger_manager;
 use crate::result::Result;
+use crate::version::Version;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -23,6 +24,8 @@ pub struct ServiceStatusInfo {
     pub start_type: String,
     /// The service's registered executable path; `None` when not installed or unavailable.
     pub executable_path: Option<PathBuf>,
+    /// The executable's cached product version; `None` when not installed or unreadable.
+    pub version: Option<Version>,
 }
 
 impl ServiceStatusInfo {
@@ -572,6 +575,7 @@ mod tests {
             state: None,
             start_type: "NotInstalled".to_string(),
             executable_path: None,
+            version: None,
         };
         assert_eq!(info.summary(), "NotInstalled");
 
@@ -581,6 +585,7 @@ mod tests {
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
             executable_path: None,
+            version: None,
         };
         assert_eq!(info.summary(), "Running, AutoStart");
 
@@ -590,6 +595,7 @@ mod tests {
             state: Some(ServiceState::Stopped),
             start_type: "Disabled".to_string(),
             executable_path: None,
+            version: None,
         };
         assert_eq!(info.summary(), "Stopped, Disabled");
     }
@@ -602,6 +608,7 @@ mod tests {
             state: None,
             start_type: "NotInstalled".to_string(),
             executable_path: None,
+            version: None,
         };
         let msg = info.message();
         assert!(
@@ -619,6 +626,7 @@ mod tests {
             state: Some(ServiceState::Running),
             start_type: "AutoStart".to_string(),
             executable_path: None,
+            version: None,
         };
         let msg = info.message();
         assert!(
