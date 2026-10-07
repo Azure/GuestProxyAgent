@@ -439,6 +439,18 @@ impl ProxyServer {
             return Ok(Self::method_not_allowed_response());
         }
 
+        if http_connection_context.has_nested_percent_encoding() {
+            // If the proxied request contains nested percent encoding characters, we will return 404 Not Found to avoid potential security issues.
+            self.log_connection_summary(
+                &mut http_connection_context,
+                StatusCode::NOT_FOUND,
+                false,
+                "Nested percent encoding found in the request, return NOT FOUND!".to_string(),
+            )
+            .await;
+            return Ok(Self::closed_response(StatusCode::NOT_FOUND));
+        }
+
         if http_connection_context.contains_traversal_characters() {
             // If the proxied request contains traversal characters, we will return 403 Forbidden to avoid potential security issues.
             self.log_connection_summary(
@@ -1329,6 +1341,39 @@ mod tests {
             response.status(),
             "response.status must be FORBIDDEN."
         );
+
+        // Match IIS request-filtering behavior for double and deeper
+        // percent encoding without recursively decoding the request.
+        for path in [
+            "/test/%252e%252e/",
+            "/test/%25252e%25252e/",
+            "/test/%25%32%65%25%32%65/",
+        ] {
+            let endpoint = hyper_client::HostEndpoint::new(host, port, path);
+            let request = hyper_client::build_request(
+                Method::GET,
+                &endpoint,
+                &HashMap::new(),
+                None,
+                key_keeper_shared_state
+                    .get_current_key_guid()
+                    .await
+                    .unwrap_or(None),
+                key_keeper_shared_state
+                    .get_current_key_value()
+                    .await
+                    .unwrap_or(None),
+            )
+            .unwrap();
+            let response = hyper_client::send_request(host, port, request, logger::write_warning)
+                .await
+                .unwrap();
+            assert_eq!(
+                http::StatusCode::NOT_FOUND,
+                response.status(),
+                "nested percent-encoded path {path:?} must return NOT_FOUND"
+            );
+        }
 
         // test large request body
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
