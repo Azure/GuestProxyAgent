@@ -179,7 +179,7 @@ impl BpfObject {
         let compartment_id = 1;
         let mut link: ebpf_link_t = ebpf_link_t::empty();
         let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
-        match ebpf_prog_attach(
+        match ebpf_program_attach(
             program,
             std::ptr::null(),
             &compartment_id as *const i32 as *const c_void,
@@ -190,7 +190,7 @@ impl BpfObject {
                 if r != 0 {
                     return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                         program_name.to_string(),
-                        format!("ebpf_prog_attach return with error code '{r}'"),
+                        format!("ebpf_program_attach return with error code '{r}'"),
                     )));
                 }
                 logger::write_information(format!("Successfully attached {program_name} program."));
@@ -277,10 +277,6 @@ impl BpfObject {
         if self.0.is_null() {
             return;
         }
-        if let Err(e) = bpf_object__close(self.0) {
-            logger::write_error(format!("bpf_object__close with error: {e}"));
-        }
-        self.0 = std::ptr::null::<bpf_object>().cast_mut();
 
         for link in self.1.drain(..) {
             if link.is_null() {
@@ -293,6 +289,11 @@ impl BpfObject {
                 logger::write_error(format!("bpf_link_destroy with error: {e}"));
             }
         }
+
+        if let Err(e) = bpf_object__close(self.0) {
+            logger::write_error(format!("bpf_object__close with error: {e}"));
+        }
+        self.0 = std::ptr::null::<bpf_object>().cast_mut();
     }
 
     /**
@@ -502,7 +503,7 @@ impl BpfObject {
                         logger::write_warning(format!(
                             "ring_buffer__poll failed with result {result}"
                         ));
-                        break;
+                        continue; // or break; depending on desired behavior
                     }
                     Err(err) => {
                         logger::write_warning(format!("ring_buffer__poll failed: {err}"));
