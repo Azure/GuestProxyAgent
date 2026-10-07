@@ -26,8 +26,15 @@ pub fn get_proxy_agent_aggregate_status_folder() -> std::path::PathBuf {
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub enum ModuleState {
     UNKNOWN,
+    STARTING,
     RUNNING,
     STOPPED,
+}
+
+impl ModuleState {
+    pub fn is_ultimate_state(&self) -> bool {
+        matches!(self, ModuleState::RUNNING | ModuleState::STOPPED)
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
@@ -56,11 +63,19 @@ pub struct ProxyAgentStatus {
     pub ebpfProgramStatus: ProxyAgentDetailStatus,
     pub proxyListenerStatus: ProxyAgentDetailStatus,
     pub telemetryLoggerStatus: ProxyAgentDetailStatus,
+    pub auditFallback: Option<AuditFallback>,
     pub proxyConnectionsCount: u128,
 }
 
 fn default_address_family() -> String {
     "IPv4".to_string()
+}
+
+#[derive(Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct AuditFallback {
+    pub fallbacked: bool,
+    pub reason: String,
 }
 
 #[derive(Serialize, Deserialize)]
