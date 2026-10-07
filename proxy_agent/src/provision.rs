@@ -746,7 +746,8 @@ mod tests {
 
         // initialize key keeper secure channel state to UNKNOWN
         let port: u16 = 8092;
-        let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
+        let proxy_server =
+            proxy_server::ProxyServer::new(port, &shared_state, cancellation_token.clone());
 
         tokio::spawn({
             let proxy_server = proxy_server.clone();

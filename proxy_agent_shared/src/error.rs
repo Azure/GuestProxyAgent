@@ -111,6 +111,9 @@ pub enum HyperErrorType {
 
     #[error("Deserialization failed: {0}")]
     Deserialize(String),
+
+    #[error("Header extraction error: {0}")]
+    Header(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -127,7 +130,9 @@ pub enum WireServerErrorType {
 
 #[cfg(test)]
 mod test {
-    use super::{CommandErrorType, Error, ParseVersionErrorType, WireServerErrorType};
+    use super::{
+        CommandErrorType, Error, HyperErrorType, ParseVersionErrorType, WireServerErrorType,
+    };
     use std::fs;
 
     #[test]
@@ -173,6 +178,14 @@ mod test {
         assert_eq!(
             error.to_string(),
             "Failed to get response from testurl.com, status code: 500 Internal Server Error"
+        );
+
+        let error = Error::Hyper(HyperErrorType::Header(
+            "Duplicate header key found: x-test".to_string(),
+        ));
+        assert_eq!(
+            error.to_string(),
+            "Header extraction error: Duplicate header key found: x-test"
         );
     }
 }
