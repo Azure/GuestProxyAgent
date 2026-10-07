@@ -1101,7 +1101,20 @@ impl ProxyServer {
                 .await
                 .unwrap_or(None),
         ) {
-            let input_to_sign = hyper_client::as_sig_input(head, whole_body);
+            let input_to_sign = match hyper_client::as_sig_input(head, whole_body) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.log_connection_summary(
+                        &mut http_connection_context,
+                        StatusCode::BAD_REQUEST,
+                        false,
+                        format!("Failed to generate input to sign: {e}"),
+                    )
+                    .await;
+                    return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
+                }
+            };
+
             match misc_helpers::compute_signature(&key, input_to_sign.as_slice()) {
                 Ok(sig) => {
                     let authorization_value = format!(
