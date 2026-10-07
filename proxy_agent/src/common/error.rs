@@ -134,6 +134,9 @@ pub enum BpfErrorType {
     #[error("Failed to attach program '{0}' with error: {1}")]
     AttachBpfProgram(String, String),
 
+    #[error("Failed to close BPF object: {0}")]
+    CloseBpfObject(String),
+
     #[error("Failed to convert program to '{0}' with error: {1}")]
     ConvertBpfProgram(String, String),
 

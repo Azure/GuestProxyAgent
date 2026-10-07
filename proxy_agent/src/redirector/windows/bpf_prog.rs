@@ -61,7 +61,11 @@ impl BpfObject {
     }
 
     pub fn new() -> Self {
-        Self(std::ptr::null::<bpf_object>().cast_mut(), Vec::new())
+        Self(
+            std::ptr::null::<bpf_object>().cast_mut(),
+            Vec::new(),
+            super::super::EventTaskRuntime::default(),
+        )
     }
 
     /**
@@ -175,7 +179,7 @@ impl BpfObject {
         let compartment_id = 1;
         let mut link: ebpf_link_t = ebpf_link_t::empty();
         let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
-        match ebpf_prog_attach(
+        match ebpf_program_attach(
             program,
             std::ptr::null(),
             &compartment_id as *const i32 as *const c_void,
@@ -186,7 +190,7 @@ impl BpfObject {
                 if r != 0 {
                     return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                         program_name.to_string(),
-                        format!("ebpf_prog_attach return with error code '{r}'"),
+                        format!("ebpf_program_attach return with error code '{r}'"),
                     )));
                 }
                 logger::write_information(format!("Successfully attached {program_name} program."));
@@ -273,10 +277,6 @@ impl BpfObject {
         if self.0.is_null() {
             return;
         }
-        if let Err(e) = bpf_object__close(self.0) {
-            logger::write_error(format!("bpf_object__close with error: {e}"));
-        }
-        self.0 = std::ptr::null::<bpf_object>().cast_mut();
 
         for link in self.1.drain(..) {
             if link.is_null() {
@@ -289,6 +289,11 @@ impl BpfObject {
                 logger::write_error(format!("bpf_link_destroy with error: {e}"));
             }
         }
+
+        if let Err(e) = bpf_object__close(self.0) {
+            logger::write_error(format!("bpf_object__close with error: {e}"));
+        }
+        self.0 = std::ptr::null::<bpf_object>().cast_mut();
     }
 
     /**
@@ -466,7 +471,7 @@ impl BpfObject {
     }
 
     pub fn subscribe_alert_only(
-        &self,
+        &mut self,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>> {
         let map_name = ALERT_ONLY_MAP_NAME;
@@ -489,7 +494,7 @@ impl BpfObject {
         }
         let ring_address = ring as usize;
         let context_address = context as usize;
-        tokio::task::spawn_blocking(move || {
+        let event_reader_task = tokio::task::spawn_blocking(move || {
             let ring = ring_address as *mut ring_buffer;
             while !cancellation_token.is_cancelled() {
                 match ring_buffer__poll(ring, 250) {
@@ -498,7 +503,9 @@ impl BpfObject {
                         logger::write_warning(format!(
                             "ring_buffer__poll failed with result {result}"
                         ));
-                        break;
+                        // TODO: Handle negative result appropriately,
+                        // For now, just log and continue to poll the ring buffer
+                        continue;
                     }
                     Err(err) => {
                         logger::write_warning(format!("ring_buffer__poll failed: {err}"));
@@ -513,6 +520,7 @@ impl BpfObject {
                 ));
             }
         });
+        self.2.add_task(event_reader_task);
         Ok(receiver)
     }
 

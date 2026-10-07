@@ -234,7 +234,7 @@ pub fn bpf_object__find_program_by_name(
     Ok(unsafe { find_program_by_name(obj, c_string.as_ptr()) })
 }
 
-pub fn ebpf_prog_attach(
+pub fn ebpf_program_attach(
     prog: *mut ebpf_program_t,
     attach_type: *const ebpf_attach_type_t,
     attach_parameters: *const c_void,
