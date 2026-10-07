@@ -1117,19 +1117,12 @@ impl ProxyServer {
                             Err(e) => {
                                 http_connection_context.log(
                                     LoggerLevel::Error,
-                                    format!(
-                                        "Failed to add authorization header: {authorization_value} with error: {e}"
-                                    ),
+                                    format!("Failed to add authorization header with error: {e}"),
                                 );
                                 return Ok(Self::closed_response(StatusCode::BAD_GATEWAY));
                             }
                         },
                     );
-
-                    http_connection_context.log(
-                        LoggerLevel::Trace,
-                        format!("Added authorization header {authorization_value}"),
-                    )
                 }
                 Err(e) => {
                     http_connection_context.log(
