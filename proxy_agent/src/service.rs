@@ -96,7 +96,12 @@ pub async fn start_service(shared_state: SharedState) {
         }
     });
 
-    let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
+    let proxy_cancellation_token = shared_state.get_cancellation_token().child_token();
+    let proxy_server = ProxyServer::new(
+        constants::PROXY_AGENT_PORT,
+        &shared_state,
+        proxy_cancellation_token,
+    );
     if let Err(e) = proxy_server.start_on_dedicated_runtime() {
         logger::write_error(format!(
             "Failed to start the proxy server runtime thread: {e}"
