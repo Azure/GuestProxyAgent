@@ -503,7 +503,9 @@ impl BpfObject {
                         logger::write_warning(format!(
                             "ring_buffer__poll failed with result {result}"
                         ));
-                        continue; // or break; depending on desired behavior
+                        // TODO: Handle negative result appropriately,
+                        // For now, just log and continue to poll the ring buffer
+                        continue;
                     }
                     Err(err) => {
                         logger::write_warning(format!("ring_buffer__poll failed: {err}"));
