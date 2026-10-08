@@ -339,6 +339,16 @@ impl Clone for Identity {
     }
 }
 
+/// Converts a `stat` `st_dev` (userspace encoding: glibc `makedev`) to the kernel-internal
+/// `dev_t` encoding (`MKDEV`: major << 20 | minor) that `super_block->s_dev` holds and that
+/// the eBPF program reports in `Claims::processExecutableDevice`.
+#[cfg(not(windows))]
+pub(crate) fn kernel_dev_from_st_dev(st_dev: u64) -> u64 {
+    let major = u64::from(libc::major(st_dev));
+    let minor = u64::from(libc::minor(st_dev));
+    (major << 20) | minor
+}
+
 impl Identity {
     pub fn is_match(&self, logger: &mut ConnectionLogger, claims: &Claims) -> bool {
         logger.write(
@@ -414,7 +424,15 @@ impl Identity {
                     );
                     return false;
                 }
-                if metadata.dev() != claims.processExecutableDevice
+                // Authorize by file identity, not by path: the eBPF hook captured the
+                // (device, inode) of the caller's mapped executable, which a bind mount
+                // or symlink over `exePath` cannot change. Compare it with the file that
+                // `exePath` resolves to in GPA's own (trusted) mount namespace. A mismatch
+                // means the caller is a different file than the one the rule allows, even
+                // if its `/proc/<pid>/exe` path text looks identical.
+                // stat's st_dev uses the userspace encoding, but the eBPF value is the
+                // kernel's internal s_dev, so re-encode before comparing.
+                if kernel_dev_from_st_dev(metadata.dev()) != claims.processExecutableDevice
                     || metadata.ino() != claims.processExecutableInode
                 {
                     logger.write(
@@ -1686,6 +1704,19 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn kernel_dev_from_st_dev_matches_kernel_encoding() {
+        // /dev/sda1 (8,1): stat st_dev is 0x801, kernel s_dev is 0x800001.
+        assert_eq!(super::kernel_dev_from_st_dev(0x801), 0x80_0001);
+        // Minor numbers above 255 are split across the userspace encoding.
+        let st_dev = libc::makedev(259, 0x1234);
+        assert_eq!(
+            super::kernel_dev_from_st_dev(st_dev),
+            (259u64 << 20) | 0x1234
+        );
+    }
+
     #[tokio::test]
     async fn test_identity_is_match() {
         #[cfg(not(windows))]
@@ -1709,7 +1740,7 @@ mod tests {
             runAsElevated: true,
             processFullPath: current_exe,
             #[cfg(not(windows))]
-            processExecutableDevice: current_exe_metadata.dev(),
+            processExecutableDevice: super::kernel_dev_from_st_dev(current_exe_metadata.dev()),
             #[cfg(windows)]
             processExecutableDevice: 0,
             #[cfg(not(windows))]

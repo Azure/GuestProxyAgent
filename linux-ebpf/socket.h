@@ -106,23 +106,38 @@ struct sock {
     struct sock_common __sk_common;
 };
 
+// Minimal kernel structs used to read the connecting task's executable identity:
+//   task_struct->mm->exe_file->f_inode->{i_sb->s_dev, i_ino}
+// As with the structs above, only the named fields are declared; CO-RE relocates
+// them against the running kernel's BTF, and the type names must match the kernel's.
+
+// Filesystem superblock; s_dev is the backing device (dev_t encoding) of the file's
+// filesystem. Together with i_ino it identifies the file independent of any path or
+// mount namespace.
 struct super_block {
     __u32 s_dev;
 };
 
+// On-disk file object; (s_dev, i_ino) is the executable identity compared by user mode.
 struct inode {
     unsigned long i_ino;
     struct super_block *i_sb;
 };
 
+// Open file object; f_inode is the inode backing the file.
 struct file {
     struct inode *f_inode;
 };
 
+// Process address space; exe_file is the file execve() mapped as the main
+// executable (the same file /proc/<pid>/exe resolves to), but read here without a
+// path lookup, so a bind mount or symlink cannot change what is observed.
+// May be NULL for kernel threads.
 struct mm_struct {
     struct file *exe_file;
 };
 
+// Current task (from bpf_get_current_task()); mm is NULL for kernel threads.
 struct task_struct {
     struct mm_struct *mm;
 };

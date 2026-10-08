@@ -649,7 +649,10 @@ mod tests {
         let (current_exe_dev, current_exe_ino) = {
             use std::os::unix::fs::MetadataExt;
             let metadata = std::fs::metadata(&current_exe).unwrap();
-            (metadata.dev(), metadata.ino())
+            (
+                crate::key_keeper::key::kernel_dev_from_st_dev(metadata.dev()),
+                metadata.ino(),
+            )
         };
         #[cfg(windows)]
         let (current_exe_dev, current_exe_ino) = (0u64, 0u64);
