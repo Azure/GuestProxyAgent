@@ -66,7 +66,8 @@ const START_LISTENER_RETRY_SLEEP_DURATION: Duration = Duration::from_secs(1);
 #[derive(Clone)]
 pub struct ProxyServer {
     port: u16,
-    cancellation_token: CancellationToken,
+    service_cancellation_token: CancellationToken,
+    listener_cancellation_token: CancellationToken,
     key_keeper_shared_state: KeyKeeperSharedState,
     common_state: CommonState,
     provision_shared_state: ProvisionSharedState,
@@ -78,10 +79,15 @@ pub struct ProxyServer {
 }
 
 impl ProxyServer {
-    pub fn new(port: u16, shared_state: &SharedState) -> Self {
+    pub fn new(
+        port: u16,
+        shared_state: &SharedState,
+        listener_cancellation_token: CancellationToken,
+    ) -> Self {
         ProxyServer {
             port,
-            cancellation_token: shared_state.get_cancellation_token(),
+            service_cancellation_token: shared_state.get_cancellation_token(),
+            listener_cancellation_token,
             key_keeper_shared_state: shared_state.get_key_keeper_shared_state(),
             common_state: shared_state.get_common_state(),
             provision_shared_state: shared_state.get_provision_shared_state(),
@@ -221,7 +227,7 @@ impl ProxyServer {
             logger::write_warning(format!("Failed to set module state: {e}"));
         }
         provision::listener_started(EventThreadsSharedState {
-            cancellation_token: self.cancellation_token.clone(),
+            cancellation_token: self.service_cancellation_token.clone(),
             common_state: self.common_state.clone(),
             access_control_shared_state: self.access_control_shared_state.clone(),
             redirector_shared_state: self.redirector_shared_state.clone(),
@@ -235,7 +241,7 @@ impl ProxyServer {
         // We start a loop to continuously accept incoming connections
         loop {
             tokio::select! {
-                _ = self.cancellation_token.cancelled() => {
+                _ = self.listener_cancellation_token.cancelled() => {
                     logger::write_warning("cancellation token signal received, stop the listener.".to_string());
                     let _= self.agent_status_shared_state
                         .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
@@ -431,6 +437,18 @@ impl ProxyServer {
             )
             .await;
             return Ok(Self::method_not_allowed_response());
+        }
+
+        if http_connection_context.has_nested_percent_encoding() {
+            // If the proxied request contains nested percent encoding characters, we will return 404 Not Found to avoid potential security issues.
+            self.log_connection_summary(
+                &mut http_connection_context,
+                StatusCode::NOT_FOUND,
+                false,
+                "Nested percent encoding found in the request, return NOT FOUND!".to_string(),
+            )
+            .await;
+            return Ok(Self::closed_response(StatusCode::NOT_FOUND));
         }
 
         if http_connection_context.contains_traversal_characters() {
@@ -1101,7 +1119,20 @@ impl ProxyServer {
                 .await
                 .unwrap_or(None),
         ) {
-            let input_to_sign = hyper_client::as_sig_input(head, whole_body);
+            let input_to_sign = match hyper_client::as_sig_input(head, whole_body) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.log_connection_summary(
+                        &mut http_connection_context,
+                        StatusCode::BAD_REQUEST,
+                        false,
+                        format!("Failed to generate input to sign: {e}"),
+                    )
+                    .await;
+                    return Ok(Self::closed_response(StatusCode::BAD_REQUEST));
+                }
+            };
+
             match misc_helpers::compute_signature(&key, input_to_sign.as_slice()) {
                 Ok(sig) => {
                     let authorization_value = format!(
@@ -1117,19 +1148,12 @@ impl ProxyServer {
                             Err(e) => {
                                 http_connection_context.log(
                                     LoggerLevel::Error,
-                                    format!(
-                                        "Failed to add authorization header: {authorization_value} with error: {e}"
-                                    ),
+                                    format!("Failed to add authorization header with error: {e}"),
                                 );
                                 return Ok(Self::closed_response(StatusCode::BAD_GATEWAY));
                             }
                         },
                     );
-
-                    http_connection_context.log(
-                        LoggerLevel::Trace,
-                        format!("Added authorization header {authorization_value}"),
-                    )
                 }
                 Err(e) => {
                     http_connection_context.log(
@@ -1207,7 +1231,8 @@ mod tests {
     async fn dedicated_runtime_stops_on_cancellation() {
         let shared_state = shared_state::SharedState::start_all();
         shared_state.cancel_cancellation_token();
-        let proxy_server = proxy_server::ProxyServer::new(0, &shared_state);
+        let proxy_server =
+            proxy_server::ProxyServer::new(0, &shared_state, shared_state.get_cancellation_token());
 
         let runtime_thread = proxy_server.start_on_dedicated_runtime().unwrap();
         tokio::task::spawn_blocking(move || runtime_thread.join().unwrap())
@@ -1223,7 +1248,8 @@ mod tests {
         let shared_state = shared_state::SharedState::start_all();
         let key_keeper_shared_state = shared_state.get_key_keeper_shared_state();
         let cancellation_token = shared_state.get_cancellation_token();
-        let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
+        let proxy_server =
+            proxy_server::ProxyServer::new(port, &shared_state, cancellation_token.clone());
 
         tokio::spawn({
             let proxy_server = proxy_server.clone();
@@ -1316,6 +1342,39 @@ mod tests {
             "response.status must be FORBIDDEN."
         );
 
+        // Match IIS request-filtering behavior for double and deeper
+        // percent encoding without recursively decoding the request.
+        for path in [
+            "/test/%252e%252e/",
+            "/test/%25252e%25252e/",
+            "/test/%25%32%65%25%32%65/",
+        ] {
+            let endpoint = hyper_client::HostEndpoint::new(host, port, path);
+            let request = hyper_client::build_request(
+                Method::GET,
+                &endpoint,
+                &HashMap::new(),
+                None,
+                key_keeper_shared_state
+                    .get_current_key_guid()
+                    .await
+                    .unwrap_or(None),
+                key_keeper_shared_state
+                    .get_current_key_value()
+                    .await
+                    .unwrap_or(None),
+            )
+            .unwrap();
+            let response = hyper_client::send_request(host, port, request, logger::write_warning)
+                .await
+                .unwrap();
+            assert_eq!(
+                http::StatusCode::NOT_FOUND,
+                response.status(),
+                "nested percent-encoded path {path:?} must return NOT_FOUND"
+            );
+        }
+
         // test large request body
         let body = vec![88u8; super::REQUEST_BODY_LOW_LIMIT_SIZE + 1];
         let request = hyper_client::build_request(
@@ -1361,7 +1420,8 @@ mod tests {
         let port: u16 = 8092; // distinct from other tests
         let shared_state = shared_state::SharedState::start_all();
         let cancellation_token = shared_state.get_cancellation_token();
-        let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
+        let proxy_server =
+            proxy_server::ProxyServer::new(port, &shared_state, cancellation_token.clone());
 
         tokio::spawn({
             let proxy_server = proxy_server.clone();

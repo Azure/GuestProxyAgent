@@ -85,13 +85,23 @@ pub async fn start_service(shared_state: SharedState) {
     });
 
     tokio::spawn({
-        let redirector: Redirector = Redirector::new(constants::PROXY_AGENT_PORT, &shared_state);
+        let redirector_cancellation_token = shared_state.get_cancellation_token().child_token();
+        let redirector: Redirector = Redirector::new(
+            constants::PROXY_AGENT_PORT,
+            &shared_state,
+            redirector_cancellation_token,
+        );
         async move {
             redirector.start().await;
         }
     });
 
-    let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
+    let proxy_cancellation_token = shared_state.get_cancellation_token().child_token();
+    let proxy_server = ProxyServer::new(
+        constants::PROXY_AGENT_PORT,
+        &shared_state,
+        proxy_cancellation_token,
+    );
     if let Err(e) = proxy_server.start_on_dedicated_runtime() {
         logger::write_error(format!(
             "Failed to start the proxy server runtime thread: {e}"
@@ -169,7 +179,8 @@ pub fn stop_service(shared_state: SharedState) {
     tokio::spawn({
         let shared_state = shared_state.clone();
         async move {
-            redirector::close(
+            // Best effort to close the redirector gracefully. The result is ignored as we are stopping the service.
+            _ = redirector::close(
                 shared_state.get_redirector_shared_state(),
                 shared_state.get_agent_status_shared_state(),
             )

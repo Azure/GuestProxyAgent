@@ -303,6 +303,12 @@ impl HttpConnectionContext {
         path_has_traversal(self.url.path())
     }
 
+    /// Checks if the request path contains nested percent-encoding, which can be used to bypass
+    /// certain security checks. Returns `true` if nested percent-encoding is detected.
+    pub fn has_nested_percent_encoding(&self) -> bool {
+        path_has_nested_percent_encoding(self.url.path())
+    }
+
     pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
         if config::get_enable_http_proxy_trace() {
             self.add_stage(message.clone());
@@ -448,9 +454,22 @@ fn path_has_traversal(raw_path: &str) -> bool {
     decoded.contains("..")
 }
 
+/// Detect nested percent-encoding without changing request handling.
+/// Every deeper encoding exposes a valid `%HH` sequence after one decode.
+fn path_has_nested_percent_encoding(raw_path: &str) -> bool {
+    let decoded = percent_encoding::percent_decode_str(raw_path).decode_utf8_lossy();
+    contains_percent_encoded_byte(decoded.as_bytes())
+}
+
+fn contains_percent_encoded_byte(value: &[u8]) -> bool {
+    value.windows(3).any(|window| {
+        window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit()
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::path_has_traversal;
+    use super::{path_has_nested_percent_encoding, path_has_traversal};
 
     #[test]
     fn clean_paths_are_not_traversal() {
@@ -529,6 +548,35 @@ mod tests {
             assert!(
                 !path_has_traversal(p),
                 "expected non-traversal (deferred to canonical): {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_percent_encoding_tests() {
+        for p in [
+            "/foo/%252e%252e/bar",
+            "/foo/%252E%252e/bar",
+            "/foo/%25252e%25252e/bar",
+            "/foo/%25%32%65%25%32%65/bar",
+            "/metadata%252fidentity/oauth2/token",
+            "/metadata/%253Fapi-version=2021-02-01",
+        ] {
+            assert!(
+                path_has_nested_percent_encoding(p),
+                "expected nested percent encoding to be detected: {p:?}"
+            );
+        }
+
+        for p in [
+            "/metadata/%69nstance",
+            "/metadata/value%25done",
+            "/metadata/value%252",
+            "/metadata/value%25zz",
+        ] {
+            assert!(
+                !path_has_nested_percent_encoding(p),
+                "expected unambiguous encoding to be allowed: {p:?}"
             );
         }
     }
