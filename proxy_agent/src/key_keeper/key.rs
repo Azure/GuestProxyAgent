@@ -36,8 +36,10 @@ use hyper::Uri;
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::{collections::HashMap, path::PathBuf};
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::{ffi::OsString, time::Duration};
 
 const AUDIT_MODE: &str = "audit";
@@ -385,24 +387,74 @@ impl Identity {
             }
         }
         if let Some(ref exe_path) = self.exePath {
-            let process_path_buf: PathBuf = exe_path.into();
-            if process_path_buf == claims.processFullPath {
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::MetadataExt;
+
+                let metadata = match std::fs::metadata(exe_path) {
+                    Ok(metadata) => metadata,
+                    Err(err) => {
+                        logger.write(
+                            LoggerLevel::Warn,
+                            format!(
+                                "Could not resolve executable identity '{}' from identity '{}': {}",
+                                exe_path, self.name, err
+                            ),
+                        );
+                        return false;
+                    }
+                };
+                if !claims.processExecutableIdentityValid {
+                    logger.write(
+                        LoggerLevel::Warn,
+                        format!(
+                            "Kernel executable identity unavailable for identity '{}'",
+                            self.name
+                        ),
+                    );
+                    return false;
+                }
+                if metadata.dev() != claims.processExecutableDevice
+                    || metadata.ino() != claims.processExecutableInode
+                {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Not matched executable identity '{}' from identity '{}'",
+                            exe_path, self.name
+                        ),
+                    );
+                    return false;
+                }
                 logger.write(
                     LoggerLevel::Trace,
                     format!(
-                        "Matched process full path '{}' from identity '{}'",
+                        "Matched executable identity '{}' from identity '{}'",
                         exe_path, self.name
                     ),
                 );
-            } else {
-                logger.write(
-                    LoggerLevel::Trace,
-                    format!(
-                        "Not matched process full path '{}' from identity '{}'",
-                        exe_path, self.name
-                    ),
-                );
-                return false;
+            }
+            #[cfg(windows)]
+            {
+                let process_path_buf: PathBuf = exe_path.into();
+                if process_path_buf == claims.processFullPath {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Matched process full path '{}' from identity '{}'",
+                            exe_path, self.name
+                        ),
+                    );
+                } else {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Not matched process full path '{}' from identity '{}'",
+                            exe_path, self.name
+                        ),
+                    );
+                    return false;
+                }
             }
         }
         if let Some(ref group_name) = self.groupName {
@@ -910,7 +962,6 @@ mod tests {
     use std::os::unix::ffi::OsStringExt;
     #[cfg(windows)]
     use std::os::windows::ffi::OsStringExt;
-    use std::path::PathBuf;
 
     use super::Key;
     use super::KeyStatus;
@@ -1637,7 +1688,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_is_match() {
+        #[cfg(not(windows))]
+        use std::os::unix::fs::MetadataExt;
+
         let mut logger = ConnectionLogger::new(1, 1);
+        let current_exe = std::env::current_exe().unwrap();
+        let current_exe_text = current_exe.to_string_lossy().to_string();
+        #[cfg(not(windows))]
+        let current_exe_metadata = std::fs::metadata(&current_exe).unwrap();
 
         let mut claims = super::Claims {
             userName: "test".to_string(),
@@ -1649,17 +1707,26 @@ mod tests {
             clientIp: "00.000.000".to_string(),
             clientPort: 0, // doesn't matter for this test
             runAsElevated: true,
-            processFullPath: PathBuf::from("test"),
+            processFullPath: current_exe,
+            #[cfg(not(windows))]
+            processExecutableDevice: current_exe_metadata.dev(),
+            #[cfg(windows)]
+            processExecutableDevice: 0,
+            #[cfg(not(windows))]
+            processExecutableInode: current_exe_metadata.ino(),
+            #[cfg(windows)]
+            processExecutableInode: 0,
+            processExecutableIdentityValid: true,
         };
 
-        let identity = r#"{
+        let identity: Identity = serde_json::from_value(serde_json::json!({
             "name": "test",
             "userName": "test",
             "groupName": "test",
-            "exePath": "test",
+            "exePath": current_exe_text,
             "processName": "test"
-        }"#;
-        let identity: Identity = serde_json::from_str(identity).unwrap();
+        }))
+        .unwrap();
         assert!(
             identity.is_match(&mut logger, &claims),
             "identity should be matched"
@@ -1747,15 +1814,30 @@ mod tests {
             !identity4.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
-        let identity4 = r#"{
+        let identity4: Identity = serde_json::from_value(serde_json::json!({
             "name": "test",
-            "exePath": "test"
-        }"#;
-        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+            "exePath": current_exe_text
+        }))
+        .unwrap();
         assert!(
             identity4.is_match(&mut logger, &claims),
             "identity should be matched"
         );
+        #[cfg(not(windows))]
+        {
+            claims.processExecutableInode ^= 1;
+            assert!(
+                !identity4.is_match(&mut logger, &claims),
+                "a spoofed path with a different kernel executable identity must not match"
+            );
+            claims.processExecutableInode ^= 1;
+            claims.processExecutableIdentityValid = false;
+            assert!(
+                !identity4.is_match(&mut logger, &claims),
+                "exePath identity must fail closed when kernel identity is unavailable"
+            );
+            claims.processExecutableIdentityValid = true;
+        }
 
         // test groupName
         let identity5 = r#"{

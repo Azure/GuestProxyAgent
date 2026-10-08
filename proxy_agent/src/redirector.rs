@@ -166,6 +166,12 @@ pub struct AuditEntry {
     pub destination_port: u16, // in network byte order
     #[serde(default)]
     pub address_family: AddressFamily,
+    #[serde(default)]
+    pub executable_device: u64,
+    #[serde(default)]
+    pub executable_inode: u64,
+    #[serde(default)]
+    pub executable_identity_valid: bool,
 }
 
 impl AuditEntry {
@@ -177,6 +183,9 @@ impl AuditEntry {
             destination_ipv4: 0,
             destination_port: 0,
             address_family: AddressFamily::IPv4,
+            executable_device: 0,
+            executable_inode: 0,
+            executable_identity_valid: false,
         }
     }
 
