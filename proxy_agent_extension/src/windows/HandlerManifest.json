@@ -8,6 +8,7 @@
         "disableCommand": "disable.cmd", 
         "rebootAfterInstall": "false", 
         "reportHeartbeat": "true",
+        "catalogFileName": "GuestProxyAgentExtension.cat",
         "resetStateCommand": "reset.cmd", 
         "supportMultipleExtensions": "false"
     }, 
