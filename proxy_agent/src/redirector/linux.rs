@@ -8,7 +8,7 @@ use crate::common::{
 };
 use crate::redirector::shared_ebpf::linux_types::{
     alert_only_event, destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
-    sock_addr_skip_process_entry, AuditMapKey, AuditMapValue, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME,
+    sock_addr_skip_process_entry, AuditMapKey, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME,
     CONFIG_MAP_NAME, GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
 };
 use crate::redirector::{ip_to_string, AlertOnlyEntry, AuditEntry};
@@ -27,6 +27,21 @@ use std::path::PathBuf;
 pub struct BpfObject {
     ebpf: Option<Ebpf>,
     event_runtime: super::EventTaskRuntime,
+}
+
+/// Linux audit_map value: the shared 28-byte audit entry followed by the executable
+/// identity captured in-kernel (device, inode low/high, valid flag).
+/// Mirrors `struct gpa_linux_audit_event` in linux-ebpf/socket.h.
+pub type LinuxAuditMapValue = [u32; 11];
+
+fn linux_audit_entry_from_array(value: LinuxAuditMapValue) -> AuditEntry {
+    let mut base = [0u32; 7];
+    base.copy_from_slice(&value[..7]);
+    let mut entry = sock_addr_audit_entry::from_array(base).to_audit_entry();
+    entry.executable_device = u64::from(value[7]);
+    entry.executable_inode = u64::from(value[8]) | (u64::from(value[9]) << 32);
+    entry.executable_identity_valid = value[10] != 0;
+    entry
 }
 
 // BpfObject is a wrapper around Bpf object to interact with Linux eBPF programs and maps
@@ -305,25 +320,24 @@ impl BpfObject {
     pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
         let audit_map_name = AUDIT_MAP_NAME;
         match self.ebpf()?.map(audit_map_name) {
-            Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
-                Ok(audit_map) => {
-                    let key = sock_addr_audit_key::from_source_port(source_port);
-                    match audit_map.get(&key.as_array(), 0) {
-                        Ok(value) => {
-                            let audit_value = sock_addr_audit_entry::from_array(value);
-                            Ok(audit_value.to_audit_entry())
+            Some(map) => {
+                match HashMap::<&MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
+                    Ok(audit_map) => {
+                        let key = sock_addr_audit_key::from_source_port(source_port);
+                        match audit_map.get(&key.as_array(), 0) {
+                            Ok(value) => Ok(linux_audit_entry_from_array(value)),
+                            Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
+                                source_port.to_string(),
+                                err.to_string(),
+                            ))),
                         }
-                        Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                            source_port.to_string(),
-                            err.to_string(),
-                        ))),
                     }
+                    Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                        audit_map_name.to_string(),
+                        err.to_string(),
+                    ))),
                 }
-                Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
-                    audit_map_name.to_string(),
-                    err.to_string(),
-                ))),
-            },
+            }
             None => Err(Error::Bpf(BpfErrorType::GetBpfMap(
                 audit_map_name.to_string(),
                 "Map does not exist".to_string(),
@@ -418,23 +432,25 @@ impl BpfObject {
     pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
         let audit_map_name = AUDIT_MAP_NAME;
         match self.ebpf_mut()?.map_mut(audit_map_name) {
-            Some(map) => match HashMap::<&mut MapData, AuditMapKey, AuditMapValue>::try_from(map) {
-                Ok(mut audit_map) => {
-                    let key = sock_addr_audit_key::from_source_port(source_port);
-                    audit_map.remove(&key.as_array()).map_err(|err| {
-                        Error::Bpf(BpfErrorType::MapDeleteElem(
-                            source_port.to_string(),
-                            format!("Error: {err}"),
-                        ))
-                    })?;
+            Some(map) => {
+                match HashMap::<&mut MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
+                    Ok(mut audit_map) => {
+                        let key = sock_addr_audit_key::from_source_port(source_port);
+                        audit_map.remove(&key.as_array()).map_err(|err| {
+                            Error::Bpf(BpfErrorType::MapDeleteElem(
+                                source_port.to_string(),
+                                format!("Error: {err}"),
+                            ))
+                        })?;
+                    }
+                    Err(err) => {
+                        return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                            audit_map_name.to_string(),
+                            err.to_string(),
+                        )));
+                    }
                 }
-                Err(err) => {
-                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
-                        audit_map_name.to_string(),
-                        err.to_string(),
-                    )));
-                }
-            },
+            }
             None => {
                 return Err(Error::Bpf(BpfErrorType::GetBpfMap(
                     audit_map_name.to_string(),
@@ -628,10 +644,11 @@ pub async fn update_hostga_redirect_policy(
 #[cfg(test)]
 #[cfg(feature = "test-with-root")]
 mod tests {
+    use super::LinuxAuditMapValue;
     use crate::common::config;
     use crate::common::constants;
     use crate::redirector::shared_ebpf::linux_types::{
-        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey, AuditMapValue,
+        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey,
     };
     use aya::maps::HashMap;
     use proxy_agent_shared::misc_helpers;
@@ -721,16 +738,20 @@ mod tests {
             address_family: crate::redirector::shared_ebpf::GPA_ADDRESS_FAMILY_IPV6,
             reserved: 0,
         };
+        let mut linux_value: LinuxAuditMapValue = [0; 11];
+        linux_value[..7].copy_from_slice(&value.as_array());
+        linux_value[7] = 8;
+        linux_value[8] = 7;
+        linux_value[9] = 6;
+        linux_value[10] = 1;
         {
             // drop map_mut("audit_map") within this scope
-            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, AuditMapValue> =
-                HashMap::<&mut aya::maps::MapData, AuditMapKey, AuditMapValue>::try_from(
+            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, LinuxAuditMapValue> =
+                HashMap::<&mut aya::maps::MapData, AuditMapKey, LinuxAuditMapValue>::try_from(
                     bpf.ebpf_mut().unwrap().map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
-            audit_map
-                .insert(key.as_array(), value.as_array(), 0)
-                .unwrap();
+            audit_map.insert(key.as_array(), linux_value, 0).unwrap();
         }
         let audit = bpf.lookup_audit(source_port);
         match audit {
@@ -753,11 +774,52 @@ mod tests {
                     "destination_port is not equal"
                 );
                 assert_eq!(entry.address_family, crate::redirector::AddressFamily::IPv6);
+                assert_eq!(entry.executable_device, 8);
+                assert_eq!(entry.executable_inode, (6u64 << 32) | 7);
+                assert!(entry.executable_identity_valid);
             }
             Err(err) => {
                 println!("lookup_audit_internal error: {}", err);
                 assert!(false, "lookup_audit_internal should not return Err");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod audit_decode_tests {
+    use super::{linux_audit_entry_from_array, LinuxAuditMapValue};
+
+    #[test]
+    fn linux_audit_value_decodes_executable_identity() {
+        let value: LinuxAuditMapValue = [
+            1000,
+            42,
+            0,
+            0x0102_0304,
+            80,
+            4,
+            0,
+            8,
+            0x89AB_CDEF,
+            0x0123_4567,
+            1,
+        ];
+        let entry = linux_audit_entry_from_array(value);
+
+        assert_eq!(entry.logon_id, 1000);
+        assert_eq!(entry.process_id, 42);
+        assert_eq!(entry.executable_device, 8);
+        assert_eq!(entry.executable_inode, 0x0123_4567_89AB_CDEF);
+        assert!(entry.executable_identity_valid);
+
+        let mut invalid = value;
+        invalid[10] = 0;
+        assert!(!linux_audit_entry_from_array(invalid).executable_identity_valid);
+    }
+
+    #[test]
+    fn linux_audit_value_matches_ebpf_layout() {
+        assert_eq!(std::mem::size_of::<LinuxAuditMapValue>(), 44);
     }
 }

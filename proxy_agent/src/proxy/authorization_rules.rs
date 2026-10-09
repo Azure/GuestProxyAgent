@@ -644,6 +644,18 @@ mod tests {
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         let mut test_logger = ConnectionLogger::new(0, 0);
+        let current_exe = std::env::current_exe().unwrap();
+        #[cfg(not(windows))]
+        let (current_exe_dev, current_exe_ino) = {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = std::fs::metadata(&current_exe).unwrap();
+            (
+                crate::key_keeper::key::kernel_dev_from_st_dev(metadata.dev()),
+                metadata.ino(),
+            )
+        };
+        #[cfg(windows)]
+        let (current_exe_dev, current_exe_ino) = (0u64, 0u64);
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
@@ -658,7 +670,7 @@ mod tests {
             }]),
             identities: Some(vec![Identity {
                 name: "test".to_string(),
-                exePath: Some("test".to_string()),
+                exePath: Some(current_exe.to_string_lossy().to_string()),
                 groupName: Some("test".to_string()),
                 processName: Some("test".to_string()),
                 userName: Some("test".to_string()),
@@ -687,7 +699,10 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: 0,
-            processFullPath: PathBuf::from("test"),
+            processFullPath: current_exe.clone(),
+            processExecutableDevice: current_exe_dev,
+            processExecutableInode: current_exe_ino,
+            processExecutableIdentityValid: true,
             clientIp: "0".to_string(),
             clientPort: 0, // doesn't matter for this test
             processName: OsString::from("test"),
@@ -941,6 +956,9 @@ mod tests {
             userGroups: vec!["users".to_string()],
             processId: 1234,
             processFullPath: PathBuf::from("/usr/bin/curl"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "127.0.0.1".to_string(),
             clientPort: 12345,
             processName: OsString::from("curl"),
@@ -976,6 +994,9 @@ mod tests {
             userGroups: vec!["users".to_string()],
             processId: 5678,
             processFullPath: PathBuf::from("/usr/bin/curl"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "127.0.0.1".to_string(),
             clientPort: 12345,
             processName: OsString::from("curl"),
@@ -1072,6 +1093,9 @@ mod tests {
             userGroups: vec![],
             processId: 0,
             processFullPath: PathBuf::from("p"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "0".to_string(),
             clientPort: 0,
             processName: OsString::from("p"),
