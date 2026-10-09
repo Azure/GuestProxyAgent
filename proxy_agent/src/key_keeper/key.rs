@@ -31,6 +31,7 @@ use crate::{
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
+use base64::{engine::general_purpose, Engine as _};
 use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::hyper_client;
@@ -842,6 +843,68 @@ impl Display for KeyAction {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct RuleIdDescriptor {
+    pub(crate) logical_id: String,
+    pub(crate) use_local_file_rules: bool,
+    pub(crate) enable_soft_audit: bool,
+}
+
+impl RuleIdDescriptor {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.logical_id.is_empty()
+    }
+
+    pub(crate) fn display_id(&self) -> String {
+        if self.logical_id.is_empty() {
+            "unknown".to_string()
+        } else {
+            format!(
+                "{}-useLocalFileRules-{}",
+                self.logical_id, self.use_local_file_rules
+            )
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+pub(crate) struct EncodedRuleId {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) useLocalFileRules: bool,
+    #[serde(default)]
+    pub(crate) enableSoftAudit: bool,
+}
+
+/// Parse the rule ID descriptor from the raw rule ID string.
+/// The raw rule ID can be either a plain logical ID or
+/// a base64-encoded JSON string containing the logical ID and whether to use local file rules.
+pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescriptor {
+    let raw_rule_id = raw_rule_id.unwrap_or_default().trim();
+    if raw_rule_id.is_empty() {
+        return RuleIdDescriptor::default();
+    }
+
+    if let Ok(decoded) = general_purpose::STANDARD.decode(raw_rule_id) {
+        if let Ok(contract) = serde_json::from_slice::<EncodedRuleId>(&decoded) {
+            return RuleIdDescriptor {
+                logical_id: contract.id,
+                use_local_file_rules: contract.useLocalFileRules,
+                enable_soft_audit: contract.enableSoftAudit,
+            };
+        }
+    }
+
+    // If parsing fails, treat the raw rule ID as the logical ID and do not use local file rules.
+    RuleIdDescriptor {
+        logical_id: raw_rule_id.to_string(),
+        use_local_file_rules: false,
+        enable_soft_audit: false,
+    }
+}
+
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 const HOST_DATE_TIME_DRIFT_MAX_AGE: Duration = Duration::from_secs(60 * 15);
@@ -983,9 +1046,12 @@ mod tests {
 
     use super::Key;
     use super::KeyStatus;
+    use crate::key_keeper::key::parse_rule_id_descriptor;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
+    use base64::engine::general_purpose;
+    use base64::Engine;
     use hyper::Uri;
     use proxy_agent_shared::hyper_client;
     use serde_json::json;
@@ -1920,5 +1986,18 @@ mod tests {
             replacement_char, process_name_lossy,
             "process name after lossy conversion should be equal to replacement char"
         );
+    }
+
+    #[test]
+    fn parse_rule_id_descriptor_test() {
+        let legacy = parse_rule_id_descriptor(Some("legacy-id"));
+        assert_eq!(legacy.logical_id, "legacy-id");
+        assert!(!legacy.use_local_file_rules);
+
+        let encoded = general_purpose::STANDARD
+            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true}"#);
+        let descriptor = parse_rule_id_descriptor(Some(&encoded));
+        assert_eq!(descriptor.logical_id, "sig-resource-id");
+        assert!(descriptor.use_local_file_rules);
     }
 }
