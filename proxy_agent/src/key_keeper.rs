@@ -34,7 +34,7 @@ use self::local_rules::{
 use crate::common::error::{Error, KeyErrorType};
 use crate::common::result::Result;
 use crate::common::{constants, helpers, logger};
-use crate::key_keeper::key::{AuthorizationRules, KeyStatus};
+use crate::key_keeper::key::{AuthorizationItem, AuthorizationRules, KeyStatus};
 use crate::provision;
 use crate::proxy::authorization_rules::{AuthorizationRulesForLogging, ComputedAuthorizationRules};
 use crate::shared_state::access_control_wrapper::AccessControlSharedState;
@@ -105,6 +105,25 @@ pub struct KeyKeeper {
 enum WakeReason {
     Notified,
     TimerElapsed,
+}
+
+/// Determines whether soft audit should be enabled based on the WireServer and IMDS rules and their descriptors.
+/// return true when any of the host service is in Audit mode and its “enableSoftAudit” is set to true
+/// return false  otherwise
+fn should_enable_soft_audit(
+    wireserver_rules: &Option<AuthorizationItem>,
+    wireserver_rule_id_descriptor: &key::RuleIdDescriptor,
+    imds_rules: &Option<AuthorizationItem>,
+    imds_rule_id_descriptor: &key::RuleIdDescriptor,
+) -> bool {
+    (wireserver_rule_id_descriptor.enable_soft_audit
+        && wireserver_rules
+            .as_ref()
+            .is_some_and(|rules| rules.mode.eq_ignore_ascii_case("audit")))
+        || (imds_rule_id_descriptor.enable_soft_audit
+            && imds_rules
+                .as_ref()
+                .is_some_and(|rules| rules.mode.eq_ignore_ascii_case("audit")))
 }
 
 impl KeyKeeper {
@@ -537,22 +556,48 @@ impl KeyKeeper {
             }
         }
 
+        let remote_wire_server_rules = status.get_wireserver_rules();
+        let wire_server_rule_id_descriptor = key::parse_rule_id_descriptor(
+            remote_wire_server_rules
+                .as_ref()
+                .map(|item| item.id.as_str()),
+        );
         let (wireserver_rules, wireserver_local_state_changed) = resolve_effective_rules(
             &self.rules_dir,
-            status.get_wireserver_rules(),
+            remote_wire_server_rules,
+            &wire_server_rule_id_descriptor,
             LocalRuleTarget::WireServer,
             &mut local_rule_state_tracker.wireserver,
             wireserver_rule_id_changed,
         )
         .await;
+
+        let remote_imds_rules = status.get_imds_rules();
+        let imds_rule_id_descriptor =
+            key::parse_rule_id_descriptor(remote_imds_rules.as_ref().map(|item| item.id.as_str()));
         let (imds_rules, imds_local_state_changed) = resolve_effective_rules(
             &self.rules_dir,
-            status.get_imds_rules(),
+            remote_imds_rules,
+            &imds_rule_id_descriptor,
             LocalRuleTarget::Imds,
             &mut local_rule_state_tracker.imds,
             imds_rule_id_changed,
         )
         .await;
+
+        let soft_audit_mode_enabled = should_enable_soft_audit(
+            &wireserver_rules,
+            &wire_server_rule_id_descriptor,
+            &imds_rules,
+            &imds_rule_id_descriptor,
+        );
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_soft_audit_mode(soft_audit_mode_enabled)
+            .await
+        {
+            logger::write_warning(format!("Failed to set soft audit mode: {e}"));
+        }
 
         if wireserver_rule_id_changed || wireserver_local_state_changed {
             if let Err(e) = self
@@ -1097,16 +1142,72 @@ impl KeyKeeper {
 
 #[cfg(test)]
 mod tests {
-    use super::key::Key;
+    use super::key::{AuthorizationItem, Key, RuleIdDescriptor};
     use super::local_rules;
-    use crate::key_keeper;
     use crate::key_keeper::KeyKeeper;
+    use crate::key_keeper::{self, should_enable_soft_audit};
     use proxy_agent_shared::misc_helpers;
     use proxy_agent_shared::server_mock;
     use std::env;
     use std::fs;
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
+
+    fn authorization_item(mode: &str) -> Option<AuthorizationItem> {
+        Some(AuthorizationItem {
+            defaultAccess: "deny".to_string(),
+            mode: mode.to_string(),
+            id: "test-rule-id".to_string(),
+            rules: None,
+        })
+    }
+
+    fn rule_id_descriptor(enable_soft_audit: bool) -> RuleIdDescriptor {
+        RuleIdDescriptor {
+            logical_id: "test-rule-id".to_string(),
+            use_local_file_rules: false,
+            enable_soft_audit,
+        }
+    }
+
+    #[test]
+    fn should_enable_soft_audit_test() {
+        let enabled_descriptor = rule_id_descriptor(true);
+        let disabled_descriptor = rule_id_descriptor(false);
+        let audit_rules = authorization_item("Audit");
+        let enforce_rules = authorization_item("enforce");
+
+        assert!(should_enable_soft_audit(
+            &audit_rules,
+            &enabled_descriptor,
+            &enforce_rules,
+            &disabled_descriptor,
+        ));
+        assert!(should_enable_soft_audit(
+            &enforce_rules,
+            &disabled_descriptor,
+            &audit_rules,
+            &enabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
+            &audit_rules,
+            &disabled_descriptor,
+            &audit_rules,
+            &disabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
+            &enforce_rules,
+            &enabled_descriptor,
+            &audit_rules,
+            &disabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
+            &None,
+            &enabled_descriptor,
+            &None,
+            &enabled_descriptor,
+        ));
+    }
 
     #[tokio::test]
     async fn check_local_key_test() {

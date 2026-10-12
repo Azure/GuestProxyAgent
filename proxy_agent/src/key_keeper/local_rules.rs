@@ -6,8 +6,8 @@ use crate::common::logger;
 use crate::common::result::Result;
 use crate::key_keeper::key::{
     AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
+    RuleIdDescriptor,
 };
-use base64::{engine::general_purpose, Engine as _};
 use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::telemetry::event_logger;
@@ -65,38 +65,6 @@ pub(crate) struct LocalRuleStateTracker {
     pub(crate) imds: LocalRuleMonitorState,
 }
 
-#[derive(Default)]
-pub(crate) struct RuleIdDescriptor {
-    pub(crate) logical_id: String,
-    pub(crate) use_local_file_rules: bool,
-}
-
-impl RuleIdDescriptor {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.logical_id.is_empty()
-    }
-
-    pub(crate) fn display_id(&self) -> String {
-        if self.logical_id.is_empty() {
-            "unknown".to_string()
-        } else {
-            format!(
-                "{}-useLocalFileRules-{}",
-                self.logical_id, self.use_local_file_rules
-            )
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[allow(non_snake_case)]
-struct EncodedRuleId {
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    useLocalFileRules: bool,
-}
-
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 pub(crate) struct LocalAuthorizationRulesFile {
@@ -129,31 +97,6 @@ fn get_local_rule_file_state(local_rules_file_path: &Path) -> LocalRuleFileState
         Err(e) => LocalRuleFileState::Error(format!(
             "Unexpected error reading local rules file metadata: {e}"
         )),
-    }
-}
-
-/// Parse the rule ID descriptor from the raw rule ID string.
-/// The raw rule ID can be either a plain logical ID or
-/// a base64-encoded JSON string containing the logical ID and whether to use local file rules.
-fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescriptor {
-    let raw_rule_id = raw_rule_id.unwrap_or_default().trim();
-    if raw_rule_id.is_empty() {
-        return RuleIdDescriptor::default();
-    }
-
-    if let Ok(decoded) = general_purpose::STANDARD.decode(raw_rule_id) {
-        if let Ok(contract) = serde_json::from_slice::<EncodedRuleId>(&decoded) {
-            return RuleIdDescriptor {
-                logical_id: contract.id,
-                use_local_file_rules: contract.useLocalFileRules,
-            };
-        }
-    }
-
-    // If parsing fails, treat the raw rule ID as the logical ID and do not use local file rules.
-    RuleIdDescriptor {
-        logical_id: raw_rule_id.to_string(),
-        use_local_file_rules: false,
     }
 }
 
@@ -580,18 +523,18 @@ pub(crate) async fn read_local_rules_file(
 pub(crate) async fn resolve_effective_rules(
     rules_dir: &Path,
     remote_rules: Option<AuthorizationItem>,
+    rule_id_descriptor: &RuleIdDescriptor,
     target: LocalRuleTarget,
     tracker: &mut LocalRuleMonitorState,
     remote_rule_changed: bool,
 ) -> (Option<AuthorizationItem>, bool) {
-    let descriptor = parse_rule_id_descriptor(remote_rules.as_ref().map(|item| item.id.as_str()));
-    let normalized_remote_rules = normalize_authorization_item(remote_rules, &descriptor);
+    let normalized_remote_rules = normalize_authorization_item(remote_rules, rule_id_descriptor);
     let use_local_file_rules_changed =
-        tracker.use_local_file_rules != descriptor.use_local_file_rules;
+        tracker.use_local_file_rules != rule_id_descriptor.use_local_file_rules;
     let previous_parse_failed = tracker.parse_failed;
 
     if use_local_file_rules_changed {
-        let action = if descriptor.use_local_file_rules {
+        let action = if rule_id_descriptor.use_local_file_rules {
             "enabled"
         } else {
             "disabled"
@@ -604,8 +547,8 @@ pub(crate) async fn resolve_effective_rules(
         );
     }
 
-    tracker.use_local_file_rules = descriptor.use_local_file_rules;
-    if !descriptor.use_local_file_rules {
+    tracker.use_local_file_rules = rule_id_descriptor.use_local_file_rules;
+    if !rule_id_descriptor.use_local_file_rules {
         // not using local file rules, return normalized remote rules directly.
         // also reset the tracker state as we are not monitoring local file changes in this case.
         tracker.file_state = LocalRuleFileState::Unknown;
@@ -716,7 +659,8 @@ pub(crate) async fn resolve_effective_rules(
             message,
         );
 
-        let fail_closed_rules = build_fail_closed_rules(normalized_remote_rules, &descriptor);
+        let fail_closed_rules =
+            build_fail_closed_rules(normalized_remote_rules, rule_id_descriptor);
         tracker.parse_failed = true;
         tracker.effective_rules = fail_closed_rules.clone();
         return (
@@ -728,7 +672,7 @@ pub(crate) async fn resolve_effective_rules(
     match read_local_rules_file(&local_rules_file, target).await {
         Ok(local_rules) => {
             let effective_rules =
-                merge_authorization_item(normalized_remote_rules, local_rules, &descriptor);
+                merge_authorization_item(normalized_remote_rules, local_rules, rule_id_descriptor);
             tracker.parse_failed = false;
             tracker.effective_rules = effective_rules.clone();
             (
@@ -750,7 +694,8 @@ pub(crate) async fn resolve_effective_rules(
                 message,
             );
 
-            let fail_closed_rules = build_fail_closed_rules(normalized_remote_rules, &descriptor);
+            let fail_closed_rules =
+                build_fail_closed_rules(normalized_remote_rules, rule_id_descriptor);
             tracker.parse_failed = true;
             tracker.effective_rules = fail_closed_rules.clone();
             (
@@ -779,14 +724,15 @@ pub(crate) fn write_local_rules_event(
 #[cfg(test)]
 mod tests {
     use super::{
-        get_rules_dir_from_key_dir, merge_authorization_item, parse_rule_id_descriptor,
-        prefix_local_rule_names, read_local_rules_file, resolve_effective_rules,
-        validate_access_control_rules, validate_identities, validate_privileges,
-        validate_role_assignments, validate_roles, LocalAuthorizationRulesFile,
-        LocalRuleMonitorState, LocalRuleTarget, RuleIdDescriptor, LOCAL_RULE_NAME_PREFIX,
+        get_rules_dir_from_key_dir, merge_authorization_item, prefix_local_rule_names,
+        read_local_rules_file, resolve_effective_rules, validate_access_control_rules,
+        validate_identities, validate_privileges, validate_role_assignments, validate_roles,
+        LocalAuthorizationRulesFile, LocalRuleMonitorState, LocalRuleTarget, RuleIdDescriptor,
+        LOCAL_RULE_NAME_PREFIX,
     };
     use crate::key_keeper::key::{
-        AccessControlRules, AuthorizationItem, Identity, Privilege, Role, RoleAssignment,
+        parse_rule_id_descriptor, AccessControlRules, AuthorizationItem, Identity, Privilege, Role,
+        RoleAssignment,
     };
     use base64::{engine::general_purpose, Engine as _};
     use proxy_agent_shared::misc_helpers;
@@ -908,10 +854,12 @@ mod tests {
             rules: remote_rules,
         });
         let mut tracker = LocalRuleMonitorState::default();
-
+        let rule_id_descriptor =
+            parse_rule_id_descriptor(remote_rules.as_ref().map(|item| item.id.as_str()));
         let result = resolve_effective_rules(
             &rules_dir,
             remote_rules,
+            &rule_id_descriptor,
             LocalRuleTarget::WireServer,
             &mut tracker,
             remote_rule_changed,
@@ -942,19 +890,6 @@ mod tests {
 
         let config_content = fs::read_to_string(config_source).unwrap();
         fs::write(config_target, config_content).unwrap();
-    }
-
-    #[test]
-    fn parse_rule_id_descriptor_test() {
-        let legacy = parse_rule_id_descriptor(Some("legacy-id"));
-        assert_eq!(legacy.logical_id, "legacy-id");
-        assert!(!legacy.use_local_file_rules);
-
-        let encoded = general_purpose::STANDARD
-            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true}"#);
-        let descriptor = parse_rule_id_descriptor(Some(&encoded));
-        assert_eq!(descriptor.logical_id, "sig-resource-id");
-        assert!(descriptor.use_local_file_rules);
     }
 
     #[test]
@@ -1004,6 +939,7 @@ mod tests {
         let descriptor = RuleIdDescriptor {
             logical_id: "decoded-id".to_string(),
             use_local_file_rules: true,
+            enable_soft_audit: false,
         };
         let local_rules = LocalAuthorizationRulesFile {
             id: Some("local-id".to_string()),
