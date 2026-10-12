@@ -28,6 +28,31 @@ static mut CURRENT_STATE: Lazy<String> = Lazy::new(|| String::from("wireserver")
 /// If the port is already in use, it will automatically bind to an ephemeral port and log a warning message.
 /// Returns the port number that the server is listening on, or an error if the server fails to start.
 pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken) -> Result<u16> {
+    start_internal(ip, port, cancellation_token, None).await
+}
+
+/// Starts a mock WireServer with a caller-provided secure-channel status response.
+pub async fn start_with_secure_channel_status(
+    ip: String,
+    port: u16,
+    cancellation_token: CancellationToken,
+    secure_channel_status_response: String,
+) -> Result<u16> {
+    start_internal(
+        ip,
+        port,
+        cancellation_token,
+        Some(secure_channel_status_response),
+    )
+    .await
+}
+
+async fn start_internal(
+    ip: String,
+    port: u16,
+    cancellation_token: CancellationToken,
+    secure_channel_status_response: Option<String>,
+) -> Result<u16> {
     logger_manager::write_info("Mock Server starting...".to_string());
     let addr = format!("{ip}:{port}");
     let listener = match TcpListener::bind(&addr).await {
@@ -59,10 +84,19 @@ pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken)
                     match result {
                         Ok((stream, _)) =>{
                             let ip = ip.to_string();
+                            let secure_channel_status_response =
+                                secure_channel_status_response.clone();
                             tokio::spawn(async move {
                                 let io = TokioIo::new(stream);
                                 let ip = ip.to_string();
-                                let service = service_fn(move |req| handle_request(ip.to_string(), port, req));
+                                let service = service_fn(move |req| {
+                                    handle_request(
+                                        ip.to_string(),
+                                        port,
+                                        secure_channel_status_response.clone(),
+                                        req,
+                                    )
+                                });
                                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                                     println!("Error serving connection: {err:?}");
                                 }
@@ -82,6 +116,7 @@ pub async fn start(ip: String, port: u16, cancellation_token: CancellationToken)
 async fn handle_request(
     ip: String,
     port: u16,
+    secure_channel_status_response: Option<String>,
     request: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>> {
     logger_manager::write_info("WireServer processing request.".to_string());
@@ -98,18 +133,23 @@ async fn handle_request(
         if !segments.is_empty() && segments[0] == "secure-channel" {
             if segments.len() > 1 && segments[1] == "status" {
                 // get key status
-                let status_response = r#"{
-                    "authorizationScheme": "Azure-HMAC-SHA256",
-                    "keyDeliveryMethod": "http",
-                    "keyGuid": "",
-                    "requiredClaimsHeaderPairs": [
-                        "isRoot"
-                    ],
-                    "secureChannelState": "$$secureChannelState$$",
-                    "version": "1.0"
-                }"#;
-                let state = unsafe { (*CURRENT_STATE).to_string() };
-                body_string = status_response.replace("$$secureChannelState$$", &state);
+                body_string = match secure_channel_status_response {
+                    Some(response) => response,
+                    None => {
+                        let status_response = r#"{
+                            "authorizationScheme": "Azure-HMAC-SHA256",
+                            "keyDeliveryMethod": "http",
+                            "keyGuid": "",
+                            "requiredClaimsHeaderPairs": [
+                                "isRoot"
+                            ],
+                            "secureChannelState": "$$secureChannelState$$",
+                            "version": "1.0"
+                        }"#;
+                        let state = unsafe { (*CURRENT_STATE).to_string() };
+                        status_response.replace("$$secureChannelState$$", &state)
+                    }
+                };
             }
         } else if !segments.is_empty()
             && segments[0] == proxy_agent_aggregate_status::STATUS_URL_PATH.trim_start_matches('/')

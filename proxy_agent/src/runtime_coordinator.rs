@@ -6,7 +6,9 @@
 use crate::common::{constants, logger};
 use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector::{self, Redirector};
-use crate::shared_state::agent_status_wrapper::{AgentStatusModule, RuntimeStatusSnapshot};
+use crate::shared_state::agent_status_wrapper::{
+    AgentStatusModule, AgentStatusSharedState, RuntimeStatusSnapshot,
+};
 use crate::shared_state::SharedState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use std::thread::JoinHandle as ThreadJoinHandle;
@@ -46,6 +48,36 @@ fn evaluate_status(
         PairAction::StartPair
     } else {
         PairAction::None
+    }
+}
+
+pub(crate) async fn set_fallback_reason_for_soft_audit(
+    agent_status_shared_state: &AgentStatusSharedState,
+) {
+    let mut fallback_reason = String::new();
+    let proxy_agent_detail_status = agent_status_shared_state
+        .get_module_status(AgentStatusModule::Redirector)
+        .await;
+    if proxy_agent_detail_status.status == ModuleState::STOPPED {
+        fallback_reason.push_str(&proxy_agent_detail_status.message);
+        fallback_reason.push_str("\r\n");
+    }
+
+    let proxy_agent_detail_status = agent_status_shared_state
+        .get_module_status(AgentStatusModule::ProxyServer)
+        .await;
+    if proxy_agent_detail_status.status == ModuleState::STOPPED {
+        fallback_reason.push_str(&proxy_agent_detail_status.message);
+        fallback_reason.push_str("\r\n");
+    }
+
+    if !fallback_reason.is_empty() {
+        if let Err(e) = agent_status_shared_state
+            .set_fallback_reason(Some(fallback_reason))
+            .await
+        {
+            logger::write_error(format!("Failed to set fallback reason: {e}"));
+        }
     }
 }
 
@@ -155,7 +187,10 @@ impl RuntimeCoordinator {
                     PairAction::StopPairForSoftAudit => {
                         if !previous_soft_audit_enabled {
                             // set the fallback reason for soft audit.
-                            self.set_fallback_reason_for_soft_audit().await;
+                            set_fallback_reason_for_soft_audit(
+                                &self.shared_state.get_agent_status_shared_state(),
+                            )
+                            .await;
                         }
                         self.stop_pair(&status).await;
                     }
@@ -169,35 +204,6 @@ impl RuntimeCoordinator {
             .await;
         self.stop_proxy_server("RuntimeCoordinator stopping ProxyServer".to_string())
             .await;
-    }
-
-    async fn set_fallback_reason_for_soft_audit(&self) {
-        let agent_status_shared_state = self.shared_state.get_agent_status_shared_state();
-        let mut fallback_reason = String::new();
-        let proxy_agent_detail_status = agent_status_shared_state
-            .get_module_status(AgentStatusModule::Redirector)
-            .await;
-        if proxy_agent_detail_status.status == ModuleState::STOPPED {
-            fallback_reason.push_str(&proxy_agent_detail_status.message);
-            fallback_reason.push_str("\r\n");
-        }
-
-        let proxy_agent_detail_status = agent_status_shared_state
-            .get_module_status(AgentStatusModule::ProxyServer)
-            .await;
-        if proxy_agent_detail_status.status == ModuleState::STOPPED {
-            fallback_reason.push_str(&proxy_agent_detail_status.message);
-            fallback_reason.push_str("\r\n");
-        }
-
-        if !fallback_reason.is_empty() {
-            if let Err(e) = agent_status_shared_state
-                .set_fallback_reason(Some(fallback_reason))
-                .await
-            {
-                logger::write_error(format!("Failed to set fallback reason: {e}"));
-            }
-        }
     }
 
     async fn handle_starting_timeouts(&mut self, status: &RuntimeStatusSnapshot) -> bool {
@@ -484,6 +490,41 @@ mod tests {
                 &status(false, ModuleState::STOPPED, ModuleState::RUNNING,),
                 false,
             )
+        );
+    }
+
+    #[test]
+    fn soft_audit_transition_stops_then_restarts_pair_once() {
+        let mut previous_soft_audit_enabled = false;
+
+        let enabled_with_stopped_pair = status(true, ModuleState::STOPPED, ModuleState::STOPPED);
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(&enabled_with_stopped_pair, previous_soft_audit_enabled)
+        );
+        previous_soft_audit_enabled = enabled_with_stopped_pair.soft_audit_enabled;
+
+        let enabled_with_partially_stopped_pair =
+            status(true, ModuleState::RUNNING, ModuleState::STOPPED);
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(
+                &enabled_with_partially_stopped_pair,
+                previous_soft_audit_enabled
+            )
+        );
+        previous_soft_audit_enabled = enabled_with_partially_stopped_pair.soft_audit_enabled;
+
+        let disabled_with_stopped_pair = status(false, ModuleState::STOPPED, ModuleState::STOPPED);
+        assert_eq!(
+            PairAction::StartPair,
+            evaluate_status(&disabled_with_stopped_pair, previous_soft_audit_enabled)
+        );
+        previous_soft_audit_enabled = disabled_with_stopped_pair.soft_audit_enabled;
+
+        assert_eq!(
+            PairAction::None,
+            evaluate_status(&disabled_with_stopped_pair, previous_soft_audit_enabled)
         );
     }
 
