@@ -100,6 +100,12 @@ impl CanonicalPattern {
         }
         for (i, seg) in self.path_prefix.iter().enumerate() {
             if &req.path_segments[i] != seg {
+                if i == self.path_prefix.len() - 1 && req.path_segments[i].starts_with(seg) {
+                    // Back-compat: allow the last segment to be a prefix match.
+                    // TODO: need to emit telemetry for back-compat prefix match, alert the customers to fix their rules.
+                    break;
+                }
+
                 return false;
             }
         }
@@ -446,6 +452,12 @@ mod rule_tests {
                 "http://169.254.169.254/m?v=a&extra=zzz",
                 true,
                 "extra request keys allowed",
+            ),
+            (
+                &multi_value,
+                "http://169.254.169.254/m%3Fv=a",
+                true,
+                "encoded query delimiter is matched",
             ),
             // AND across keys.
             (

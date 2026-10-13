@@ -101,7 +101,8 @@ The canonical model targets, at minimum, every pattern in pentest scenarios `D1`
 - Overlong UTF-8 for `/`.
 - Semicolon matrix params on path segments.
 - Trailing dot or whitespace in path.
-- Embedded `?` via `%3F` that re-introduces query parameters into the path string.
+- Embedded `?` via `%3F` is treated as a path/query delimiter for compatibility
+  with long-standing clients and canonicalized exactly once.
 
 ### 3.2 Host-form differentials (pentest C7)
 
@@ -349,7 +350,7 @@ The "zero divergences" cutover bar in §9.3 means **zero *unexplained* divergenc
 
 Until a logged divergence is dispositioned, **do not enable enforce mode for the affected fleet**, because enforce mode acts on the canonical verdict and would change production behavior for that traffic.
 
-#### KD-1 · `%3F`-encoded query delimiter from `VmssRuntimeAgent` (`CANON_EMBQ`)
+#### KD-1 · `%3F`-encoded query delimiter from `VmssRuntimeAgent`
 
 | Field            | Value                                                                                                  |
 |------------------|--------------------------------------------------------------------------------------------------------|
@@ -377,17 +378,24 @@ Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of 
 1. **IMDS decodes-first** — it percent-decodes `%3F` → `?`, re-splits, and serves the real `scheduledevents` endpoint. Confirmed by a `200 OK` / 9 ms connection-log entry for `VmssRuntimeAgent.exe`.
 2. **Legacy matcher** — matches the raw, still-encoded string with a case-insensitive `starts_with`, so the permissive prefix rule allows it.
 
-**Why canon denies (and why that's right).** The canonical pipeline decodes once and finds a literal `?` embedded in the decoded **path** — the unambiguous signature of the `%3F` query-smuggling vector called out in §3.1 and pinned by the `A1.embedded_query` / `D1.embedded_query_*_hex` golden vectors. It fails closed (`CANON_EMBQ`). This is the rule/request asymmetry the canonical model exists to eliminate: legacy authorized an *opaque path string* while IMDS acted on a *decoded query*.
+**Compatibility behavior.** The canonical request pipeline decodes the path once,
+splits the resulting `?` into path and query components, and parses that embedded
+query without percent-decoding it a second time. This matches the long-standing
+client and host behavior while preserving the pipeline's exact-once decoding
+invariant. For example, `%3Fkey=value%26marker=%2526` becomes the query
+`key=value&marker=%26`; the remaining `%26` is data, not another delimiter.
 
-**Why we do NOT "fix" this in canon by decode-and-splitting.** GPA forwards the **original bytes** to the upstream (§1.3; `proxy_server.rs` only adds headers, never rewrites the URI). So any decode-and-split in canon would merely be GPA *predicting* IMDS's parser — re-introducing the differential the moment the two parsers disagree on an edge case (`%23` fragment, repeated/encoded delimiters, `+`→space), and broadening `%3F`-as-delimiter acceptance to *every* endpoint. The clean, auditable fail-closed deny is preferable to a fragile parser-equivalence bet.
-
-**Security assessment.** *Medium latent severity; benign for this emitter.* This is a genuine authorization **differential**, not a cosmetic one: legacy authorizes an opaque, still-encoded path string while IMDS acts on the *decoded* query, so the bytes GPA approved and the request IMDS served are semantically different. For this caller it is harmless — `scheduledevents` is an allowed endpoint either way and the emitter is a first-party `SYSTEM` agent — but the *class* (path/query confusion via `%3F`) is exactly how a crafted request turns a permissive prefix rule into access to a query-gated or path-adjacent endpoint the rule never intended to allow. Canon closing it is real hardening, not tidiness. There is no wire-level smuggling: the `%3F` stays percent-encoded in the bytes GPA forwards, so the confusion lives purely at the authZ layer. Enforce impact is availability-only — scheduled-events polling for this agent is denied until the client emits a literal `?`.
+**Security assessment.** Supporting the established interpretation removes the
+legacy/canonical availability divergence. The compatibility is request-only:
+rule paths still reject embedded queries, and canonical matching continues to
+operate on separately typed path segments and query parameters.
 
 **Resolution / action items.**
 
-- [ ] **Root cause (owner: VmssRuntimeAgent team):** fix the IMDS URL construction to emit a literal `?`; audit all IMDS call sites for the same pattern (typically caused by escaping the whole path+query string instead of building the query with a URI builder).
-- [ ] **GPA rollout gate:** keep the affected fleet in **shadow** (do not enable **enforce**) until the agent fix is deployed, to avoid blocking scheduled-events polling.
-- [ ] **Close-out:** entry is resolved when the divergence stops appearing in shadow telemetry post-deployment.
+- [x] **Pipeline compatibility:** split `%3F` after the single path decode and
+  canonicalize the embedded query without a second decode.
+- [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry
+  before enabling enforce mode for the affected fleet.
 
 #### KD-2 · Case-sensitive query-value match on `mi_res_id` ARM ids
 
@@ -430,14 +438,14 @@ Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of 
 - [x] **Pipeline fix:** `canonicalize_query` ASCII-lowercases values; regression tests added (above).
 - [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry for managed-identity token traffic before flipping the affected fleet to **enforce**.
 
-#### KD-3 · Trailing carriage return (`%0D`) on a `client_id` query value (`CANON_CTRL`)
+#### KD-3 · Trailing carriage return (`%0D`) on a `client_id` query value
 
 | Field            | Value                                                                                                  |
 |------------------|--------------------------------------------------------------------------------------------------------|
 | First observed   | 2026-07-06 (shadow)                                                                                     |
-| Disposition      | **Canon-stricter-and-correct** — client-side defect; canon deny is the intended behavior                |
+| Disposition      | **Compatibility normalization** — trim trailing CR from request `client_id` values                       |
 | Legacy decision  | `allow`                                                                                                 |
-| Canon decision   | `deny` → `CANON_CTRL` (`CanonError::ControlChar`, control character in a decoded query component)       |
+| Canon decision   | `allow` when the trailing CR is the only control contamination in `client_id`                            |
 | Emitter          | IMDS managed-identity token client (identity scoped by `client_id`)                                     |
 | Destination      | IMDS `169.254.169.254:80`, `/metadata/identity/oauth2/token`                                            |
 
@@ -460,21 +468,31 @@ No legitimate caller puts a control character in a `client_id`. This is classic 
 1. **Legacy matcher** — decodes the value to `...52d441e9ee5b\r`, lowercases it, and since nothing compares against `client_id`, the privilege still matches and identity resolves → `allow`. The stray `\r` just rides along.
 2. **IMDS** — tolerates or trims the trailing CR when resolving the identity, so production sees a token issued and the bug stays masked.
 
-**Why canon denies (and why that's right).** The canonical query pipeline (`proxy/canonical/query.rs::canonicalize_query` → `decode_query_component`) percent-decodes once, then rejects any decoded byte `< 0x20` or `== 0x7F` as `CanonError::ControlChar`. A `\r` in a request component is exactly the CRLF-injection / request-splitting vector the control-char guard exists to stop, and RFC 3986 query values are `pchar`-only — raw control octets are not allowed. Canon fails closed on the *whole* request (`CANON_CTRL`) rather than silently forwarding a `\r`. Legacy is the permissive, non-compliant side.
-
-**Why we do NOT "fix" this in canon by stripping the CR.** Silently trimming control characters would put GPA back in the business of *repairing* malformed client input and predicting how the upstream normalizes it — the same parser-equivalence trap called out in KD-1. Rejecting is auditable and safe under any upstream parser; the correct remedy is to stop emitting the CR at the source.
+**Compatibility behavior.** Incoming request queries percent-decode once and
+trim trailing `\r` characters only when the canonical key is `client_id`.
+Control characters in query keys, in other values, or anywhere except the end
+of `client_id` remain `CANON_CTRL`. Rule canonicalization also remains strict,
+so malformed rule values cannot acquire this compatibility behavior.
 
 **Regression coverage.**
 
-- `query.rs::control_char_rejected` — asserts a decoded control character in a query component yields `CanonError::ControlChar`, including the exact KD-3 vector (`client_id=...%0D`).
+- `query.rs::request_trims_trailing_cr_from_client_id_only` — accepts the
+  established `client_id=...%0D` form and rejects CR in every broader location.
+- `mod.rs::trailing_client_id_cr_is_trimmed_for_regular_and_embedded_queries`
+  — covers both ordinary and `%3F`-embedded query forms.
 
-**Security assessment.** *Low severity; availability consideration only.* No authorization bypass in either direction — `client_id` is not a rule constraint, so the trailing `\r` grants nothing extra (legacy) and denies no legitimate access on its merits (canon fails closed on hygiene, not scope). No wire-level CRLF injection: the control byte stays percent-encoded (`%0D`) in the bytes GPA forwards and is never decoded-then-reinserted into a header or request line. No log forging — the divergence line renders the URI with `{:?}`, which escapes `\r`. No cross-identity token leak — a CR-suffixed GUID collides with no other valid `client_id`; worst case IMDS trims it (intended token) or rejects it (client error). The only real risk is availability: flipping enforce before the client is fixed denies these malformed-but-currently-working token requests. Treat as data-hygiene / client-correctness and gate the enforce flip on the client fix; no hotfix or security escalation warranted.
+**Security assessment.** The exception is intentionally narrow: it cannot
+normalize CRLF, embedded CR, another query field, or a rule value. The upstream
+already treats the trailing CR as line-ending contamination, so canonicalizing
+it to the same `client_id` removes an availability divergence without changing
+the identity selected by the host.
 
 **Resolution / action items.**
 
-- [ ] **Root cause (owner: token-client team):** strip the trailing CR/LF from `client_id` (and audit all IMDS query values) at the source; the GUID should be trimmed before URL construction.
-- [ ] **GPA rollout gate:** keep the affected fleet in **shadow** (do not enable **enforce**) until the client fix is deployed, so the malformed-but-currently-working requests are not denied.
-- [ ] **Close-out:** entry is resolved when the divergence stops appearing in shadow telemetry post-deployment.
+- [x] **Pipeline compatibility:** trim trailing CR from request-side
+  `client_id` values while retaining strict control rejection elsewhere.
+- [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry
+  before enabling enforce mode for the affected fleet.
 
 ## 10. Test Strategy
 

@@ -12,13 +12,15 @@
 //! 4. Reject non-ASCII bytes (paths to IMDS / WireServer are ASCII;
 //!    accepting non-ASCII would require NFC normalization that adds a
 //!    dependency we do not currently take).
-//! 5. ASCII-lowercase.
-//! 6. Split on `/`, drop empty segments, drop `.`, resolve `..`
+//! 5. Normalize `\` to `/`.
+//! 6. ASCII-lowercase.
+//! 7. Split on `/`, drop empty segments, drop `.`, resolve `..`
 //!    (RFC 3986 §5.2.4). Underflow past the root is an error, not a
 //!    no-op — a real client would never produce it.
-//! 7. Strip matrix params (`;jsessionid=...`) from each segment.
-//! 8. Reject an embedded `?` in the decoded path (caused by `%3F`
-//!    smuggling) — the matcher must never see ambiguous input.
+//! 8. Strip matrix params (`;jsessionid=...`) from each segment.
+//! 9. Request canonicalization may split an embedded `?` produced by
+//!    `%3F` into a query for compatibility with long-standing clients.
+//!    Rule canonicalization remains strict and rejects embedded queries.
 //!
 //! The output is `(segments, trailing_slash)`. `segments` always begins
 //! with the empty root segment, so the canonical form of `/` is
@@ -32,18 +34,52 @@ const ROOT: &str = "";
 /// Run the path pipeline. Public for unit tests; the canonicalizer
 /// entrypoint is [`super::canonicalize`].
 pub fn canonicalize_path(raw: &str) -> Result<(Vec<String>, bool), CanonError> {
+    let (segments, trailing_slash, _) = canonicalize_path_impl(raw, false)?;
+    Ok((segments, trailing_slash))
+}
+
+/// Canonicalize an incoming request path and return a query embedded via
+/// an encoded `%3F` delimiter. The embedded query has already been
+/// percent-decoded once with the path and must not be decoded again.
+pub(super) fn canonicalize_request_path(
+    raw: &str,
+) -> Result<(Vec<String>, bool, Option<String>), CanonError> {
+    canonicalize_path_impl(raw, true)
+}
+
+fn canonicalize_path_impl(
+    raw: &str,
+    allow_embedded_query: bool,
+) -> Result<(Vec<String>, bool, Option<String>), CanonError> {
     // hyper guarantees the path starts with '/'.
     let raw = if raw.is_empty() { "/" } else { raw };
-    let trailing_slash = raw.len() > 1 && raw.ends_with('/');
 
-    let decoded = decode_path_once(raw)?;
+    let mut decoded = decode_path_once(raw)?;
     reject_overlong_utf8(decoded.as_bytes())?;
-    reject_control_chars(&decoded)?;
-    reject_non_ascii(&decoded)?;
-    if decoded.contains('?') {
-        return Err(CanonError::EmbeddedQuery);
+
+    let embedded_query = if allow_embedded_query {
+        match decoded.find('?') {
+            Some(pos) => Some(decoded.split_off(pos + 1)),
+            None => None,
+        }
+    } else {
+        reject_control_chars(&decoded)?;
+        if decoded.contains('?') {
+            return Err(CanonError::EmbeddedQuery);
+        }
+        None
+    };
+    if embedded_query.is_some() {
+        decoded.pop();
     }
 
+    reject_control_chars(&decoded)?;
+    reject_non_ascii(&decoded)?;
+    if decoded.contains('\\') {
+        decoded = decoded.replace('\\', "/");
+    }
+
+    let trailing_slash = decoded.len() > 1 && decoded.ends_with('/');
     let lowered = decoded.to_ascii_lowercase();
     let segments = split_and_resolve(&lowered)?;
 
@@ -56,7 +92,7 @@ pub fn canonicalize_path(raw: &str) -> Result<(Vec<String>, bool), CanonError> {
     // invariant the rest of the pipeline depends on.
     let trailing_slash = trailing_slash && segments.len() > 1;
 
-    Ok((segments, trailing_slash))
+    Ok((segments, trailing_slash, embedded_query))
 }
 
 /// Single-pass percent-decode. Rejects truncated (`%2`) and non-hex
@@ -238,12 +274,20 @@ mod path_tests {
                 false,
             ),
             (
+                "/metadata\\identity;jsessionid=abc",
+                &["", "metadata", "identity"],
+                false,
+            ),
+            ("/metadata%5Cidentity", &["", "metadata", "identity"], false),
+            (
                 "/metadata;a=1;b=2/identity;c=3",
                 &["", "metadata", "identity"],
                 false,
             ),
             ("/a/;jsessionid=x/b", &["", "a", "b"], false),
             ("/metadata/", &["", "metadata"], true),
+            ("/metadata\\", &["", "metadata"], true),
+            ("/metadata%5C", &["", "metadata"], true),
         ];
         for (input, expected_segs, expected_ts) in cases {
             let got = canonicalize_path(input)
@@ -609,6 +653,16 @@ mod path_tests {
                 "http://169.254.169.254/metadata/identity;jsessionid=abc",
                 "/metadata/identity",
             ),
+            (
+                "A1.backslash",
+                "http://169.254.169.254/metadata\\identity;jsessionid=abc",
+                "/metadata/identity",
+            ),
+            (
+                "A1.embedded_query",
+                "http://169.254.169.254/metadata/identity%3Fapi-version=2018",
+                "/metadata/identity",
+            ),
         ];
         for (label, url, expected) in cases {
             assert_eq!(canon_path_via_pipeline(url), *expected, "vector={label}");
@@ -624,11 +678,6 @@ mod path_tests {
                 // /metadata/identity -> pop x2 -> root; the third .. underflows.
                 "http://169.254.169.254/metadata/identity/../../..",
                 CanonError::PathUnderflow,
-            ),
-            (
-                "A1.embedded_query",
-                "http://169.254.169.254/metadata/identity%3Fapi-version=2018",
-                CanonError::EmbeddedQuery,
             ),
             (
                 "A1.control_char",
@@ -818,17 +867,6 @@ mod path_tests {
                 "D1.underflow_via_dotdot_chain",
                 "http://169.254.169.254/a/b/../../..",
                 CanonError::PathUnderflow,
-            ),
-            // Embedded `?` smuggled via uppercase AND lowercase `%3F`.
-            (
-                "D1.embedded_query_uppercase_hex",
-                "http://169.254.169.254/x%3Fy",
-                CanonError::EmbeddedQuery,
-            ),
-            (
-                "D1.embedded_query_lowercase_hex",
-                "http://169.254.169.254/x%3fy",
-                CanonError::EmbeddedQuery,
             ),
         ];
         for (label, url, expected) in exact {
