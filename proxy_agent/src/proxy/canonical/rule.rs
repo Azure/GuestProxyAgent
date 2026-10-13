@@ -52,6 +52,10 @@ pub struct CanonicalPattern {
     /// Required query parameters. Empty map means "no query constraint".
     /// All present keys must match at least one of the supplied values.
     pub required_query: BTreeMap<String, Vec<String>>,
+    /// Whether the path ended in `/`. This marks an explicit segment
+    /// boundary and disables final-segment prefix compatibility; it does not
+    /// require the incoming URI to retain the trailing slash.
+    pub trailing_slash: bool,
 }
 
 impl CanonicalPattern {
@@ -62,7 +66,7 @@ impl CanonicalPattern {
     /// pipeline. Rules that fail canonicalization are **rejected** by
     /// the loader — fail-closed.
     pub fn from_privilege(p: &Privilege) -> Result<Self, CanonError> {
-        let (segments, _trailing) = canonicalize_path(&p.path)?;
+        let (segments, trailing_slash) = canonicalize_path(&p.path)?;
         let required_query = match &p.queryParameters {
             None => BTreeMap::new(),
             Some(qp) => {
@@ -82,6 +86,7 @@ impl CanonicalPattern {
             destination: RuleDestination::Any,
             path_prefix: segments,
             required_query,
+            trailing_slash,
         })
     }
 
@@ -100,7 +105,10 @@ impl CanonicalPattern {
         }
         for (i, seg) in self.path_prefix.iter().enumerate() {
             if &req.path_segments[i] != seg {
-                if i == self.path_prefix.len() - 1 && req.path_segments[i].starts_with(seg) {
+                if !self.trailing_slash
+                    && i == self.path_prefix.len() - 1
+                    && req.path_segments[i].starts_with(seg)
+                {
                     // Back-compat: allow the last segment to be a prefix match.
                     // TODO: need to emit telemetry for back-compat prefix match, alert the customers to fix their rules.
                     break;
@@ -109,7 +117,6 @@ impl CanonicalPattern {
                 return false;
             }
         }
-
         // Query: every required key must be present and at least one
         // of its required values must appear among the request's values
         // for that key.
@@ -184,6 +191,7 @@ mod rule_tests {
             destination,
             path_prefix: segs(prefix),
             required_query: required,
+            trailing_slash: false,
         }
     }
 
@@ -233,6 +241,11 @@ mod rule_tests {
                 "from_privilege must default to Any (input path={path:?})"
             );
             assert_eq!(p.path_prefix, segs(expect_segs), "path={path:?}");
+            assert_eq!(
+                p.trailing_slash,
+                *path == "/metadata/identity/",
+                "path={path:?}"
+            );
             let actual: Vec<(String, Vec<String>)> = p.required_query.into_iter().collect();
             let expected: Vec<(String, Vec<String>)> = expect_q
                 .iter()
@@ -307,7 +320,8 @@ mod rule_tests {
         // (rule_path, request_uri, expected, label)
         // Method is intentionally varied to confirm it is NOT part of rule matching.
         let cases: &[(&str, &str, &Method, bool, &str)] = &[
-            // Segment-boundary safety: /metadata must not match /metadata-attacker.
+            // Legacy compatibility: the final rule segment may prefix-match
+            // the final request segment when the rule has no trailing slash.
             (
                 "/metadata",
                 "http://169.254.169.254/metadata/identity",
@@ -319,8 +333,8 @@ mod rule_tests {
                 "/metadata",
                 "http://169.254.169.254/metadata-attacker/identity",
                 &Method::GET,
-                false,
-                "rule must not bleed across segment boundary",
+                true,
+                "final-segment legacy prefix compatibility",
             ),
             // Exact match.
             (
@@ -376,6 +390,34 @@ mod rule_tests {
                 &Method::GET,
                 true,
                 "root-only rule on root request",
+            ),
+            (
+                "/machine/",
+                "http://168.63.129.16/machine?comp=telemetrydata",
+                &Method::GET,
+                true,
+                "trailing-slash rule matches exact path without slash",
+            ),
+            (
+                "/machine/",
+                "http://168.63.129.16/machine/?comp=goalstate",
+                &Method::GET,
+                true,
+                "trailing-slash rule matches exact path with slash",
+            ),
+            (
+                "/machine/",
+                "http://168.63.129.16/machine/child",
+                &Method::GET,
+                true,
+                "trailing-slash rule matches descendant",
+            ),
+            (
+                "/machine/",
+                "http://168.63.129.16/machine-attacker",
+                &Method::GET,
+                false,
+                "trailing-slash rule disables final-segment prefix fallback",
             ),
         ];
         for (rule_path, uri, method, expected, label) in cases {

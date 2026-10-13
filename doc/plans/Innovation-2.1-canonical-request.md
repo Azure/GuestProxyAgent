@@ -494,6 +494,178 @@ the identity selected by the host.
 - [ ] **Close-out:** confirm the divergence stops appearing in shadow telemetry
   before enabling enforce mode for the affected fleet.
 
+#### KD-4 · Rule trailing slash differs from host path equivalence
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-10-13 (shadow, `pentest-ws-s17`)                                                                  |
+| Disposition      | **Host compatibility** — treat a trailing rule slash as a boundary marker, not an exact URI requirement |
+| Legacy decision  | `deny`                                                                                                 |
+| Canon decision   | `allow`                                                                                                |
+| Emitter          | WireServer telemetry client                                                                            |
+| Destination      | WireServer, `/machine?comp=telemetrydata`                                                              |
+
+**Divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id>-useLocalFileRules-true_pentest-ws-s17 \
+      legacy=deny canon=allow uri="/machine?comp=telemetrydata"
+
+**What happened.** WS-S17 installs a privilege whose path is `/machine/` and
+whose default access is deny. The observed request uses `/machine` without the
+trailing slash. Its query is irrelevant because the privilege has no query
+constraint.
+
+**Root cause and intended behavior.**
+
+- **Legacy** performs string-prefix matching:
+  `"/machine".starts_with("/machine/") == false`. No privilege matches, so the
+  rule set's deny default applies.
+- **Host and canonical model** treat `/machine` and `/machine/` as the same
+  endpoint boundary. Both forms become `["", "machine"]`, so the privilege
+  matches either URI.
+- The retained rule-side trailing-slash bit prevents the KD-6 compatibility
+  fallback from extending `/machine/` to `/machine-attacker`.
+
+**Security assessment.** This is an intentional legacy divergence aligned with
+host routing. The rule slash expresses a segment boundary, so allowing exact
+`/machine` does not broaden access to an adjacent segment such as
+`/machine-attacker`.
+
+**Resolution / action items.**
+
+- [x] Add a trailing-slash requirement to `CanonicalPattern`.
+- [x] Treat `/machine` and `/machine/` as the same exact canonical path.
+- [x] Continue allowing `/machine/` to prefix-match descendants such as
+  `/machine/child`.
+- [x] Disable KD-6 final-segment prefix compatibility for slash-terminated
+  rules so `/machine-attacker` remains denied.
+- [x] Add regression coverage for `/machine`, `/machine?comp=telemetrydata`,
+  exact `/machine/`, descendant `/machine/child`, and `/machine-attacker`.
+- [ ] Confirm the shadow divergence stops before enabling enforce mode.
+
+#### KD-5 · Duplicate constrained query key uses any-value matching
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-10-13 (shadow)                                                                                    |
+| Disposition      | **Canon bug** — duplicate request values can satisfy a constrained key through any-value matching      |
+| Legacy decision  | `deny`                                                                                                 |
+| Canon decision   | `allow`                                                                                                |
+| Emitter          | IMDS managed-identity token client                                                                     |
+| Destination      | IMDS, `/metadata/identity/oauth2/token`                                                                |
+
+**Divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id> legacy=deny canon=allow \
+      uri="/metadata/identity/oauth2/token?api-version=2018-02-01\
+      &resource=https%3A%2F%2Fmanagement.azure.com%2F\
+      &client_id=00000000-0000-0000-0000-000000000001\
+      &client_id=<allowed-client-id>"
+
+**What happened.** The request supplies `client_id` twice. The first value does
+not satisfy the privilege's required `client_id`; the second value does.
+
+**Root cause.**
+
+- **Legacy** scans the ordered query pairs with `.find(...)`, so only the first
+  `client_id` is compared with the rule. It differs from the required value and
+  the privilege is denied.
+- **Canon** stores every value in `BTreeMap<String, Vec<String>>`.
+  `CanonicalPattern::matches` accepts the key when *any* actual value equals
+  any required value, so the matching second `client_id` changes the decision
+  to allow.
+
+**Security assessment.** *Authorization expansion and parser differential.*
+Different components may resolve duplicate query keys as first-wins,
+last-wins, or reject-duplicates. Allowing any value lets GPA authorize one
+identity while the host may select another. This is unsafe for constrained
+parameters and must block enforce rollout.
+
+**Resolution / action items.**
+
+- [ ] For every rule-constrained query key, deny the match unless the request
+  contains exactly one value.
+- [ ] Keep duplicate unconstrained keys in the canonical request for stable
+  rendering and telemetry; they do not participate in authorization.
+- [ ] Add regression coverage for first-matching/second-mismatching,
+  first-mismatching/second-matching, and two identical constrained values.
+- [ ] Confirm the shadow divergence stops before enabling enforce mode.
+
+#### KD-6 · Legacy rules rely on a prefix within the final path segment
+
+| Field            | Value                                                                                                  |
+|------------------|--------------------------------------------------------------------------------------------------------|
+| First observed   | 2026-10-13 (shadow)                                                                                    |
+| Disposition      | **Compatibility exception with security debt** — preserve legacy final-segment prefix behavior temporarily |
+| Legacy decision  | `allow`                                                                                                 |
+| Canon decision   | `deny` before the compatibility fallback; `allow` with the fallback                                    |
+| Emitter          | WireServer configuration client                                                                        |
+| Destination      | WireServer, machine configuration path                                                                 |
+
+**Representative divergence log line:**
+
+    CANON_DIVERGENCE mode=shadow rule_set=<id> legacy=allow canon=deny \
+      uri="/machine/<vm-id>/<deployment-id>._<role-name>\
+      ?comp=config&type=extensionsConfig&incarnation=4"
+
+**What happened.** Some deployed rules end the path at a stable identifier
+inside the final segment, while WireServer appends a role or instance suffix to
+that same segment:
+
+    rule segment:    <deployment-id>
+    request segment: <deployment-id>._<role-name>
+
+The rule intentionally relies on string-prefix behavior within that final
+segment.
+
+**Root cause.**
+
+- **Legacy** evaluates the complete decoded path with `starts_with`, so the
+  stable identifier prefix matches the suffixed WireServer segment.
+- **Canon** originally compared path segments for equality. The final rule
+  segment and request segment therefore differed even though the deployed rule
+  expected the legacy prefix behavior.
+
+**Compatibility behavior.** When the rule does not end in `/`, all earlier
+segments match, and only the final rule segment differs, canon currently
+accepts the request if the request's final segment starts with the rule's final
+segment:
+
+    if !self.trailing_slash
+        && i == self.path_prefix.len() - 1
+        && req.path_segments[i].starts_with(seg)
+    {
+        break;
+    }
+
+Slash-terminated rules never use this fallback. For example, `/machine/`
+matches exact `/machine`, `/machine?comp=xx`, `/machine/`, and descendants such
+as `/machine/child`, while rejecting `/machine-attacker`.
+
+**Security assessment.** This restores production compatibility but weakens
+the segment-boundary guarantee that motivated the canonical matcher. Without
+additional constraints, a rule ending in `/metadata` can again match
+`/metadata-attacker`, and a short identifier prefix can match unrelated final
+segments. The exception must therefore remain temporary and observable rather
+than becoming undocumented permanent behavior.
+
+**Resolution / action items.**
+
+- [ ] Emit dedicated telemetry whenever the final-segment compatibility branch
+  is used, including the rule-set id and privilege name but no sensitive query
+  values.
+- [ ] Inventory affected deployed rules and confirm the suffix formats expected
+  from WireServer.
+- [ ] Add an explicit rule representation for intentional final-segment
+  prefixes, such as a terminal `*`, rather than inferring wildcard semantics
+  from every rule.
+- [ ] Restrict prefix matching to explicitly marked rules and restore exact
+  segment matching for ordinary rules.
+- [ ] Add regression coverage for the legitimate
+  `<deployment-id>._<role-name>` shape and rejection of `/metadata-attacker`,
+  empty prefixes, and unrelated identifier prefixes.
+- [ ] Remove the implicit compatibility branch after affected rules migrate.
+
 ## 10. Test Strategy
 
 ### 10.1 Golden vectors
