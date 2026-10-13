@@ -58,10 +58,7 @@ fn canonicalize_path_impl(
     reject_overlong_utf8(decoded.as_bytes())?;
 
     let embedded_query = if allow_embedded_query {
-        match decoded.find('?') {
-            Some(pos) => Some(decoded.split_off(pos + 1)),
-            None => None,
-        }
+        decoded.find('?').map(|pos| decoded.split_off(pos + 1))
     } else {
         reject_control_chars(&decoded)?;
         if decoded.contains('?') {
