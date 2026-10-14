@@ -219,8 +219,8 @@ if  %ERRORLEVEL% NEQ 0 (
 
 echo ======= build e2e test project
 SET out_e2etest_dir=%out_dir%\e2etest
-echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
-call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
 if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe build failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -246,6 +246,13 @@ for %%F in (%extension_src_path%\*.cmd) do (
     xcopy /Y %%F %out_package_proxyagent_extension_dir%\
 )
 xcopy /Y %out_dir%\ProxyAgentExt.* %out_package_proxyagent_extension_dir%\
+
+echo ======= generate ProxyAgent Extension catalog
+call powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%extension_root_path%\scripts\New-ExtensionCatalog.ps1" -ExtensionPackageDirectory "%out_package_proxyagent_extension_dir%"
+if %ERRORLEVEL% NEQ 0 (
+    echo Extension catalog generation failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
 
 echo ======= copy e2e test project to Package folder
 SET out_package_e2etest_dir=%out_package_dir%\e2etest

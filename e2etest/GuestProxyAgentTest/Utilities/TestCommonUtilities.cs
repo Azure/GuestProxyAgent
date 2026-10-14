@@ -119,9 +119,10 @@ namespace GuestProxyAgentTest.Utilities
         public class TokenEnvModel
         {
             [DataMember(Name = "accessToken")]
-            public string AccessToken { get; set; }
+            public string AccessToken { get; set; } = string.Empty;
+
             [DataMember(Name = "expiresOn")]
-            public string ExpiresOn { get; set; }
+            public string ExpiresOn { get; set; } = string.Empty;
         }
     }
 }
