@@ -71,7 +71,7 @@ namespace GuestProxyAgentTest.TestCases
                 if (instanceView?.Statuses?.Count > 0 && instanceView.Statuses[0].DisplayStatus == "Provisioning succeeded")
                 {
                     context.TestResultDetails.Succeed = true;
-                    context.TestResultDetails.CustomOut = FormatVMExtensionData(vmExtension.Value.Data);
+                    context.TestResultDetails.CustomOut = FormatVMExtensionData(vmExtension?.Value?.Data);
                     return;
                 }
 

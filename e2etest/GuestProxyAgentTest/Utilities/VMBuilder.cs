@@ -80,7 +80,12 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="deleteExistingResourceGroup">true to delete RG if already exists</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(TestLogger logger, bool enableProxyAgent, string vmSizeOverride, bool deleteExistingResourceGroup, CancellationToken cancellationToken)
+        public async Task<VirtualMachineResource> Build(
+            TestLogger logger,
+            bool enableProxyAgent,
+            string? vmSizeOverride,
+            bool deleteExistingResourceGroup,
+            CancellationToken cancellationToken)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -90,7 +95,6 @@ namespace GuestProxyAgentTest.Utilities
             string vmSizeToUse = vmSizeOverride ?? TestSetting.Instance.vmSize;
             if (vmSizeOverride == null)
             {
-                // Resolve an available VM size before creating resources
                 var resolvedVmSize = await GetAvailableVmSizeAsync(logger);
                 logger.Log($"Resolved VM size: {resolvedVmSize}");
                 vmSizeToUse = resolvedVmSize;

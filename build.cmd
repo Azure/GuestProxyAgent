@@ -219,8 +219,8 @@ if  %ERRORLEVEL% NEQ 0 (
 
 echo ======= build e2e test project
 SET out_e2etest_dir=%out_dir%\e2etest
-echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
-call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
 if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe build failed with exit-code: %errorlevel%
     exit /b %errorlevel%
