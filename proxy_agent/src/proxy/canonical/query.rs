@@ -277,7 +277,7 @@ mod query_tests {
         );
 
         assert_eq!(
-            canonicalize_request_query("client_id=value%0Dextra").unwrap_err(),
+            canonicalize_request_query(concat!("client_id=value%0D", "extra")).unwrap_err(),
             CanonError::ControlChar
         );
         assert_eq!(

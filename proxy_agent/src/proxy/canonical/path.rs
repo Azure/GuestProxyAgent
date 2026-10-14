@@ -275,7 +275,11 @@ mod path_tests {
                 &["", "metadata", "identity"],
                 false,
             ),
-            ("/metadata%5Cidentity", &["", "metadata", "identity"], false),
+            (
+                concat!("/metadata%5C", "identity"),
+                &["", "metadata", "identity"],
+                false,
+            ),
             (
                 "/metadata;a=1;b=2/identity;c=3",
                 &["", "metadata", "identity"],
@@ -531,7 +535,7 @@ mod path_tests {
         }
         // Any non-ASCII character (1, 2, 3, or 4 UTF-8 bytes wide) must
         // be rejected with the NonAscii code — distinct from InvalidUtf8
-        // (random bytes) and OverlongUtf8 (IDS-bypass overlongs) so audit
+        // (random bytes) and OverlongUtf8 (IDS-bypass overlong encodings) so audit
         // logs can `grep CANON_NON_ASCII` for the homoglyph attack class
         // without picking up generic encoding-failure noise.
         for s in ["é", "中", "🙂", "/abc/中文/x"] {
@@ -630,7 +634,7 @@ mod path_tests {
                 "/metadata/identity",
             ),
             (
-                "A1.dotdot_segment",
+                "A1.parent_directory_segment",
                 "http://169.254.169.254/metadata/x/../identity",
                 "/metadata/identity",
             ),
@@ -729,7 +733,7 @@ mod path_tests {
             // Double-encoded `..` (`%252e%252e`) decodes ONCE to the literal
             // bytes `%2e%2e` — it must NOT collapse like `..` would.
             (
-                "D1.double_encoded_dotdot",
+                "D1.double_encoded_parent_directory",
                 "http://169.254.169.254/metadata/%252e%252e/identity",
                 "/metadata/%2e%2e/identity",
             ),
@@ -759,9 +763,9 @@ mod path_tests {
                 "http://169.254.169.254/foo%20bar",
                 "/foo bar",
             ),
-            // Combined dot / dotdot / matrix in one path.
+            // Combined current-directory / parent-directory / matrix markers.
             (
-                "D1.combined_dot_dotdot_matrix",
+                "D1.combined_directory_markers_matrix",
                 "http://169.254.169.254/a/b/./c/../d;p=q/e",
                 "/a/b/d/e",
             ),
@@ -861,7 +865,7 @@ mod path_tests {
                 CanonError::PathUnderflow,
             ),
             (
-                "D1.underflow_via_dotdot_chain",
+                "D1.underflow_via_parent_directory_chain",
                 "http://169.254.169.254/a/b/../../..",
                 CanonError::PathUnderflow,
             ),

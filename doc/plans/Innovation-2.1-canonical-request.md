@@ -382,8 +382,9 @@ Per RFC 3986, `%3F` inside the path is a literal `?` character that is *part of 
 splits the resulting `?` into path and query components, and parses that embedded
 query without percent-decoding it a second time. This matches the long-standing
 client and host behavior while preserving the pipeline's exact-once decoding
-invariant. For example, `%3Fkey=value%26marker=%2526` becomes the query
-`key=value&marker=%26`; the remaining `%26` is data, not another delimiter.
+invariant. For example, `%3F` followed by `key=value%26marker=%2526` becomes
+the query `key=value&marker=%26`; the remaining `%26` is data, not another
+delimiter.
 
 **Security assessment.** Supporting the established interpretation removes the
 legacy/canonical availability divergence. The compatibility is request-only:
