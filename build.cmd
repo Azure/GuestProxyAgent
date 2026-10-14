@@ -247,6 +247,13 @@ for %%F in (%extension_src_path%\*.cmd) do (
 )
 xcopy /Y %out_dir%\ProxyAgentExt.* %out_package_proxyagent_extension_dir%\
 
+echo ======= generate ProxyAgent Extension catalog
+call powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%extension_root_path%\scripts\New-ExtensionCatalog.ps1" -ExtensionPackageDirectory "%out_package_proxyagent_extension_dir%"
+if %ERRORLEVEL% NEQ 0 (
+    echo Extension catalog generation failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
+
 echo ======= copy e2e test project to Package folder
 SET out_package_e2etest_dir=%out_package_dir%\e2etest
 echo xcopy /Y /S /C /Q %out_e2etest_dir% %out_package_e2etest_dir%\
