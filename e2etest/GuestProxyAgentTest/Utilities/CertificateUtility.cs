@@ -110,13 +110,28 @@ namespace GuestProxyAgentTest.Utilities
                 Console.WriteLine("No cert found in environment variable: " + certNameInKV);
                 return null;
             }
-            var cert = new X509Certificate2(Convert.FromBase64String(based64EncodedCert));            
-            if (cert != null)
+
+            X509Certificate2 cert;
+            try
             {
-                Console.WriteLine("Found cert on from environment variable, " + cert.Thumbprint);
+                var rawCert = Convert.FromBase64String(based64EncodedCert);
+                try
+                {
+                    cert = X509CertificateLoader.LoadPkcs12(rawCert, password: (string?)null);
+                }
+                catch (CryptographicException)
+                {
+                    cert = X509CertificateLoader.LoadCertificate(rawCert);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to load cert from environment variable: " + ex.Message);
+                return null;
             }
 
-            return (cert != null && !(requirePrivateKeyAccess && !CanAccessPrivateKey(cert))) ? cert : null;
+            Console.WriteLine("Found cert on from environment variable, " + cert.Thumbprint);
+            return requirePrivateKeyAccess && !CanAccessPrivateKey(cert) ? null : cert;
         }
 
         private static bool CanAccessPrivateKey(X509Certificate2 cert)
