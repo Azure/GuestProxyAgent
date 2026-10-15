@@ -1880,11 +1880,25 @@ mod tests {
         let legacy = parse_rule_id_descriptor(Some("legacy-id"));
         assert_eq!(legacy.logical_id, "legacy-id");
         assert!(!legacy.use_local_file_rules);
+        assert!(!legacy.enable_soft_audit);
 
         let encoded = general_purpose::STANDARD
-            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true}"#);
+            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true,"enableSoftAudit":true}"#);
         let descriptor = parse_rule_id_descriptor(Some(&encoded));
         assert_eq!(descriptor.logical_id, "sig-resource-id");
         assert!(descriptor.use_local_file_rules);
+        assert!(descriptor.enable_soft_audit);
+
+        let malformed_base64 = parse_rule_id_descriptor(Some("not-valid-base64!"));
+        assert_eq!(malformed_base64.logical_id, "not-valid-base64!");
+        assert!(!malformed_base64.use_local_file_rules);
+        assert!(!malformed_base64.enable_soft_audit);
+
+        let malformed_json = general_purpose::STANDARD
+            .encode(r#"{"id":"sig-resource-id","enableSoftAudit":"true"}"#);
+        let malformed_json_descriptor = parse_rule_id_descriptor(Some(&malformed_json));
+        assert_eq!(malformed_json_descriptor.logical_id, malformed_json);
+        assert!(!malformed_json_descriptor.use_local_file_rules);
+        assert!(!malformed_json_descriptor.enable_soft_audit);
     }
 }

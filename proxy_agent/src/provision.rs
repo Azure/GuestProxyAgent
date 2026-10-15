@@ -739,6 +739,48 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test]
+    async fn soft_audit_suppresses_incomplete_provision_errors() {
+        let shared_state = SharedState::start_all();
+        let provision_shared_state = shared_state.get_provision_shared_state();
+        let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+
+        let error_message = super::get_provision_failed_state_message(
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        assert!(error_message.contains("ebpfProgramStatus"));
+        assert!(error_message.contains("keyLatchStatus"));
+        assert!(error_message.contains("proxyListenerStatus"));
+
+        agent_status_shared_state
+            .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        assert_eq!(
+            "",
+            super::get_provision_failed_state_message(
+                provision_shared_state.clone(),
+                agent_status_shared_state.clone(),
+            )
+            .await
+        );
+
+        agent_status_shared_state
+            .set_soft_audit_mode(false)
+            .await
+            .unwrap();
+        let error_message = super::get_provision_failed_state_message(
+            provision_shared_state,
+            agent_status_shared_state,
+        )
+        .await;
+        assert!(error_message.contains("ebpfProgramStatus"));
+        assert!(error_message.contains("keyLatchStatus"));
+        assert!(error_message.contains("proxyListenerStatus"));
+    }
+
+    #[tokio::test]
     async fn provision_state_test() {
         let mut temp_test_path = env::temp_dir();
         let logger_key = "provision_state_test";
