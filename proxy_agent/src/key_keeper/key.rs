@@ -239,6 +239,8 @@ impl Privilege {
             None => (lowered_request_path, None),
         };
 
+        // Normalize backslashes to forward slashes for consistent path matching.
+        let actual_path = actual_path.replace('\\', "/");
         if actual_path.starts_with(&self.path) {
             logger.write(
                 LoggerLevel::Trace,
@@ -1698,6 +1700,29 @@ mod tests {
         assert!(
             privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
             "encoded %3F query separator must be decoded and query params matched"
+        );
+
+        let url: Uri = "http://169.254.169.254/metadata\\identity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "backslashes in the path should be normalized to forward slashes"
+        );
+        let url: Uri = "http://169.254.169.254/metadata%5Cidentity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "percent-encoded backslashes (%5C) in the path should be normalized to forward slashes"
         );
     }
 

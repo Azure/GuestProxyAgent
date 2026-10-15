@@ -16,6 +16,9 @@
 //!   ASCII folding leaves any non-ASCII bytes untouched, so the
 //!   non-ASCII-value allowance below still holds.
 //! - Reject control characters and malformed UTF-8 in both key and value.
+//!   Incoming requests have one compatibility exception: trailing `\r`
+//!   characters are trimmed from `client_id` values because established
+//!   clients and the host endpoint treat them as line-ending contamination.
 //!   Unlike the path pipeline, well-formed non-ASCII UTF-8 is **allowed**
 //!   here: query *values* legitimately carry it (e.g. an IMDS
 //!   `msi_res_id` / `resource` ARM id whose resource-group name contains
@@ -31,6 +34,31 @@ use super::CanonError;
 
 /// Canonicalize a raw query string (the part after `?`, without it).
 pub fn canonicalize_query(raw: &str) -> Result<BTreeMap<String, Vec<String>>, CanonError> {
+    canonicalize_query_impl(raw, true, false)
+}
+
+/// Canonicalize the ordinary query portion of an incoming request.
+pub(super) fn canonicalize_request_query(
+    raw: &str,
+) -> Result<BTreeMap<String, Vec<String>>, CanonError> {
+    canonicalize_query_impl(raw, true, true)
+}
+
+/// Canonicalize a query that was embedded in a path via `%3F`.
+///
+/// The path decoder has already percent-decoded this string once, so this
+/// entrypoint performs query parsing and validation without a second decode.
+pub(super) fn canonicalize_decoded_query(
+    raw: &str,
+) -> Result<BTreeMap<String, Vec<String>>, CanonError> {
+    canonicalize_query_impl(raw, false, true)
+}
+
+fn canonicalize_query_impl(
+    raw: &str,
+    decode_percent: bool,
+    allow_client_id_trailing_cr: bool,
+) -> Result<BTreeMap<String, Vec<String>>, CanonError> {
     let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
     if raw.is_empty() {
         return Ok(map);
@@ -44,26 +72,30 @@ pub fn canonicalize_query(raw: &str) -> Result<BTreeMap<String, Vec<String>>, Ca
             Some(pos) => (&pair[..pos], &pair[pos + 1..]),
             None => (pair, ""),
         };
-        let k = decode_query_component(k_raw)?;
-        let v = decode_query_component(v_raw)?;
+        let k = decode_query_component(k_raw, decode_percent)?;
+        reject_control_chars(&k)?;
         if k.is_empty() {
             // `?=foo` is malformed — silently drop instead of injecting a
             // ghost empty key into the map.
             continue;
         }
+        let key = k.to_ascii_lowercase();
+        let mut v = decode_query_component(v_raw, decode_percent)?;
+        if allow_client_id_trailing_cr && key == "client_id" {
+            v.truncate(v.trim_end_matches('\r').len());
+        }
+        reject_control_chars(&v)?;
         // ASCII-lowercase the value as well as the key: the rule side runs
         // through this same function, so folding both sides keeps the
         // `av == rv` comparison in `rule::CanonicalPattern::matches`
         // case-insensitive — matching legacy semantics for case-insensitive
         // ARM ids (KD-2).
-        map.entry(k.to_ascii_lowercase())
-            .or_default()
-            .push(v.to_ascii_lowercase());
+        map.entry(key).or_default().push(v.to_ascii_lowercase());
     }
     Ok(map)
 }
 
-fn decode_query_component(raw: &str) -> Result<String, CanonError> {
+fn decode_query_component(raw: &str, decode_percent: bool) -> Result<String, CanonError> {
     // `+` in a query component is a legacy form for space (application/x-www-form-urlencoded).
     // IMDS / WireServer don't use form-encoded queries, but normalize it so a rule author
     // can't tell the difference between `?key=a+b` and `?key=a%20b`.
@@ -73,7 +105,7 @@ fn decode_query_component(raw: &str) -> Result<String, CanonError> {
     while i < bytes.len() {
         let b = bytes[i];
         match b {
-            b'%' => {
+            b'%' if decode_percent => {
                 if i + 2 >= bytes.len() {
                     return Err(CanonError::MalformedPercent);
                 }
@@ -98,14 +130,17 @@ fn decode_query_component(raw: &str) -> Result<String, CanonError> {
     // path pipeline does: query values legitimately carry Unicode (e.g.
     // an ARM `msi_res_id` whose resource-group name has Unicode letters),
     // and a confusable in a query value cannot slip past a path-prefix
-    // deny rule. Control characters stay forbidden in both halves.
-    let s = String::from_utf8(out).map_err(|_| CanonError::InvalidUtf8)?;
+    // deny rule.
+    String::from_utf8(out).map_err(|_| CanonError::InvalidUtf8)
+}
+
+fn reject_control_chars(s: &str) -> Result<(), CanonError> {
     for b in s.bytes() {
         if b < 0x20 || b == 0x7F {
             return Err(CanonError::ControlChar);
         }
     }
-    Ok(s)
+    Ok(())
 }
 
 fn hex_value(b: u8) -> Result<u8, CanonError> {
@@ -182,6 +217,13 @@ mod query_tests {
     }
 
     #[test]
+    fn decoded_query_is_not_percent_decoded_twice() {
+        let q = canonicalize_decoded_query("k=%26&other=value").unwrap();
+        assert_eq!(q.get("k"), Some(&vec!["%26".to_string()]));
+        assert_eq!(q.get("other"), Some(&vec!["value".to_string()]));
+    }
+
+    #[test]
     fn repeated_key_preserves_order() {
         let q = canonicalize_query("k=1&k=2&k=3").unwrap();
         assert_eq!(
@@ -221,6 +263,29 @@ mod query_tests {
         // (observed as a contaminated `client_id`) must fail closed.
         assert_eq!(
             canonicalize_query("client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D").unwrap_err(),
+            CanonError::ControlChar
+        );
+    }
+
+    #[test]
+    fn request_trims_trailing_cr_from_client_id_only() {
+        let q = canonicalize_request_query("client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D%0D")
+            .unwrap();
+        assert_eq!(
+            q.get("client_id"),
+            Some(&vec!["292e4c16-1d25-4666-a60a-52d441e9ee5b".to_string()])
+        );
+
+        assert_eq!(
+            canonicalize_request_query(concat!("client_id=value%0D", "extra")).unwrap_err(),
+            CanonError::ControlChar
+        );
+        assert_eq!(
+            canonicalize_request_query("resource=value%0D").unwrap_err(),
+            CanonError::ControlChar
+        );
+        assert_eq!(
+            canonicalize_request_query("client%0Did=value").unwrap_err(),
             CanonError::ControlChar
         );
     }

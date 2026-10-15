@@ -16,3 +16,6 @@ pub use windows::store_key_data;
 
 #[cfg(windows)]
 pub use windows::fetch_key_data;
+
+#[cfg(all(windows, test))]
+pub use windows::{clear_mock_key_data, has_mock_key_data, mock_key_data_count};

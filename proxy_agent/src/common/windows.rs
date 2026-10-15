@@ -7,6 +7,7 @@ use crate::common::{
 };
 use std::mem::MaybeUninit;
 use std::path::Path;
+#[cfg(not(test))]
 use windows_sys::Win32::Security::Cryptography::{
     // crypt32.dll
     // msasn1.dll (ASN.1 library) is also used by crypt32.dll
@@ -20,6 +21,15 @@ use windows_sys::Win32::System::SystemInformation::{
     MEMORYSTATUSEX,
     SYSTEM_INFO,
 };
+#[cfg(test)]
+use {
+    once_cell::sync::Lazy,
+    std::{collections::HashMap, path::PathBuf, sync::Mutex},
+};
+
+#[cfg(test)]
+static TEST_DPAPI_MOCK_DATA: Lazy<Mutex<HashMap<PathBuf, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn get_processor_count() -> usize {
     let mut data = MaybeUninit::<SYSTEM_INFO>::uninit();
@@ -44,6 +54,7 @@ pub fn get_memory_in_mb() -> Result<u64> {
     }
 }
 
+#[cfg(not(test))]
 pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()> {
     let data = key_data.as_bytes();
     let data_in = CRYPT_INTEGER_BLOB {
@@ -89,6 +100,19 @@ pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()
     Ok(())
 }
 
+#[cfg(test)]
+pub fn store_key_data(encrypted_file_path: &Path, key_data: String) -> Result<()> {
+    let mut mock_data = TEST_DPAPI_MOCK_DATA.lock().map_err(|e| {
+        Error::Io(
+            "store mock encrypted key data failed".to_string(),
+            std::io::Error::other(e.to_string()),
+        )
+    })?;
+    mock_data.insert(encrypted_file_path.to_path_buf(), key_data);
+    Ok(())
+}
+
+#[cfg(not(test))]
 pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
     let encrypted_data = std::fs::read(encrypted_file_path).map_err(|e| {
         Error::Io(
@@ -136,6 +160,53 @@ pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
 }
 
 #[cfg(test)]
+pub fn fetch_key_data(encrypted_file_path: &Path) -> Result<String> {
+    let mock_data = TEST_DPAPI_MOCK_DATA.lock().map_err(|e| {
+        Error::Io(
+            "fetch mock encrypted key data failed".to_string(),
+            std::io::Error::other(e.to_string()),
+        )
+    })?;
+    mock_data.get(encrypted_file_path).cloned().ok_or_else(|| {
+        Error::Io(
+            format!(
+                "mock encrypted key file '{}' does not exist",
+                encrypted_file_path.display()
+            ),
+            std::io::Error::new(std::io::ErrorKind::NotFound, "mock key data not found"),
+        )
+    })
+}
+
+#[cfg(test)]
+pub fn has_mock_key_data(encrypted_file_path: &Path) -> bool {
+    TEST_DPAPI_MOCK_DATA
+        .lock()
+        .map(|mock_data| mock_data.contains_key(encrypted_file_path))
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+pub fn mock_key_data_count(key_dir: &Path) -> usize {
+    TEST_DPAPI_MOCK_DATA
+        .lock()
+        .map(|mock_data| {
+            mock_data
+                .keys()
+                .filter(|path| path.parent() == Some(key_dir))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+pub fn clear_mock_key_data(key_dir: &Path) {
+    if let Ok(mut mock_data) = TEST_DPAPI_MOCK_DATA.lock() {
+        mock_data.retain(|path, _| path.parent() != Some(key_dir));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::{env, fs};
 
@@ -171,6 +242,8 @@ mod tests {
         let key_data = "test data".to_string();
         let encrypted_file_path = temp_test_path.join("test_data.encrypted");
         super::store_key_data(&encrypted_file_path, key_data.clone()).unwrap();
+        assert!(!encrypted_file_path.exists());
+        assert!(super::has_mock_key_data(&encrypted_file_path));
 
         let fetched_key_data = super::fetch_key_data(&encrypted_file_path).unwrap();
         assert_eq!(key_data, fetched_key_data);

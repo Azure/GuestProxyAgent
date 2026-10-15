@@ -139,6 +139,11 @@ if "%Target%"=="arm64" (
     echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
+)
+if  %ERRORLEVEL% NEQ 0 (
+    echo call cargo test proxy_agent_shared failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
 
 echo ======= copy config file for windows platform
 REM Adding a wildcard (*) to the end of the destination will suppress this prompt and default to copying as a file:
@@ -170,6 +175,10 @@ if "%Target%"=="arm64" (
     echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
 )
+if  %ERRORLEVEL% NEQ 0 (
+    echo call cargo test proxy_agent failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
 
 echo ======= build proxy_agent_extension
 SET extension_root_path=%root_path%proxy_agent_extension
@@ -195,6 +204,11 @@ if "%Target%"=="arm64" (
     REM use exit /b 1 to propagate error codes inside a (...) block
     echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
     call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+)
+)
+if  %ERRORLEVEL% NEQ 0 (
+    echo call cargo test proxy_agent_extension failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
 )
 
 echo ======= build proxy_agent_setup
