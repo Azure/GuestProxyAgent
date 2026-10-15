@@ -7,7 +7,7 @@ use std::ffi::c_char;
 pub use crate::redirector::shared_ebpf::windows_types::{
     destination_entry_t, sock_addr_skip_process_entry,
 };
-pub(crate) use crate::redirector::shared_ebpf::AuditValueEntry;
+pub(crate) use crate::redirector::windows::AuditValueEntry;
 
 pub type ebpf_id_t = u32;
 pub type fd_t = i32;

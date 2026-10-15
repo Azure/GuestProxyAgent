@@ -13,7 +13,7 @@ use crate::redirector::shared_ebpf::windows_types::{
     alert_only_event, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME, CONFIG_MAP_NAME,
     GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
 };
-use crate::redirector::shared_ebpf::AuditKeyEntry;
+use crate::redirector::windows::AuditKeyEntry;
 use crate::redirector::{AlertOnlyEntry, AuditEntry};
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
