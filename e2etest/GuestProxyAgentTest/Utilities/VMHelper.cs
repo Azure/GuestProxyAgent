@@ -4,6 +4,7 @@ using Azure.Identity;
 using Azure.ResourceManager;
 using Azure.ResourceManager.Compute;
 using Azure.ResourceManager.Resources;
+using Azure.ResourceManager.Resources.Deployments;
 using GuestProxyAgentTest.Settings;
 using System.Security.Cryptography.X509Certificates;
 
@@ -93,7 +94,9 @@ namespace GuestProxyAgentTest.Utilities
             {
                 var firstDeployment = System.Linq.Enumerable.FirstOrDefault(
                     System.Linq.Enumerable.OrderBy(
-                        System.Linq.Enumerable.Where(rg.GetArmDeployments(), x => x?.Data?.Properties?.Timestamp != null),
+                        System.Linq.Enumerable.Where(
+                            ResourcesDeploymentsExtensions.GetArmDeployments(rg),
+                            x => x?.Data?.Properties?.Timestamp != null),
                         x => x.Data.Properties.Timestamp));
 
                 if (firstDeployment != null && firstDeployment.Data?.Properties?.Timestamp?.DateTime.AddDays(2) <= DateTime.UtcNow)

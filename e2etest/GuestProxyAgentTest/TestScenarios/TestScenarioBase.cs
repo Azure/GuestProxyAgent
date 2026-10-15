@@ -26,12 +26,12 @@ namespace GuestProxyAgentTest.TestScenarios
             get; private set;
         }
 
-        protected bool EnableProxyAgentForNewVM { get; set; }
-
+        protected GuestProxyAgentSettings GuestProxyAgentSettings { get; set; }
 
         public TestScenarioBase()
         {
             Logger = new TestLogger(this.LogPrefix);
+            GuestProxyAgentSettings = new GuestProxyAgentSettings();
             TestScenarioSetup();
         }
 
@@ -188,7 +188,7 @@ namespace GuestProxyAgentTest.TestScenarios
                 try
                 {
                     ConsoleLog(string.Format("Creating {0} VM...", _testScenarioSetting.VMImageDetails.IsArm64 ? "ARM64" : "AMD64"));
-                    vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, cancellationToken);
+                    vmr = await _vmBuilder.Build(this.Logger, this.GuestProxyAgentSettings, cancellationToken);
                     ConsoleLog("VM Create succeed");
                     sw.Stop();
                     _junitTestResultBuilder.AddSuccessTestResult(_testScenarioSetting.testScenarioName, vmCreateTestName, "VM Create succeed", "", sw.ElapsedMilliseconds);
@@ -212,7 +212,7 @@ namespace GuestProxyAgentTest.TestScenarios
                                 try
                                 {
                                     ConsoleLog($"Retrying VM creation with VM size: {altSize}");
-                                    vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, altSize, false, cancellationToken);
+                                    vmr = await _vmBuilder.Build(this.Logger, this.GuestProxyAgentSettings, altSize, false, cancellationToken);
                                     ConsoleLog($"VM Create succeed with alternative VM size: {altSize}");
                                     retrySucceeded = true;
                                     break;
@@ -235,7 +235,7 @@ namespace GuestProxyAgentTest.TestScenarios
                         {
                             var availableVMSize = await _vmBuilder.GetAvailableVmSizeAsync(this.Logger);
                             ConsoleLog($"AllocationFailed but no alternative VM sizes found in the error message, last retry with available VM size `{availableVMSize}`.");
-                            vmr = await _vmBuilder.Build(this.Logger, this.EnableProxyAgentForNewVM, availableVMSize, false, cancellationToken);
+                            vmr = await _vmBuilder.Build(this.Logger, this.GuestProxyAgentSettings, availableVMSize, false, cancellationToken);
                             ConsoleLog($"VM Create succeed with available VM size {availableVMSize}.");
                             retrySucceeded = true;
                         }
