@@ -57,6 +57,12 @@ pub struct Claims {
     #[serde(with = "os_string_as_string")]
     pub processName: OsString,
     pub processFullPath: PathBuf,
+    #[serde(default)]
+    pub processExecutableDevice: u64,
+    #[serde(default)]
+    pub processExecutableInode: u64,
+    #[serde(default)]
+    pub processExecutableIdentityValid: bool,
     pub processCmdLine: String,
     pub runAsElevated: bool,
     pub clientIp: String,
@@ -163,6 +169,9 @@ impl Claims {
             processId: 0,
             processName: OsString::from(EMPTY),
             processFullPath: PathBuf::from(EMPTY),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: EMPTY.to_string(),
             runAsElevated: false,
             clientIp: EMPTY.to_string(),
@@ -185,6 +194,9 @@ impl Claims {
             processId: p.pid,
             processName: p.name,
             processFullPath: p.exe_full_name,
+            processExecutableDevice: entry.executable_device,
+            processExecutableInode: entry.executable_inode,
+            processExecutableIdentityValid: entry.executable_identity_valid,
             processCmdLine: p.command_line.clone(),
             runAsElevated: entry.is_admin == 1,
             clientIp: client_ip.to_string(),

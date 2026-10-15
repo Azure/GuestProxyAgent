@@ -42,8 +42,8 @@ struct
 {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __type(key, struct gpa_audit_key);     // source port and protocol
-    __type(value, struct gpa_audit_event); // audit event (canonical struct)
-    __uint(max_entries, 200);              // LRU evicts oldest on overflow
+    __type(value, struct gpa_linux_audit_event); // audit event + executable identity
+    __uint(max_entries, 200);                    // LRU evicts oldest on overflow
 } audit_map SEC(".maps");
 
 struct
@@ -56,7 +56,7 @@ struct
 {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __type(key, __u64); // pid-tgid or socket cookie
-    __type(value, struct gpa_sock_addr_local_entry);
+    __type(value, struct gpa_linux_sock_addr_local_entry);
     __uint(max_entries, 200);
 } local_map SEC(".maps");
 
@@ -81,6 +81,41 @@ local_ip_bind_monitor_only_enabled(void)
     __u32 key = GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY;
     struct gpa_config_entry *entry = bpf_map_lookup_elem(&config_map, &key);
     return entry != NULL && entry->enabled != 0;
+}
+
+static __always_inline void
+capture_executable_identity(struct gpa_linux_executable_identity *identity)
+{
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    struct mm_struct *mm = BPF_CORE_READ(task, mm);
+    if (mm == NULL)
+    {
+        return;
+    }
+
+    struct file *exe_file = BPF_CORE_READ(mm, exe_file);
+    if (exe_file == NULL)
+    {
+        return;
+    }
+
+    struct inode *inode = BPF_CORE_READ(exe_file, f_inode);
+    if (inode == NULL)
+    {
+        return;
+    }
+
+    struct super_block *super_block = BPF_CORE_READ(inode, i_sb);
+    if (super_block == NULL)
+    {
+        return;
+    }
+
+    __u64 inode_number = BPF_CORE_READ(inode, i_ino);
+    identity->device = BPF_CORE_READ(super_block, s_dev);
+    identity->inode_low = (__u32)inode_number;
+    identity->inode_high = (__u32)(inode_number >> 32);
+    identity->valid = 1;
 }
 
 /*
@@ -124,8 +159,9 @@ update_local_map_entry(struct bpf_sock_addr *ctx, __be32 destination_ipv4, __u32
         return 0;
     }
 
-    struct gpa_sock_addr_local_entry entry = {0};
-    entry.audit = audit;
+    struct gpa_linux_sock_addr_local_entry entry = {0};
+    entry.audit.audit = audit;
+    capture_executable_identity(&entry.audit.executable);
     entry.protocol = ctx->protocol;
     __u64 ret = bpf_map_update_elem(&local_map, &pid_tip, &entry, 0);
     if (ret != 0)
@@ -252,13 +288,13 @@ int connect6(struct bpf_sock_addr *ctx)
 }
 
 static __always_inline int
-update_audit_map_entry_sk(__u32 local_port, struct gpa_sock_addr_local_entry *local_entry)
+update_audit_map_entry_sk(__u32 local_port, struct gpa_linux_sock_addr_local_entry *local_entry)
 {
     struct gpa_audit_key key = {0};
     key.protocol = local_entry->protocol;
     key.source_port = local_port;
 
-    struct gpa_audit_event entry = local_entry->audit;
+    struct gpa_linux_audit_event entry = local_entry->audit;
 
     __u64 ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
     if (ret != 0)
@@ -294,7 +330,7 @@ trace_tcp_connect(struct sock *sk)
     }
 
     // Find the entry in the local map.
-    struct gpa_sock_addr_local_entry *local_entry = bpf_map_lookup_elem(&local_map, &pid_tgid);
+    struct gpa_linux_sock_addr_local_entry *local_entry = bpf_map_lookup_elem(&local_map, &pid_tgid);
     if (local_entry != NULL)
     {
         update_audit_map_entry_sk(skc_num, local_entry);

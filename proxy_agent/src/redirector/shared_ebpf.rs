@@ -225,6 +225,9 @@ impl sock_addr_audit_entry {
             } else {
                 crate::redirector::AddressFamily::IPv4
             },
+            executable_device: 0,
+            executable_inode: 0,
+            executable_identity_valid: false,
         }
     }
 }
@@ -257,6 +260,9 @@ impl sock_addr_audit_entry_legacy {
             destination_ipv4: self.destination_ipv4,
             destination_port: self.destination_port,
             address_family: crate::redirector::AddressFamily::IPv4,
+            executable_device: 0,
+            executable_inode: 0,
+            executable_identity_valid: false,
         }
     }
 }
@@ -415,8 +421,8 @@ impl AuditValueEntry {
 pub mod linux_types {
     pub use super::{
         alert_only_event, destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
-        sock_addr_skip_process_entry, AuditMapKey, AuditMapValue, ALERT_ONLY_MAP_NAME,
-        AUDIT_MAP_NAME, CONFIG_MAP_NAME, GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME,
+        sock_addr_skip_process_entry, AuditMapKey, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME,
+        CONFIG_MAP_NAME, GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME,
         SKIP_PROCESS_MAP_NAME,
     };
 }

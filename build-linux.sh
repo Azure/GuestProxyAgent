@@ -281,6 +281,9 @@ cp -f $out_dir/ProxyAgentExt $out_package_proxyagent_extension_dir/
 echo "======= copy e2e test project to Package folder"
 cp -rf $out_dir/e2etest/ $out_package_dir/e2etest/
 
+echo "======= copy pentest project to Package folder"
+cp -rf $root_path/pentest/ $out_package_dir/pentest/
+
 echo "======= Generate build-configuration-linux-$Target.zip file with relative path within the zip file"
 cd $out_package_dir
 zip -r $out_dir/build-$Configuration-linux-$Target.zip .

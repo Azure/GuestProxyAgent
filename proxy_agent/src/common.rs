@@ -16,3 +16,6 @@ pub use windows::store_key_data;
 
 #[cfg(windows)]
 pub use windows::fetch_key_data;
+
+#[cfg(not(windows))]
+pub mod linux;
