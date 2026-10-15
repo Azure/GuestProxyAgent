@@ -7,7 +7,6 @@ use crate::common::{
     error::{BpfErrorType, Error},
     result::Result,
 };
-use std::ffi::c_void;
 use std::net::{IpAddr, SocketAddr};
 
 #[repr(C)]
@@ -480,5 +479,4 @@ mod tests {
         assert_eq!(audit.destination_port, 80u16.to_be());
         assert!(alert_only_event::from_bytes(&bytes[..bytes.len() - 1]).is_err());
     }
-
 }
