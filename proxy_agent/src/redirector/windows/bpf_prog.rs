@@ -13,6 +13,7 @@ use crate::redirector::shared_ebpf::windows_types::{
     alert_only_event, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME, CONFIG_MAP_NAME,
     GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
 };
+use crate::redirector::shared_ebpf::AuditKeyEntry;
 use crate::redirector::{AlertOnlyEntry, AuditEntry};
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
@@ -303,34 +304,33 @@ impl BpfObject {
 
     Arguments:
 
-        source_port - source local port.
+        peer - accepted source address and port.
 
     Return Value:
 
         audit entry from audit_map on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+    pub fn lookup_audit(&self, peer: &std::net::SocketAddr) -> Result<AuditEntry> {
         let map_name = AUDIT_MAP_NAME;
-        let (map_fd, value_size) = self.get_bpf_map_fd_and_value_size(map_name)?;
+        let (map_fd, key_size, value_size) = self.get_bpf_map_fd_and_sizes(map_name)?;
 
-        // query by source port.
-        let key = sock_addr_audit_key_t::from_source_port(source_port);
+        let key = AuditKeyEntry::from_peer(peer, key_size)?;
         let mut audit_value_entry = AuditValueEntry::empty(value_size);
         let result = bpf_map_lookup_elem(
             map_fd,
-            &key as *const sock_addr_audit_key_t as *const c_void,
+            key.value_pointer(),
             audit_value_entry.value_pointer_mut(),
         )
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Result: {result}"),
             )));
         }
@@ -415,25 +415,21 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn remove_audit_map_entry(&self, source_port: u16) -> Result<()> {
+    pub fn remove_audit_map_entry(&self, peer: &std::net::SocketAddr) -> Result<()> {
         let audit_map_name = AUDIT_MAP_NAME;
-        let map_fd = self.get_bpf_map_fd(audit_map_name)?;
+        let (map_fd, key_size, _) = self.get_bpf_map_fd_and_sizes(audit_map_name)?;
 
-        let key = sock_addr_audit_key_t::from_source_port(source_port);
-        let result = bpf_map_delete_elem(
-            map_fd,
-            &key as *const sock_addr_audit_key_t as *const c_void,
-        )
-        .map_err(|e| {
+        let key = AuditKeyEntry::from_peer(peer, key_size)?;
+        let result = bpf_map_delete_elem(map_fd, key.value_pointer()).map_err(|e| {
             Error::Bpf(BpfErrorType::MapDeleteElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Result: {result}"),
             )));
         }
@@ -525,11 +521,11 @@ impl BpfObject {
     }
 
     fn get_bpf_map_fd(&self, map_name: &str) -> Result<i32> {
-        let (map_fd, _) = self.get_bpf_map_fd_and_value_size(map_name)?;
+        let (map_fd, _, _) = self.get_bpf_map_fd_and_sizes(map_name)?;
         Ok(map_fd)
     }
 
-    fn get_bpf_map_fd_and_value_size(&self, map_name: &str) -> Result<(i32, u32)> {
+    fn get_bpf_map_fd_and_sizes(&self, map_name: &str) -> Result<(i32, u32, u32)> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
@@ -546,6 +542,10 @@ impl BpfObject {
 
         let map_fd = bpf_map__fd(bpf_map)
             .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
-        Ok((map_fd, bpf_map_value_size(bpf_map)))
+        Ok((
+            map_fd,
+            bpf_map_key_size(bpf_map),
+            bpf_map_value_size(bpf_map),
+        ))
     }
 }

@@ -157,27 +157,23 @@ impl TcpConnectionContext {
         logger: &mut ConnectionLogger,
         #[cfg(windows)] raw_socket_id: usize,
     ) -> Result<AuditEntry> {
-        let client_source_port = client_addr.port();
-        match redirector::lookup_audit(client_source_port, redirector_shared_state).await {
+        match redirector::lookup_audit(client_addr, redirector_shared_state).await {
             Ok(data) => {
                 logger.write(
                     LoggerLevel::Trace,
-                    format!(
-                        "Found audit entry with client_source_port '{client_source_port}' successfully"
-                    ),
+                    format!("Found audit entry for TCP peer '{client_addr}' successfully"),
                 );
-                match redirector::remove_audit(client_source_port, redirector_shared_state).await {
+                match redirector::remove_audit(client_addr, redirector_shared_state).await {
                     Ok(_) => logger.write(
                         LoggerLevel::Trace,
-                        format!(
-                            "Removed audit entry with client_source_port '{client_source_port}' successfully"
-                        ),
+                        format!("Removed audit entry for TCP peer '{client_addr}' successfully"),
                     ),
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Warn,
                             format!("Failed to remove audit entry: {e}"),
                         );
+                        return Err(e);
                     }
                 }
 
@@ -185,7 +181,7 @@ impl TcpConnectionContext {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to find audit entry with client_source_port '{client_source_port}' with error: {e}"
+                    "Failed to find audit entry for TCP peer '{client_addr}' with error: {e}"
                 );
                 logger.write(LoggerLevel::Warn, message.clone());
 

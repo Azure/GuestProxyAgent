@@ -8,8 +8,10 @@ use crate::common::{
     result::Result,
 };
 use std::ffi::c_void;
+use std::net::{IpAddr, SocketAddr};
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct _ip_address {
     pub ip: [u32; 4], // ipv4 uses the first element; ipv6 uses all 4 elements
 }
@@ -129,35 +131,106 @@ impl alert_only_event {
 pub struct sock_addr_audit_key {
     pub protocol: u32,
     pub source_port: u32,
+    pub source_address_family: u32,
+    pub source_ip: ip_address,
 }
 pub type AuditMapKey =
     [u32; std::mem::size_of::<sock_addr_audit_key>() / std::mem::size_of::<u32>()];
 #[allow(dead_code)]
 impl sock_addr_audit_key {
-    #[cfg(windows)]
-    pub fn from_source_port(port: u16) -> Self {
-        sock_addr_audit_key {
+    pub fn from_peer(peer: &SocketAddr) -> Result<Self> {
+        let (source_address_family, source_ip) = match peer.ip().to_canonical() {
+            IpAddr::V4(ip) => (
+                GPA_ADDRESS_FAMILY_IPV4,
+                ip_address::from_ipv4(u32::from_ne_bytes(ip.octets())),
+            ),
+            IpAddr::V6(ip) => {
+                let octets = ip.octets();
+                let words = std::array::from_fn(|i| {
+                    let offset = i * 4;
+                    u32::from_ne_bytes([
+                        octets[offset],
+                        octets[offset + 1],
+                        octets[offset + 2],
+                        octets[offset + 3],
+                    ])
+                });
+                (GPA_ADDRESS_FAMILY_IPV6, ip_address::from_ipv6(words))
+            }
+        };
+        #[cfg(windows)]
+        let source_port = u32::from(peer.port().to_be());
+        #[cfg(not(windows))]
+        let source_port = u32::from(peer.port());
+        Ok(sock_addr_audit_key {
             protocol: IPPROTO_TCP,
-            source_port: u32::from(port.to_be()),
-        }
-    }
-
-    #[cfg(not(windows))]
-    pub fn from_source_port(port: u16) -> Self {
-        sock_addr_audit_key {
-            protocol: IPPROTO_TCP,
-            source_port: u32::from(port),
-        }
+            source_port,
+            source_address_family,
+            source_ip,
+        })
     }
 
     pub fn as_array(&self) -> AuditMapKey {
-        [self.protocol, self.source_port]
+        [
+            self.protocol,
+            self.source_port,
+            self.source_address_family,
+            self.source_ip.ip[0],
+            self.source_ip.ip[1],
+            self.source_ip.ip[2],
+            self.source_ip.ip[3],
+        ]
     }
 
     pub fn from_array(array: AuditMapKey) -> Self {
         sock_addr_audit_key {
             protocol: array[0],
             source_port: array[1],
+            source_address_family: array[2],
+            source_ip: ip_address {
+                ip: [array[3], array[4], array[5], array[6]],
+            },
+        }
+    }
+}
+
+/// Original Windows audit key. Port-only keys cannot safely identify a peer.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct sock_addr_audit_key_legacy {
+    pub protocol: u32,
+    pub source_port: u32,
+}
+
+pub(crate) enum AuditKeyEntry {
+    New(sock_addr_audit_key),
+    Legacy(sock_addr_audit_key_legacy),
+}
+
+impl AuditKeyEntry {
+    pub fn from_peer(peer: &SocketAddr, key_size: u32) -> Result<Self> {
+        match key_size as usize {
+            size if size == std::mem::size_of::<sock_addr_audit_key>() => {
+                Ok(Self::New(sock_addr_audit_key::from_peer(peer)?))
+            }
+            size if size == std::mem::size_of::<sock_addr_audit_key_legacy>() => {
+                let key = sock_addr_audit_key::from_peer(peer)?;
+                Ok(Self::Legacy(sock_addr_audit_key_legacy {
+                    protocol: key.protocol,
+                    source_port: key.source_port,
+                }))
+            }
+            _ => Err(Error::Bpf(BpfErrorType::GetBpfMap(
+                AUDIT_MAP_NAME.to_string(),
+                format!("Unsupported audit key size: {key_size}; expected 8 or 28 bytes"),
+            ))),
+        }
+    }
+
+    pub fn value_pointer(&self) -> *const c_void {
+        match self {
+            Self::New(key) => key as *const sock_addr_audit_key as *const c_void,
+            Self::Legacy(key) => key as *const sock_addr_audit_key_legacy as *const c_void,
         }
     }
 }
@@ -430,8 +503,7 @@ pub mod linux_types {
 #[cfg(windows)]
 pub mod windows_types {
     pub use super::{
-        alert_only_event, destination_entry as destination_entry_t,
-        sock_addr_audit_key as sock_addr_audit_key_t, sock_addr_skip_process_entry,
+        alert_only_event, destination_entry as destination_entry_t, sock_addr_skip_process_entry,
         ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME, CONFIG_MAP_NAME,
         GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
     };
@@ -460,11 +532,16 @@ mod tests {
 
     #[test]
     fn audit_key_array_roundtrip() {
-        let key = sock_addr_audit_key::from_source_port(1234);
+        let key = sock_addr_audit_key::from_peer(&"127.0.0.1:1234".parse().unwrap()).unwrap();
         let array = key.as_array();
         let rebuilt = sock_addr_audit_key::from_array(array);
 
         assert_eq!(rebuilt.protocol, IPPROTO_TCP, "protocol mismatch");
+        assert_eq!(std::mem::size_of::<sock_addr_audit_key>(), 28);
+        assert_eq!(rebuilt.source_address_family, GPA_ADDRESS_FAMILY_IPV4);
+        assert_eq!(rebuilt.source_ip.ip[0].to_ne_bytes(), [127, 0, 0, 1]);
+        assert_eq!(&rebuilt.source_ip.ip[1..], &[0; 3]);
+        assert_eq!(rebuilt.as_array(), array);
 
         #[cfg(windows)]
         assert_eq!(
@@ -475,6 +552,110 @@ mod tests {
 
         #[cfg(not(windows))]
         assert_eq!(rebuilt.source_port, 1234u32, "source_port mismatch");
+    }
+
+    #[test]
+    fn audit_key_matches_only_the_redirected_peer() {
+        let key = |peer: &str| {
+            sock_addr_audit_key::from_peer(&peer.parse().unwrap())
+                .unwrap()
+                .as_array()
+        };
+        let victim = key("127.0.0.1:40000");
+        let shadow = key("127.0.0.2:40000");
+        let mapped = key("[::ffff:127.0.0.1]:40000");
+        assert_ne!(victim, shadow);
+        assert_ne!(victim, key("127.0.0.1:40001"));
+        assert_eq!(victim, mapped);
+        let mut udp = victim;
+        udp[0] = IPPROTO_UDP;
+        assert_ne!(victim, udp);
+
+        let mut audit_map = std::collections::HashMap::from([(victim, 42)]);
+        assert_eq!(audit_map.remove(&shadow), None);
+        assert_eq!(audit_map.remove(&udp), None);
+        assert_eq!(audit_map.remove(&mapped), Some(42));
+        assert_eq!(audit_map.remove(&victim), None);
+    }
+
+    #[test]
+    fn audit_key_native_ipv6_roundtrip() {
+        let peer: SocketAddr = "[2001:db8:1234:5678:90ab:cdef:1122:3344]:40000"
+            .parse()
+            .unwrap();
+        let key = sock_addr_audit_key::from_peer(&peer).unwrap();
+        assert_eq!(key.source_address_family, GPA_ADDRESS_FAMILY_IPV6);
+        let octets: Vec<u8> = key
+            .source_ip
+            .ip
+            .iter()
+            .flat_map(|word| word.to_ne_bytes())
+            .collect();
+        let IpAddr::V6(ip) = peer.ip() else {
+            panic!("Expected IPv6 peer")
+        };
+        assert_eq!(octets, ip.octets());
+        assert_eq!(
+            sock_addr_audit_key::from_array(key.as_array()).as_array(),
+            key.as_array()
+        );
+
+        for peer in [
+            "[2001:db8:1234:5678:90ab:cdef:1122:3345]:40000",
+            "[2001:db9:1234:5678:90ab:cdef:1122:3344]:40000",
+            "[2001:db8:1234:5678:90ab:cdef:1122:3344]:40001",
+        ] {
+            assert_ne!(
+                key.as_array(),
+                sock_addr_audit_key::from_peer(&peer.parse().unwrap())
+                    .unwrap()
+                    .as_array()
+            );
+        }
+        let ipv4 = sock_addr_audit_key::from_peer(&"127.0.0.1:40000".parse().unwrap()).unwrap();
+        let ipv6 = sock_addr_audit_key::from_peer(&"[7f00:1::]:40000".parse().unwrap()).unwrap();
+        assert_eq!(ipv4.source_ip.ip, ipv6.source_ip.ip);
+        assert_ne!(ipv4.as_array(), ipv6.as_array());
+    }
+
+    #[test]
+    fn audit_key_legacy_layout_selection() {
+        assert_eq!(std::mem::size_of::<sock_addr_audit_key_legacy>(), 8);
+        let peer = "127.0.0.1:40000".parse().unwrap();
+        let canonical = sock_addr_audit_key::from_peer(&peer).unwrap();
+        let AuditKeyEntry::New(key) = AuditKeyEntry::from_peer(&peer, 28).unwrap() else {
+            panic!("Expected canonical key");
+        };
+        assert_eq!(key.as_array(), canonical.as_array());
+        let AuditKeyEntry::Legacy(key) = AuditKeyEntry::from_peer(&peer, 8).unwrap() else {
+            panic!("Expected released legacy key");
+        };
+        assert_eq!(key.protocol, IPPROTO_TCP);
+        assert_eq!(key.source_port, canonical.source_port);
+
+        for size in [0, 4, 12, 16, 24, 32, u32::MAX] {
+            assert!(AuditKeyEntry::from_peer(&peer, size).is_err());
+        }
+        assert!(AuditKeyEntry::from_peer(&"[::1]:40000".parse().unwrap(), 12).is_err());
+        assert!(AuditKeyEntry::from_peer(&"[::1]:40000".parse().unwrap(), 28).is_ok());
+    }
+
+    #[test]
+    fn audit_key_legacy_preserves_released_port_only_layout() {
+        let key_bytes = |peer: &str| {
+            let key = AuditKeyEntry::from_peer(&peer.parse().unwrap(), 8).unwrap();
+            // The legacy variant owns an initialized 8-byte repr(C) key.
+            unsafe { std::slice::from_raw_parts(key.value_pointer().cast::<u8>(), 8).to_vec() }
+        };
+        let key = key_bytes("127.0.0.1:40000");
+        assert_eq!(&key[..4], &IPPROTO_TCP.to_ne_bytes());
+        #[cfg(windows)]
+        assert_eq!(&key[4..], &u32::from(40000u16.to_be()).to_ne_bytes());
+        #[cfg(not(windows))]
+        assert_eq!(&key[4..], &40000u32.to_ne_bytes());
+        assert_eq!(key, key_bytes("[::ffff:127.0.0.1]:40000"));
+        assert_eq!(key, key_bytes("127.0.0.2:40000"));
+        assert_ne!(key, key_bytes("127.0.0.1:40001"));
     }
 
     #[test]

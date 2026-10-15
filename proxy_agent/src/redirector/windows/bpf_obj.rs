@@ -5,7 +5,7 @@
 use std::ffi::c_char;
 
 pub use crate::redirector::shared_ebpf::windows_types::{
-    destination_entry_t, sock_addr_audit_key_t, sock_addr_skip_process_entry,
+    destination_entry_t, sock_addr_skip_process_entry,
 };
 pub(crate) use crate::redirector::shared_ebpf::AuditValueEntry;
 
@@ -233,4 +233,8 @@ pub struct bpf_object {
 
 pub fn bpf_map_value_size(map: *const bpf_map) -> u32 {
     unsafe { (*map).map_definition.value_size }
+}
+
+pub fn bpf_map_key_size(map: *const bpf_map) -> u32 {
+    unsafe { (*map).map_definition.key_size }
 }
