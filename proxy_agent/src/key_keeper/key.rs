@@ -340,16 +340,6 @@ impl Clone for Identity {
     }
 }
 
-/// Converts a `stat` `st_dev` (userspace encoding: glibc `makedev`) to the kernel-internal
-/// `dev_t` encoding (`MKDEV`: major << 20 | minor) that `super_block->s_dev` holds and that
-/// the eBPF program reports in `Claims::processExecutableDevice`.
-#[cfg(not(windows))]
-pub(crate) fn kernel_dev_from_st_dev(st_dev: u64) -> u64 {
-    let major = u64::from(libc::major(st_dev));
-    let minor = u64::from(libc::minor(st_dev));
-    (major << 20) | minor
-}
-
 impl Identity {
     pub fn is_match(&self, logger: &mut ConnectionLogger, claims: &Claims) -> bool {
         logger.write(
@@ -433,14 +423,33 @@ impl Identity {
                 // if its `/proc/<pid>/exe` path text looks identical.
                 // stat's st_dev uses the userspace encoding, but the eBPF value is the
                 // kernel's internal s_dev, so re-encode before comparing.
-                if kernel_dev_from_st_dev(metadata.dev()) != claims.processExecutableDevice
-                    || metadata.ino() != claims.processExecutableInode
-                {
+                // Btrfs `stat` reports a per-subvolume device (`btrfs_getattr` sets
+                // `stat->dev = root->anon_dev`), not the superblock `s_dev` the eBPF hook reads:
+                // https://github.com/torvalds/linux/blob/master/fs/btrfs/inode.c
+                // So fall back to mountinfo's device (verified on Ubuntu 6.8 Btrfs). Known limit: on
+                // SLES 15 SP4 Btrfs no userspace value equals the eBPF s_dev (eBPF 45, mountinfo 46,
+                // stat/maps 47), so exePath there fails closed (deny).
+                // More details: https://github.com/Azure/GuestProxyAgent/issues/440
+                let stat_dev = crate::common::linux::kernel_dev_from_st_dev(metadata.dev());
+                let sb_dev = if stat_dev == claims.processExecutableDevice {
+                    None
+                } else {
+                    crate::common::linux::sb_dev_of_path(exe_path)
+                };
+                let device_matches = stat_dev == claims.processExecutableDevice
+                    || sb_dev == Some(claims.processExecutableDevice);
+                if metadata.ino() != claims.processExecutableInode || !device_matches {
                     logger.write(
                         LoggerLevel::Trace,
                         format!(
-                            "Not matched executable identity '{}' from identity '{}'",
-                            exe_path, self.name
+                            "Not matched executable identity '{}' from identity '{}': kernel dev={} ino={}, file stat dev={} sb dev={:?} ino={}",
+                            exe_path,
+                            self.name,
+                            claims.processExecutableDevice,
+                            claims.processExecutableInode,
+                            stat_dev,
+                            sb_dev,
+                            metadata.ino()
                         ),
                     );
                     return false;
@@ -1770,19 +1779,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(windows))]
-    #[test]
-    fn kernel_dev_from_st_dev_matches_kernel_encoding() {
-        // /dev/sda1 (8,1): stat st_dev is 0x801, kernel s_dev is 0x800001.
-        assert_eq!(super::kernel_dev_from_st_dev(0x801), 0x80_0001);
-        // Minor numbers above 255 are split across the userspace encoding.
-        let st_dev = libc::makedev(259, 0x1234);
-        assert_eq!(
-            super::kernel_dev_from_st_dev(st_dev),
-            (259u64 << 20) | 0x1234
-        );
-    }
-
     #[tokio::test]
     async fn test_identity_is_match() {
         #[cfg(not(windows))]
@@ -1806,7 +1802,9 @@ mod tests {
             runAsElevated: true,
             processFullPath: current_exe,
             #[cfg(not(windows))]
-            processExecutableDevice: super::kernel_dev_from_st_dev(current_exe_metadata.dev()),
+            processExecutableDevice: crate::common::linux::kernel_dev_from_st_dev(
+                current_exe_metadata.dev(),
+            ),
             #[cfg(windows)]
             processExecutableDevice: 0,
             #[cfg(not(windows))]

@@ -650,7 +650,7 @@ mod tests {
             use std::os::unix::fs::MetadataExt;
             let metadata = std::fs::metadata(&current_exe).unwrap();
             (
-                crate::key_keeper::key::kernel_dev_from_st_dev(metadata.dev()),
+                crate::common::linux::kernel_dev_from_st_dev(metadata.dev()),
                 metadata.ino(),
             )
         };
