@@ -725,7 +725,7 @@ impl KeyKeeper {
     async fn try_fetch_local_key(&self, key_guid: &Option<String>) -> bool {
         if let Some(guid) = key_guid {
             // key latched before and search the key locally first
-            match Self::fetch_key(&self.key_dir, guid) {
+            match Self::fetch_local_key(&self.key_dir, guid) {
                 Ok(key) => {
                     if let Err(e) = self.update_key_to_shared_state(key.clone()).await {
                         logger::write_warning(format!("Failed to update key: {e}"));
@@ -770,7 +770,7 @@ impl KeyKeeper {
 
         // persist the new key to local disk
         let guid = key.guid.to_string();
-        if let Err(e) = Self::store_key(&self.key_dir, &key) {
+        if let Err(e) = Self::store_local_key(&self.key_dir, &key) {
             self.update_status_message(format!("Failed to save key details to file: {e:?}"), true)
                 .await;
             return false;
@@ -780,7 +780,7 @@ impl KeyKeeper {
         ));
 
         // double check the key details saved correctly to local disk
-        if let Err(e) = Self::check_key(&self.key_dir, &key) {
+        if let Err(e) = Self::check_local_key(&self.key_dir, &key) {
             self.update_status_message(
                 format!("Failed to check the key '{guid}' details saved locally: {e:?}."),
                 true,
@@ -968,7 +968,10 @@ impl KeyKeeper {
         previous_message.is_none_or(|previous| previous != current_message)
     }
 
-    fn store_local_key(key_dir: &Path, key: &Key, encrypted: bool) -> Result<()> {
+    fn store_local_key(key_dir: &Path, key: &Key) -> Result<()> {
+        // determine if the key should be stored encrypted based on the platform
+        let encrypted = cfg!(windows);
+
         let guid = key.guid.to_string();
         let mut key_file = key_dir.to_path_buf().join(guid);
         if encrypted {
@@ -1017,19 +1020,8 @@ impl KeyKeeper {
         }
     }
 
-    fn store_key(key_dir: &Path, key: &Key) -> Result<()> {
-        #[cfg(windows)]
-        {
-            // save the key to encrypted file
-            Self::store_local_key(key_dir, key, true)
-        }
-        #[cfg(not(windows))]
-        {
-            Self::store_local_key(key_dir, key, false)
-        }
-    }
-
-    fn fetch_local_key(key_dir: &Path, key_guid: &str, encrypted: bool) -> Result<Key> {
+    fn fetch_local_key(key_dir: &Path, key_guid: &str) -> Result<Key> {
+        let encrypted = cfg!(windows);
         let mut key_file = key_dir.join(key_guid);
         if encrypted {
             key_file.set_extension("encrypted");
@@ -1071,37 +1063,11 @@ impl KeyKeeper {
         })
     }
 
-    fn fetch_key(key_dir: &Path, key_guid: &str) -> Result<Key> {
-        // fetch encrypted key file first
-        match Self::fetch_local_key(key_dir, key_guid, true) {
-            Ok(key) => Ok(key),
-            Err(_e) => {
-                #[cfg(windows)]
-                {
-                    logger::write_information(format!(
-                        "Failed to fetch .encrypted file with error: {_e}. Fallback to fetch .key file for windows platform."
-                    ));
-                }
-
-                // fallback to fetch key file
-                let local_key = Self::fetch_local_key(key_dir, key_guid, false)?;
-
-                #[cfg(windows)]
-                {
-                    // re-save the key to encrypted file for windows platform
-                    Self::store_local_key(key_dir, &local_key, true)?;
-                }
-
-                Ok(local_key)
-            }
-        }
-    }
-
     // key was saved locally correctly before
     // check the key file found and its guid and key value are corrected
-    fn check_local_key(key_dir: &Path, key: &Key, encrypted: bool) -> Result<()> {
+    fn check_local_key(key_dir: &Path, key: &Key) -> Result<()> {
         let guid = key.guid.to_string();
-        let local_key = Self::fetch_local_key(key_dir, &guid, encrypted)?;
+        let local_key = Self::fetch_local_key(key_dir, &guid)?;
 
         if local_key.guid == key.guid && local_key.key == key.key {
             Ok(())
@@ -1112,17 +1078,6 @@ impl KeyKeeper {
                     "Local key guid or key value is not matched.".to_string(),
                 ),
             ))
-        }
-    }
-
-    fn check_key(key_dir: &Path, key: &Key) -> Result<()> {
-        #[cfg(windows)]
-        {
-            Self::check_local_key(key_dir, key, true)
-        }
-        #[cfg(not(windows))]
-        {
-            Self::check_local_key(key_dir, key, false)
         }
     }
 
@@ -1146,7 +1101,13 @@ mod tests {
     use super::local_rules;
     use crate::key_keeper::KeyKeeper;
     use crate::key_keeper::{self, should_enable_soft_audit};
+    use crate::proxy_agent_status::ProxyAgentStatusTask;
+    use crate::runtime_coordinator::set_fallback_reason_for_soft_audit;
+    use crate::shared_state::agent_status_wrapper::AgentStatusModule;
+    use crate::shared_state::SharedState;
+    use base64::{engine::general_purpose, Engine as _};
     use proxy_agent_shared::misc_helpers;
+    use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
     use proxy_agent_shared::server_mock;
     use std::env;
     use std::fs;
@@ -1175,7 +1136,9 @@ mod tests {
         let enabled_descriptor = rule_id_descriptor(true);
         let disabled_descriptor = rule_id_descriptor(false);
         let audit_rules = authorization_item("Audit");
+        let mixed_case_audit_rules = authorization_item("aUdIt");
         let enforce_rules = authorization_item("enforce");
+        let disabled_rules = authorization_item("disabled");
 
         assert!(should_enable_soft_audit(
             &audit_rules,
@@ -1189,6 +1152,12 @@ mod tests {
             &audit_rules,
             &enabled_descriptor,
         ));
+        assert!(should_enable_soft_audit(
+            &mixed_case_audit_rules,
+            &enabled_descriptor,
+            &disabled_rules,
+            &disabled_descriptor,
+        ));
         assert!(!should_enable_soft_audit(
             &audit_rules,
             &disabled_descriptor,
@@ -1202,11 +1171,141 @@ mod tests {
             &disabled_descriptor,
         ));
         assert!(!should_enable_soft_audit(
+            &disabled_rules,
+            &enabled_descriptor,
+            &enforce_rules,
+            &enabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
+            &None,
+            &enabled_descriptor,
+            &audit_rules,
+            &disabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
+            &audit_rules,
+            &disabled_descriptor,
+            &None,
+            &enabled_descriptor,
+        ));
+        assert!(!should_enable_soft_audit(
             &None,
             &enabled_descriptor,
             &None,
             &enabled_descriptor,
         ));
+    }
+
+    #[tokio::test]
+    async fn wire_server_soft_audit_status_updates_gpa_status() {
+        let mut temp_test_path = env::temp_dir();
+        temp_test_path.push("wire_server_soft_audit_status_updates_gpa_status");
+        _ = fs::remove_dir_all(&temp_test_path);
+
+        let encoded_rule_id = general_purpose::STANDARD.encode(
+            r#"{"id":"wire-server-rule","useLocalFileRules":false,"enableSoftAudit":true}"#,
+        );
+        let status_response = serde_json::json!({
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": "",
+            "requiredClaimsHeaderPairs": ["isRoot"],
+            "secureChannelState": "wireserver",
+            "secureChannelEnabled": true,
+            "version": "2.0",
+            "authorizationRules": {
+                "wireserver": {
+                    "defaultAccess": "deny",
+                    "mode": "Audit",
+                    "id": encoded_rule_id,
+                    "rules": null
+                },
+                "imds": {
+                    "defaultAccess": "allow",
+                    "mode": "enforce",
+                    "id": "imds-rule",
+                    "rules": null
+                }
+            }
+        })
+        .to_string();
+
+        let shared_state = SharedState::start_all();
+        let cancellation_token = shared_state.get_cancellation_token();
+        let ip = "127.0.0.1";
+        let port = server_mock::start_with_secure_channel_status(
+            ip.to_string(),
+            0,
+            cancellation_token.clone(),
+            status_response,
+        )
+        .await
+        .unwrap();
+
+        let key_keeper = KeyKeeper::new(
+            ip.to_string(),
+            port,
+            temp_test_path.join("keys"),
+            temp_test_path.join("logs"),
+            Duration::from_secs(1),
+            &shared_state,
+        );
+        let status = super::key::get_status(ip, port).await.unwrap();
+        let mut local_rule_state_tracker = local_rules::LocalRuleStateTracker::default();
+        assert!(
+            key_keeper
+                .update_access_control_rules(&status, &mut local_rule_state_tracker)
+                .await
+        );
+
+        let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+        assert!(agent_status_shared_state
+            .get_soft_audit_mode()
+            .await
+            .unwrap());
+
+        agent_status_shared_state
+            .set_module_status_message(
+                "redirector failed to start".to_string(),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_module_status_message(
+                "proxy listener failed to start".to_string(),
+                AgentStatusModule::ProxyServer,
+            )
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+
+        set_fallback_reason_for_soft_audit(&agent_status_shared_state).await;
+        let aggregate_status = ProxyAgentStatusTask::get_proxy_agent_aggregate_status(
+            &agent_status_shared_state,
+            &shared_state.get_key_keeper_shared_state(),
+            &shared_state.get_connection_summary_shared_state(),
+        )
+        .await;
+        let audit_fallback = aggregate_status
+            .proxyAgentStatus
+            .auditFallback
+            .expect("soft audit fallback should be reported");
+        assert!(audit_fallback.fallbacked);
+        assert!(audit_fallback.reason.contains("redirector failed to start"));
+        assert!(audit_fallback
+            .reason
+            .contains("proxy listener failed to start"));
+
+        cancellation_token.cancel();
+        _ = fs::remove_dir_all(&temp_test_path);
     }
 
     #[tokio::test]
@@ -1226,24 +1325,13 @@ mod tests {
         }"#;
         let key: Key = serde_json::from_str(key_str).unwrap();
 
-        KeyKeeper::store_local_key(&temp_test_path, &key, false).unwrap();
-        assert!(KeyKeeper::check_local_key(&temp_test_path, &key, false).is_ok());
-        let local_key = KeyKeeper::fetch_key(&temp_test_path, &key.guid).unwrap();
+        KeyKeeper::store_local_key(&temp_test_path, &key).unwrap();
+        assert!(KeyKeeper::check_local_key(&temp_test_path, &key).is_ok());
+        let local_key = KeyKeeper::fetch_local_key(&temp_test_path, &key.guid).unwrap();
         assert_eq!(
             key.key, local_key.key,
             "Key value should be matched without encrypted."
         );
-
-        #[cfg(windows)]
-        {
-            // test encrypted key for windows platform
-            assert!(KeyKeeper::check_local_key(&temp_test_path, &key, true).is_ok());
-            let local_key = KeyKeeper::fetch_key(&temp_test_path, &key.guid).unwrap();
-            assert_eq!(
-                key.key, local_key.key,
-                "Key value should be matched with encrypted."
-            );
-        }
 
         _ = fs::remove_dir_all(&temp_test_path);
     }

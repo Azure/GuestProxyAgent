@@ -181,7 +181,7 @@ then
 fi
 
 echo "======= build e2e test solution"
-runthis dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest -v normal
+runthis dotnet build $root_path/e2etest/GuestProxyAgentTest/GuestProxyAgentTest.csproj --configuration $Configuration -o $out_dir/e2etest -v normal
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
