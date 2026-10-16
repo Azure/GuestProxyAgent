@@ -23,7 +23,7 @@ namespace GuestProxyAgentTest.TestScenarios
             }
             else
             {
-                EnableProxyAgentForNewVM = true;
+                this.GuestProxyAgentSettings.Enabled = true;
             }
 
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseBeforeUpdate", proxyAgentVersionBeforeUpdate));

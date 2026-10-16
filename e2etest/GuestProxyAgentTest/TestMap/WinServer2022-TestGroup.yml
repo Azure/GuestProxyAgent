@@ -10,3 +10,5 @@ scenarios:
     className: GuestProxyAgentTest.TestScenarios.TCPPortScalabilityScenario
   - name: ProxyAgentExtension 
     className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
+  - name: RunPenTest
+    className: GuestProxyAgentTest.TestScenarios.PenTestScenario
