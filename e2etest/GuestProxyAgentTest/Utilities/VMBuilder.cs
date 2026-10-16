@@ -14,7 +14,7 @@ namespace GuestProxyAgentTest.Utilities
 {
     public class GuestProxyAgentSettings
     {
-        internal bool Enabled { get; set; } = true;
+        internal bool Enabled { get; set; } = false;
         internal bool AddProxyAgentExtension { get; set; } = false;
         internal bool UseLocalFileRules { get; set; } = false;
     }
