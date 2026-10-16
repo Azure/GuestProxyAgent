@@ -149,8 +149,7 @@ update_audit_map_entry(bpf_sock_addr_t *ctx, uint32_t destination_ipv4, uint32_t
 
     // Wildcard-bound sources are not selected yet; only socket-bound context is safe.
     if (source_port == 0 ||
-        (key.source_address_family == GPA_ADDRESS_FAMILY_IPV6 &&
-         key.source_ip.ipv6[0] == 0 && key.source_ip.ipv6[1] == 0 &&
+        (key.source_ip.ipv6[0] == 0 && key.source_ip.ipv6[1] == 0 &&
          key.source_ip.ipv6[2] == 0 && key.source_ip.ipv6[3] == 0))
     {
         int32_t result = bpf_sock_addr_set_redirect_context(ctx, &entry, sizeof(sock_addr_audit_entry_t));

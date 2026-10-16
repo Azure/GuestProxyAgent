@@ -183,7 +183,6 @@ impl TcpConnectionContext {
                 let message = format!(
                     "Failed to find audit entry for TCP peer '{client_addr}' with error: {e}"
                 );
-                logger.write(LoggerLevel::Warn, message.clone());
 
                 #[cfg(not(windows))]
                 {
@@ -193,23 +192,23 @@ impl TcpConnectionContext {
                 #[cfg(windows)]
                 {
                     logger.write(
-                        LoggerLevel::Info,
-                        "Try to get audit entry from socket stream".to_string(),
+                        LoggerLevel::Trace,
+                        format!("{message}. Try to get audit entry from socket stream",),
                     );
 
                     match redirector::get_audit_from_stream_socket(raw_socket_id) {
                         Ok(data) => {
                             logger.write(
-                                LoggerLevel::Info,
+                                LoggerLevel::Trace,
                                 "Found audit entry from socket stream successfully".to_string(),
                             );
                             Ok(data)
                         }
                         Err(e) => {
-                            logger.write(
-                                LoggerLevel::Warn,
-                                format!("Failed to get lookup_audit_from_stream with error: {e}"),
+                            let message = format!(
+                                "{message}. Failed to get audit entry from socket stream with error: {e}"
                             );
+                            logger.write(LoggerLevel::Warn, message.to_string());
                             Err(Error::FindAuditEntryError(message))
                         }
                     }
