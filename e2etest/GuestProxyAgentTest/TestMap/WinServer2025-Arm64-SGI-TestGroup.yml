@@ -1,0 +1,15 @@
+groupName: WinServer2025-Arm64-SGI
+vmImagePublisher:  
+vmImageOffer: 
+vmImageSku: 
+vmImageVersion: 
+sharedGalleryImageUniqueId: /sharedGalleries/WindowsServer.1P/images/2025-datacenter-azure-edition-arm64/versions/latest
+scenarios:
+  - className: GuestProxyAgentTest.TestScenarios.BVTScenario
+    name: BVTScenario
+  - name: TCPPortScalabilityScenario
+    className: GuestProxyAgentTest.TestScenarios.TCPPortScalabilityScenario
+  - name: ProxyAgentExtension 
+    className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
+  - name: RunPenTest
+    className: GuestProxyAgentTest.TestScenarios.PenTestScenario
