@@ -51,7 +51,7 @@ if [[ $os == *"Ubuntu"* ]]; then
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via apt-get $i"
         sudo apt-get update
-        sudo apt-get install -y jq unzip
+        sudo apt-get install -y jq unzip zip
         sleep 10
         install=$(apt list --installed jq)
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
@@ -63,7 +63,7 @@ if [[ $os == *"Ubuntu"* ]]; then
 else
     for  i in {1..3}; do
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - start installing jq via dnf $i"
-        sudo dnf -y install jq unzip
+        sudo dnf -y install jq unzip zip
         sleep 10
         install=$(dnf list --installed jq)
         echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - install=$install"
