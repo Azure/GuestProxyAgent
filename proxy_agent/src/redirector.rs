@@ -610,25 +610,22 @@ pub fn get_ebpf_file_path() -> PathBuf {
 }
 
 pub async fn lookup_audit(
-    source_port: u16,
+    peer: &std::net::SocketAddr,
     redirector_shared_state: &RedirectorSharedState,
 ) -> Result<AuditEntry> {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object.lock().unwrap().lookup_audit(source_port)
+        bpf_object.lock().unwrap().lookup_audit(peer)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
 }
 
 pub async fn remove_audit(
-    source_port: u16,
+    peer: &std::net::SocketAddr,
     redirector_shared_state: &RedirectorSharedState,
 ) -> Result<()> {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object
-            .lock()
-            .unwrap()
-            .remove_audit_map_entry(source_port)
+        bpf_object.lock().unwrap().remove_audit_map_entry(peer)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
