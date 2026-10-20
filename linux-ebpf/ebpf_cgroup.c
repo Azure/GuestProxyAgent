@@ -41,7 +41,7 @@ struct
 struct
 {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __type(key, struct gpa_audit_key);     // source port and protocol
+    __type(key, struct gpa_audit_key);     // source address, port and protocol
     __type(value, struct gpa_linux_audit_event); // audit event + executable identity
     __uint(max_entries, 200);                    // LRU evicts oldest on overflow
 } audit_map SEC(".maps");
@@ -288,11 +288,43 @@ int connect6(struct bpf_sock_addr *ctx)
 }
 
 static __always_inline int
-update_audit_map_entry_sk(__u32 local_port, struct gpa_linux_sock_addr_local_entry *local_entry)
+update_audit_map_entry_sk(struct sock *sk, struct gpa_linux_sock_addr_local_entry *local_entry)
 {
     struct gpa_audit_key key = {0};
     key.protocol = local_entry->protocol;
-    key.source_port = local_port;
+    key.source_port = BPF_CORE_READ(sk, __sk_common.skc_num);
+    if (BPF_CORE_READ(sk, __sk_common.skc_family) == AF_INET6)
+    {
+        key.source_address_family = GPA_ADDRESS_FAMILY_IPV6;
+        BPF_CORE_READ_INTO(&key.source_ip.ipv6, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr32);
+        __be32 ipv4 = 0;
+        if (key.source_ip.ipv6[0] == 0 && key.source_ip.ipv6[1] == 0)
+        {
+            if (key.source_ip.ipv6[2] == bpf_htonl(0x0000ffff))
+            {
+                ipv4 = key.source_ip.ipv6[3];
+            }
+            else if (key.source_ip.ipv6[2] == 0 && key.source_ip.ipv6[3] == 0)
+            {
+                // The mapped tcp_v4_connect path can publish IPv6 source fields
+                // only after tcp_connect; the selected IPv4 source is ready now.
+                ipv4 = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+            }
+        }
+        if (ipv4 != 0)
+        {
+            key.source_address_family = GPA_ADDRESS_FAMILY_IPV4;
+            key.source_ip.ipv6[0] = ipv4;
+            key.source_ip.ipv6[1] = 0;
+            key.source_ip.ipv6[2] = 0;
+            key.source_ip.ipv6[3] = 0;
+        }
+    }
+    else
+    {
+        key.source_address_family = GPA_ADDRESS_FAMILY_IPV4;
+        key.source_ip.ipv4 = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+    }
 
     struct gpa_linux_audit_event entry = local_entry->audit;
 
@@ -319,8 +351,6 @@ trace_tcp_connect(struct sock *sk)
     // local scalars (no preserve_access_index), so their offsets are NOT
     // relocated - this is required, otherwise the verifier rejects writes that
     // would land outside our local stack copy.
-    __u16 skc_num = BPF_CORE_READ(sk, __sk_common.skc_num);
-
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = (__u32)(pid_tgid >> 32);
     if (check_skip_process_map_entry(pid) == 1)
@@ -333,7 +363,7 @@ trace_tcp_connect(struct sock *sk)
     struct gpa_linux_sock_addr_local_entry *local_entry = bpf_map_lookup_elem(&local_map, &pid_tgid);
     if (local_entry != NULL)
     {
-        update_audit_map_entry_sk(skc_num, local_entry);
+        update_audit_map_entry_sk(sk, local_entry);
         __u64 ret = bpf_map_delete_elem(&local_map, &pid_tgid);
         if (ret != 0)
         {

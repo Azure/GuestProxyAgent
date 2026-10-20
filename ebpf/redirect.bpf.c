@@ -31,7 +31,7 @@ struct bpf_map_def skip_process_map = {
 #pragma clang section data = "maps"
 struct bpf_map_def audit_map = {
     .type = BPF_MAP_TYPE_LRU_HASH,             // retain the latest records automatically
-    .key_size = sizeof(sock_addr_audit_key_t), // source port and protocol
+    .key_size = sizeof(sock_addr_audit_key_t), // source address, port and protocol
     .value_size = sizeof(sock_addr_audit_entry_t),
     .max_entries = 1000};
 
@@ -104,8 +104,6 @@ update_audit_map_entry(bpf_sock_addr_t *ctx, uint32_t destination_ipv4, uint32_t
     entry.destination_ipv4 = destination_ipv4;
     entry.destination_port = ctx->user_port;
     entry.address_family = address_family;
-    uint16_t source_port = ctx->msg_src_port;
-
     if (alert_only)
     {
         // if alert_only, emit an alert-only event to the ring buffer.
@@ -121,7 +119,38 @@ update_audit_map_entry(bpf_sock_addr_t *ctx, uint32_t destination_ipv4, uint32_t
         return 0;
     }
 
-    if (source_port == 0)
+    uint16_t source_port = ctx->msg_src_port;
+    sock_addr_audit_key_t key = {0};
+    key.protocol = ctx->protocol;
+    key.source_port = source_port;
+    key.source_address_family = GPA_ADDRESS_FAMILY_IPV4;
+    if (ctx->family == AF_INET6)
+    {
+        if (ctx->msg_src_ip6[0] == 0 &&
+            ctx->msg_src_ip6[1] == 0 &&
+            ctx->msg_src_ip6[2] == bpf_htonl(0x0000ffff))
+        {
+            // IPv4-mapped IPv6 address, extract the IPv4 part.
+            key.source_ip.ipv4 = ctx->msg_src_ip6[3];
+        }
+        else
+        {
+            key.source_address_family = GPA_ADDRESS_FAMILY_IPV6;
+            key.source_ip.ipv6[0] = ctx->msg_src_ip6[0];
+            key.source_ip.ipv6[1] = ctx->msg_src_ip6[1];
+            key.source_ip.ipv6[2] = ctx->msg_src_ip6[2];
+            key.source_ip.ipv6[3] = ctx->msg_src_ip6[3];
+        }
+    }
+    else
+    {
+        key.source_ip.ipv4 = ctx->msg_src_ip4;
+    }
+
+    // Wildcard-bound sources are not selected yet; only socket-bound context is safe.
+    if (source_port == 0 ||
+        (key.source_ip.ipv6[0] == 0 && key.source_ip.ipv6[1] == 0 &&
+         key.source_ip.ipv6[2] == 0 && key.source_ip.ipv6[3] == 0))
     {
         int32_t result = bpf_sock_addr_set_redirect_context(ctx, &entry, sizeof(sock_addr_audit_entry_t));
         if (result != 0)
@@ -135,9 +164,6 @@ update_audit_map_entry(bpf_sock_addr_t *ctx, uint32_t destination_ipv4, uint32_t
     }
     else
     {
-        sock_addr_audit_key_t key = {0};
-        key.protocol = ctx->protocol;
-        key.source_port = source_port;
         uint64_t ret = bpf_map_update_elem(&audit_map, &key, &entry, 0);
         if (ret != 0)
         {

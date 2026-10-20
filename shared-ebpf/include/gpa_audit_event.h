@@ -41,12 +41,14 @@ struct gpa_destination_entry
     __u32 protocol;         // IPPROTO_TCP (6) or IPPROTO_UDP (17)
 };
 
-// Minimal audit key for map lookups (protocol + source port)
-// Size: 8 bytes - matches Rust sock_addr_audit_key -> [u32; 2]
+// Connection audit key. IPv4-mapped IPv6 sources use their embedded IPv4 address.
+// Size: 28 bytes - matches Rust sock_addr_audit_key -> [u32; 7]
 struct gpa_audit_key
 {
     __u32 protocol;    // IPPROTO_TCP or IPPROTO_UDP
     __u32 source_port; // Local source port (stored as u32)
+    __u32 source_address_family; // GPA_ADDRESS_FAMILY_IPV4 or GPA_ADDRESS_FAMILY_IPV6
+    struct gpa_ip_address source_ip; // Network byte order; unused IPv4 words are zero
 };
 
 // Canonical audit event entry - the record stored in the audit map
@@ -103,7 +105,7 @@ struct gpa_sock_addr_local_entry
 // If these fail, the Rust [u32; N] mappings in ebpf_obj.rs must be updated too.
 _Static_assert(sizeof(struct gpa_ip_address) == 16, "ip_address must be 16 bytes ([u32; 4])");
 _Static_assert(sizeof(struct gpa_destination_entry) == 24, "destination_entry must be 24 bytes ([u32; 6])");
-_Static_assert(sizeof(struct gpa_audit_key) == 8, "audit_key must be 8 bytes ([u32; 2])");
+_Static_assert(sizeof(struct gpa_audit_key) == 28, "audit_key must be 28 bytes ([u32; 7])");
 _Static_assert(sizeof(struct gpa_audit_event) == 28, "audit_event must be 28 bytes ([u32; 7])");
 _Static_assert(sizeof(struct gpa_skip_process_entry) == 4, "skip_process_entry must be 4 bytes ([u32; 1])");
 _Static_assert(sizeof(struct gpa_sock_addr_local_entry) == 32, "sock_addr_local_entry must be 32 bytes ([u32; 8])");
