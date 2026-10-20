@@ -25,8 +25,8 @@ namespace GuestProxyAgentTest.TestCases
         }
 
         internal bool EnableProxyAgent { get; set; }
-
         internal bool AddProxyAgentVMExtension { get; set; } = false;
+        internal bool UseLocalFileRules { get; set; } = false;
 
         public override async Task StartAsync(TestCaseExecutionContext context)
         {
@@ -52,11 +52,13 @@ namespace GuestProxyAgentTest.TestCases
             if (EnableProxyAgent)
             {
                 // property 'inVMAccessControlProfileReferenceId' cannot be used together with property 'mode'
-                if (string.IsNullOrEmpty(TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId))
+                // when useLocalFileRules is set, then do not use inVMAccessControlProfileReferenceId
+                if (UseLocalFileRules || string.IsNullOrEmpty(TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId))
                 {
                     patch.SecurityProfile.ProxyAgentSettings.WireServer = new HostEndpointSettings
                     {
                         Mode = HostEndpointSettingsMode.Enforce,
+                        UseLocalFileRules = UseLocalFileRules
                     };
                 }
                 else
@@ -66,11 +68,12 @@ namespace GuestProxyAgentTest.TestCases
                         InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
                     };
                 }
-                if (string.IsNullOrEmpty(TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId))
+                if (UseLocalFileRules || string.IsNullOrEmpty(TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId))
                 {
                     patch.SecurityProfile.ProxyAgentSettings.Imds = new HostEndpointSettings
                     {
                         Mode = HostEndpointSettingsMode.Enforce,
+                        UseLocalFileRules = UseLocalFileRules
                     };
                 }
                 else

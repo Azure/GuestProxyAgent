@@ -18,7 +18,7 @@ namespace GuestProxyAgentTest.TestScenarios
             var secureChannelEnabled = false;
             // currently IPv6 dual stack is not supported on this bakedIn scenario,
             var ipv6DualStackSupported = false;
-            EnableProxyAgentForNewVM = false;
+            this.GuestProxyAgentSettings.Enabled = false;
             AddTestCase(new GuestProxyAgentValidationCase("GuestProxyAgentValidationWithoutMSP", "disabled"));
             AddTestCase(new IMDSPingTestCase("IMDSPingTestBeforeEnableMSP", secureChannelEnabled, ipv6DualStackSupported));
 
