@@ -54,6 +54,16 @@ fn evaluate_status(
     }
 }
 
+fn should_reconcile_proxy_port(
+    status: &RuntimeStatusSnapshot,
+    current_local_port: Option<u16>,
+) -> bool {
+    match current_local_port {
+        Some(current_local_port) => current_local_port != status.desired_local_port,
+        None => status.desired_local_port != constants::PROXY_AGENT_PORT,
+    }
+}
+
 pub(crate) async fn set_fallback_reason_for_soft_audit(
     agent_status_shared_state: &AgentStatusSharedState,
 ) {
@@ -175,15 +185,25 @@ impl RuntimeCoordinator {
 
             let status = runtime_status_rx.borrow_and_update().clone();
 
-            // TODO: need to handle if the default local port is taken before or the redirector is stopped too.
-            // so we need to check if the desired local port has changed and handoff the proxy server accordingly.
-            if status.both_running()
-                && self
-                    .proxy_server_runtime
+            if should_reconcile_proxy_port(
+                &status,
+                self.proxy_server_runtime
                     .as_ref()
-                    .is_some_and(|runtime| runtime.local_port != status.desired_local_port)
-            {
-                self.handoff_proxy_server(status.desired_local_port).await;
+                    .map(|runtime| runtime.local_port),
+            ) {
+                let listener_reconciled = self
+                    .handoff_proxy_server(
+                        status.proxy_server_state,
+                        status.desired_local_port,
+                        status.redirector_state == ModuleState::RUNNING,
+                    )
+                    .await;
+                if listener_reconciled && status.redirector_state != ModuleState::RUNNING {
+                    // A STARTING redirector was created with the previous port. This call first
+                    // cancels and cleans it up, then starts a new redirector with the current
+                    // ProxyServerRuntime port.
+                    self.start_redirector().await;
+                }
                 continue;
             }
 
@@ -289,7 +309,9 @@ impl RuntimeCoordinator {
             ));
         }
 
-        self.proxy_server_runtime = self.start_proxy_runtime(local_port).await;
+        // Start the proxy server runtime with the specified local port and
+        // do not wait for its startup to complete.
+        self.proxy_server_runtime = self.start_proxy_runtime(local_port, None).await;
 
         // set the starting time to track potential starting timeouts
         self.proxy_starting_since = self.proxy_server_runtime.as_ref().map(|_| Instant::now());
@@ -406,7 +428,11 @@ impl RuntimeCoordinator {
         }
     }
 
-    async fn start_proxy_runtime(&self, local_port: u16) -> Option<ProxyServerRuntime> {
+    async fn start_proxy_runtime(
+        &self,
+        local_port: u16,
+        startup_timeout: Option<Duration>,
+    ) -> Option<ProxyServerRuntime> {
         let cancellation_token = self.shared_state.get_cancellation_token().child_token();
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let (proxy_server, suppress_shutdown_status) = ProxyServer::new_managed(
@@ -431,29 +457,33 @@ impl RuntimeCoordinator {
             thread,
         };
 
-        match tokio::time::timeout(STARTING_TIMEOUT, ready_rx).await {
-            Ok(Ok(Ok(()))) => Some(runtime),
-            Ok(Ok(Err(e))) => {
-                logger::write_error(format!(
-                    "Failed to start proxy listener on port {local_port}: {e}"
-                ));
-                Self::stop_proxy_runtime(runtime, true).await;
-                None
-            }
-            Ok(Err(e)) => {
-                logger::write_error(format!(
-                    "Proxy listener on port {local_port} stopped before reporting readiness: {e}"
-                ));
-                Self::stop_proxy_runtime(runtime, true).await;
-                None
-            }
-            Err(_) => {
-                logger::write_error(format!(
+        if let Some(timeout) = startup_timeout {
+            match tokio::time::timeout(timeout, ready_rx).await {
+                Ok(Ok(Ok(()))) => Some(runtime),
+                Ok(Ok(Err(e))) => {
+                    logger::write_error(format!(
+                        "Failed to start proxy listener on port {local_port}: {e}"
+                    ));
+                    Self::stop_proxy_runtime(runtime, true).await;
+                    None
+                }
+                Ok(Err(e)) => {
+                    logger::write_error(format!(
+                        "Proxy listener on port {local_port} stopped before reporting readiness: {e}"
+                    ));
+                    Self::stop_proxy_runtime(runtime, true).await;
+                    None
+                }
+                Err(_) => {
+                    logger::write_error(format!(
                     "Timed out waiting for proxy listener on port {local_port} to become ready."
                 ));
-                Self::stop_proxy_runtime(runtime, true).await;
-                None
+                    Self::stop_proxy_runtime(runtime, true).await;
+                    None
+                }
             }
+        } else {
+            Some(runtime)
         }
     }
 
@@ -478,73 +508,124 @@ impl RuntimeCoordinator {
         }
     }
 
-    async fn handoff_proxy_server(&mut self, new_port: u16) {
-        let Some(old_port) = self
+    async fn handoff_proxy_server(
+        &mut self,
+        current_state: ModuleState,
+        new_port: u16,
+        redirector_ready_for_policy_update: bool,
+    ) -> bool {
+        let old_port: Option<u16> = self
             .proxy_server_runtime
             .as_ref()
-            .map(|runtime| runtime.local_port)
+            .map(|runtime| runtime.local_port);
+        let has_previous_listener = old_port.is_some();
+        if old_port == Some(new_port) {
+            return true;
+        }
+
+        match old_port {
+            Some(old_port) => logger::write_warning(format!(
+                "Starting proxy listener handoff from port {old_port} to {new_port}."
+            )),
+            None => logger::write_warning(format!(
+                "Starting replacement proxy listener on port {new_port}."
+            )),
+        }
+
+        let agent_status_shared_state = self.shared_state.get_agent_status_shared_state();
+        // Attempt to start a new proxy server runtime on the specified port.
+        // Store the current state of the proxy server module to restore it if starting the new runtime fails.
+        let Some(candidate) = self
+            .start_proxy_runtime(new_port, Some(STARTING_TIMEOUT))
+            .await
         else {
-            return;
-        };
-        if old_port == new_port {
-            return;
-        }
-
-        logger::write_warning(format!(
-            "Starting proxy listener handoff from port {old_port} to {new_port}."
-        ));
-        let Some(candidate) = self.start_proxy_runtime(new_port).await else {
-            let _ = self
-                .shared_state
-                .get_agent_status_shared_state()
-                .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
-                .await;
-            return;
+            if has_previous_listener {
+                let _ = agent_status_shared_state
+                    .set_module_state(current_state, AgentStatusModule::ProxyServer)
+                    .await;
+            }
+            return false;
         };
 
-        let redirector_state = self.shared_state.get_redirector_shared_state();
-        if let Err(e) = redirector_state.set_local_port(new_port).await {
-            logger::write_error(format!(
-                "Failed to stage redirect policies for proxy port {new_port}: {e}"
-            ));
-            Self::stop_proxy_runtime(candidate, true).await;
-            return;
-        }
-        let policies_updated = provision::update_redirector_policy(
-            redirector_state.clone(),
-            self.shared_state.get_access_control_shared_state(),
-        )
-        .await;
-        if !policies_updated {
-            logger::write_error(format!(
-                "Failed to update redirect policies for proxy port {new_port}; keeping port {old_port} active."
-            ));
-            if let Err(e) = redirector_state.set_local_port(old_port).await {
+        // Redirect-map updates are skipped because no redirector is active.
+        // When the redirector starts later, it uses the current listener port.
+        if redirector_ready_for_policy_update {
+            let redirector_state = self.shared_state.get_redirector_shared_state();
+            let previous_redirector_port = match redirector_state.get_local_port().await {
+                Ok(port) => port,
+                Err(e) => {
+                    logger::write_error(format!(
+                        "Failed to read the active redirector port before switching to {new_port}: {e}"
+                    ));
+                    Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                    return false;
+                }
+            };
+            if let Err(e) = redirector_state.set_local_port(new_port).await {
                 logger::write_error(format!(
-                    "Failed to restore redirector local port {old_port}: {e}"
+                    "Failed to stage redirect policies for proxy port {new_port}: {e}"
                 ));
-            } else {
-                let _ = provision::update_redirector_policy(
+                Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                return false;
+            }
+            let policies_updated = provision::update_redirector_policy(
+                redirector_state.clone(),
+                self.shared_state.get_access_control_shared_state(),
+            )
+            .await;
+            if !policies_updated {
+                logger::write_error(format!(
+                    "Failed to update redirect policies for proxy port {new_port}; keeping the previous listener active."
+                ));
+
+                // A policy update may partially succeed, so reapply every policy with the
+                // previous port before discarding the replacement listener.
+                if let Err(e) = redirector_state
+                    .set_local_port(previous_redirector_port)
+                    .await
+                {
+                    logger::write_error(format!(
+                        "Failed to restore redirector local port {previous_redirector_port}: {e}"
+                    ));
+                } else if !provision::update_redirector_policy(
                     redirector_state,
                     self.shared_state.get_access_control_shared_state(),
                 )
-                .await;
+                .await
+                {
+                    logger::write_error(format!(
+                        "Failed to restore all redirect policies to port {previous_redirector_port}."
+                    ));
+                }
+
+                // The old listener is still owned by the coordinator. Stop only the uncommitted
+                // replacement; suppress STOPPED status while the old listener remains active.
+                Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                return false;
             }
-            Self::stop_proxy_runtime(candidate, true).await;
-            return;
         }
 
-        let old_runtime = self.proxy_server_runtime.replace(candidate).unwrap();
-        Self::stop_proxy_runtime(old_runtime, true).await;
-        logger::write_information(format!(
-            "Completed proxy listener handoff from port {old_port} to {new_port}."
-        ));
+        if let Some(old_runtime) = self.proxy_server_runtime.replace(candidate) {
+            let old_port = old_runtime.local_port;
+            Self::stop_proxy_runtime(old_runtime, true).await;
+            logger::write_information(format!(
+                "Completed proxy listener handoff from port {old_port} to {new_port}."
+            ));
+        } else {
+            logger::write_information(format!(
+                "Started replacement proxy listener on port {new_port}."
+            ));
+        }
+        true
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluate_status, starting_timed_out, PairAction, STARTING_TIMEOUT};
+    use super::{
+        evaluate_status, should_reconcile_proxy_port, starting_timed_out, PairAction,
+        STARTING_TIMEOUT,
+    };
     use crate::shared_state::agent_status_wrapper::RuntimeStatusSnapshot;
     use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
     use std::time::Duration;
@@ -615,6 +696,33 @@ mod tests {
                 false,
             )
         );
+    }
+
+    #[test]
+    fn proxy_port_change_is_reconciled_while_redirector_is_stopped() {
+        let mut status = status(false, ModuleState::RUNNING, ModuleState::STOPPED);
+        status.desired_local_port = 3081;
+
+        assert!(should_reconcile_proxy_port(&status, Some(3080)));
+    }
+
+    #[test]
+    fn changed_port_recovers_after_default_listener_failed() {
+        let mut status = status(false, ModuleState::STOPPED, ModuleState::RUNNING);
+        status.desired_local_port = 3081;
+
+        assert!(should_reconcile_proxy_port(&status, None));
+        status.desired_local_port = crate::common::constants::PROXY_AGENT_PORT;
+        assert!(!should_reconcile_proxy_port(&status, None));
+    }
+
+    #[test]
+    fn soft_audit_does_not_suppress_proxy_port_reconciliation() {
+        let mut status = status(true, ModuleState::STOPPED, ModuleState::STOPPED);
+        status.desired_local_port = 3081;
+
+        assert!(should_reconcile_proxy_port(&status, Some(3080)));
+        assert!(should_reconcile_proxy_port(&status, None));
     }
 
     #[test]
