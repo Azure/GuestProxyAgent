@@ -857,6 +857,7 @@ pub(crate) struct RuleIdDescriptor {
     pub(crate) logical_id: String,
     pub(crate) use_local_file_rules: bool,
     pub(crate) enable_soft_audit: bool,
+    pub(crate) local_proxy_port: Option<u16>,
 }
 
 impl RuleIdDescriptor {
@@ -868,10 +869,17 @@ impl RuleIdDescriptor {
         if self.logical_id.is_empty() {
             "unknown".to_string()
         } else {
-            format!(
+            let mut display_id = format!(
                 "{}-useLocalFileRules-{}",
                 self.logical_id, self.use_local_file_rules
-            )
+            );
+            if self.enable_soft_audit {
+                display_id.push_str("-enableSoftAudit-true");
+            }
+            if let Some(local_proxy_port) = self.local_proxy_port {
+                display_id.push_str(&format!("-localProxyPort-{local_proxy_port}"));
+            }
+            display_id
         }
     }
 }
@@ -885,6 +893,8 @@ pub(crate) struct EncodedRuleId {
     pub(crate) useLocalFileRules: bool,
     #[serde(default)]
     pub(crate) enableSoftAudit: bool,
+    #[serde(default)]
+    pub(crate) localProxyPort: Option<u16>,
 }
 
 /// Parse the rule ID descriptor from the raw rule ID string.
@@ -902,6 +912,7 @@ pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescr
                 logical_id: contract.id,
                 use_local_file_rules: contract.useLocalFileRules,
                 enable_soft_audit: contract.enableSoftAudit,
+                local_proxy_port: contract.localProxyPort,
             };
         }
     }
@@ -911,6 +922,7 @@ pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescr
         logical_id: raw_rule_id.to_string(),
         use_local_file_rules: false,
         enable_soft_audit: false,
+        local_proxy_port: None,
     }
 }
 
@@ -1992,18 +2004,25 @@ mod tests {
         assert_eq!(legacy.logical_id, "legacy-id");
         assert!(!legacy.use_local_file_rules);
         assert!(!legacy.enable_soft_audit);
+        assert_eq!(legacy.local_proxy_port, None);
 
         let encoded = general_purpose::STANDARD
-            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true,"enableSoftAudit":true}"#);
+            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true,"enableSoftAudit":true,"localProxyPort":3080}"#);
         let descriptor = parse_rule_id_descriptor(Some(&encoded));
         assert_eq!(descriptor.logical_id, "sig-resource-id");
         assert!(descriptor.use_local_file_rules);
         assert!(descriptor.enable_soft_audit);
+        assert_eq!(descriptor.local_proxy_port, Some(3080));
+        assert_eq!(
+            descriptor.display_id(),
+            "sig-resource-id-useLocalFileRules-true-enableSoftAudit-true-localProxyPort-3080"
+        );
 
         let malformed_base64 = parse_rule_id_descriptor(Some("not-valid-base64!"));
         assert_eq!(malformed_base64.logical_id, "not-valid-base64!");
         assert!(!malformed_base64.use_local_file_rules);
         assert!(!malformed_base64.enable_soft_audit);
+        assert_eq!(malformed_base64.local_proxy_port, None);
 
         let malformed_json = general_purpose::STANDARD
             .encode(r#"{"id":"sig-resource-id","enableSoftAudit":"true"}"#);
@@ -2011,5 +2030,6 @@ mod tests {
         assert_eq!(malformed_json_descriptor.logical_id, malformed_json);
         assert!(!malformed_json_descriptor.use_local_file_rules);
         assert!(!malformed_json_descriptor.enable_soft_audit);
+        assert_eq!(malformed_json_descriptor.local_proxy_port, None);
     }
 }
