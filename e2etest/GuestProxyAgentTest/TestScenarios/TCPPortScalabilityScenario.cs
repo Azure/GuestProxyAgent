@@ -18,7 +18,7 @@ namespace GuestProxyAgentTest.TestScenarios
             ConsoleLog(string.Format("Received ProxyAgent Version:{0}", proxyAgentVersion));
 
             // This scenario must enable MSP for the new VM to test TCP port scalability.
-            EnableProxyAgentForNewVM = true;
+            this.GuestProxyAgentSettings.Enabled = true;
 
             AddTestCase(new InstallOrUpdateGuestProxyAgentExtensionCase());
             AddTestCase(new GuestProxyAgentExtensionValidationCase("GuestProxyAgentExtensionValidationCaseAfterUpdate", proxyAgentVersion));
