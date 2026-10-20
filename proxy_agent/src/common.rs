@@ -19,3 +19,6 @@ pub use windows::fetch_key_data;
 
 #[cfg(not(windows))]
 pub mod linux;
+
+#[cfg(all(windows, test))]
+pub use windows::{clear_mock_key_data, has_mock_key_data, mock_key_data_count};
