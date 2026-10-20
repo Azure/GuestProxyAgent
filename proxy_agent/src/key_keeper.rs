@@ -1028,7 +1028,13 @@ impl KeyKeeper {
         } else {
             key_file.set_extension("key");
         }
-        if !key_file.exists() {
+
+        #[cfg(all(windows, test))]
+        let key_file_exists =
+            key_file.exists() || (encrypted && crate::common::has_mock_key_data(&key_file));
+        #[cfg(not(all(windows, test)))]
+        let key_file_exists = key_file.exists();
+        if !key_file_exists {
             // guid.key file does not exist locally
             return Err(Error::Key(
                 crate::common::error::KeyErrorType::FetchLocalKey(format!(
@@ -1352,6 +1358,8 @@ mod tests {
                 eprintln!("Failed to remove_dir_all with error {}.", e);
             }
         }
+        #[cfg(windows)]
+        crate::common::clear_mock_key_data(&keys_dir);
 
         let cancellation_token = CancellationToken::new();
         // start wire_server listener
@@ -1399,9 +1407,12 @@ mod tests {
             }
         }
 
-        let key_files: Vec<std::path::PathBuf> = misc_helpers::get_files(&keys_dir).unwrap();
+        #[cfg(windows)]
+        let key_file_count = crate::common::mock_key_data_count(&keys_dir);
+        #[cfg(not(windows))]
+        let key_file_count = misc_helpers::get_files(&keys_dir).unwrap().len();
         assert!(
-            key_files.is_empty(),
+            key_file_count == 0,
             "Should not write key file at disable secure channel state"
         );
 
@@ -1409,10 +1420,12 @@ mod tests {
         server_mock::set_secure_channel_state(true);
         // wait poll_secure_channel_status run at least one loop
         tokio::time::sleep(Duration::from_millis(100)).await;
-        let key_files = misc_helpers::get_files(&keys_dir).unwrap();
+        #[cfg(windows)]
+        let key_file_count = crate::common::mock_key_data_count(&keys_dir);
+        #[cfg(not(windows))]
+        let key_file_count = misc_helpers::get_files(&keys_dir).unwrap().len();
         assert_eq!(
-            1,
-            key_files.len(),
+            1, key_file_count,
             "Should write key file at running secure channel state"
         );
 
@@ -1421,6 +1434,8 @@ mod tests {
 
         // clean up and ignore the clean up errors
         _ = fs::remove_dir_all(&temp_test_path);
+        #[cfg(windows)]
+        crate::common::clear_mock_key_data(&keys_dir);
     }
 
     #[test]
