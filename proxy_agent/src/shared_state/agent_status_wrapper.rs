@@ -5,6 +5,7 @@
 //! The proxy agent status contains the 'state' and 'status message' of the key keeper, telemetry reader, telemetry logger, redirector, and proxy server modules.
 //! The proxy agent status contains the 'connection count' of the proxy server.
 
+use crate::common::constants;
 use crate::common::error::Error;
 use crate::common::logger;
 use crate::common::result::Result;
@@ -50,6 +51,10 @@ enum AgentStatusAction {
     GetSoftAuditMode {
         response: oneshot::Sender<bool>,
     },
+    SetDesiredLocalPort {
+        port: u16,
+        response: oneshot::Sender<bool>,
+    },
     SetFallbackReason {
         reason: Option<String>,
         response: oneshot::Sender<Option<String>>,
@@ -74,6 +79,7 @@ pub struct RuntimeStatusSnapshot {
     pub soft_audit_enabled: bool,
     pub proxy_server_state: ModuleState,
     pub redirector_state: ModuleState,
+    pub desired_local_port: u16,
 }
 
 impl Default for RuntimeStatusSnapshot {
@@ -82,6 +88,7 @@ impl Default for RuntimeStatusSnapshot {
             soft_audit_enabled: false,
             proxy_server_state: ModuleState::UNKNOWN,
             redirector_state: ModuleState::UNKNOWN,
+            desired_local_port: constants::PROXY_AGENT_PORT,
         }
     }
 }
@@ -127,6 +134,7 @@ impl AgentStatusSharedState {
             let mut proxy_agent_status_state = ModuleState::UNKNOWN;
             let mut proxy_agent_status_message = super::UNKNOWN_STATUS_MESSAGE.to_string();
             let mut soft_audit_mode_enabled: bool = false;
+            let mut desired_local_port = constants::PROXY_AGENT_PORT;
             let mut fallback_reason: Option<String> = None;
 
             // The proxied connection count for the listener
@@ -240,6 +248,7 @@ impl AgentStatusSharedState {
                                 soft_audit_enabled: soft_audit_mode_enabled,
                                 proxy_server_state: proxy_server_state.clone(),
                                 redirector_state: redirector_state.clone(),
+                                desired_local_port,
                             };
                             if *snapshot == updated {
                                 false
@@ -304,6 +313,7 @@ impl AgentStatusSharedState {
                                     soft_audit_enabled: soft_audit_mode_enabled,
                                     proxy_server_state: proxy_server_state.clone(),
                                     redirector_state: redirector_state.clone(),
+                                    desired_local_port,
                                 };
                                 if *snapshot == updated {
                                     false
@@ -327,6 +337,23 @@ impl AgentStatusSharedState {
                     AgentStatusAction::GetSoftAuditMode { response } => {
                         if let Err(value) = response.send(soft_audit_mode_enabled) {
                             logger::write_warning(format!("Failed to send response to AgentStatusAction::GetSoftAuditMode with value '{value}'"));
+                        }
+                    }
+                    AgentStatusAction::SetDesiredLocalPort { port, response } => {
+                        let changed = desired_local_port != port;
+                        if changed {
+                            logger::write_warning(format!(
+                                "Desired local proxy port changed from {desired_local_port} to {port}."
+                            ));
+                            desired_local_port = port;
+                            runtime_status_tx.send_modify(|snapshot| {
+                                snapshot.desired_local_port = port;
+                            });
+                        }
+                        if response.send(changed).is_err() {
+                            logger::write_warning(format!(
+                                "Failed to send response to AgentStatusAction::SetDesiredLocalPort for port '{port}'"
+                            ));
                         }
                     }
                     AgentStatusAction::SetFallbackReason { reason, response } => {
@@ -612,6 +639,25 @@ impl AgentStatusSharedState {
             .map_err(|e| Error::RecvError("AgentStatusAction::GetSoftAuditMode".to_string(), e))
     }
 
+    pub async fn set_desired_local_port(&self, port: u16) -> Result<bool> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.0
+            .send(AgentStatusAction::SetDesiredLocalPort {
+                port,
+                response: response_tx,
+            })
+            .await
+            .map_err(|e| {
+                Error::SendError(
+                    "AgentStatusAction::SetDesiredLocalPort".to_string(),
+                    e.to_string(),
+                )
+            })?;
+        response_rx
+            .await
+            .map_err(|e| Error::RecvError("AgentStatusAction::SetDesiredLocalPort".to_string(), e))
+    }
+
     pub async fn get_fallback_reason(&self) -> Result<Option<String>> {
         let (response_tx, response_rx) = oneshot::channel();
         self.0
@@ -665,6 +711,19 @@ mod tests {
             RuntimeStatusSnapshot::default(),
             runtime_status_rx.borrow().clone()
         );
+        assert_eq!(
+            constants::PROXY_AGENT_PORT,
+            runtime_status_rx.borrow().desired_local_port
+        );
+        assert!(agent_status_shared_state
+            .set_desired_local_port(3081)
+            .await
+            .unwrap());
+        assert_eq!(3081, runtime_status_rx.borrow().desired_local_port);
+        assert!(!agent_status_shared_state
+            .set_desired_local_port(3081)
+            .await
+            .unwrap());
 
         let modules = vec![
             AgentStatusModule::KeyKeeper,

@@ -50,9 +50,12 @@ use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
@@ -62,6 +65,10 @@ const REQUEST_BODY_LOW_LIMIT_SIZE: usize = 1024 * 100; // 100KB
 const REQUEST_BODY_LARGE_LIMIT_SIZE: usize = 1024 * REQUEST_BODY_LOW_LIMIT_SIZE; // 100MB
 const START_LISTENER_RETRY_COUNT: u16 = 5;
 const START_LISTENER_RETRY_SLEEP_DURATION: Duration = Duration::from_secs(1);
+
+/// Type alias for the channel used to signal when the listener is ready.
+/// It sends a Result indicating proxy http listener starts successfully or an error message.
+type ListenerReadySender = oneshot::Sender<std::result::Result<(), String>>;
 
 #[derive(Clone)]
 pub struct ProxyServer {
@@ -76,6 +83,10 @@ pub struct ProxyServer {
     proxy_server_shared_state: ProxyServerSharedState,
     access_control_shared_state: AccessControlSharedState,
     connection_summary_shared_state: ConnectionSummarySharedState,
+    listener_ready: Arc<Mutex<Option<ListenerReadySender>>>,
+    /// Indicates whether the shutdown status should be suppressed.
+    /// If true, the proxy server can be stopped without reporting STOPPED to the agent status.
+    suppress_shutdown_status: Arc<AtomicBool>,
 }
 
 impl ProxyServer {
@@ -84,7 +95,17 @@ impl ProxyServer {
         shared_state: &SharedState,
         listener_cancellation_token: CancellationToken,
     ) -> Self {
-        ProxyServer {
+        Self::new_managed(port, shared_state, listener_cancellation_token, None).0
+    }
+
+    pub(crate) fn new_managed(
+        port: u16,
+        shared_state: &SharedState,
+        listener_cancellation_token: CancellationToken,
+        listener_ready: Option<ListenerReadySender>,
+    ) -> (Self, Arc<AtomicBool>) {
+        let suppress_shutdown_status = Arc::new(AtomicBool::new(false));
+        let server = ProxyServer {
             port,
             service_cancellation_token: shared_state.get_cancellation_token(),
             listener_cancellation_token,
@@ -96,7 +117,13 @@ impl ProxyServer {
             proxy_server_shared_state: shared_state.get_proxy_server_shared_state(),
             access_control_shared_state: shared_state.get_access_control_shared_state(),
             connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
-        }
+            // Channel used to signal when the listener is ready or encounters an error.
+            // Wrapped in a Mutex to allow safe concurrent access.
+            listener_ready: Arc::new(Mutex::new(listener_ready)),
+            // Suppresses the shutdown status been updated to agent status if set to true.
+            suppress_shutdown_status: suppress_shutdown_status.clone(),
+        };
+        (server, suppress_shutdown_status)
     }
 
     /// Starts the proxy server on an isolated Tokio runtime.
@@ -178,6 +205,7 @@ impl ProxyServer {
             Ok(listener) => listener,
             Err(e) => {
                 let message = e.to_string();
+                self.signal_listener_ready(Err(message.clone()));
                 if let Err(e) = self
                     .agent_status_shared_state
                     .set_module_status_message(message.to_string(), AgentStatusModule::ProxyServer)
@@ -205,6 +233,7 @@ impl ProxyServer {
                 return;
             }
         };
+        self.signal_listener_ready(Ok(()));
 
         let message = helpers::write_startup_event(
             "Started proxy listener, ready to accept request",
@@ -243,11 +272,14 @@ impl ProxyServer {
             tokio::select! {
                 _ = self.listener_cancellation_token.cancelled() => {
                     logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                    let _= self.agent_status_shared_state
-                        .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                        .await;
+                    if !self.suppress_shutdown_status.load(Ordering::SeqCst) {
+                        let _= self.agent_status_shared_state
+                            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+                            .await;
+                    }
                     return;
                 }
+
                 result = listener.accept() => {
                     match result {
                         Ok((stream, client_addr)) =>{
@@ -259,6 +291,12 @@ impl ProxyServer {
                     }
                 }
             }
+        }
+    }
+
+    fn signal_listener_ready(&self, result: std::result::Result<(), String>) {
+        if let Some(sender) = self.listener_ready.lock().unwrap().take() {
+            let _ = sender.send(result);
         }
     }
 

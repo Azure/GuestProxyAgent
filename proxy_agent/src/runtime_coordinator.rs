@@ -4,6 +4,7 @@
 //! Manages the proxy server and redirector as one runtime pair.
 
 use crate::common::{constants, logger};
+use crate::provision;
 use crate::proxy::proxy_server::ProxyServer;
 use crate::redirector::{self, Redirector};
 use crate::shared_state::agent_status_wrapper::{
@@ -11,6 +12,8 @@ use crate::shared_state::agent_status_wrapper::{
 };
 use crate::shared_state::SharedState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle as ThreadJoinHandle;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -98,7 +101,9 @@ fn starting_timed_out(
 }
 
 struct ProxyServerRuntime {
+    local_port: u16,
     cancellation_token: CancellationToken,
+    suppress_shutdown_status: Arc<AtomicBool>,
     thread: ThreadJoinHandle<()>,
 }
 
@@ -138,13 +143,14 @@ impl RuntimeCoordinator {
             .shared_state
             .get_agent_status_shared_state()
             .subscribe_runtime_status();
-
         // Initialize the previous soft audit enabled flag to false.
         let mut previous_soft_audit_enabled = false;
 
         if !service_cancellation_token.is_cancelled() {
             // Start both the proxy server and redirector initially.
-            self.start_proxy_server().await;
+            // Start the proxy server with the default local port during service provisioning.
+            // If the customer chooses a different port, it will be updated later.
+            self.start_proxy_server(constants::PROXY_AGENT_PORT).await;
             self.start_redirector().await;
         }
 
@@ -168,6 +174,18 @@ impl RuntimeCoordinator {
             }
 
             let status = runtime_status_rx.borrow_and_update().clone();
+
+            // TODO: need to handle if the default local port is taken before or the redirector is stopped too.
+            // so we need to check if the desired local port has changed and handoff the proxy server accordingly.
+            if status.both_running()
+                && self
+                    .proxy_server_runtime
+                    .as_ref()
+                    .is_some_and(|runtime| runtime.local_port != status.desired_local_port)
+            {
+                self.handoff_proxy_server(status.desired_local_port).await;
+                continue;
+            }
 
             // Handle any starting timeouts for the proxy server and redirector.
             if self.handle_starting_timeouts(&status).await {
@@ -247,7 +265,7 @@ impl RuntimeCoordinator {
     /// Starts the runtime pair, including the proxy server and redirector, if they are not already running.
     async fn start_pair(&mut self, status: &RuntimeStatusSnapshot) {
         if status.proxy_server_state != ModuleState::RUNNING {
-            self.start_proxy_server().await;
+            self.start_proxy_server(status.desired_local_port).await;
         }
         if status.redirector_state != ModuleState::RUNNING {
             self.start_redirector().await;
@@ -255,7 +273,7 @@ impl RuntimeCoordinator {
     }
 
     /// Starts the proxy server if it is not already running.
-    async fn start_proxy_server(&mut self) {
+    async fn start_proxy_server(&mut self, local_port: u16) {
         self.stop_proxy_server(
             "RuntimeCoordinator cleanup Stopped ProxyServer state before its startup".to_string(),
         )
@@ -271,33 +289,10 @@ impl RuntimeCoordinator {
             ));
         }
 
-        let proxy_cancellation_token = self.shared_state.get_cancellation_token().child_token();
-        let proxy_server = ProxyServer::new(
-            constants::PROXY_AGENT_PORT,
-            &self.shared_state,
-            proxy_cancellation_token.clone(),
-        );
-        let proxy_thread = match proxy_server.start_on_dedicated_runtime() {
-            Ok(thread) => thread,
-            Err(e) => {
-                logger::write_error(format!(
-                    "Failed to start the proxy server runtime thread: {e}"
-                ));
-                let _ = self
-                    .shared_state
-                    .get_agent_status_shared_state()
-                    .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                    .await;
-                return;
-            }
-        };
-        self.proxy_server_runtime = Some(ProxyServerRuntime {
-            cancellation_token: proxy_cancellation_token,
-            thread: proxy_thread,
-        });
+        self.proxy_server_runtime = self.start_proxy_runtime(local_port).await;
 
         // set the starting time to track potential starting timeouts
-        self.proxy_starting_since = Some(Instant::now());
+        self.proxy_starting_since = self.proxy_server_runtime.as_ref().map(|_| Instant::now());
     }
 
     /// Starts the redirector if it is not already running.
@@ -319,8 +314,12 @@ impl RuntimeCoordinator {
 
         let redirector_cancellation_token =
             self.shared_state.get_cancellation_token().child_token();
+        let local_port = self
+            .proxy_server_runtime
+            .as_ref()
+            .map_or(constants::PROXY_AGENT_PORT, |runtime| runtime.local_port);
         let redirector = Redirector::new(
-            constants::PROXY_AGENT_PORT,
+            local_port,
             &self.shared_state,
             redirector_cancellation_token.clone(),
         );
@@ -392,18 +391,7 @@ impl RuntimeCoordinator {
     /// It also sets the appropriate status message in the agent status shared state.
     async fn stop_proxy_server(&mut self, message: String) {
         if let Some(runtime) = self.proxy_server_runtime.take() {
-            runtime.cancellation_token.cancel();
-            match tokio::task::spawn_blocking(move || runtime.thread.join()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) => {
-                    logger::write_warning("Proxy server runtime thread panicked.".to_string());
-                }
-                Err(e) => {
-                    logger::write_warning(format!(
-                        "Failed to join the proxy server runtime thread: {e}"
-                    ));
-                }
-            }
+            Self::stop_proxy_runtime(runtime, false).await;
 
             if let Err(e) = self
                 .shared_state
@@ -416,6 +404,141 @@ impl RuntimeCoordinator {
                 ));
             }
         }
+    }
+
+    async fn start_proxy_runtime(&self, local_port: u16) -> Option<ProxyServerRuntime> {
+        let cancellation_token = self.shared_state.get_cancellation_token().child_token();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let (proxy_server, suppress_shutdown_status) = ProxyServer::new_managed(
+            local_port,
+            &self.shared_state,
+            cancellation_token.clone(),
+            Some(ready_tx),
+        );
+        let thread = match proxy_server.start_on_dedicated_runtime() {
+            Ok(thread) => thread,
+            Err(e) => {
+                logger::write_error(format!(
+                    "Failed to start the proxy server runtime thread on port {local_port}: {e}"
+                ));
+                return None;
+            }
+        };
+        let runtime = ProxyServerRuntime {
+            local_port,
+            cancellation_token,
+            suppress_shutdown_status,
+            thread,
+        };
+
+        match tokio::time::timeout(STARTING_TIMEOUT, ready_rx).await {
+            Ok(Ok(Ok(()))) => Some(runtime),
+            Ok(Ok(Err(e))) => {
+                logger::write_error(format!(
+                    "Failed to start proxy listener on port {local_port}: {e}"
+                ));
+                Self::stop_proxy_runtime(runtime, true).await;
+                None
+            }
+            Ok(Err(e)) => {
+                logger::write_error(format!(
+                    "Proxy listener on port {local_port} stopped before reporting readiness: {e}"
+                ));
+                Self::stop_proxy_runtime(runtime, true).await;
+                None
+            }
+            Err(_) => {
+                logger::write_error(format!(
+                    "Timed out waiting for proxy listener on port {local_port} to become ready."
+                ));
+                Self::stop_proxy_runtime(runtime, true).await;
+                None
+            }
+        }
+    }
+
+    async fn stop_proxy_runtime(runtime: ProxyServerRuntime, suppress_status: bool) {
+        if suppress_status {
+            // If suppress_status is true, we shutdown the proxy server listener without reporting STOPPED to the agent status.
+            runtime
+                .suppress_shutdown_status
+                .store(true, Ordering::SeqCst);
+        }
+        runtime.cancellation_token.cancel();
+        match tokio::task::spawn_blocking(move || runtime.thread.join()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => {
+                logger::write_warning("Proxy server runtime thread panicked.".to_string());
+            }
+            Err(e) => {
+                logger::write_warning(format!(
+                    "Failed to join the proxy server runtime thread: {e}"
+                ));
+            }
+        }
+    }
+
+    async fn handoff_proxy_server(&mut self, new_port: u16) {
+        let Some(old_port) = self
+            .proxy_server_runtime
+            .as_ref()
+            .map(|runtime| runtime.local_port)
+        else {
+            return;
+        };
+        if old_port == new_port {
+            return;
+        }
+
+        logger::write_warning(format!(
+            "Starting proxy listener handoff from port {old_port} to {new_port}."
+        ));
+        let Some(candidate) = self.start_proxy_runtime(new_port).await else {
+            let _ = self
+                .shared_state
+                .get_agent_status_shared_state()
+                .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
+                .await;
+            return;
+        };
+
+        let redirector_state = self.shared_state.get_redirector_shared_state();
+        if let Err(e) = redirector_state.set_local_port(new_port).await {
+            logger::write_error(format!(
+                "Failed to stage redirect policies for proxy port {new_port}: {e}"
+            ));
+            Self::stop_proxy_runtime(candidate, true).await;
+            return;
+        }
+        let policies_updated = provision::update_redirector_policy(
+            redirector_state.clone(),
+            self.shared_state.get_access_control_shared_state(),
+        )
+        .await;
+        if !policies_updated {
+            logger::write_error(format!(
+                "Failed to update redirect policies for proxy port {new_port}; keeping port {old_port} active."
+            ));
+            if let Err(e) = redirector_state.set_local_port(old_port).await {
+                logger::write_error(format!(
+                    "Failed to restore redirector local port {old_port}: {e}"
+                ));
+            } else {
+                let _ = provision::update_redirector_policy(
+                    redirector_state,
+                    self.shared_state.get_access_control_shared_state(),
+                )
+                .await;
+            }
+            Self::stop_proxy_runtime(candidate, true).await;
+            return;
+        }
+
+        let old_runtime = self.proxy_server_runtime.replace(candidate).unwrap();
+        Self::stop_proxy_runtime(old_runtime, true).await;
+        logger::write_information(format!(
+            "Completed proxy listener handoff from port {old_port} to {new_port}."
+        ));
     }
 }
 
@@ -436,6 +559,7 @@ mod tests {
             soft_audit_enabled,
             proxy_server_state,
             redirector_state,
+            desired_local_port: crate::common::constants::PROXY_AGENT_PORT,
         }
     }
 

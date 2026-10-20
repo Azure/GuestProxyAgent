@@ -562,6 +562,20 @@ impl KeyKeeper {
                 .as_ref()
                 .map(|item| item.id.as_str()),
         );
+        // Update the desired local port based on the wire server rule ID descriptor.
+        // If the wire server rule ID descriptor specifies a local proxy port, use it;
+        // otherwise, use the default proxy agent port.
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_desired_local_port(
+                wire_server_rule_id_descriptor
+                    .local_proxy_port
+                    .unwrap_or(constants::PROXY_AGENT_PORT),
+            )
+            .await
+        {
+            logger::write_warning(format!("Failed to update desired local proxy port: {e}"));
+        }
         let (wireserver_rules, wireserver_local_state_changed) = resolve_effective_rules(
             &self.rules_dir,
             remote_wire_server_rules,
@@ -1182,6 +1196,9 @@ mod tests {
             &shared_state,
         );
         let mut tracker = local_rules::LocalRuleStateTracker::default();
+        let runtime_status = shared_state
+            .get_agent_status_shared_state()
+            .subscribe_runtime_status();
 
         let initial_status = key_status_with_wireserver_local_proxy_port(3080);
         assert!(
@@ -1190,6 +1207,7 @@ mod tests {
                 .await,
             "the initial rule descriptor must be treated as changed"
         );
+        assert_eq!(3080, runtime_status.borrow().desired_local_port);
         assert!(
             !key_keeper
                 .update_access_control_rules(&initial_status, &mut tracker)
@@ -1204,6 +1222,7 @@ mod tests {
                 .await,
             "a changed local proxy port must trigger a rule update"
         );
+        assert_eq!(3081, runtime_status.borrow().desired_local_port);
 
         shared_state.cancel_cancellation_token();
         _ = fs::remove_dir_all(&temp_test_path);
