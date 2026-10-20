@@ -616,6 +616,7 @@ pub async fn get_provision_state_internal(
 /// It is used to query the provision status from GPA service via http request
 pub mod provision_query {
     use crate::common::{constants, error::Error, helpers, logger, result::Result};
+    use crate::key_keeper::key;
     use proxy_agent_shared::{hyper_client, misc_helpers};
     use serde_derive::{Deserialize, Serialize};
     use std::{collections::HashMap, net::Ipv4Addr, time::Duration};
@@ -647,15 +648,15 @@ pub mod provision_query {
     /// It is used to query the provision status from GPA service via http request
     /// This struct is designed for GPA command line, serves for --status [--wait seconds] option
     pub struct ProvisionQuery {
-        port: u16,
+        default_port: u16,
         wait_duration: Option<Duration>,
         query_time_tick: i128,
     }
 
     impl ProvisionQuery {
-        pub fn new(port: u16, wait_duration: Option<Duration>) -> ProvisionQuery {
+        pub fn new(default_port: u16, wait_duration: Option<Duration>) -> ProvisionQuery {
             ProvisionQuery {
-                port,
+                default_port,
                 wait_duration,
                 query_time_tick: misc_helpers::get_date_time_unix_nano(),
             }
@@ -670,10 +671,14 @@ pub mod provision_query {
         /// This function is designed for GPA command line, serves for --status [--wait seconds] option
         pub async fn get_provision_status_wait(&self) -> ProvisionState {
             let mut first_loop = true;
+            let mut port = self.default_port;
             loop {
                 // query the current provision state from GPA service via http request
                 // ask GPA service listener to notify the its key_keeper in the first loop only
-                let state = match self.get_current_provision_status(first_loop).await {
+                let state = match self
+                    .get_current_provision_status_with_fallback(&mut port, first_loop)
+                    .await
+                {
                     Ok(state) => state,
                     Err(e) => {
                         println!("Failed to query the current provision state with error: {e}.");
@@ -701,10 +706,49 @@ pub mod provision_query {
         // return value
         //  bool - true provision finished; false provision not finished
         //  String - provision error message, empty means provision success or provision failed.
-        async fn get_current_provision_status(&self, notify: bool) -> Result<ProvisionState> {
+        async fn get_current_provision_status_with_fallback(
+            &self,
+            port: &mut u16,
+            notify: bool,
+        ) -> Result<ProvisionState> {
+            match self.get_current_provision_status(*port, notify).await {
+                Ok(state) => Ok(state),
+                Err(primary_error) => {
+                    let customized_port = match get_customized_proxy_port(
+                        constants::WIRE_SERVER_IP,
+                        constants::WIRE_SERVER_PORT,
+                    )
+                    .await
+                    {
+                        Ok(discovered_port) => discovered_port,
+                        Err(e) => {
+                            logger::write_warning(format!(
+                                "Failed to discover the proxy port from WireServer: {e}"
+                            ));
+                            return Err(primary_error);
+                        }
+                    };
+                    if customized_port == *port {
+                        return Err(primary_error);
+                    }
+
+                    logger::write_information(format!(
+                        "Retrying provision status query on WireServer-provided proxy port {customized_port}."
+                    ));
+                    *port = customized_port;
+                    self.get_current_provision_status(*port, notify).await
+                }
+            }
+        }
+
+        async fn get_current_provision_status(
+            &self,
+            port: u16,
+            notify: bool,
+        ) -> Result<ProvisionState> {
             let endpoint = hyper_client::HostEndpoint::new(
                 Ipv4Addr::LOCALHOST.to_string(),
-                self.port,
+                port,
                 PROVISION_URL_PATH,
             );
 
@@ -725,6 +769,18 @@ pub mod provision_query {
                 .map_err(Error::ProxyAgentSharedError)
         }
     }
+
+    /// Retrieves the customized proxy port from the WireServer rules.
+    /// If no custom port is specified, it returns the default proxy agent port.
+    pub(super) async fn get_customized_proxy_port(host: &str, port: u16) -> Result<u16> {
+        let status = key::get_status(host, port).await?;
+        let wireserver_rules = status.get_wireserver_rules();
+        let descriptor =
+            key::parse_rule_id_descriptor(wireserver_rules.as_ref().map(|rules| rules.id.as_str()));
+        Ok(descriptor
+            .local_proxy_port
+            .unwrap_or(constants::PROXY_AGENT_PORT))
+    }
 }
 
 #[cfg(test)]
@@ -735,9 +791,60 @@ mod tests {
     use crate::proxy::proxy_server;
     use crate::shared_state::EventThreadsSharedState;
     use crate::shared_state::SharedState;
+    use base64::{engine::general_purpose, Engine as _};
     use std::env;
     use std::fs;
     use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn discovers_custom_proxy_port_from_wireserver_rule_id() {
+        let encoded_rule_id = general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "id": "wire-server-rule",
+                "useLocalFileRules": false,
+                "enableSoftAudit": false,
+                "localProxyPort": 3081
+            })
+            .to_string(),
+        );
+        let status = serde_json::json!({
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": [],
+            "secureChannelState": "wireserver",
+            "secureChannelEnabled": true,
+            "version": "2.0",
+            "authorizationRules": {
+                "wireserver": {
+                    "defaultAccess": "deny",
+                    "mode": "enforce",
+                    "id": encoded_rule_id,
+                    "rules": null
+                }
+            }
+        })
+        .to_string();
+        let cancellation_token = CancellationToken::new();
+        let host = "127.0.0.1";
+        let port = proxy_agent_shared::server_mock::start_with_secure_channel_status(
+            host.to_string(),
+            0,
+            cancellation_token.clone(),
+            status,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            3081,
+            super::provision_query::get_customized_proxy_port(host, port)
+                .await
+                .unwrap()
+        );
+        cancellation_token.cancel();
+    }
 
     #[tokio::test]
     async fn soft_audit_suppresses_incomplete_provision_errors() {
