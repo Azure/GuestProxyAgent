@@ -81,6 +81,12 @@ typedef struct _bpf_sock_tuple_ipv4
 // Minimal sock_common - only the fields we actually read.
 // Field offsets are relocated by CO-RE; we only need the names to match
 // the kernel's struct sock_common (verified against vmlinux BTF).
+struct in6_addr {
+    union {
+        __be32 u6_addr32[4];
+    } in6_u;
+};
+
 struct sock_common {
     union {
         struct {
@@ -95,6 +101,7 @@ struct sock_common {
         };
     };
     short unsigned int skc_family;
+    struct in6_addr skc_v6_rcv_saddr;
 };
 
 // Minimal sock wrapper - we only access __sk_common.

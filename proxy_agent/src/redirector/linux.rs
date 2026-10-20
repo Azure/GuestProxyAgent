@@ -317,17 +317,17 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
+    pub fn lookup_audit(&self, peer: &std::net::SocketAddr) -> Result<AuditEntry> {
         let audit_map_name = AUDIT_MAP_NAME;
         match self.ebpf()?.map(audit_map_name) {
             Some(map) => {
                 match HashMap::<&MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
                     Ok(audit_map) => {
-                        let key = sock_addr_audit_key::from_source_port(source_port);
+                        let key = sock_addr_audit_key::from_peer(peer)?;
                         match audit_map.get(&key.as_array(), 0) {
                             Ok(value) => Ok(linux_audit_entry_from_array(value)),
                             Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                                source_port.to_string(),
+                                peer.to_string(),
                                 err.to_string(),
                             ))),
                         }
@@ -429,16 +429,16 @@ impl BpfObject {
         false
     }
 
-    pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
+    pub fn remove_audit_map_entry(&mut self, peer: &std::net::SocketAddr) -> Result<()> {
         let audit_map_name = AUDIT_MAP_NAME;
         match self.ebpf_mut()?.map_mut(audit_map_name) {
             Some(map) => {
                 match HashMap::<&mut MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
                     Ok(mut audit_map) => {
-                        let key = sock_addr_audit_key::from_source_port(source_port);
+                        let key = sock_addr_audit_key::from_peer(peer)?;
                         audit_map.remove(&key.as_array()).map_err(|err| {
                             Error::Bpf(BpfErrorType::MapDeleteElem(
-                                source_port.to_string(),
+                                peer.to_string(),
                                 format!("Error: {err}"),
                             ))
                         })?;
@@ -722,13 +722,14 @@ mod tests {
         );
 
         let source_port = 1;
-        let audit = bpf.lookup_audit(source_port);
+        let peer = std::net::SocketAddr::from(([127, 0, 0, 1], source_port));
+        let audit = bpf.lookup_audit(&peer);
         assert!(
             audit.is_err(),
             "lookup_audit should return error for invalid source port"
         );
         // insert to map an then look up
-        let key = sock_addr_audit_key::from_source_port(source_port);
+        let key = sock_addr_audit_key::from_peer(&peer).unwrap();
         let value = sock_addr_audit_entry {
             logon_id: 999,
             process_id: 888,
@@ -753,7 +754,10 @@ mod tests {
                 .unwrap();
             audit_map.insert(key.as_array(), linux_value, 0).unwrap();
         }
-        let audit = bpf.lookup_audit(source_port);
+        let shadow = std::net::SocketAddr::from(([127, 0, 0, 2], source_port));
+        assert!(bpf.lookup_audit(&shadow).is_err());
+        assert!(bpf.remove_audit_map_entry(&shadow).is_err());
+        let audit = bpf.lookup_audit(&peer);
         match audit {
             Ok(entry) => {
                 assert_eq!(
@@ -783,6 +787,10 @@ mod tests {
                 assert!(false, "lookup_audit_internal should not return Err");
             }
         }
+        let mapped = format!("[::ffff:127.0.0.1]:{source_port}").parse().unwrap();
+        assert!(bpf.lookup_audit(&mapped).is_ok());
+        bpf.remove_audit_map_entry(&mapped).unwrap();
+        assert!(bpf.lookup_audit(&peer).is_err());
     }
 }
 
