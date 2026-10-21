@@ -912,7 +912,10 @@ pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescr
                 logical_id: contract.id,
                 use_local_file_rules: contract.useLocalFileRules,
                 enable_soft_audit: contract.enableSoftAudit,
-                local_proxy_port: contract.localProxyPort,
+                // Normalize localProxyPort 0 as None to use the default port.
+                // Binding localhost:0 selects an ephemeral port. 
+                // The coordinator still records zero and programs redirects to zero accordingly.
+                local_proxy_port: contract.localProxyPort.filter(|port| *port != 0), 
             };
         }
     }
