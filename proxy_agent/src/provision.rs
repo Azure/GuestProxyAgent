@@ -176,7 +176,7 @@ async fn update_provision_state(
 pub(crate) async fn update_redirector_policy(
     redirector_shared_state: RedirectorSharedState,
     access_control_shared_state: AccessControlSharedState,
-) -> bool {
+) {
     let wireserver_mode =
         if let Ok(Some(rules)) = access_control_shared_state.get_wireserver_rules().await {
             rules.mode
@@ -184,7 +184,7 @@ pub(crate) async fn update_redirector_policy(
             // default to disabled if the rules are not ready
             AuthorizationMode::Disabled
         };
-    let wireserver_updated = redirector::update_wire_server_redirect_policy(
+    redirector::update_wire_server_redirect_policy(
         wireserver_mode != AuthorizationMode::Disabled,
         redirector_shared_state.clone(),
     )
@@ -196,7 +196,7 @@ pub(crate) async fn update_redirector_policy(
         // default to disabled if the rules are not ready
         AuthorizationMode::Disabled
     };
-    let imds_updated = redirector::update_imds_redirect_policy(
+    redirector::update_imds_redirect_policy(
         imds_mode != AuthorizationMode::Disabled,
         redirector_shared_state.clone(),
     )
@@ -209,12 +209,11 @@ pub(crate) async fn update_redirector_policy(
             // default to disabled if the rules are not ready
             AuthorizationMode::Disabled
         };
-    let hostga_updated = redirector::update_hostga_redirect_policy(
+    redirector::update_hostga_redirect_policy(
         ga_plugin_mode != AuthorizationMode::Disabled,
         redirector_shared_state.clone(),
     )
     .await;
-    wireserver_updated && imds_updated && hostga_updated
 }
 
 pub async fn key_latch_ready_state_reset(provision_shared_state: ProvisionSharedState) {
