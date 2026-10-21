@@ -50,7 +50,6 @@ use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -84,9 +83,9 @@ pub struct ProxyServer {
     access_control_shared_state: AccessControlSharedState,
     connection_summary_shared_state: ConnectionSummarySharedState,
     listener_ready: Arc<Mutex<Option<ListenerReadySender>>>,
-    /// Indicates whether the shutdown status should be suppressed.
-    /// If true, the proxy server can be stopped without reporting STOPPED to the agent status.
-    suppress_shutdown_status: Arc<AtomicBool>,
+    /// One-shot provisioning approval signal; cancellation permits `provision::listener_started`.
+    /// Does not gate binding, accepting connections, or per-port status publication.
+    listener_committed: CancellationToken,
 }
 
 impl ProxyServer {
@@ -95,7 +94,10 @@ impl ProxyServer {
         shared_state: &SharedState,
         listener_cancellation_token: CancellationToken,
     ) -> Self {
-        Self::new_managed(port, shared_state, listener_cancellation_token, None).0
+        let (server, committed) =
+            Self::new_managed(port, shared_state, listener_cancellation_token, None);
+        committed.cancel();
+        server
     }
 
     pub(crate) fn new_managed(
@@ -103,8 +105,8 @@ impl ProxyServer {
         shared_state: &SharedState,
         listener_cancellation_token: CancellationToken,
         listener_ready: Option<ListenerReadySender>,
-    ) -> (Self, Arc<AtomicBool>) {
-        let suppress_shutdown_status = Arc::new(AtomicBool::new(false));
+    ) -> (Self, CancellationToken) {
+        let listener_committed = CancellationToken::new();
         let server = ProxyServer {
             port,
             service_cancellation_token: shared_state.get_cancellation_token(),
@@ -120,15 +122,15 @@ impl ProxyServer {
             // Channel used to signal when the listener is ready or encounters an error.
             // Wrapped in a Mutex to allow safe concurrent access.
             listener_ready: Arc::new(Mutex::new(listener_ready)),
-            // Suppresses the shutdown status been updated to agent status if set to true.
-            suppress_shutdown_status: suppress_shutdown_status.clone(),
+            listener_committed: listener_committed.clone(),
         };
-        (server, suppress_shutdown_status)
+        (server, listener_committed)
     }
 
     /// Starts the proxy server on an isolated Tokio runtime.
     pub fn start_on_dedicated_runtime(self) -> std::io::Result<std::thread::JoinHandle<()>> {
         let worker_threads = config::get_proxy_server_runtime_worker_threads();
+        let coordinator_runtime = tokio::runtime::Handle::current();
 
         std::thread::Builder::new()
             .name("proxy-server-runtime".to_string())
@@ -141,9 +143,13 @@ impl ProxyServer {
                 {
                     Ok(runtime) => runtime,
                     Err(e) => {
-                        logger::write_error(format!(
-                            "Failed to create the proxy server Tokio runtime: {e}"
-                        ));
+                        let message =
+                            format!("Failed to create the proxy server Tokio runtime: {e}");
+                        logger::write_error(message.clone());
+                        coordinator_runtime.block_on(
+                            self.set_listener_status(ModuleState::STOPPED, message.clone()),
+                        );
+                        self.signal_listener_ready(Err(message));
                         return;
                     }
                 };
@@ -192,34 +198,40 @@ impl ProxyServer {
     }
 
     pub async fn start(&self) {
+        let standalone = self.listener_ready.lock().unwrap().is_none();
+        if standalone {
+            if let Err(e) = self
+                .agent_status_shared_state
+                .set_desired_local_port(self.port)
+                .await
+            {
+                logger::write_warning(format!("Failed to select standalone proxy listener: {e}"));
+            }
+        }
         let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, self.port);
         logger::write_information(format!("Start proxy listener at '{addr}'.",));
 
-        let listener = match Self::start_listener_with_retry(
-            &addr,
-            START_LISTENER_RETRY_COUNT,
-            START_LISTENER_RETRY_SLEEP_DURATION,
-        )
-        .await
-        {
+        let listener_result = tokio::select! {
+            biased;
+            _ = self.listener_cancellation_token.cancelled() => {
+                let message = "Proxy listener cancelled during startup.".to_string();
+                self.set_listener_status(ModuleState::STOPPED, message.clone()).await;
+                self.signal_listener_ready(Err(message));
+                return;
+            }
+            result = Self::start_listener_with_retry(
+                &addr,
+                START_LISTENER_RETRY_COUNT,
+                START_LISTENER_RETRY_SLEEP_DURATION,
+            ) => result,
+        };
+        let listener = match listener_result {
             Ok(listener) => listener,
             Err(e) => {
                 let message = e.to_string();
+                self.set_listener_status(ModuleState::STOPPED, message.clone())
+                    .await;
                 self.signal_listener_ready(Err(message.clone()));
-                if let Err(e) = self
-                    .agent_status_shared_state
-                    .set_module_status_message(message.to_string(), AgentStatusModule::ProxyServer)
-                    .await
-                {
-                    logger::write_warning(format!("Failed to set module status message: {e}"));
-                }
-                if let Err(e) = self
-                    .agent_status_shared_state
-                    .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                    .await
-                {
-                    logger::write_warning(format!("Failed to set module state: {e}"));
-                }
 
                 // send this critical error to event logger
                 event_logger::write_event(
@@ -233,51 +245,43 @@ impl ProxyServer {
                 return;
             }
         };
-        self.signal_listener_ready(Ok(()));
-
         let message = helpers::write_startup_event(
             "Started proxy listener, ready to accept request",
             "start",
             "proxy_server",
             logger::AGENT_LOGGER_KEY,
         );
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_status_message(message.to_string(), AgentStatusModule::ProxyServer)
-            .await
-        {
-            logger::write_warning(format!("Failed to set module status message: {e}"));
-        }
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
-            .await
-        {
-            logger::write_warning(format!("Failed to set module state: {e}"));
-        }
-        provision::listener_started(EventThreadsSharedState {
-            cancellation_token: self.service_cancellation_token.clone(),
-            common_state: self.common_state.clone(),
-            access_control_shared_state: self.access_control_shared_state.clone(),
-            redirector_shared_state: self.redirector_shared_state.clone(),
-            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-            provision_shared_state: self.provision_shared_state.clone(),
-            agent_status_shared_state: self.agent_status_shared_state.clone(),
-            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
-        })
-        .await;
+        self.set_listener_status(ModuleState::RUNNING, message)
+            .await;
+        self.signal_listener_ready(Ok(()));
 
+        let mut provisioned = false;
         // We start a loop to continuously accept incoming connections
         loop {
             tokio::select! {
                 _ = self.listener_cancellation_token.cancelled() => {
                     logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                    if !self.suppress_shutdown_status.load(Ordering::SeqCst) {
-                        let _= self.agent_status_shared_state
-                            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                            .await;
+                    if let Err(e) = self.agent_status_shared_state
+                        .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyListener(self.port))
+                        .await
+                    {
+                        logger::write_warning(format!("Failed to set listener state: {e}"));
                     }
                     return;
+                }
+
+                _ = self.listener_committed.cancelled(), if !provisioned => {
+                    provisioned = true;
+                    provision::listener_started(EventThreadsSharedState {
+                        cancellation_token: self.service_cancellation_token.clone(),
+                        common_state: self.common_state.clone(),
+                        access_control_shared_state: self.access_control_shared_state.clone(),
+                        redirector_shared_state: self.redirector_shared_state.clone(),
+                        key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                        provision_shared_state: self.provision_shared_state.clone(),
+                        agent_status_shared_state: self.agent_status_shared_state.clone(),
+                        connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+                    }).await;
                 }
 
                 result = listener.accept() => {
@@ -291,6 +295,23 @@ impl ProxyServer {
                     }
                 }
             }
+        }
+    }
+
+    async fn set_listener_status(&self, state: ModuleState, message: String) {
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message, AgentStatusModule::ProxyListener(self.port))
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener status message: {e}"));
+        }
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_state(state, AgentStatusModule::ProxyListener(self.port))
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener state: {e}"));
         }
     }
 

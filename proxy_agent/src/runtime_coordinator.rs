@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! Manages the proxy server and redirector as one runtime pair.
+//! Listener status is per port; the aggregate follows the desired local port.
+//! Same-port restarts join the previous runtime before reuse.
 
 use crate::common::{constants, logger};
 use crate::provision;
@@ -12,8 +14,6 @@ use crate::shared_state::agent_status_wrapper::{
 };
 use crate::shared_state::SharedState;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::thread::JoinHandle as ThreadJoinHandle;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -113,7 +113,9 @@ fn starting_timed_out(
 struct ProxyServerRuntime {
     local_port: u16,
     cancellation_token: CancellationToken,
-    suppress_shutdown_status: Arc<AtomicBool>,
+    /// Cancelled to approve provisioning notifications: immediately for initial startup,
+    /// or after successful policy staging for a replacement listener.
+    listener_committed: CancellationToken,
     thread: ThreadJoinHandle<()>,
 }
 
@@ -193,7 +195,6 @@ impl RuntimeCoordinator {
             ) {
                 let listener_reconciled = self
                     .handoff_proxy_server(
-                        status.proxy_server_state,
                         status.desired_local_port,
                         status.redirector_state == ModuleState::RUNNING,
                     )
@@ -299,16 +300,6 @@ impl RuntimeCoordinator {
         )
         .await;
 
-        let agent_status = self.shared_state.get_agent_status_shared_state();
-        if let Err(e) = agent_status
-            .set_module_state(ModuleState::STARTING, AgentStatusModule::ProxyServer)
-            .await
-        {
-            logger::write_warning(format!(
-                "Failed to mark ProxyServer as starting before runtime pair startup: {e}"
-            ));
-        }
-
         // Start the proxy server runtime with the specified local port and
         // do not wait for its startup to complete.
         self.proxy_server_runtime = self.start_proxy_runtime(local_port, None).await;
@@ -413,12 +404,13 @@ impl RuntimeCoordinator {
     /// It also sets the appropriate status message in the agent status shared state.
     async fn stop_proxy_server(&mut self, message: String) {
         if let Some(runtime) = self.proxy_server_runtime.take() {
-            Self::stop_proxy_runtime(runtime, false).await;
+            let local_port = runtime.local_port;
+            self.stop_proxy_runtime(runtime).await;
 
             if let Err(e) = self
                 .shared_state
                 .get_agent_status_shared_state()
-                .set_module_status_message(message, AgentStatusModule::ProxyServer)
+                .set_module_status_message(message, AgentStatusModule::ProxyListener(local_port))
                 .await
             {
                 logger::write_warning(format!(
@@ -433,27 +425,68 @@ impl RuntimeCoordinator {
         local_port: u16,
         startup_timeout: Option<Duration>,
     ) -> Option<ProxyServerRuntime> {
+        let agent_status = self.shared_state.get_agent_status_shared_state();
+        if let Err(e) = agent_status
+            .set_module_state(
+                ModuleState::STARTING,
+                AgentStatusModule::ProxyListener(local_port),
+            )
+            .await
+        {
+            logger::write_warning(format!("Failed to mark proxy listener as starting: {e}"));
+        }
+        if let Err(e) = agent_status
+            .set_module_status_message(
+                format!("Starting proxy listener on port {local_port}."),
+                AgentStatusModule::ProxyListener(local_port),
+            )
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener startup message: {e}"));
+        }
         let cancellation_token = self.shared_state.get_cancellation_token().child_token();
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        let (proxy_server, suppress_shutdown_status) = ProxyServer::new_managed(
+        let (proxy_server, listener_committed) = ProxyServer::new_managed(
             local_port,
             &self.shared_state,
             cancellation_token.clone(),
             Some(ready_tx),
         );
+        if startup_timeout.is_none() {
+            listener_committed.cancel();
+        }
         let thread = match proxy_server.start_on_dedicated_runtime() {
             Ok(thread) => thread,
             Err(e) => {
-                logger::write_error(format!(
+                let message = format!(
                     "Failed to start the proxy server runtime thread on port {local_port}: {e}"
-                ));
+                );
+                logger::write_error(message.clone());
+                if let Err(e) = agent_status
+                    .set_module_status_message(
+                        message,
+                        AgentStatusModule::ProxyListener(local_port),
+                    )
+                    .await
+                {
+                    logger::write_warning(format!("Failed to set listener startup failure: {e}"));
+                }
+                if let Err(e) = agent_status
+                    .set_module_state(
+                        ModuleState::STOPPED,
+                        AgentStatusModule::ProxyListener(local_port),
+                    )
+                    .await
+                {
+                    logger::write_warning(format!("Failed to mark proxy listener as stopped: {e}"));
+                }
                 return None;
             }
         };
         let runtime = ProxyServerRuntime {
             local_port,
             cancellation_token,
-            suppress_shutdown_status,
+            listener_committed,
             thread,
         };
 
@@ -464,21 +497,21 @@ impl RuntimeCoordinator {
                     logger::write_error(format!(
                         "Failed to start proxy listener on port {local_port}: {e}"
                     ));
-                    Self::stop_proxy_runtime(runtime, true).await;
+                    self.stop_proxy_runtime(runtime).await;
                     None
                 }
                 Ok(Err(e)) => {
                     logger::write_error(format!(
                         "Proxy listener on port {local_port} stopped before reporting readiness: {e}"
                     ));
-                    Self::stop_proxy_runtime(runtime, true).await;
+                    self.stop_proxy_runtime(runtime).await;
                     None
                 }
                 Err(_) => {
                     logger::write_error(format!(
                     "Timed out waiting for proxy listener on port {local_port} to become ready."
                 ));
-                    Self::stop_proxy_runtime(runtime, true).await;
+                    self.stop_proxy_runtime(runtime).await;
                     None
                 }
             }
@@ -487,13 +520,8 @@ impl RuntimeCoordinator {
         }
     }
 
-    async fn stop_proxy_runtime(runtime: ProxyServerRuntime, suppress_status: bool) {
-        if suppress_status {
-            // If suppress_status is true, we shutdown the proxy server listener without reporting STOPPED to the agent status.
-            runtime
-                .suppress_shutdown_status
-                .store(true, Ordering::SeqCst);
-        }
+    async fn stop_proxy_runtime(&self, runtime: ProxyServerRuntime) {
+        let local_port = runtime.local_port;
         runtime.cancellation_token.cancel();
         match tokio::task::spawn_blocking(move || runtime.thread.join()).await {
             Ok(Ok(())) => {}
@@ -506,11 +534,21 @@ impl RuntimeCoordinator {
                 ));
             }
         }
+        if let Err(e) = self
+            .shared_state
+            .get_agent_status_shared_state()
+            .set_module_state(
+                ModuleState::STOPPED,
+                AgentStatusModule::ProxyListener(local_port),
+            )
+            .await
+        {
+            logger::write_warning(format!("Failed to mark proxy listener as stopped: {e}"));
+        }
     }
 
     async fn handoff_proxy_server(
         &mut self,
-        current_state: ModuleState,
         new_port: u16,
         redirector_ready_for_policy_update: bool,
     ) -> bool {
@@ -518,7 +556,6 @@ impl RuntimeCoordinator {
             .proxy_server_runtime
             .as_ref()
             .map(|runtime| runtime.local_port);
-        let has_previous_listener = old_port.is_some();
         if old_port == Some(new_port) {
             return true;
         }
@@ -532,18 +569,11 @@ impl RuntimeCoordinator {
             )),
         }
 
-        let agent_status_shared_state = self.shared_state.get_agent_status_shared_state();
-        // Attempt to start a new proxy server runtime on the specified port.
-        // Store the current state of the proxy server module to restore it if starting the new runtime fails.
+        // Each runtime publishes only its own port's status.
         let Some(candidate) = self
             .start_proxy_runtime(new_port, Some(STARTING_TIMEOUT))
             .await
         else {
-            if has_previous_listener {
-                let _ = agent_status_shared_state
-                    .set_module_state(current_state, AgentStatusModule::ProxyServer)
-                    .await;
-            }
             return false;
         };
 
@@ -557,7 +587,7 @@ impl RuntimeCoordinator {
                     logger::write_error(format!(
                         "Failed to read the active redirector port before switching to {new_port}: {e}"
                     ));
-                    Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                    self.stop_proxy_runtime(candidate).await;
                     return false;
                 }
             };
@@ -565,7 +595,7 @@ impl RuntimeCoordinator {
                 logger::write_error(format!(
                     "Failed to stage redirect policies for proxy port {new_port}: {e}"
                 ));
-                Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                self.stop_proxy_runtime(candidate).await;
                 return false;
             }
             let policies_updated = provision::update_redirector_policy(
@@ -598,16 +628,15 @@ impl RuntimeCoordinator {
                     ));
                 }
 
-                // The old listener is still owned by the coordinator. Stop only the uncommitted
-                // replacement; suppress STOPPED status while the old listener remains active.
-                Self::stop_proxy_runtime(candidate, has_previous_listener).await;
+                self.stop_proxy_runtime(candidate).await;
                 return false;
             }
         }
 
+        candidate.listener_committed.cancel();
         if let Some(old_runtime) = self.proxy_server_runtime.replace(candidate) {
             let old_port = old_runtime.local_port;
-            Self::stop_proxy_runtime(old_runtime, true).await;
+            self.stop_proxy_runtime(old_runtime).await;
             logger::write_information(format!(
                 "Completed proxy listener handoff from port {old_port} to {new_port}."
             ));
@@ -624,12 +653,256 @@ impl RuntimeCoordinator {
 mod tests {
     use super::{
         evaluate_status, should_reconcile_proxy_port, starting_timed_out, PairAction,
-        STARTING_TIMEOUT,
+        RuntimeCoordinator, STARTING_TIMEOUT,
     };
-    use crate::shared_state::agent_status_wrapper::RuntimeStatusSnapshot;
+    use crate::shared_state::agent_status_wrapper::{AgentStatusModule, RuntimeStatusSnapshot};
+    use crate::shared_state::SharedState;
     use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
     use std::time::Duration;
+    use tokio::net::TcpListener;
     use tokio::time::Instant;
+
+    fn coordinator() -> RuntimeCoordinator {
+        RuntimeCoordinator {
+            shared_state: SharedState::start_all(),
+            proxy_server_runtime: None,
+            redirector_runtime: None,
+            proxy_starting_since: None,
+            redirector_starting_since: None,
+        }
+    }
+
+    async fn set_desired_port(coordinator: &RuntimeCoordinator, port: u16) {
+        coordinator
+            .shared_state
+            .get_agent_status_shared_state()
+            .set_desired_local_port(port)
+            .await
+            .unwrap();
+    }
+
+    async fn wait_for_proxy_state(coordinator: &RuntimeCoordinator, expected: ModuleState) {
+        let mut status = coordinator
+            .shared_state
+            .get_agent_status_shared_state()
+            .subscribe_runtime_status();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if status.borrow_and_update().proxy_server_state == expected {
+                    break;
+                }
+                status.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn handoff_cancels_bind_retries_without_overwriting_desired_listener() {
+        let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let old_port = occupied.local_addr().unwrap().port();
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, old_port).await;
+        coordinator.start_proxy_server(old_port).await;
+
+        set_desired_port(&coordinator, 0).await;
+        assert!(tokio::time::timeout(
+            Duration::from_secs(2),
+            coordinator.handoff_proxy_server(0, false),
+        )
+        .await
+        .unwrap());
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        let aggregate = agent_status
+            .get_module_status(AgentStatusModule::ProxyServer)
+            .await;
+        assert_eq!(ModuleState::RUNNING, aggregate.status);
+        let retired = agent_status
+            .get_module_status(AgentStatusModule::ProxyListener(old_port))
+            .await;
+        assert_eq!(ModuleState::UNKNOWN, retired.status);
+        assert_eq!(
+            PairAction::None,
+            evaluate_status(&status(true, aggregate.status, ModuleState::RUNNING), false),
+        );
+
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+        wait_for_proxy_state(&coordinator, ModuleState::STOPPED).await;
+    }
+
+    #[tokio::test]
+    async fn rejected_desired_candidate_evicts_retired_status_and_allows_port_reuse() {
+        let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let old_port = occupied.local_addr().unwrap().port();
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, old_port).await;
+        coordinator.start_proxy_server(old_port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::STOPPED).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        let failed = agent_status
+            .get_module_status(AgentStatusModule::ProxyServer)
+            .await;
+        assert!(failed.message.contains("Failed to bind"));
+        let mut updates = agent_status.subscribe_runtime_status();
+        updates.borrow_and_update();
+
+        // With no BPF object, policy staging rejects the bound candidate.
+        set_desired_port(&coordinator, 0).await;
+        assert!(!coordinator.handoff_proxy_server(0, true).await);
+        assert!(updates.has_changed().unwrap());
+        let after = agent_status
+            .get_module_status(AgentStatusModule::ProxyServer)
+            .await;
+        assert_eq!(ModuleState::STOPPED, after.status);
+        let retired = agent_status
+            .get_module_status(AgentStatusModule::ProxyListener(old_port))
+            .await;
+        assert_eq!(ModuleState::UNKNOWN, retired.status);
+        assert_eq!(
+            ModuleState::STOPPED,
+            agent_status
+                .get_module_status(AgentStatusModule::ProxyListener(0))
+                .await
+                .status,
+        );
+        assert!(
+            !crate::provision::is_proxy_server_provisioned(
+                &coordinator.shared_state.get_provision_shared_state(),
+            )
+            .await
+        );
+
+        drop(occupied);
+        set_desired_port(&coordinator, old_port).await;
+        coordinator.start_proxy_server(old_port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let restarted = agent_status
+            .get_module_status(AgentStatusModule::ProxyListener(old_port))
+            .await;
+        assert_eq!(ModuleState::RUNNING, restarted.status);
+        assert!(!restarted.message.contains("Failed to bind"));
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", old_port))
+            .await
+            .is_ok());
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+    }
+
+    #[tokio::test]
+    async fn desired_candidate_failures_are_not_masked_by_healthy_old_listener() {
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, port).await;
+        coordinator.start_proxy_server(port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        let running = agent_status
+            .get_module_status(AgentStatusModule::ProxyServer)
+            .await;
+        let mut updates = agent_status.subscribe_runtime_status();
+        updates.borrow_and_update();
+
+        set_desired_port(&coordinator, 0).await;
+        assert!(!coordinator.handoff_proxy_server(0, true).await);
+        let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let candidate_port = occupied.local_addr().unwrap().port();
+        set_desired_port(&coordinator, candidate_port).await;
+        assert!(
+            !coordinator
+                .handoff_proxy_server(candidate_port, false)
+                .await
+        );
+        let failed = agent_status
+            .get_module_status(AgentStatusModule::ProxyListener(candidate_port))
+            .await;
+        assert_eq!(ModuleState::STOPPED, failed.status);
+        assert!(failed.message.contains("Failed to bind"));
+        assert!(coordinator
+            .start_proxy_runtime(candidate_port, Some(Duration::from_millis(20)),)
+            .await
+            .is_none());
+        assert!(updates.has_changed().unwrap());
+        assert_eq!(ModuleState::STOPPED, updates.borrow().proxy_server_state);
+        assert_eq!(
+            ModuleState::STOPPED,
+            agent_status
+                .get_module_status(AgentStatusModule::ProxyServer)
+                .await
+                .status,
+        );
+        let after = agent_status
+            .get_module_status(AgentStatusModule::ProxyListener(port))
+            .await;
+        assert_eq!(ModuleState::RUNNING, after.status);
+        assert_eq!(running.message, after.message);
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok());
+
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+    }
+
+    #[tokio::test]
+    async fn rejected_desired_candidate_without_previous_runtime_reports_stopped() {
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, 0).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+        let mut updates = agent_status.subscribe_runtime_status();
+        updates.borrow_and_update();
+
+        assert!(!coordinator.handoff_proxy_server(0, true).await);
+        assert!(coordinator.proxy_server_runtime.is_none());
+        assert!(updates.has_changed().unwrap());
+        assert_eq!(ModuleState::STOPPED, updates.borrow().proxy_server_state);
+        assert_eq!(
+            ModuleState::STOPPED,
+            agent_status
+                .get_module_status(AgentStatusModule::ProxyServer)
+                .await
+                .status,
+        );
+        assert_eq!(
+            ModuleState::STOPPED,
+            agent_status
+                .get_module_status(AgentStatusModule::ProxyListener(0))
+                .await
+                .status,
+        );
+    }
+
+    #[tokio::test]
+    async fn initial_listener_does_not_override_requested_port() {
+        let mut coordinator = coordinator();
+        let desired_port = crate::common::constants::PROXY_AGENT_PORT + 1;
+        set_desired_port(&coordinator, desired_port).await;
+        coordinator.start_proxy_server(0).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        let snapshot = agent_status.subscribe_runtime_status().borrow().clone();
+        assert_eq!(desired_port, snapshot.desired_local_port);
+        assert_eq!(ModuleState::UNKNOWN, snapshot.proxy_server_state);
+        assert_eq!(
+            ModuleState::UNKNOWN,
+            agent_status
+                .get_module_status(AgentStatusModule::ProxyServer)
+                .await
+                .status,
+        );
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+    }
 
     fn status(
         soft_audit_enabled: bool,

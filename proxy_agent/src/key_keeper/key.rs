@@ -915,6 +915,7 @@ pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescr
                 // Normalize localProxyPort 0 as None to use the default port.
                 // Binding localhost:0 selects an ephemeral port. 
                 // The coordinator still records zero and programs redirects to zero accordingly.
+                // GPA service needs a determined local proxy port; or it may take the port needed by other guest services.
                 local_proxy_port: contract.localProxyPort.filter(|port| *port != 0), 
             };
         }
