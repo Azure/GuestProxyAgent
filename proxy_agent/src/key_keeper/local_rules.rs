@@ -940,6 +940,7 @@ mod tests {
             logical_id: "decoded-id".to_string(),
             use_local_file_rules: true,
             enable_soft_audit: false,
+            local_proxy_port: None,
         };
         let local_rules = LocalAuthorizationRulesFile {
             id: Some("local-id".to_string()),

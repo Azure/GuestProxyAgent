@@ -5,6 +5,7 @@
 //! It listens on a specified port and forwards the requests to the target server,
 //!  then forward the response from the target server and sends it back to the client.
 //! It also handles the provision state check request.
+//! Retiring listeners stop accepting immediately and drain active connections for up to 30 seconds.
 //! It uses the `hyper` crate to handle the HTTP requests and responses,
 //!  uses the `tower` crate to limit the incoming request body size.
 //!
@@ -50,9 +51,12 @@ use proxy_agent_shared::logger::LoggerLevel;
 use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
 use proxy_agent_shared::telemetry::event_logger;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::oneshot;
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
@@ -62,6 +66,12 @@ const REQUEST_BODY_LOW_LIMIT_SIZE: usize = 1024 * 100; // 100KB
 const REQUEST_BODY_LARGE_LIMIT_SIZE: usize = 1024 * REQUEST_BODY_LOW_LIMIT_SIZE; // 100MB
 const START_LISTENER_RETRY_COUNT: u16 = 5;
 const START_LISTENER_RETRY_SLEEP_DURATION: Duration = Duration::from_secs(1);
+// Timeout duration for draining connections before forcefully shutting down.
+const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Type alias for the channel used to signal when the listener is ready.
+/// It sends a Result indicating proxy http listener starts successfully or an error message.
+type ListenerReadySender = oneshot::Sender<std::result::Result<(), String>>;
 
 #[derive(Clone)]
 pub struct ProxyServer {
@@ -76,6 +86,10 @@ pub struct ProxyServer {
     proxy_server_shared_state: ProxyServerSharedState,
     access_control_shared_state: AccessControlSharedState,
     connection_summary_shared_state: ConnectionSummarySharedState,
+    listener_ready: Arc<Mutex<Option<ListenerReadySender>>>,
+    /// One-shot provisioning approval signal; cancellation permits `provision::listener_started`.
+    /// Does not gate binding, accepting connections, or per-port status publication.
+    listener_committed: CancellationToken,
 }
 
 impl ProxyServer {
@@ -84,7 +98,20 @@ impl ProxyServer {
         shared_state: &SharedState,
         listener_cancellation_token: CancellationToken,
     ) -> Self {
-        ProxyServer {
+        let (server, committed) =
+            Self::new_managed(port, shared_state, listener_cancellation_token, None);
+        committed.cancel();
+        server
+    }
+
+    pub(crate) fn new_managed(
+        port: u16,
+        shared_state: &SharedState,
+        listener_cancellation_token: CancellationToken,
+        listener_ready: Option<ListenerReadySender>,
+    ) -> (Self, CancellationToken) {
+        let listener_committed = CancellationToken::new();
+        let server = ProxyServer {
             port,
             service_cancellation_token: shared_state.get_cancellation_token(),
             listener_cancellation_token,
@@ -96,12 +123,19 @@ impl ProxyServer {
             proxy_server_shared_state: shared_state.get_proxy_server_shared_state(),
             access_control_shared_state: shared_state.get_access_control_shared_state(),
             connection_summary_shared_state: shared_state.get_connection_summary_shared_state(),
-        }
+            // Channel used to signal when the listener is ready or encounters an error.
+            // Wrapped in a Mutex to allow safe concurrent access.
+            listener_ready: Arc::new(Mutex::new(listener_ready)),
+            listener_committed: listener_committed.clone(),
+        };
+        (server, listener_committed)
     }
 
     /// Starts the proxy server on an isolated Tokio runtime.
+    /// Listener cancellation closes the socket, then drains connections before dropping the runtime.
     pub fn start_on_dedicated_runtime(self) -> std::io::Result<std::thread::JoinHandle<()>> {
         let worker_threads = config::get_proxy_server_runtime_worker_threads();
+        let coordinator_runtime = tokio::runtime::Handle::current();
 
         std::thread::Builder::new()
             .name("proxy-server-runtime".to_string())
@@ -114,9 +148,13 @@ impl ProxyServer {
                 {
                     Ok(runtime) => runtime,
                     Err(e) => {
-                        logger::write_error(format!(
-                            "Failed to create the proxy server Tokio runtime: {e}"
-                        ));
+                        let message =
+                            format!("Failed to create the proxy server Tokio runtime: {e}");
+                        logger::write_error(message.clone());
+                        coordinator_runtime.block_on(
+                            self.set_listener_status(ModuleState::STOPPED, message.clone()),
+                        );
+                        self.signal_listener_ready(Err(message));
                         return;
                     }
                 };
@@ -165,33 +203,40 @@ impl ProxyServer {
     }
 
     pub async fn start(&self) {
+        let standalone = self.listener_ready.lock().unwrap().is_none();
+        if standalone {
+            if let Err(e) = self
+                .agent_status_shared_state
+                .set_desired_local_port(self.port)
+                .await
+            {
+                logger::write_warning(format!("Failed to select standalone proxy listener: {e}"));
+            }
+        }
         let addr = format!("{}:{}", std::net::Ipv4Addr::LOCALHOST, self.port);
         logger::write_information(format!("Start proxy listener at '{addr}'.",));
 
-        let listener = match Self::start_listener_with_retry(
-            &addr,
-            START_LISTENER_RETRY_COUNT,
-            START_LISTENER_RETRY_SLEEP_DURATION,
-        )
-        .await
-        {
+        let listener_result = tokio::select! {
+            biased;
+            _ = self.listener_cancellation_token.cancelled() => {
+                let message = "Proxy listener cancelled during startup.".to_string();
+                self.set_listener_status(ModuleState::STOPPED, message.clone()).await;
+                self.signal_listener_ready(Err(message));
+                return;
+            }
+            result = Self::start_listener_with_retry(
+                &addr,
+                START_LISTENER_RETRY_COUNT,
+                START_LISTENER_RETRY_SLEEP_DURATION,
+            ) => result,
+        };
+        let listener = match listener_result {
             Ok(listener) => listener,
             Err(e) => {
                 let message = e.to_string();
-                if let Err(e) = self
-                    .agent_status_shared_state
-                    .set_module_status_message(message.to_string(), AgentStatusModule::ProxyServer)
-                    .await
-                {
-                    logger::write_warning(format!("Failed to set module status message: {e}"));
-                }
-                if let Err(e) = self
-                    .agent_status_shared_state
-                    .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                    .await
-                {
-                    logger::write_warning(format!("Failed to set module state: {e}"));
-                }
+                self.set_listener_status(ModuleState::STOPPED, message.clone())
+                    .await;
+                self.signal_listener_ready(Err(message.clone()));
 
                 // send this critical error to event logger
                 event_logger::write_event(
@@ -205,53 +250,50 @@ impl ProxyServer {
                 return;
             }
         };
-
         let message = helpers::write_startup_event(
             "Started proxy listener, ready to accept request",
             "start",
             "proxy_server",
             logger::AGENT_LOGGER_KEY,
         );
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_status_message(message.to_string(), AgentStatusModule::ProxyServer)
-            .await
-        {
-            logger::write_warning(format!("Failed to set module status message: {e}"));
-        }
-        if let Err(e) = self
-            .agent_status_shared_state
-            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
-            .await
-        {
-            logger::write_warning(format!("Failed to set module state: {e}"));
-        }
-        provision::listener_started(EventThreadsSharedState {
-            cancellation_token: self.service_cancellation_token.clone(),
-            common_state: self.common_state.clone(),
-            access_control_shared_state: self.access_control_shared_state.clone(),
-            redirector_shared_state: self.redirector_shared_state.clone(),
-            key_keeper_shared_state: self.key_keeper_shared_state.clone(),
-            provision_shared_state: self.provision_shared_state.clone(),
-            agent_status_shared_state: self.agent_status_shared_state.clone(),
-            connection_summary_shared_state: self.connection_summary_shared_state.clone(),
-        })
-        .await;
+        self.set_listener_status(ModuleState::RUNNING, message)
+            .await;
+        self.signal_listener_ready(Ok(()));
 
+        let mut provisioned = false;
+        let mut connection_tasks = JoinSet::new();
         // We start a loop to continuously accept incoming connections
         loop {
             tokio::select! {
+                // use biased select to prioritize the actions in order
+                biased;
                 _ = self.listener_cancellation_token.cancelled() => {
                     logger::write_warning("cancellation token signal received, stop the listener.".to_string());
-                    let _= self.agent_status_shared_state
-                        .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
-                        .await;
-                    return;
+                    break;
                 }
+
+                _ = self.listener_committed.cancelled(), if !provisioned => {
+                    provisioned = true;
+                    provision::listener_started(EventThreadsSharedState {
+                        cancellation_token: self.service_cancellation_token.clone(),
+                        common_state: self.common_state.clone(),
+                        access_control_shared_state: self.access_control_shared_state.clone(),
+                        redirector_shared_state: self.redirector_shared_state.clone(),
+                        key_keeper_shared_state: self.key_keeper_shared_state.clone(),
+                        provision_shared_state: self.provision_shared_state.clone(),
+                        agent_status_shared_state: self.agent_status_shared_state.clone(),
+                        connection_summary_shared_state: self.connection_summary_shared_state.clone(),
+                    }).await;
+                }
+
+                Some(result) = connection_tasks.join_next(), if !connection_tasks.is_empty() => {
+                    Self::log_connection_task_result(result);
+                }
+
                 result = listener.accept() => {
                     match result {
                         Ok((stream, client_addr)) =>{
-                           self.handle_new_tcp_connection(stream, client_addr).await;
+                           self.handle_new_tcp_connection(stream, client_addr, &mut connection_tasks).await;
                         },
                         Err(e) => {
                             logger::write_error(format!("Failed to accept connection: {e}"));
@@ -260,12 +302,75 @@ impl ProxyServer {
                 }
             }
         }
+
+        drop(listener);
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_state(
+                ModuleState::STOPPED,
+                AgentStatusModule::ProxyListener(self.port),
+            )
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener state: {e}"));
+        }
+        Self::drain_connections(&mut connection_tasks, CONNECTION_DRAIN_TIMEOUT).await;
+    }
+
+    fn log_connection_task_result(result: std::result::Result<(), JoinError>) {
+        if let Err(e) = result {
+            logger::write_warning(format!("Proxy connection task failed: {e}"));
+        }
+    }
+
+    async fn drain_connections(connection_tasks: &mut JoinSet<()>, timeout: Duration) {
+        if tokio::time::timeout(timeout, async {
+            while let Some(result) = connection_tasks.join_next().await {
+                Self::log_connection_task_result(result);
+            }
+        })
+        .await
+        .is_err()
+        {
+            logger::write_warning(format!(
+                "Proxy connection drain timed out after {timeout:?}; aborting {} remaining connections.",
+                connection_tasks.len(),
+            ));
+            connection_tasks.abort_all();
+            while let Some(result) = connection_tasks.join_next().await {
+                Self::log_connection_task_result(result);
+            }
+        }
+    }
+
+    async fn set_listener_status(&self, state: ModuleState, message: String) {
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_status_message(message, AgentStatusModule::ProxyListener(self.port))
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener status message: {e}"));
+        }
+        if let Err(e) = self
+            .agent_status_shared_state
+            .set_module_state(state, AgentStatusModule::ProxyListener(self.port))
+            .await
+        {
+            logger::write_warning(format!("Failed to set listener state: {e}"));
+        }
+    }
+
+    fn signal_listener_ready(&self, result: std::result::Result<(), String>) {
+        if let Some(sender) = self.listener_ready.lock().unwrap().take() {
+            let _ = sender.send(result);
+        }
     }
 
     async fn handle_new_tcp_connection(
         &self,
         stream: TcpStream,
         client_addr: std::net::SocketAddr,
+        connection_tasks: &mut JoinSet<()>,
     ) {
         let tcp_connection_id = match self
             .agent_status_shared_state
@@ -287,7 +392,7 @@ impl ProxyServer {
             format!("Accepted new tcp connection [{tcp_connection_id}]."),
         );
 
-        tokio::spawn({
+        connection_tasks.spawn({
             let cloned_proxy_server = self.clone();
             async move {
                 // Get raw socket ID before any conversion (Windows only)
@@ -308,6 +413,8 @@ impl ProxyServer {
                 .await;
 
                 let cloned_tcp_connection_context = tcp_connection_context.clone();
+                let listener_cancellation_token =
+                    cloned_proxy_server.listener_cancellation_token.clone();
                 // move client addr, cloned std stream and shared_state to the service_fn
                 let service = service_fn(move |req| {
                     // use tower service as middleware to limit the request body size
@@ -338,14 +445,8 @@ impl ProxyServer {
                     tower_service.call(req)
                 });
 
-                // Use an adapter to access something implementing `tokio::io` traits as if they implement
-                let io = TokioIo::new(stream);
-                // We use the `hyper::server::conn::Http` to serve the connection
-                let mut http = hyper::server::conn::http1::Builder::new();
-                if let Err(e) = http
-                    .keep_alive(true) // set keep_alive to true explicitly
-                    .serve_connection(io, service)
-                    .await
+                if let Err(e) =
+                    Self::serve_http_connection(stream, service, listener_cancellation_token).await
                 {
                     tcp_connection_logger.write(
                         LoggerLevel::Warn,
@@ -354,6 +455,39 @@ impl ProxyServer {
                 }
             }
         });
+    }
+
+    async fn serve_http_connection<S, B>(
+        stream: TcpStream,
+        service: S,
+        listener_cancellation_token: CancellationToken,
+    ) -> std::result::Result<(), hyper::Error>
+    where
+        S: hyper::service::Service<Request<Incoming>, Response = Response<B>, Error = Error>
+            + Send
+            + 'static,
+        S::Future: Send,
+        B: hyper::body::Body + Send + 'static,
+        B::Data: Send,
+        B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+    {
+        let mut http = hyper::server::conn::http1::Builder::new();
+        let connection = http
+            .keep_alive(true)
+            .serve_connection(TokioIo::new(stream), service);
+        // Pin once so select! can poll the connection and graceful_shutdown can use the same future.
+        tokio::pin!(connection);
+        tokio::select! {
+            // use `biased` select to prioritize the connection result over cancellation
+            // in case of cancellation and connection completion happen simultaneously
+            biased;
+            // connection completion result has higher priority than cancellation
+            result = connection.as_mut() => result,
+            _ = listener_cancellation_token.cancelled() => {
+                connection.as_mut().graceful_shutdown();
+                connection.await
+            }
+        }
     }
 
     #[cfg(windows)]
@@ -1223,9 +1357,227 @@ mod tests {
     use crate::proxy::proxy_server;
     use crate::shared_state;
     use http::Method;
+    use http_body_util::BodyExt;
     use proxy_agent_shared::{hyper_client, proxy_agent_aggregate_status};
     use std::collections::HashMap;
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::{oneshot, Notify};
+    use tokio::task::{JoinHandle, JoinSet};
+    use tokio_util::sync::CancellationToken;
+
+    struct DrainingHttpServer {
+        port: u16,
+        cancellation_token: CancellationToken,
+        request_started: Arc<Notify>,
+        release_response: Arc<Notify>,
+        listener_closed: oneshot::Receiver<()>,
+        runtime: JoinHandle<()>,
+    }
+
+    async fn start_draining_http_server(drain_timeout: Duration) -> DrainingHttpServer {
+        let cancellation_token = CancellationToken::new();
+        let server_cancellation = cancellation_token.clone();
+        let request_started = Arc::new(Notify::new());
+        let server_request_started = request_started.clone();
+        let release_response = Arc::new(Notify::new());
+        let server_release_response = release_response.clone();
+        let (port_tx, port_rx) = oneshot::channel();
+        let (closed_tx, listener_closed) = oneshot::channel();
+        let runtime = tokio::task::spawn_blocking(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                port_tx.send(listener.local_addr().unwrap().port()).unwrap();
+                let (stream, _) = listener.accept().await.unwrap();
+                let service = hyper::service::service_fn(
+                    move |_request: hyper::Request<hyper::body::Incoming>| {
+                        let request_started = server_request_started.clone();
+                        let release_response = server_release_response.clone();
+                        async move {
+                            request_started.notify_one();
+                            release_response.notified().await;
+                            Ok::<_, crate::common::error::Error>(hyper::Response::new(
+                                hyper_client::full_body(b"completed".to_vec()),
+                            ))
+                        }
+                    },
+                );
+                let connection_cancellation = server_cancellation.clone();
+                let mut connection_tasks = JoinSet::new();
+                connection_tasks.spawn(async move {
+                    proxy_server::ProxyServer::serve_http_connection(
+                        stream,
+                        service,
+                        connection_cancellation,
+                    )
+                    .await
+                    .unwrap();
+                });
+                server_cancellation.cancelled().await;
+                drop(listener);
+                closed_tx.send(()).unwrap();
+                proxy_server::ProxyServer::drain_connections(&mut connection_tasks, drain_timeout)
+                    .await;
+            });
+        });
+        let port = port_rx.await.unwrap();
+        DrainingHttpServer {
+            port,
+            cancellation_token,
+            request_started,
+            release_response,
+            listener_closed,
+            runtime,
+        }
+    }
+
+    fn empty_request() -> hyper::Request<http_body_util::Full<hyper::body::Bytes>> {
+        hyper::Request::builder()
+            .uri("/")
+            .body(http_body_util::Full::new(hyper::body::Bytes::new()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn retiring_runtime_finishes_in_flight_response_after_closing_listener() {
+        let server = start_draining_http_server(proxy_server::CONNECTION_DRAIN_TIMEOUT).await;
+        let mut sender =
+            hyper_client::build_http_sender("127.0.0.1", server.port, logger::write_warning)
+                .await
+                .unwrap();
+        let request = tokio::spawn(async move {
+            let response = sender.send_request(empty_request()).await;
+            (sender, response)
+        });
+        tokio::time::timeout(Duration::from_secs(2), server.request_started.notified())
+            .await
+            .unwrap();
+
+        server.cancellation_token.cancel();
+        server.listener_closed.await.unwrap();
+        let _replacement_listener = TcpListener::bind(("127.0.0.1", server.port)).await.unwrap();
+        assert!(!request.is_finished());
+        assert!(!server.runtime.is_finished());
+
+        server.release_response.notify_one();
+        let (mut sender, response) = tokio::time::timeout(Duration::from_secs(2), request)
+            .await
+            .unwrap()
+            .unwrap();
+        let response = response.unwrap();
+        assert_eq!(hyper::StatusCode::OK, response.status());
+        assert_eq!(
+            b"completed".as_slice(),
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .as_ref(),
+        );
+        tokio::time::timeout(Duration::from_secs(2), server.runtime)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), sender.send_request(empty_request()))
+                .await
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn retiring_runtime_aborts_pending_requests_only_after_drain_deadline() {
+        assert_eq!(
+            Duration::from_secs(30),
+            proxy_server::CONNECTION_DRAIN_TIMEOUT
+        );
+        let drain_timeout = Duration::from_millis(50);
+        let server = start_draining_http_server(drain_timeout).await;
+        let mut sender =
+            hyper_client::build_http_sender("127.0.0.1", server.port, logger::write_warning)
+                .await
+                .unwrap();
+        let request = tokio::spawn(async move { sender.send_request(empty_request()).await });
+        tokio::time::timeout(Duration::from_secs(2), server.request_started.notified())
+            .await
+            .unwrap();
+
+        let started = tokio::time::Instant::now();
+        server.cancellation_token.cancel();
+        server.listener_closed.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), server.runtime)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(started.elapsed() >= drain_timeout);
+        assert!(tokio::time::timeout(Duration::from_secs(2), request)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn dedicated_runtime_closes_idle_keep_alive_connection_without_waiting_for_deadline() {
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let shared_state = shared_state::SharedState::start_all();
+        shared_state
+            .get_agent_status_shared_state()
+            .set_desired_local_port(port)
+            .await
+            .unwrap();
+        let cancellation_token = CancellationToken::new();
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let (server, _) = proxy_server::ProxyServer::new_managed(
+            port,
+            &shared_state,
+            cancellation_token.clone(),
+            Some(ready_tx),
+        );
+        let runtime = server.start_on_dedicated_runtime().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let mut sender = hyper_client::build_http_sender("127.0.0.1", port, logger::write_warning)
+            .await
+            .unwrap();
+        let request = hyper::Request::builder()
+            .uri(crate::provision::provision_query::PROVISION_URL_PATH)
+            .header(hyper_client::METADATA_HEADER, "true")
+            .body(http_body_util::Full::new(hyper::body::Bytes::new()))
+            .unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(2), sender.send_request(request))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(hyper::StatusCode::OK, response.status());
+        response.into_body().collect().await.unwrap();
+
+        cancellation_token.cancel();
+        let stopped = tokio::task::spawn_blocking(move || runtime.join().unwrap());
+        tokio::time::timeout(Duration::from_secs(2), stopped)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), sender.send_request(empty_request()))
+                .await
+                .unwrap()
+                .is_err()
+        );
+    }
 
     #[tokio::test]
     async fn dedicated_runtime_stops_on_cancellation() {
