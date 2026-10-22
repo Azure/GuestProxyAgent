@@ -178,34 +178,34 @@ pub async fn update_wire_server_redirect_policy(
     redirector_shared_state: RedirectorSharedState,
 ) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        if redirect {
-            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
-                if let Err(e) = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+        let result = if redirect {
+            match redirector_shared_state.get_local_port().await {
+                Ok(local_port) => bpf_object.lock().unwrap().update_policy_elem_bpf_map(
                     "WireServer endpoints",
                     local_port,
                     constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
                     constants::WIRE_SERVER_PORT,
-                ) {
-                    logger::write_error(format!(
-                        "Failed to update bpf map for wireserver redirect policy with result: {e}"
-                    ));
-                } else {
-                    logger::write(
-                        "Success updated bpf map for wireserver redirect policy.".to_string(),
-                    );
+                ),
+                Err(e) => {
+                    logger::write_error(format!("Failed to get proxy port for WireServer: {e}"));
+                    return false;
                 }
             }
-        } else if let Err(e) = bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
-            constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
-            constants::WIRE_SERVER_PORT,
-        ) {
-            logger::write_error(format!(
-                "Failed to delete bpf map for wireserver redirect policy with result: {e}"
-            ));
         } else {
-            logger::write("Success deleted bpf map for wireserver redirect policy.".to_string());
+            bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
+                constants::WIRE_SERVER_IP_NETWORK_BYTE_ORDER,
+                constants::WIRE_SERVER_PORT,
+            )
+        };
+        if let Err(e) = result {
+            logger::write_error(format!(
+                "Failed to update bpf map for WireServer redirect policy with result: {e}"
+            ));
+            false
+        } else {
+            logger::write("Successfully updated WireServer redirect policy.".to_string());
+            true
         }
-        true
     } else {
         false
     }
@@ -216,33 +216,34 @@ pub async fn update_imds_redirect_policy(
     redirector_shared_state: RedirectorSharedState,
 ) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        if redirect {
-            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
-                if let Err(e) = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+        let result = if redirect {
+            match redirector_shared_state.get_local_port().await {
+                Ok(local_port) => bpf_object.lock().unwrap().update_policy_elem_bpf_map(
                     "IMDS endpoints",
                     local_port,
                     constants::IMDS_IP_NETWORK_BYTE_ORDER,
                     constants::IMDS_PORT,
-                ) {
-                    logger::write_error(format!(
-                        "Failed to update bpf map for IMDS redirect policy with result: {e}"
-                    ));
-                } else {
-                    logger::write("Success updated bpf map for IMDS redirect policy.".to_string());
+                ),
+                Err(e) => {
+                    logger::write_error(format!("Failed to get proxy port for IMDS: {e}"));
+                    return false;
                 }
             }
-        } else if let Err(e) = bpf_object
-            .lock()
-            .unwrap()
-            .remove_policy_elem_bpf_map(constants::IMDS_IP_NETWORK_BYTE_ORDER, constants::IMDS_PORT)
-        {
-            logger::write_error(format!(
-                "Failed to delete bpf map for IMDS redirect policy with result: {e}"
-            ));
         } else {
-            logger::write("Success deleted bpf map for IMDS redirect policy.".to_string());
+            bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
+                constants::IMDS_IP_NETWORK_BYTE_ORDER,
+                constants::IMDS_PORT,
+            )
+        };
+        if let Err(e) = result {
+            logger::write_error(format!(
+                "Failed to update bpf map for IMDS redirect policy with result: {e}"
+            ));
+            false
+        } else {
+            logger::write("Successfully updated IMDS redirect policy.".to_string());
+            true
         }
-        true
     } else {
         false
     }
@@ -253,35 +254,34 @@ pub async fn update_hostga_redirect_policy(
     redirector_shared_state: RedirectorSharedState,
 ) -> bool {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        if redirect {
-            if let Ok(local_port) = redirector_shared_state.get_local_port().await {
-                if let Err(e) = bpf_object.lock().unwrap().update_policy_elem_bpf_map(
+        let result = if redirect {
+            match redirector_shared_state.get_local_port().await {
+                Ok(local_port) => bpf_object.lock().unwrap().update_policy_elem_bpf_map(
                     "Host GAPlugin endpoints",
                     local_port,
                     constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
                     constants::GA_PLUGIN_PORT,
-                ) {
-                    logger::write_error(format!(
-                        "Failed to update bpf map for HostGAPlugin redirect policy with result: {e}"
-                    ));
-                } else {
-                    logger::write(
-                        "Success updated bpf map for HostGAPlugin redirect policy.".to_string(),
-                    );
+                ),
+                Err(e) => {
+                    logger::write_error(format!("Failed to get proxy port for HostGAPlugin: {e}"));
+                    return false;
                 }
             }
-        } else if let Err(e) = bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
-            constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
-            constants::GA_PLUGIN_PORT,
-        ) {
-            logger::write_error(format!(
-                "Failed to delete bpf map for HostGAPlugin redirect policy with result: {e}"
-            ));
         } else {
-            logger::write("Success deleted bpf map for HostGAPlugin redirect policy.".to_string());
+            bpf_object.lock().unwrap().remove_policy_elem_bpf_map(
+                constants::GA_PLUGIN_IP_NETWORK_BYTE_ORDER,
+                constants::GA_PLUGIN_PORT,
+            )
+        };
+        if let Err(e) = result {
+            logger::write_error(format!(
+                "Failed to update bpf map for HostGAPlugin redirect policy with result: {e}"
+            ));
+            false
+        } else {
+            logger::write("Successfully updated HostGAPlugin redirect policy.".to_string());
+            true
         }
-
-        true
     } else {
         false
     }

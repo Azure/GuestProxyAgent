@@ -4,6 +4,7 @@
 //! This module contains the logic to interact with the provision state of the GPA service.
 //! The provision state is a bit field, which is used to store the provision state of the GPA service.
 //! It contains the provision state, event log threads initialized, and provision finished.
+//! Its runtime handle keeps service-wide tasks on the service runtime, not a listener runtime.
 //!
 //! Example
 //! ```rust
@@ -63,10 +64,11 @@ enum ProvisionAction {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProvisionSharedState(mpsc::Sender<ProvisionAction>);
+pub struct ProvisionSharedState(mpsc::Sender<ProvisionAction>, tokio::runtime::Handle);
 
 impl ProvisionSharedState {
     pub fn start_new() -> Self {
+        let service_runtime = tokio::runtime::Handle::current();
         let (tx, mut rx) = mpsc::channel(100);
         tokio::spawn(async move {
             // The provision state, it is a bitflag field
@@ -139,7 +141,11 @@ impl ProvisionSharedState {
             }
         });
 
-        ProvisionSharedState(tx)
+        ProvisionSharedState(tx, service_runtime)
+    }
+
+    pub(crate) fn service_runtime_handle(&self) -> &tokio::runtime::Handle {
+        &self.1
     }
 
     /// Update the one of the provision state
