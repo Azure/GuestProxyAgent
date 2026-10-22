@@ -137,11 +137,6 @@ if "%Target%"=="arm64" (
     echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
 )
-)
-if  %ERRORLEVEL% NEQ 0 (
-    echo call cargo test proxy_agent_shared failed with exit-code: %errorlevel%
-    exit /b %errorlevel%
-)
 
 echo ======= copy config file for windows platform
 REM Adding a wildcard (*) to the end of the destination will suppress this prompt and default to copying as a file:
@@ -172,10 +167,6 @@ if "%Target%"=="arm64" (
     echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
 )
-if  %ERRORLEVEL% NEQ 0 (
-    echo call cargo test proxy_agent failed with exit-code: %errorlevel%
-    exit /b %errorlevel%
-)
 
 echo ======= build proxy_agent_extension
 SET extension_root_path=%root_path%proxy_agent_extension
@@ -200,11 +191,6 @@ if "%Target%"=="arm64" (
     echo ======= run rust proxy_agent_extension tests
     echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
     call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
-)
-)
-if  %ERRORLEVEL% NEQ 0 (
-    echo call cargo test proxy_agent_extension failed with exit-code: %errorlevel%
-    exit /b %errorlevel%
 )
 
 echo ======= build proxy_agent_setup
