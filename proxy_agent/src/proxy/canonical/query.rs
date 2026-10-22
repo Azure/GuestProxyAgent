@@ -213,7 +213,7 @@ mod query_tests {
     #[test]
     fn plus_to_space() {
         for canonicalize in [canonicalize_query, canonicalize_request_query] {
-            let q = canonicalize("k+key=a+b&literal%2Bkey=a%2Bb").unwrap();
+            let q = canonicalize(concat!("k+key=a+b&literal%2B", "key=a%2Bb")).unwrap();
             assert_eq!(q.get("k key"), Some(&vec!["a b".to_string()]));
             assert_eq!(q.get("literal+key"), Some(&vec!["a+b".to_string()]));
         }
