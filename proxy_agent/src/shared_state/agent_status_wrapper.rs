@@ -1025,7 +1025,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn selecting_unstarted_listener_updates_snapshot_and_getters_together() {
+    async fn selecting_not_started_listener_updates_snapshot_and_getters_together() {
         let status = AgentStatusSharedState::start_new();
         let port = constants::PROXY_AGENT_PORT;
         set_listener(&status, port, ModuleState::RUNNING, "Old listener ready.").await;
