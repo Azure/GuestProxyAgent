@@ -1206,13 +1206,13 @@ mod tests {
         // shadow window proves zero divergences. We pin its
         // semantics here so a future enforce wiring doesn't get a
         // surprise.
-        let rules = build_test_rules("/test");
+        let rules = build_test_rules("/test/");
         let claims = trusted_claims();
         let mut log = ConnectionLogger::new(0, 0);
 
-        // Divergent case: legacy=true (substring), canon=Denied.
+        // Divergent case: legacy=false (substring), canon=Denied.
         let uri = hyper::Uri::from_str("http://169.254.169.254/test-evil/anything").unwrap();
-        let legacy_allowed = true;
+        let legacy_allowed = false;
         let canon = rules.shadow_compare(
             &mut log,
             &uri,
