@@ -1017,11 +1017,11 @@ mod tests {
             .await;
         assert_eq!(ModuleState::STOPPED, rejected.status);
         assert_eq!("Candidate rejected.", rejected.message);
-        let unstarted = status
+        let not_started = status
             .get_module_status(AgentStatusModule::ProxyListener(port + 2))
             .await;
-        assert_eq!(ModuleState::UNKNOWN, unstarted.status);
-        assert_eq!(shared_state::UNKNOWN_STATUS_MESSAGE, unstarted.message);
+        assert_eq!(ModuleState::UNKNOWN, not_started.status);
+        assert_eq!(shared_state::UNKNOWN_STATUS_MESSAGE, not_started.message);
     }
 
     #[tokio::test]
