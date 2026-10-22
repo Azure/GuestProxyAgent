@@ -331,14 +331,18 @@ fn set_resource_limits() {
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
-pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedState) {
+/// Tasks run on the service runtime even if provisioning finishes on a listener runtime.
+/// Dropping the returned handles does not stop the tasks; an empty list means already initialized.
+pub async fn start_event_threads(
+    event_threads_shared_state: EventThreadsSharedState,
+) -> Vec<tokio::task::JoinHandle<()>> {
     if let Ok(logger_threads_initialized) = event_threads_shared_state
         .provision_shared_state
         .get_event_log_threads_initialized()
         .await
     {
         if logger_threads_initialized {
-            return;
+            return Vec::new();
         }
     }
 
@@ -346,7 +350,10 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
     // those tasks starts to run after provision finished or provision timedout
     set_resource_limits();
 
-    tokio::spawn({
+    let service_runtime = event_threads_shared_state
+        .provision_shared_state
+        .service_runtime_handle();
+    let event_logger_task = service_runtime.spawn({
         let cloned_agent_status_shared_state =
             event_threads_shared_state.agent_status_shared_state.clone();
         let direct_send_config = event_logger::DirectSendConfig::new(
@@ -374,7 +381,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
             .await;
         }
     });
-    tokio::spawn({
+    let event_reader_task = service_runtime.spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
             event_threads_shared_state.common_state.clone(),
@@ -387,7 +394,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
                 .await;
         }
     });
-    tokio::spawn({
+    let extension_status_task = service_runtime.spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
             event_threads_shared_state.common_state.clone(),
@@ -400,7 +407,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
                 .await;
         }
     });
-    tokio::spawn({
+    let event_sender_task = service_runtime.spawn({
         let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
         async move {
             event_sender.start(None, None).await;
@@ -417,7 +424,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
         ));
     }
 
-    tokio::spawn({
+    let status_task = service_runtime.spawn({
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
@@ -432,6 +439,14 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
             agent_status_task.start().await;
         }
     });
+
+    vec![
+        event_logger_task,
+        event_reader_task,
+        extension_status_task,
+        event_sender_task,
+        status_task,
+    ]
 }
 
 /// Write provision state to provisioned.tag file and status.tag file under provision_dir
@@ -788,13 +803,78 @@ mod tests {
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
+    use crate::shared_state::agent_status_wrapper::AgentStatusModule;
     use crate::shared_state::EventThreadsSharedState;
     use crate::shared_state::SharedState;
     use base64::{engine::general_purpose, Engine as _};
+    use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
     use std::env;
     use std::fs;
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
+
+    async fn start_event_tasks_on_listener_runtime(
+        shared_state: &SharedState,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        let event_threads_shared_state = EventThreadsSharedState::new(shared_state);
+        tokio::task::spawn_blocking(move || {
+            let listener_runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            listener_runtime.block_on(super::start_event_threads(event_threads_shared_state))
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn event_tasks_survive_listener_runtime_shutdown() {
+        let shared_state = SharedState::start_all();
+        let mut tasks = start_event_tasks_on_listener_runtime(&shared_state).await;
+        let task_count = tasks.len();
+        let alive_after_first_listener = tasks.iter().filter(|task| !task.is_finished()).count();
+        let replacement_tasks = start_event_tasks_on_listener_runtime(&shared_state).await;
+        let replacement_task_count = replacement_tasks.len();
+        let initialized = shared_state
+            .get_provision_shared_state()
+            .get_event_log_threads_initialized()
+            .await
+            .unwrap();
+        let reporting_started = tokio::time::timeout(Duration::from_secs(2), async {
+            let status = shared_state.get_agent_status_shared_state();
+            while status
+                .get_module_status(AgentStatusModule::ProxyAgentStatus)
+                .await
+                .status
+                != ModuleState::RUNNING
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        let alive_after_replacement = tasks.iter().filter(|task| !task.is_finished()).count();
+
+        tasks.extend(replacement_tasks);
+        for task in &tasks {
+            task.abort();
+        }
+        for task in tasks {
+            if let Err(e) = task.await {
+                assert!(e.is_cancelled(), "Service task failed: {e}");
+            }
+        }
+
+        assert_eq!(5, task_count);
+        assert_eq!(5, alive_after_first_listener);
+        assert_eq!(5, alive_after_replacement);
+        assert_eq!(0, replacement_task_count);
+        assert!(initialized);
+        assert!(
+            reporting_started.is_ok(),
+            "Aggregate-status reporting did not start"
+        );
+    }
 
     #[tokio::test]
     async fn discovers_custom_proxy_port_from_wireserver_rule_id() {
