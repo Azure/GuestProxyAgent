@@ -47,7 +47,8 @@ pub(super) fn canonicalize_request_query(
 /// Canonicalize a query that was embedded in a path via `%3F`.
 ///
 /// The path decoder has already percent-decoded this string once, so this
-/// entrypoint performs query parsing and validation without a second decode.
+/// entrypoint performs query parsing and validation without a second decode
+/// or `+`-to-space conversion, preserving literal plus signs from `%2B`.
 pub(super) fn canonicalize_decoded_query(
     raw: &str,
 ) -> Result<BTreeMap<String, Vec<String>>, CanonError> {
@@ -96,9 +97,8 @@ fn canonicalize_query_impl(
 }
 
 fn decode_query_component(raw: &str, decode_percent: bool) -> Result<String, CanonError> {
-    // `+` in a query component is a legacy form for space (application/x-www-form-urlencoded).
-    // IMDS / WireServer don't use form-encoded queries, but normalize it so a rule author
-    // can't tell the difference between `?key=a+b` and `?key=a%20b`.
+    // Raw query components treat `+` as a legacy form for space. Already-decoded
+    // embedded queries must preserve `+`, which may have originated as `%2B`.
     let bytes = raw.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -114,7 +114,7 @@ fn decode_query_component(raw: &str, decode_percent: bool) -> Result<String, Can
                 out.push((h << 4) | l);
                 i += 3;
             }
-            b'+' => {
+            b'+' if decode_percent => {
                 out.push(b' ');
                 i += 1;
             }
@@ -212,8 +212,17 @@ mod query_tests {
 
     #[test]
     fn plus_to_space() {
-        let q = canonicalize_query("k=a+b").unwrap();
-        assert_eq!(q.get("k"), Some(&vec!["a b".to_string()]));
+        for canonicalize in [canonicalize_query, canonicalize_request_query] {
+            let q = canonicalize("k+key=a+b&literal%2Bkey=a%2Bb").unwrap();
+            assert_eq!(q.get("k key"), Some(&vec!["a b".to_string()]));
+            assert_eq!(q.get("literal+key"), Some(&vec!["a+b".to_string()]));
+        }
+    }
+
+    #[test]
+    fn decoded_query_preserves_plus_in_keys_and_values() {
+        let q = canonicalize_decoded_query("k+key=a+b").unwrap();
+        assert_eq!(q.get("k+key"), Some(&vec!["a+b".to_string()]));
     }
 
     #[test]

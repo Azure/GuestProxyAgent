@@ -61,6 +61,8 @@ fn canonicalize_path_impl(
         decoded.find('?').map(|pos| decoded.split_off(pos + 1))
     } else {
         reject_control_chars(&decoded)?;
+        // reject '?', this is intentional for rule paths and '?' not allowed in path.
+        // we expect the path and queryParameters to be separate.
         if decoded.contains('?') {
             return Err(CanonError::EmbeddedQuery);
         }

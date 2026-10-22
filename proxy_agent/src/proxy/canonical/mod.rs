@@ -584,6 +584,29 @@ mod mod_tests {
     }
 
     #[test]
+    fn encoded_plus_is_preserved_in_regular_and_embedded_queries() {
+        let regular = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token?resource=a%2Bb&k%2Bkey=c%2Bd",
+        )
+        .unwrap();
+        let embedded = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token%3Fresource=a%2Bb&k%2Bkey=c%2Bd",
+        )
+        .unwrap();
+
+        assert_eq!(regular.query, embedded.query);
+        assert_eq!(
+            embedded.query.get("resource"),
+            Some(&vec!["a+b".to_string()])
+        );
+        assert_eq!(embedded.query.get("k+key"), Some(&vec!["c+d".to_string()]));
+        assert_eq!(
+            canonicalize_str(&embedded.render()).unwrap().query,
+            embedded.query
+        );
+    }
+
+    #[test]
     fn trailing_client_id_cr_is_trimmed_for_regular_and_embedded_queries() {
         let regular = canonicalize_str(
             "http://169.254.169.254/metadata/identity/oauth2/token?client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D",
