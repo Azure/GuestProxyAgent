@@ -166,6 +166,12 @@ pub struct AuditEntry {
     pub destination_port: u16, // in network byte order
     #[serde(default)]
     pub address_family: AddressFamily,
+    #[serde(default)]
+    pub executable_device: u64,
+    #[serde(default)]
+    pub executable_inode: u64,
+    #[serde(default)]
+    pub executable_identity_valid: bool,
 }
 
 impl AuditEntry {
@@ -177,6 +183,9 @@ impl AuditEntry {
             destination_ipv4: 0,
             destination_port: 0,
             address_family: AddressFamily::IPv4,
+            executable_device: 0,
+            executable_inode: 0,
+            executable_identity_valid: false,
         }
     }
 
@@ -601,25 +610,22 @@ pub fn get_ebpf_file_path() -> PathBuf {
 }
 
 pub async fn lookup_audit(
-    source_port: u16,
+    peer: &std::net::SocketAddr,
     redirector_shared_state: &RedirectorSharedState,
 ) -> Result<AuditEntry> {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object.lock().unwrap().lookup_audit(source_port)
+        bpf_object.lock().unwrap().lookup_audit(peer)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }
 }
 
 pub async fn remove_audit(
-    source_port: u16,
+    peer: &std::net::SocketAddr,
     redirector_shared_state: &RedirectorSharedState,
 ) -> Result<()> {
     if let Ok(Some(bpf_object)) = redirector_shared_state.get_bpf_object().await {
-        bpf_object
-            .lock()
-            .unwrap()
-            .remove_audit_map_entry(source_port)
+        bpf_object.lock().unwrap().remove_audit_map_entry(peer)
     } else {
         Err(Error::Bpf(BpfErrorType::NullBpfObject))
     }

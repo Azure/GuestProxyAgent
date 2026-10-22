@@ -78,34 +78,42 @@ namespace GuestProxyAgentTest.TestCases
                         .AddParameters(parameterList));
         }
 
-        protected string FormatVMExtensionData(VirtualMachineExtensionData data)
+        protected string FormatVMExtensionData(VirtualMachineExtensionData? data)
         {
             if (data == null)
             {
                 return "null";
             }
+
             return string.Format("ProvisioningState: {0}, Publisher: {1}, ExtensionType: {2}, TypeHandlerVersion: {3}, AutoUpgradeMinorVersion: {4}, EnableAutomaticUpgrade: {5}, InstanceView: {6}",
                  data.ProvisioningState, data.Publisher, data.ExtensionType, data.TypeHandlerVersion, data.AutoUpgradeMinorVersion, data.EnableAutomaticUpgrade, FormatVMExtensionInstanceView(data.InstanceView));
         }
 
-        protected string FormatVMExtensionInstanceView(VirtualMachineExtensionInstanceView instanceView)
+        protected string FormatVMExtensionInstanceView(VirtualMachineExtensionInstanceView? instanceView)
         {
             if (instanceView == null)
             {
                 return "null";
             }
+
             return string.Format("Name: {0}, ExtensionType:{1}, ExtensionVersion:{2} Statuses: {3}, Substatuses: {4}", instanceView.Name,
                 instanceView.VirtualMachineExtensionInstanceViewType, instanceView.TypeHandlerVersion
                 , FormatVMInstanceViewStatus(instanceView.Statuses), FormatVMInstanceViewStatus(instanceView.Substatuses));
         }
 
-        protected string FormatVMInstanceViewStatus(IList<InstanceViewStatus> instanceView)
+        protected string FormatVMInstanceViewStatus(IList<InstanceViewStatus>? instanceView)
         {
+            if (instanceView == null)
+            {
+                return "null";
+            }
+
             StringBuilder stringBuilder = new StringBuilder();
             foreach (var status in instanceView)
             {
                 stringBuilder.AppendFormat("Code: {0}, Level: {1}, DisplayStatus: {2}, Message: {3}", status.Code, status.Level, status.DisplayStatus, status.Message);
             }
+
             return stringBuilder.ToString();
         }
     }

@@ -34,7 +34,17 @@ namespace GuestProxyAgentTest
 
             TestCommonUtilities.TestSetup(guestProxyAgentZipFilePath, testConfigFilePath, testResultFolder, proxyAgentVersion);
 
-            VMHelper.Instance.CleanupOldTestResourcesAndForget();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await VMHelper.Instance.CleanupOldTestResourcesAndForget();
+                }
+                catch (Exception ex)
+                {
+                    logger.Log($"CleanupOldTestResourcesAndForget failed: {ex}");
+                }
+            });
 
             await new GuestProxyAgentScenarioTests(logger).StartAsync(TestMapReader.ReadFlattenTestScenarioSettingFromTestMap(test_arm64));
             logger.Log("E2E Test run completed.");

@@ -181,7 +181,7 @@ then
 fi
 
 echo "======= build e2e test solution"
-runthis dotnet build $root_path/e2etest/GuestProxyAgentTest.sln --configuration $Configuration -o $out_dir/e2etest -v normal
+runthis dotnet build $root_path/e2etest/GuestProxyAgentTest/GuestProxyAgentTest.csproj --configuration $Configuration -o $out_dir/e2etest -v normal
 error_code=$?
 if [ $error_code -ne 0 ]
 then 
@@ -280,6 +280,9 @@ cp -f $out_dir/ProxyAgentExt $out_package_proxyagent_extension_dir/
 
 echo "======= copy e2e test project to Package folder"
 cp -rf $out_dir/e2etest/ $out_package_dir/e2etest/
+
+echo "======= copy pentest project to Package folder"
+cp -rf $root_path/pentest/ $out_package_dir/pentest/
 
 echo "======= Generate build-configuration-linux-$Target.zip file with relative path within the zip file"
 cd $out_package_dir

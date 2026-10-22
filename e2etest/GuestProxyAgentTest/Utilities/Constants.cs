@@ -30,6 +30,7 @@ namespace GuestProxyAgentTest.Utilities
         public static readonly string GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME;
         public static readonly string INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME;
         public static readonly string PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME;
+        public static readonly string RUN_PEN_TEST_SCRIPT_NAME;
 
         static Constants()
         {
@@ -39,9 +40,11 @@ namespace GuestProxyAgentTest.Utilities
                 COLLECT_INVM_GA_LOG_SCRIPT_NAME = "CollectInVMGALog.ps1";
                 GUEST_PROXY_AGENT_VALIDATION_SCRIPT_NAME = "GuestProxyAgentValidation.ps1";
                 IMDS_PING_TEST_SCRIPT_NAME = "IMDSPingTest.ps1";
+                SETUP_CGROUP2_SCRIPT_NAME = string.Empty;
                 GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME = "GuestProxyAgentExtensionValidation.ps1";
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.ps1";
                 PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.ps1";
+                RUN_PEN_TEST_SCRIPT_NAME = "RunPenTest.ps1";
             }
             else
             {
@@ -53,6 +56,7 @@ namespace GuestProxyAgentTest.Utilities
                 GUEST_PROXY_AGENT_EXTENSION_VALIDATION_SCRIPT_NAME = "GuestProxyAgentExtensionValidation.sh";
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.sh";
                 PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.sh";
+                RUN_PEN_TEST_SCRIPT_NAME = "RunPenTest.sh";
             }
         }
 

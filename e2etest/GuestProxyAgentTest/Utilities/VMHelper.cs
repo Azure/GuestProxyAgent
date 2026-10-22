@@ -4,6 +4,7 @@ using Azure.Identity;
 using Azure.ResourceManager;
 using Azure.ResourceManager.Compute;
 using Azure.ResourceManager.Resources;
+using Azure.ResourceManager.Resources.Deployments;
 using GuestProxyAgentTest.Settings;
 using System.Security.Cryptography.X509Certificates;
 
@@ -83,16 +84,22 @@ namespace GuestProxyAgentTest.Utilities
         public async Task CleanupOldTestResourcesAndForget()
         {
             var sub = await client.GetDefaultSubscriptionAsync();
-            
-            var rgs = sub.GetResourceGroups().Where(rg =>
-                rg.Data.Tags.ContainsKey(Constants.COULD_CLEANUP_TAG_NAME)
-                && rg.Data.Tags[Constants.COULD_CLEANUP_TAG_NAME].Equals("true", StringComparison.OrdinalIgnoreCase)
-            );
+
+            var rgs = System.Linq.Enumerable.Where(
+                sub.GetResourceGroups(),
+                rg => rg.Data.Tags.ContainsKey(Constants.COULD_CLEANUP_TAG_NAME)
+                    && rg.Data.Tags[Constants.COULD_CLEANUP_TAG_NAME].Equals("true", StringComparison.OrdinalIgnoreCase));
 
             foreach (var rg in rgs)
-            {                
-                var firstDeployment = rg.GetArmDeployments().Where(x => x?.Data?.Properties?.Timestamp != null).OrderBy(x => x.Data.Properties.Timestamp).FirstOrDefault();
-                if(firstDeployment != null && firstDeployment?.Data?.Properties?.Timestamp?.DateTime.AddDays(2) <= DateTime.UtcNow)
+            {
+                var firstDeployment = System.Linq.Enumerable.FirstOrDefault(
+                    System.Linq.Enumerable.OrderBy(
+                        System.Linq.Enumerable.Where(
+                            ResourcesDeploymentsExtensions.GetArmDeployments(rg),
+                            x => x?.Data?.Properties?.Timestamp != null),
+                        x => x.Data.Properties.Timestamp));
+
+                if (firstDeployment != null && firstDeployment.Data?.Properties?.Timestamp?.DateTime.AddDays(2) <= DateTime.UtcNow)
                 {
                     await rg.DeleteAsync(Azure.WaitUntil.Started);
                 }
