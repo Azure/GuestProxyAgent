@@ -1140,12 +1140,9 @@ mod tests {
     }
 
     #[test]
-    fn canonical_decision_diverges_on_substring_vs_segment_prefix() {
-        // THE M3 motivating divergence. Legacy `Privilege::is_match`
-        // uses `starts_with` -> `/test-evil/x` is "under /test" by
-        // substring. Canonical does segment-by-segment prefix
-        // matching -> `/test-evil/x` is NOT under `/test`. Shadow mode
-        // exists to report this exact class.
+    fn canonical_decision_preserves_final_segment_prefix_compatibility() {
+        // KD-6 compatibility: deployed rules without a trailing slash rely
+        // on legacy `starts_with` behavior within the final path segment.
         let rules = build_test_rules("/test");
         let claims = trusted_claims();
         let mut log = ConnectionLogger::new(0, 0);
@@ -1154,22 +1151,19 @@ mod tests {
         let legacy = rules.is_allowed(&mut log, uri.clone(), claims.clone());
         let canon = rules.canonical_decision(&mut log, &uri, &hyper::Method::GET, &claims);
 
-        // Legacy is buggy here (allows the SSRF-shaped path).
         assert!(
             legacy,
-            "legacy substring match should still allow /test-evil; if this fails, legacy was fixed and this test should be retired"
+            "legacy final-segment prefix match should allow /test-evil"
         );
-        // Canonical correctly denies.
         assert_eq!(
             canon,
-            CanonicalDecision::Denied,
-            "canonical segment match must deny /test-evil"
+            CanonicalDecision::Allowed,
+            "canonical must preserve KD-6 final-segment prefix compatibility"
         );
-        // The shape we'll feed to telemetry:
-        assert_ne!(
+        assert_eq!(
             legacy,
             canon.allowed_or_fail_closed(),
-            "this is the divergence shadow mode must surface"
+            "KD-6 compatibility should eliminate this shadow divergence"
         );
     }
 
@@ -1212,13 +1206,13 @@ mod tests {
         // shadow window proves zero divergences. We pin its
         // semantics here so a future enforce wiring doesn't get a
         // surprise.
-        let rules = build_test_rules("/test");
+        let rules = build_test_rules("/test/");
         let claims = trusted_claims();
         let mut log = ConnectionLogger::new(0, 0);
 
-        // Divergent case: legacy=true (substring), canon=Denied.
+        // Divergent case: legacy=false (substring), canon=Denied.
         let uri = hyper::Uri::from_str("http://169.254.169.254/test-evil/anything").unwrap();
-        let legacy_allowed = true;
+        let legacy_allowed = false;
         let canon = rules.shadow_compare(
             &mut log,
             &uri,

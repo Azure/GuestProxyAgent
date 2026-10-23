@@ -242,6 +242,8 @@ mod tests {
         let key_data = "test data".to_string();
         let encrypted_file_path = temp_test_path.join("test_data.encrypted");
         super::store_key_data(&encrypted_file_path, key_data.clone()).unwrap();
+        assert!(!encrypted_file_path.exists());
+        assert!(super::has_mock_key_data(&encrypted_file_path));
 
         let fetched_key_data = super::fetch_key_data(&encrypted_file_path).unwrap();
         assert_eq!(key_data, fetched_key_data);

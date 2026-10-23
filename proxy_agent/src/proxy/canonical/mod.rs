@@ -23,7 +23,7 @@
 //!   ▼  split_segments        (split '/'; collapse '.'; resolve '..')
 //!   ▼  strip_matrix_params   (drop `;k=v` suffix on each segment)
 //!   ▼  decode_query_once     (k/v percent-decode once; lowercase keys)
-//!   ▼  reject_embedded_query (decoded path must not contain literal '?')
+//!   ▼  split_embedded_query  (`%3F` compatibility; no second decode)
 //!   ▼  fold_into_btreemap    (group by key)
 //! CanonicalRequest
 //! ```
@@ -94,7 +94,7 @@ pub use rule::CanonicalPattern;
 /// - `%` would otherwise be interpreted as the start of an escape on
 ///   the second decode pass.
 /// - `#` would be stripped by hyper as a fragment delimiter.
-/// - `?` would be flagged by the canonicalizer as `EmbeddedQuery`.
+/// - `?` would be reinterpreted as an embedded query delimiter.
 /// - `;` would be re-stripped as a matrix-param sentinel.
 /// - space and the C0 controls are invalid in a URI per RFC 3986.
 ///
@@ -327,8 +327,14 @@ pub fn canonicalize(uri: &Uri, method: &Method) -> Result<CanonicalRequest, Cano
 
     let destination = destination::classify(uri)?;
 
-    let (path_segments, trailing_slash) = path::canonicalize_path(uri.path())?;
-    let query = query::canonicalize_query(uri.query().unwrap_or(""))?;
+    let (path_segments, trailing_slash, embedded_query) =
+        path::canonicalize_request_path(uri.path())?;
+    let mut query = query::canonicalize_request_query(uri.query().unwrap_or(""))?;
+    if let Some(raw_embedded_query) = embedded_query {
+        for (key, values) in query::canonicalize_decoded_query(&raw_embedded_query)? {
+            query.entry(key).or_default().extend(values);
+        }
+    }
 
     Ok(CanonicalRequest {
         method: method.clone(),
@@ -533,6 +539,10 @@ mod mod_tests {
                 "dot segments collapse first time",
                 "http://169.254.169.254/a/./b/../c",
             ),
+            (
+                "encoded query delimiter",
+                "http://169.254.169.254/metadata/scheduledevents%3Fapi-version=2019-08-01",
+            ),
         ];
         for (label, url) in cases {
             let c1 = canonicalize_str(url).expect(label);
@@ -542,6 +552,74 @@ mod mod_tests {
             let c2 = canonicalize_str(&rendered).expect(label);
             assert_eq!(c1, c2, "not idempotent: {label}");
         }
+    }
+
+    #[test]
+    fn encoded_query_delimiter_is_split_and_decoded_once() {
+        let canon = canonicalize_str(
+            "http://169.254.169.254/metadata/scheduledevents%3Fapi-version=2019-08-01%26marker=%2526",
+        )
+        .unwrap();
+
+        assert_eq!(canon.path_segments, vec!["", "metadata", "scheduledevents"]);
+        assert_eq!(
+            canon.query.get("api-version"),
+            Some(&vec!["2019-08-01".to_string()])
+        );
+        assert_eq!(canon.query.get("marker"), Some(&vec!["%26".to_string()]));
+    }
+
+    #[test]
+    fn encoded_and_regular_queries_are_merged() {
+        let canon = canonicalize_str(
+            "http://169.254.169.254/metadata/scheduledevents%3Fapi-version=2019-08-01?extra=1",
+        )
+        .unwrap();
+
+        assert_eq!(canon.query.get("extra"), Some(&vec!["1".to_string()]));
+        assert_eq!(
+            canon.query.get("api-version"),
+            Some(&vec!["2019-08-01".to_string()])
+        );
+    }
+
+    #[test]
+    fn encoded_plus_is_preserved_in_regular_and_embedded_queries() {
+        let regular = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token?resource=a%2Bb&k%2Bkey=c%2Bd",
+        )
+        .unwrap();
+        let embedded = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token%3Fresource=a%2Bb&k%2Bkey=c%2Bd",
+        )
+        .unwrap();
+
+        assert_eq!(regular.query, embedded.query);
+        assert_eq!(
+            embedded.query.get("resource"),
+            Some(&vec!["a+b".to_string()])
+        );
+        assert_eq!(embedded.query.get("k+key"), Some(&vec!["c+d".to_string()]));
+        assert_eq!(
+            canonicalize_str(&embedded.render()).unwrap().query,
+            embedded.query
+        );
+    }
+
+    #[test]
+    fn trailing_client_id_cr_is_trimmed_for_regular_and_embedded_queries() {
+        let regular = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token?client_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D",
+        )
+        .unwrap();
+        let embedded = canonicalize_str(
+            "http://169.254.169.254/metadata/identity/oauth2/token%3Fclient_id=292e4c16-1d25-4666-a60a-52d441e9ee5b%0D",
+        )
+        .unwrap();
+        let expected = Some(&vec!["292e4c16-1d25-4666-a60a-52d441e9ee5b".to_string()]);
+
+        assert_eq!(regular.query.get("client_id"), expected);
+        assert_eq!(embedded.query.get("client_id"), expected);
     }
 
     #[test]

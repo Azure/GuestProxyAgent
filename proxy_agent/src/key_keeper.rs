@@ -1042,7 +1042,6 @@ impl KeyKeeper {
         } else {
             key_file.set_extension("key");
         }
-
         #[cfg(all(windows, test))]
         let key_file_exists =
             key_file.exists() || (encrypted && crate::common::has_mock_key_data(&key_file));
