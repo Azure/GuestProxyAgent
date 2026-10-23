@@ -157,27 +157,23 @@ impl TcpConnectionContext {
         logger: &mut ConnectionLogger,
         #[cfg(windows)] raw_socket_id: usize,
     ) -> Result<AuditEntry> {
-        let client_source_port = client_addr.port();
-        match redirector::lookup_audit(client_source_port, redirector_shared_state).await {
+        match redirector::lookup_audit(client_addr, redirector_shared_state).await {
             Ok(data) => {
                 logger.write(
                     LoggerLevel::Trace,
-                    format!(
-                        "Found audit entry with client_source_port '{client_source_port}' successfully"
-                    ),
+                    format!("Found audit entry for TCP peer '{client_addr}' successfully"),
                 );
-                match redirector::remove_audit(client_source_port, redirector_shared_state).await {
+                match redirector::remove_audit(client_addr, redirector_shared_state).await {
                     Ok(_) => logger.write(
                         LoggerLevel::Trace,
-                        format!(
-                            "Removed audit entry with client_source_port '{client_source_port}' successfully"
-                        ),
+                        format!("Removed audit entry for TCP peer '{client_addr}' successfully"),
                     ),
                     Err(e) => {
                         logger.write(
                             LoggerLevel::Warn,
                             format!("Failed to remove audit entry: {e}"),
                         );
+                        return Err(e);
                     }
                 }
 
@@ -185,9 +181,8 @@ impl TcpConnectionContext {
             }
             Err(e) => {
                 let message = format!(
-                    "Failed to find audit entry with client_source_port '{client_source_port}' with error: {e}"
+                    "Failed to find audit entry for TCP peer '{client_addr}' with error: {e}"
                 );
-                logger.write(LoggerLevel::Warn, message.clone());
 
                 #[cfg(not(windows))]
                 {
@@ -197,23 +192,23 @@ impl TcpConnectionContext {
                 #[cfg(windows)]
                 {
                     logger.write(
-                        LoggerLevel::Info,
-                        "Try to get audit entry from socket stream".to_string(),
+                        LoggerLevel::Trace,
+                        format!("{message}. Try to get audit entry from socket stream",),
                     );
 
                     match redirector::get_audit_from_stream_socket(raw_socket_id) {
                         Ok(data) => {
                             logger.write(
-                                LoggerLevel::Info,
+                                LoggerLevel::Trace,
                                 "Found audit entry from socket stream successfully".to_string(),
                             );
                             Ok(data)
                         }
                         Err(e) => {
-                            logger.write(
-                                LoggerLevel::Warn,
-                                format!("Failed to get lookup_audit_from_stream with error: {e}"),
+                            let message = format!(
+                                "{message}. Failed to get audit entry from socket stream with error: {e}"
                             );
+                            logger.write(LoggerLevel::Warn, message.to_string());
                             Err(Error::FindAuditEntryError(message))
                         }
                     }
@@ -301,6 +296,12 @@ impl HttpConnectionContext {
     /// this method can be removed.
     pub fn contains_traversal_characters(&self) -> bool {
         path_has_traversal(self.url.path())
+    }
+
+    /// Checks if the request path contains nested percent-encoding, which can be used to bypass
+    /// certain security checks. Returns `true` if nested percent-encoding is detected.
+    pub fn has_nested_percent_encoding(&self) -> bool {
+        path_has_nested_percent_encoding(self.url.path())
     }
 
     pub fn log(&mut self, logger_level: LoggerLevel, message: String) {
@@ -448,9 +449,22 @@ fn path_has_traversal(raw_path: &str) -> bool {
     decoded.contains("..")
 }
 
+/// Detect nested percent-encoding without changing request handling.
+/// Every deeper encoding exposes a valid `%HH` sequence after one decode.
+fn path_has_nested_percent_encoding(raw_path: &str) -> bool {
+    let decoded = percent_encoding::percent_decode_str(raw_path).decode_utf8_lossy();
+    contains_percent_encoded_byte(decoded.as_bytes())
+}
+
+fn contains_percent_encoded_byte(value: &[u8]) -> bool {
+    value.windows(3).any(|window| {
+        window[0] == b'%' && window[1].is_ascii_hexdigit() && window[2].is_ascii_hexdigit()
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::path_has_traversal;
+    use super::{path_has_nested_percent_encoding, path_has_traversal};
 
     #[test]
     fn clean_paths_are_not_traversal() {
@@ -529,6 +543,35 @@ mod tests {
             assert!(
                 !path_has_traversal(p),
                 "expected non-traversal (deferred to canonical): {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_percent_encoding_tests() {
+        for p in [
+            "/foo/%252e%252e/bar",
+            "/foo/%252E%252e/bar",
+            "/foo/%25252e%25252e/bar",
+            "/foo/%25%32%65%25%32%65/bar",
+            "/metadata%252fidentity/oauth2/token",
+            "/metadata/%253Fapi-version=2021-02-01",
+        ] {
+            assert!(
+                path_has_nested_percent_encoding(p),
+                "expected nested percent encoding to be detected: {p:?}"
+            );
+        }
+
+        for p in [
+            "/metadata/%69nstance",
+            "/metadata/value%25done",
+            "/metadata/value%252",
+            "/metadata/value%25zz",
+        ] {
+            assert!(
+                !path_has_nested_percent_encoding(p),
+                "expected unambiguous encoding to be allowed: {p:?}"
             );
         }
     }

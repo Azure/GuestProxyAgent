@@ -3,6 +3,7 @@
 using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Sas;
 using GuestProxyAgentTest.Settings;
@@ -121,7 +122,7 @@ namespace GuestProxyAgentTest.Utilities
         {
             var serviceClient = new BlobServiceClient(new Uri(TestSetting.Instance.sharedStorageAccountUrl), this.tokenCredential);
             var containerClient = serviceClient.GetBlobContainerClient(containerName);
-            foreach(var blob in containerClient.GetBlobs(prefix: folderPath))
+            foreach(var blob in containerClient.GetBlobs(new GetBlobsOptions { Prefix = folderPath }))
             {
                 containerClient.GetBlobClient(blob.Name).DeleteIfExists();
             }
@@ -130,9 +131,11 @@ namespace GuestProxyAgentTest.Utilities
         private string DoGenerateSasUri(string storageAccountUrl, string containerName, string fileName)
         {
             var bsClient = new BlobServiceClient(new Uri(storageAccountUrl), this.tokenCredential);
-            Azure.Storage.Blobs.Models.UserDelegationKey userDelegationKey =
-                     bsClient.GetUserDelegationKey(DateTimeOffset.UtcNow.AddHours(-6),
-                                                          DateTimeOffset.UtcNow.AddDays(1));
+            UserDelegationKey userDelegationKey = bsClient.GetUserDelegationKey(
+                new BlobGetUserDelegationKeyOptions(DateTimeOffset.UtcNow.AddDays(1))
+                {
+                    StartsOn = DateTimeOffset.UtcNow.AddHours(-6)
+                }).Value;
             // Create a SAS token that's valid for one hour.
             BlobSasBuilder sasBuilder = new BlobSasBuilder()
             {

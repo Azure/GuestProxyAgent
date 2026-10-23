@@ -7,14 +7,15 @@ use crate::common::{
     result::Result,
 };
 use crate::redirector::shared_ebpf::linux_types::{
-    destination_entry, sock_addr_audit_entry, sock_addr_audit_key, sock_addr_skip_process_entry,
-    AuditMapKey, AuditMapValue,
+    alert_only_event, destination_entry, sock_addr_audit_entry, sock_addr_audit_key,
+    sock_addr_skip_process_entry, AuditMapKey, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME,
+    CONFIG_MAP_NAME, GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
 };
-use crate::redirector::{ip_to_string, AuditEntry};
+use crate::redirector::{ip_to_string, AlertOnlyEntry, AuditEntry};
 use crate::shared_state::redirector_wrapper::RedirectorSharedState;
 use aya::programs::{CgroupSockAddr, KProbe};
 use aya::{
-    maps::{HashMap, MapData},
+    maps::{HashMap, MapData, RingBuf},
     programs::CgroupAttachMode,
 };
 use aya::{Btf, Ebpf, EbpfLoader};
@@ -23,16 +24,53 @@ use proxy_agent_shared::{logger::LoggerLevel, misc_helpers};
 use std::convert::TryFrom;
 use std::path::PathBuf;
 
-pub struct BpfObject(Ebpf);
+pub struct BpfObject {
+    ebpf: Option<Ebpf>,
+    event_runtime: super::EventTaskRuntime,
+}
+
+/// Linux audit_map value: the shared 28-byte audit entry followed by the executable
+/// identity captured in-kernel (device, inode low/high, valid flag).
+/// Mirrors `struct gpa_linux_audit_event` in linux-ebpf/socket.h.
+pub type LinuxAuditMapValue = [u32; 11];
+
+fn linux_audit_entry_from_array(value: LinuxAuditMapValue) -> AuditEntry {
+    let mut base = [0u32; 7];
+    base.copy_from_slice(&value[..7]);
+    let mut entry = sock_addr_audit_entry::from_array(base).to_audit_entry();
+    entry.executable_device = u64::from(value[7]);
+    entry.executable_inode = u64::from(value[8]) | (u64::from(value[9]) << 32);
+    entry.executable_identity_valid = value[10] != 0;
+    entry
+}
 
 // BpfObject is a wrapper around Bpf object to interact with Linux eBPF programs and maps
 impl BpfObject {
     pub fn new(ebpf: Ebpf) -> Self {
-        BpfObject(ebpf)
+        BpfObject {
+            ebpf: Some(ebpf),
+            event_runtime: super::EventTaskRuntime::default(),
+        }
     }
 
-    pub fn get_bpf(&self) -> &Ebpf {
-        &self.0
+    fn ebpf(&self) -> Result<&Ebpf> {
+        self.ebpf
+            .as_ref()
+            .ok_or(Error::Bpf(BpfErrorType::NullBpfObject))
+    }
+
+    fn ebpf_mut(&mut self) -> Result<&mut Ebpf> {
+        self.ebpf
+            .as_mut()
+            .ok_or(Error::Bpf(BpfErrorType::NullBpfObject))
+    }
+
+    pub(crate) fn event_runtime_mut(&mut self) -> &mut super::EventTaskRuntime {
+        &mut self.event_runtime
+    }
+
+    fn take_resources(&mut self) -> (Option<Ebpf>, super::EventTaskRuntime) {
+        (self.ebpf.take(), std::mem::take(&mut self.event_runtime))
     }
 
     pub fn from_ebpf_file(bpf_file_path: &PathBuf) -> Result<BpfObject> {
@@ -58,13 +96,13 @@ impl BpfObject {
     }
 
     pub fn update_skip_process_map(&mut self, pid: u32) -> Result<()> {
-        let skip_process_map_name = "skip_process_map";
-        match self.0.map_mut(skip_process_map_name) {
+        let skip_process_map_name = SKIP_PROCESS_MAP_NAME;
+        match self.ebpf_mut()?.map_mut(skip_process_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 1], [u32; 1]>::try_from(map) {
                 Ok(mut skip_process_map) => {
                     let key = sock_addr_skip_process_entry::from_pid(pid);
                     let value = sock_addr_skip_process_entry::from_pid(pid);
-                    match skip_process_map.insert(key.to_array(), value.to_array(), 0) {
+                    match skip_process_map.insert(key.as_array(), value.as_array(), 0) {
                         Ok(_) => logger::write(format!("skip_process_map updated with {pid}")),
                         Err(err) => {
                             return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
@@ -92,6 +130,40 @@ impl BpfObject {
         Ok(())
     }
 
+    pub fn update_local_ip_bind_monitor_only(&mut self, enabled: bool) -> Result<()> {
+        let config_map_name = CONFIG_MAP_NAME;
+        match self.ebpf_mut()?.map_mut(config_map_name) {
+            Some(map) => match HashMap::<&mut MapData, u32, [u32; 1]>::try_from(map) {
+                Ok(mut config_map) => config_map
+                    .insert(
+                        GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY,
+                        [u32::from(enabled)],
+                        0,
+                    )
+                    .map_err(|err| {
+                        Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                            config_map_name.to_string(),
+                            "localIPBindMonitorOnly".to_string(),
+                            err.to_string(),
+                        ))
+                    })?,
+                Err(err) => {
+                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                        config_map_name.to_string(),
+                        err.to_string(),
+                    )));
+                }
+            },
+            None => {
+                return Err(Error::Bpf(BpfErrorType::GetBpfMap(
+                    config_map_name.to_string(),
+                    "Map does not exist".to_string(),
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_policy_elem_bpf_map(
         &mut self,
         endpoint_name: &str,
@@ -99,14 +171,14 @@ impl BpfObject {
         dest_ipv4: u32,
         dest_port: u16,
     ) -> Result<()> {
-        let policy_map_name = "policy_map";
-        match self.0.map_mut(policy_map_name) {
+        let policy_map_name = POLICY_MAP_NAME;
+        match self.ebpf_mut()?.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let local_ip = super::string_to_ip(constants::PROXY_AGENT_IP);
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
                     let value = destination_entry::from_ipv4(local_ip, local_port);
-                    match policy_map.insert(key.to_array(), value.to_array(), 0) {
+                    match policy_map.insert(key.as_array(), value.as_array(), 0) {
                         Ok(_) => {
                             logger::write(format!("policy_map updated for {endpoint_name}"));
                         }
@@ -147,7 +219,7 @@ impl BpfObject {
         program_name: &str,
     ) -> Result<()> {
         match std::fs::File::open(cgroup2_root_path.clone()) {
-            Ok(cgroup) => match self.0.program_mut(program_name) {
+            Ok(cgroup) => match self.ebpf_mut()?.program_mut(program_name) {
                 Some(program) => match program.try_into() {
                     Ok(p) => {
                         let program: &mut CgroupSockAddr = p;
@@ -201,7 +273,7 @@ impl BpfObject {
 
     pub fn attach_kprobe_program(&mut self) -> Result<()> {
         let program_name = "tcp_connect_probe";
-        match self.0.program_mut(program_name) {
+        match self.ebpf_mut()?.program_mut(program_name) {
             Some(program) => match program.try_into() {
                 Ok(p) => {
                     let program: &mut KProbe = p;
@@ -245,28 +317,27 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
-        let audit_map_name = "audit_map";
-        match self.0.map(audit_map_name) {
-            Some(map) => match HashMap::<&MapData, AuditMapKey, AuditMapValue>::try_from(map) {
-                Ok(audit_map) => {
-                    let key = sock_addr_audit_key::from_source_port(source_port);
-                    match audit_map.get(&key.to_array(), 0) {
-                        Ok(value) => {
-                            let audit_value = sock_addr_audit_entry::from_array(value);
-                            Ok(audit_value.to_audit_entry())
+    pub fn lookup_audit(&self, peer: &std::net::SocketAddr) -> Result<AuditEntry> {
+        let audit_map_name = AUDIT_MAP_NAME;
+        match self.ebpf()?.map(audit_map_name) {
+            Some(map) => {
+                match HashMap::<&MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
+                    Ok(audit_map) => {
+                        let key = sock_addr_audit_key::from_peer(peer)?;
+                        match audit_map.get(&key.as_array(), 0) {
+                            Ok(value) => Ok(linux_audit_entry_from_array(value)),
+                            Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
+                                peer.to_string(),
+                                err.to_string(),
+                            ))),
                         }
-                        Err(err) => Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                            source_port.to_string(),
-                            err.to_string(),
-                        ))),
                     }
+                    Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                        audit_map_name.to_string(),
+                        err.to_string(),
+                    ))),
                 }
-                Err(err) => Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
-                    audit_map_name.to_string(),
-                    err.to_string(),
-                ))),
-            },
+            }
             None => Err(Error::Bpf(BpfErrorType::GetBpfMap(
                 audit_map_name.to_string(),
                 "Map does not exist".to_string(),
@@ -281,13 +352,16 @@ impl BpfObject {
         local_port: u16,
         redirect: bool,
     ) -> bool {
-        let policy_map_name = "policy_map";
-        match self.0.map_mut(policy_map_name) {
+        let policy_map_name = POLICY_MAP_NAME;
+        let Ok(ebpf) = self.ebpf_mut() else {
+            return false;
+        };
+        match ebpf.map_mut(policy_map_name) {
             Some(map) => match HashMap::<&mut MapData, [u32; 6], [u32; 6]>::try_from(map) {
                 Ok(mut policy_map) => {
                     let key = destination_entry::from_ipv4(dest_ipv4, dest_port);
                     if !redirect {
-                        match policy_map.remove(&key.to_array()) {
+                        match policy_map.remove(&key.as_array()) {
                             Ok(_) => {
                                 event_logger::write_event(
                                     LoggerLevel::Info,
@@ -319,7 +393,7 @@ impl BpfObject {
                         );
                         let local_ip: u32 = super::string_to_ip(&local_ip);
                         let value = destination_entry::from_ipv4(local_ip, local_port);
-                        match policy_map.insert(key.to_array(), value.to_array(), 0) {
+                        match policy_map.insert(key.as_array(), value.as_array(), 0) {
                             Ok(_) => {
                                 event_logger::write_event(
                                     LoggerLevel::Info,
@@ -355,26 +429,28 @@ impl BpfObject {
         false
     }
 
-    pub fn remove_audit_map_entry(&mut self, source_port: u16) -> Result<()> {
-        let audit_map_name = "audit_map";
-        match self.0.map_mut(audit_map_name) {
-            Some(map) => match HashMap::<&mut MapData, AuditMapKey, AuditMapValue>::try_from(map) {
-                Ok(mut audit_map) => {
-                    let key = sock_addr_audit_key::from_source_port(source_port);
-                    audit_map.remove(&key.to_array()).map_err(|err| {
-                        Error::Bpf(BpfErrorType::MapDeleteElem(
-                            source_port.to_string(),
-                            format!("Error: {err}"),
-                        ))
-                    })?;
+    pub fn remove_audit_map_entry(&mut self, peer: &std::net::SocketAddr) -> Result<()> {
+        let audit_map_name = AUDIT_MAP_NAME;
+        match self.ebpf_mut()?.map_mut(audit_map_name) {
+            Some(map) => {
+                match HashMap::<&mut MapData, AuditMapKey, LinuxAuditMapValue>::try_from(map) {
+                    Ok(mut audit_map) => {
+                        let key = sock_addr_audit_key::from_peer(peer)?;
+                        audit_map.remove(&key.as_array()).map_err(|err| {
+                            Error::Bpf(BpfErrorType::MapDeleteElem(
+                                peer.to_string(),
+                                format!("Error: {err}"),
+                            ))
+                        })?;
+                    }
+                    Err(err) => {
+                        return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                            audit_map_name.to_string(),
+                            err.to_string(),
+                        )));
+                    }
                 }
-                Err(err) => {
-                    return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
-                        audit_map_name.to_string(),
-                        err.to_string(),
-                    )));
-                }
-            },
+            }
             None => {
                 return Err(Error::Bpf(BpfErrorType::GetBpfMap(
                     audit_map_name.to_string(),
@@ -383,6 +459,65 @@ impl BpfObject {
             }
         }
         Ok(())
+    }
+
+    /// Subscribes to the alert-only events from the eBPF map.
+    /// Returns a receiver channel through which `AlertOnlyEventRecord` instances are sent.
+    pub fn subscribe_alert_only(
+        &mut self,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>> {
+        let audit_map_name = ALERT_ONLY_MAP_NAME;
+        let map = self.ebpf_mut()?.take_map(audit_map_name).ok_or_else(|| {
+            Error::Bpf(BpfErrorType::GetBpfMap(
+                audit_map_name.to_string(),
+                "Map does not exist".to_string(),
+            ))
+        })?;
+        let ring = RingBuf::try_from(map).map_err(|err| {
+            Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                audit_map_name.to_string(),
+                err.to_string(),
+            ))
+        })?;
+        let mut async_ring = tokio::io::unix::AsyncFd::new(ring).map_err(|err| {
+            Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                audit_map_name.to_string(),
+                err.to_string(),
+            ))
+        })?;
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let event_reader_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => return,
+                    readiness = async_ring.readable_mut() => {
+                        let Ok(mut guard) = readiness else { return; };
+                        while let Some(item) = guard.get_inner_mut().next() {
+                            match alert_only_event::from_bytes(&item) {
+                                Ok(event) => {
+                                    let record = AlertOnlyEntry  {
+                                        audit_entry: event.to_audit_entry(),
+                                        kernel_timestamp_ns: event.kernel_timestamp_ns,
+                                        timestamp_utc_ns: proxy_agent_shared::misc_helpers::get_date_time_unix_nano(),
+                                        local_ip_address: event.local_ip_address,
+                                    };
+                                    if sender.send(record).is_err() {
+                                        return;
+                                    }
+                                }
+                                Err(err) => logger::write_warning(format!(
+                                    "Failed to decode eBPF alert-only event: {err}"
+                                )),
+                            }
+                        }
+                        guard.clear_ready();
+                    }
+                }
+            }
+        });
+        self.event_runtime.add_task(event_reader_task);
+        Ok(receiver)
     }
 }
 
@@ -427,6 +562,28 @@ impl super::Redirector {
         }
         Ok(())
     }
+}
+
+pub async fn close_bpf_object(redirector_shared_state: RedirectorSharedState) -> Result<()> {
+    let Some(bpf_object) = redirector_shared_state.take_bpf_object().await? else {
+        return Ok(());
+    };
+
+    let (ebpf, event_runtime) = {
+        let mut bpf_object = bpf_object.lock().map_err(|e| {
+            Error::Bpf(BpfErrorType::CloseBpfObject(format!(
+                "BPF object lock is poisoned: {e}"
+            )))
+        })?;
+        bpf_object.take_resources()
+    };
+
+    // Aya detaches managed links and closes program/map file descriptors when Ebpf is dropped.
+    drop(ebpf);
+    event_runtime.shutdown().await?;
+
+    logger::write("Successfully closed Linux BPF object.".to_string());
+    Ok(())
 }
 
 pub async fn update_wire_server_redirect_policy(
@@ -487,10 +644,11 @@ pub async fn update_hostga_redirect_policy(
 #[cfg(test)]
 #[cfg(feature = "test-with-root")]
 mod tests {
+    use super::LinuxAuditMapValue;
     use crate::common::config;
     use crate::common::constants;
     use crate::redirector::shared_ebpf::linux_types::{
-        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey, AuditMapValue,
+        sock_addr_audit_entry, sock_addr_audit_key, AuditMapKey,
     };
     use aya::maps::HashMap;
     use proxy_agent_shared::misc_helpers;
@@ -564,13 +722,14 @@ mod tests {
         );
 
         let source_port = 1;
-        let audit = bpf.lookup_audit(source_port);
+        let peer = std::net::SocketAddr::from(([127, 0, 0, 1], source_port));
+        let audit = bpf.lookup_audit(&peer);
         assert!(
             audit.is_err(),
             "lookup_audit should return error for invalid source port"
         );
         // insert to map an then look up
-        let key = sock_addr_audit_key::from_source_port(source_port);
+        let key = sock_addr_audit_key::from_peer(&peer).unwrap();
         let value = sock_addr_audit_entry {
             logon_id: 999,
             process_id: 888,
@@ -580,18 +739,25 @@ mod tests {
             address_family: crate::redirector::shared_ebpf::GPA_ADDRESS_FAMILY_IPV6,
             reserved: 0,
         };
+        let mut linux_value: LinuxAuditMapValue = [0; 11];
+        linux_value[..7].copy_from_slice(&value.as_array());
+        linux_value[7] = 8;
+        linux_value[8] = 7;
+        linux_value[9] = 6;
+        linux_value[10] = 1;
         {
             // drop map_mut("audit_map") within this scope
-            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, AuditMapValue> =
-                HashMap::<&mut aya::maps::MapData, AuditMapKey, AuditMapValue>::try_from(
-                    bpf.0.map_mut("audit_map").unwrap(),
+            let mut audit_map: HashMap<&mut aya::maps::MapData, AuditMapKey, LinuxAuditMapValue> =
+                HashMap::<&mut aya::maps::MapData, AuditMapKey, LinuxAuditMapValue>::try_from(
+                    bpf.ebpf_mut().unwrap().map_mut("audit_map").unwrap(),
                 )
                 .unwrap();
-            audit_map
-                .insert(key.to_array(), value.to_array(), 0)
-                .unwrap();
+            audit_map.insert(key.as_array(), linux_value, 0).unwrap();
         }
-        let audit = bpf.lookup_audit(source_port);
+        let shadow = std::net::SocketAddr::from(([127, 0, 0, 2], source_port));
+        assert!(bpf.lookup_audit(&shadow).is_err());
+        assert!(bpf.remove_audit_map_entry(&shadow).is_err());
+        let audit = bpf.lookup_audit(&peer);
         match audit {
             Ok(entry) => {
                 assert_eq!(
@@ -612,11 +778,56 @@ mod tests {
                     "destination_port is not equal"
                 );
                 assert_eq!(entry.address_family, crate::redirector::AddressFamily::IPv6);
+                assert_eq!(entry.executable_device, 8);
+                assert_eq!(entry.executable_inode, (6u64 << 32) | 7);
+                assert!(entry.executable_identity_valid);
             }
             Err(err) => {
                 println!("lookup_audit_internal error: {}", err);
                 assert!(false, "lookup_audit_internal should not return Err");
             }
         }
+        let mapped = format!("[::ffff:127.0.0.1]:{source_port}").parse().unwrap();
+        assert!(bpf.lookup_audit(&mapped).is_ok());
+        bpf.remove_audit_map_entry(&mapped).unwrap();
+        assert!(bpf.lookup_audit(&peer).is_err());
+    }
+}
+
+#[cfg(test)]
+mod audit_decode_tests {
+    use super::{linux_audit_entry_from_array, LinuxAuditMapValue};
+
+    #[test]
+    fn linux_audit_value_decodes_executable_identity() {
+        let value: LinuxAuditMapValue = [
+            1000,
+            42,
+            0,
+            0x0102_0304,
+            80,
+            4,
+            0,
+            8,
+            0x89AB_CDEF,
+            0x0123_4567,
+            1,
+        ];
+        let entry = linux_audit_entry_from_array(value);
+
+        assert_eq!(entry.logon_id, 1000);
+        assert_eq!(entry.process_id, 42);
+        assert_eq!(entry.executable_device, 8);
+        assert_eq!(entry.executable_inode, 0x0123_4567_89AB_CDEF);
+        assert!(entry.executable_identity_valid);
+
+        let mut invalid = value;
+        invalid[10] = 0;
+        assert!(!linux_audit_entry_from_array(invalid).executable_identity_valid);
+    }
+
+    #[test]
+    fn linux_audit_value_matches_ebpf_layout() {
+        assert_eq!(std::mem::size_of::<LinuxAuditMapValue>(), 44);
     }
 }

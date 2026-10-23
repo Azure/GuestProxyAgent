@@ -19,7 +19,7 @@ apt update && \
     rpm \
     musl-tools \
     zip \
-    dotnet-sdk-8.0 \
+    dotnet-sdk-10.0 \
     sudo
     
 # Originally was grouped with install dotnet

@@ -12,3 +12,5 @@ scenarios:
     className: GuestProxyAgentTest.TestScenarios.ProxyAgentExtension
   - name: LinuxImplicitExtension
     className: GuestProxyAgentTest.TestScenarios.LinuxImplicitExtension
+  - name: RunPenTest
+    className: GuestProxyAgentTest.TestScenarios.PenTestScenario

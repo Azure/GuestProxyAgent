@@ -27,8 +27,8 @@ echo out_dir=%out_dir%
 
 REM Set the path to the eBPF-for-Windows binaries and include files,
 REM We build ARM64 binaries on x64 machine, so we need to set the path to the x64 binaries
-SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.x64.1.5.0\build\native\bin
-SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.%eBPF_Platform%.1.5.0\build\native\include
+SET eBPF_for_Windows_bin_path=%root_path%packages\eBPF-for-Windows.x64.1.6.0\build\native\bin
+SET eBPF_for_Windows_inc_path=%root_path%packages\eBPF-for-Windows.%eBPF_Platform%.1.6.0\build\native\include
 SET bin_skim_path=%root_path%packages\Microsoft.CodeAnalysis.BinSkim.1.9.5\tools\netcoreapp3.1\win-x64
 
 if "%CleanBuild%"=="clean" (
@@ -134,10 +134,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_shared\target\%Configuration%\
 
     echo ======= run rust proxy_agent_shared tests
-    REM %ERRORLEVEL% inside a (...) block is expanded when the entire block is parsed, not when each line run
-    REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  ^|^| exit /b 1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+    echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
 )
 
 echo ======= copy config file for windows platform
@@ -166,9 +164,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent\target\%Configuration%\
 
     echo ======= run rust proxy_agent tests
-    REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+    echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
 )
 
 echo ======= build proxy_agent_extension
@@ -192,9 +189,8 @@ if "%Target%"=="arm64" (
     xcopy /Y /S /C /Q %out_dir% %root_path%proxy_agent_extension\target\%Configuration%\
 
     echo ======= run rust proxy_agent_extension tests
-    REM use exit /b 1 to propagate error codes inside a (...) block
-    echo call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture ^|^| exit /b 1
-    call cargo test --all-features  %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture  || exit /b 1
+    echo call cargo test --all-features %release_flag% --manifest-path %cargo_toml% --target-dir %out_path% --target %build_target% -- --test-threads=1 --nocapture
+    call powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$cargoArgs = @('test', '--all-features'); if ($env:release_flag) { $cargoArgs += $env:release_flag }; $cargoArgs += @('--manifest-path', $env:cargo_toml, '--target-dir', $env:out_path, '--target', $env:build_target); & cargo @cargoArgs -- --test-threads=1 --nocapture | Tee-Object -Variable testOutput; $cargoExit = $LASTEXITCODE; if ($cargoExit -ne 0) { exit $cargoExit }; if (-not ($testOutput -match 'test result: ok\.')) { [Console]::Error.WriteLine('cargo test exited without a successful test summary. The test process may have been terminated externally.'); exit 1 }" || exit /b 1
 )
 
 echo ======= build proxy_agent_setup
@@ -219,8 +215,8 @@ if  %ERRORLEVEL% NEQ 0 (
 
 echo ======= build e2e test project
 SET out_e2etest_dir=%out_dir%\e2etest
-echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
-call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest.sln --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+echo call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
+call dotnet.exe build %root_path%\e2etest\GuestProxyAgentTest\GuestProxyAgentTest.csproj --no-restore --configuration %Configuration% -o %out_e2etest_dir%
 if  %ERRORLEVEL% NEQ 0 (
     echo call dotnet.exe build failed with exit-code: %errorlevel%
     exit /b %errorlevel%
@@ -247,10 +243,20 @@ for %%F in (%extension_src_path%\*.cmd) do (
 )
 xcopy /Y %out_dir%\ProxyAgentExt.* %out_package_proxyagent_extension_dir%\
 
+echo ======= generate ProxyAgent Extension catalog
+call powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%extension_root_path%\scripts\New-ExtensionCatalog.ps1" -ExtensionPackageDirectory "%out_package_proxyagent_extension_dir%"
+if %ERRORLEVEL% NEQ 0 (
+    echo Extension catalog generation failed with exit-code: %errorlevel%
+    exit /b %errorlevel%
+)
+
 echo ======= copy e2e test project to Package folder
 SET out_package_e2etest_dir=%out_package_dir%\e2etest
 echo xcopy /Y /S /C /Q %out_e2etest_dir% %out_package_e2etest_dir%\
 xcopy /Y /S /C /Q %out_e2etest_dir% %out_package_e2etest_dir%\
+
+echo ======== copy pentest folder to package folder
+xcopy /Y /S /C /Q %root_path%\pentest %out_package_dir%\pentest\
 
 echo ======= run binskim command
 call %bin_skim_path%\BinSkim.exe analyze %out_package_proxyagent_dir%\GuestProxyAgent.exe --output %out_package_proxyagent_dir%\GuestProxyAgent.exe.binskim.json --rich-return-code=true --force

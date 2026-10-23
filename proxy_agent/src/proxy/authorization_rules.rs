@@ -644,6 +644,18 @@ mod tests {
         let mut temp_test_path = std::env::temp_dir();
         temp_test_path.push(logger_key);
         let mut test_logger = ConnectionLogger::new(0, 0);
+        let current_exe = std::env::current_exe().unwrap();
+        #[cfg(not(windows))]
+        let (current_exe_dev, current_exe_ino) = {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = std::fs::metadata(&current_exe).unwrap();
+            (
+                crate::common::linux::kernel_dev_from_st_dev(metadata.dev()),
+                metadata.ino(),
+            )
+        };
+        #[cfg(windows)]
+        let (current_exe_dev, current_exe_ino) = (0u64, 0u64);
 
         // Test Enforce Mode
         let access_control_rules = AccessControlRules {
@@ -658,7 +670,7 @@ mod tests {
             }]),
             identities: Some(vec![Identity {
                 name: "test".to_string(),
-                exePath: Some("test".to_string()),
+                exePath: Some(current_exe.to_string_lossy().to_string()),
                 groupName: Some("test".to_string()),
                 processName: Some("test".to_string()),
                 userName: Some("test".to_string()),
@@ -687,7 +699,10 @@ mod tests {
             userName: "test".to_string(),
             userGroups: vec!["test".to_string()],
             processId: 0,
-            processFullPath: PathBuf::from("test"),
+            processFullPath: current_exe.clone(),
+            processExecutableDevice: current_exe_dev,
+            processExecutableInode: current_exe_ino,
+            processExecutableIdentityValid: true,
             clientIp: "0".to_string(),
             clientPort: 0, // doesn't matter for this test
             processName: OsString::from("test"),
@@ -941,6 +956,9 @@ mod tests {
             userGroups: vec!["users".to_string()],
             processId: 1234,
             processFullPath: PathBuf::from("/usr/bin/curl"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "127.0.0.1".to_string(),
             clientPort: 12345,
             processName: OsString::from("curl"),
@@ -976,6 +994,9 @@ mod tests {
             userGroups: vec!["users".to_string()],
             processId: 5678,
             processFullPath: PathBuf::from("/usr/bin/curl"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "127.0.0.1".to_string(),
             clientPort: 12345,
             processName: OsString::from("curl"),
@@ -1072,6 +1093,9 @@ mod tests {
             userGroups: vec![],
             processId: 0,
             processFullPath: PathBuf::from("p"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             clientIp: "0".to_string(),
             clientPort: 0,
             processName: OsString::from("p"),
@@ -1116,12 +1140,9 @@ mod tests {
     }
 
     #[test]
-    fn canonical_decision_diverges_on_substring_vs_segment_prefix() {
-        // THE M3 motivating divergence. Legacy `Privilege::is_match`
-        // uses `starts_with` -> `/test-evil/x` is "under /test" by
-        // substring. Canonical does segment-by-segment prefix
-        // matching -> `/test-evil/x` is NOT under `/test`. Shadow mode
-        // exists to report this exact class.
+    fn canonical_decision_preserves_final_segment_prefix_compatibility() {
+        // KD-6 compatibility: deployed rules without a trailing slash rely
+        // on legacy `starts_with` behavior within the final path segment.
         let rules = build_test_rules("/test");
         let claims = trusted_claims();
         let mut log = ConnectionLogger::new(0, 0);
@@ -1130,22 +1151,19 @@ mod tests {
         let legacy = rules.is_allowed(&mut log, uri.clone(), claims.clone());
         let canon = rules.canonical_decision(&mut log, &uri, &hyper::Method::GET, &claims);
 
-        // Legacy is buggy here (allows the SSRF-shaped path).
         assert!(
             legacy,
-            "legacy substring match should still allow /test-evil; if this fails, legacy was fixed and this test should be retired"
+            "legacy final-segment prefix match should allow /test-evil"
         );
-        // Canonical correctly denies.
         assert_eq!(
             canon,
-            CanonicalDecision::Denied,
-            "canonical segment match must deny /test-evil"
+            CanonicalDecision::Allowed,
+            "canonical must preserve KD-6 final-segment prefix compatibility"
         );
-        // The shape we'll feed to telemetry:
-        assert_ne!(
+        assert_eq!(
             legacy,
             canon.allowed_or_fail_closed(),
-            "this is the divergence shadow mode must surface"
+            "KD-6 compatibility should eliminate this shadow divergence"
         );
     }
 
@@ -1188,13 +1206,13 @@ mod tests {
         // shadow window proves zero divergences. We pin its
         // semantics here so a future enforce wiring doesn't get a
         // surprise.
-        let rules = build_test_rules("/test");
+        let rules = build_test_rules("/test/");
         let claims = trusted_claims();
         let mut log = ConnectionLogger::new(0, 0);
 
-        // Divergent case: legacy=true (substring), canon=Denied.
+        // Divergent case: legacy=false (substring), canon=Denied.
         let uri = hyper::Uri::from_str("http://169.254.169.254/test-evil/anything").unwrap();
-        let legacy_allowed = true;
+        let legacy_allowed = false;
         let canon = rules.shadow_compare(
             &mut log,
             &uri,
