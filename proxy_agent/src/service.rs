@@ -6,8 +6,7 @@ pub mod windows_main;
 use crate::common::{config, constants, helpers, logger};
 use crate::key_keeper::KeyKeeper;
 use crate::proxy::proxy_connection::ConnectionLogger;
-use crate::proxy::proxy_server::ProxyServer;
-use crate::redirector::{self, Redirector};
+use crate::runtime_coordinator::RuntimeCoordinator;
 use crate::shared_state::SharedState;
 use proxy_agent_shared::current_info;
 use proxy_agent_shared::hyper_client::HostEndpoint;
@@ -84,19 +83,7 @@ pub async fn start_service(shared_state: SharedState) {
         }
     });
 
-    tokio::spawn({
-        let redirector: Redirector = Redirector::new(constants::PROXY_AGENT_PORT, &shared_state);
-        async move {
-            redirector.start().await;
-        }
-    });
-
-    let proxy_server = ProxyServer::new(constants::PROXY_AGENT_PORT, &shared_state);
-    if let Err(e) = proxy_server.start_on_dedicated_runtime() {
-        logger::write_error(format!(
-            "Failed to start the proxy server runtime thread: {e}"
-        ));
-    }
+    RuntimeCoordinator::start(shared_state);
 }
 
 #[cfg(windows)]
@@ -165,17 +152,6 @@ pub fn stop_service(shared_state: SharedState) {
         helpers::get_elapsed_time_in_millisec()
     ));
     shared_state.cancel_cancellation_token();
-
-    tokio::spawn({
-        let shared_state = shared_state.clone();
-        async move {
-            redirector::close(
-                shared_state.get_redirector_shared_state(),
-                shared_state.get_agent_status_shared_state(),
-            )
-            .await;
-        }
-    });
 
     #[cfg(windows)]
     proxy_agent_shared::windows_events::etw_listener::stop();

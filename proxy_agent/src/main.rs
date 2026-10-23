@@ -8,6 +8,7 @@ pub mod provision;
 pub mod proxy;
 pub mod proxy_agent_status;
 pub mod redirector;
+pub mod runtime_coordinator;
 pub mod service;
 pub mod shared_state;
 

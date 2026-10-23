@@ -12,6 +12,13 @@ using System.Linq;
 
 namespace GuestProxyAgentTest.Utilities
 {
+    public class GuestProxyAgentSettings
+    {
+        internal bool Enabled { get; set; } = false;
+        internal bool AddProxyAgentExtension { get; set; } = false;
+        internal bool UseLocalFileRules { get; set; } = false;
+    }
+
     /// <summary>
     /// Class for Build an Azure VM based on the test case setting
     /// </summary>
@@ -67,9 +74,9 @@ namespace GuestProxyAgentTest.Utilities
             "Standard_B2pls_v5",
         };
 
-        public async Task<VirtualMachineResource> Build(TestLogger logger, bool enableProxyAgent, CancellationToken cancellationToken)
+        public async Task<VirtualMachineResource> Build(TestLogger logger, GuestProxyAgentSettings proxyAgentSettings, CancellationToken cancellationToken)
         {
-            return await Build(logger, enableProxyAgent, null, true, cancellationToken);
+            return await Build(logger, proxyAgentSettings, null, true, cancellationToken);
         }
 
         /// <summary>
@@ -80,7 +87,12 @@ namespace GuestProxyAgentTest.Utilities
         /// <param name="deleteExistingResourceGroup">true to delete RG if already exists</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<VirtualMachineResource> Build(TestLogger logger, bool enableProxyAgent, string vmSizeOverride, bool deleteExistingResourceGroup, CancellationToken cancellationToken)
+        public async Task<VirtualMachineResource> Build(
+            TestLogger logger,
+            GuestProxyAgentSettings proxyAgentSettings,
+            string? vmSizeOverride,
+            bool deleteExistingResourceGroup,
+            CancellationToken cancellationToken)
         {
             PreCheck();
             ArmClient client = new(new GuestProxyAgentE2ETokenCredential(), defaultSubscriptionId: TestSetting.Instance.subscriptionId);
@@ -90,7 +102,6 @@ namespace GuestProxyAgentTest.Utilities
             string vmSizeToUse = vmSizeOverride ?? TestSetting.Instance.vmSize;
             if (vmSizeOverride == null)
             {
-                // Resolve an available VM size before creating resources
                 var resolvedVmSize = await GetAvailableVmSizeAsync(logger);
                 logger.Log($"Resolved VM size: {resolvedVmSize}");
                 vmSizeToUse = resolvedVmSize;
@@ -110,7 +121,7 @@ namespace GuestProxyAgentTest.Utilities
             VirtualMachineCollection vmCollection = rgr.GetVirtualMachines();
             logger.Log("Creating virtual machine...");
             var vmr = (await vmCollection.CreateOrUpdateAsync(WaitUntil.Completed, this.vmName,
-                await DoCreateVMData(logger, rgr, enableProxyAgent, vmSizeToUse), cancellationToken: cancellationToken)).Value;
+                await DoCreateVMData(logger, rgr, proxyAgentSettings, vmSizeToUse), cancellationToken: cancellationToken)).Value;
             logger.Log("Virtual machine created, with id: " + vmr.Id);
             return vmr;
         }
@@ -190,7 +201,7 @@ namespace GuestProxyAgentTest.Utilities
             return sub.GetResourceGroups().Get(this.rgName).Value.GetVirtualMachine(this.vmName);
         }
 
-        private async Task<VirtualMachineData> DoCreateVMData(TestLogger logger, ResourceGroupResource rgr, bool enableProxyAgent, string vmSize)
+        private async Task<VirtualMachineData> DoCreateVMData(TestLogger logger, ResourceGroupResource rgr, GuestProxyAgentSettings proxyAgentSettings, string vmSize)
         {
             var vmData = new VirtualMachineData(TestSetting.Instance.location)
             {
@@ -236,28 +247,35 @@ namespace GuestProxyAgentTest.Utilities
                 };
             }
 
-            if (enableProxyAgent)
+            if (proxyAgentSettings.Enabled)
             {
+                var ws = new HostEndpointSettings();
+                var imds = new HostEndpointSettings();
+                if (proxyAgentSettings.UseLocalFileRules)
+                {
+                    ws.UseLocalFileRules = true;
+                    imds.UseLocalFileRules = true;
+                }
+                else
+                {
+                    ws.InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId;
+                    imds.InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId;
+                }
+
                 vmData.SecurityProfile = new SecurityProfile()
                 {
                     ProxyAgentSettings = new ProxyAgentSettings()
                     {
-                        Enabled = true,
-                        WireServer = new HostEndpointSettings()
-                        {
-                            InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmWireServerAccessControlProfileReferenceId,
-                        },
-                        Imds = new HostEndpointSettings()
-                        {
-                            InVmAccessControlProfileReferenceId = TestSetting.Instance.InVmIMDSAccessControlProfileReferenceId,
-                        },
+                        Enabled = proxyAgentSettings.Enabled,
+                        WireServer = ws,
+                        Imds = imds,
                     }
                 };
                 if (!Constants.IS_WINDOWS() && !useSGI)
                 {
                     // Only Linux VMs support flag 'AddProxyAgentExtension',
                     // Windows VMs always have the GPA VM Extension installed when ProxyAgentSettings.Enabled is true.
-                    vmData.SecurityProfile.ProxyAgentSettings.AddProxyAgentExtension = true;
+                    vmData.SecurityProfile.ProxyAgentSettings.AddProxyAgentExtension = proxyAgentSettings.AddProxyAgentExtension;
                 }
 
                 // If the access control profile reference id is not set, set the mode to Enforce to make sure the proxy agent is working in expected way.

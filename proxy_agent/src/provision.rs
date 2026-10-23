@@ -173,7 +173,7 @@ async fn update_provision_state(
 
 /// update the redirector/eBPF policy based on access control status
 /// it should be called when provision finished
-async fn update_redirector_policy(
+pub(crate) async fn update_redirector_policy(
     redirector_shared_state: RedirectorSharedState,
     access_control_shared_state: AccessControlSharedState,
 ) {
@@ -331,14 +331,18 @@ fn set_resource_limits() {
 /// Start event logger & reader tasks and status reporting task
 /// It will be called when provision finished or timedout,
 /// it is designed to delay start those tasks to give more cpu time to provision tasks
-pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedState) {
+/// Tasks run on the service runtime even if provisioning finishes on a listener runtime.
+/// Dropping the returned handles does not stop the tasks; an empty list means already initialized.
+pub async fn start_event_threads(
+    event_threads_shared_state: EventThreadsSharedState,
+) -> Vec<tokio::task::JoinHandle<()>> {
     if let Ok(logger_threads_initialized) = event_threads_shared_state
         .provision_shared_state
         .get_event_log_threads_initialized()
         .await
     {
         if logger_threads_initialized {
-            return;
+            return Vec::new();
         }
     }
 
@@ -346,7 +350,10 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
     // those tasks starts to run after provision finished or provision timedout
     set_resource_limits();
 
-    tokio::spawn({
+    let service_runtime = event_threads_shared_state
+        .provision_shared_state
+        .service_runtime_handle();
+    let event_logger_task = service_runtime.spawn({
         let cloned_agent_status_shared_state =
             event_threads_shared_state.agent_status_shared_state.clone();
         let direct_send_config = event_logger::DirectSendConfig::new(
@@ -374,7 +381,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
             .await;
         }
     });
-    tokio::spawn({
+    let event_reader_task = service_runtime.spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
             event_threads_shared_state.common_state.clone(),
@@ -387,7 +394,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
                 .await;
         }
     });
-    tokio::spawn({
+    let extension_status_task = service_runtime.spawn({
         let event_reader = EventReader::new(
             config::get_events_dir(),
             event_threads_shared_state.common_state.clone(),
@@ -400,7 +407,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
                 .await;
         }
     });
-    tokio::spawn({
+    let event_sender_task = service_runtime.spawn({
         let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
         async move {
             event_sender.start(None, None).await;
@@ -417,7 +424,7 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
         ));
     }
 
-    tokio::spawn({
+    let status_task = service_runtime.spawn({
         let agent_status_task = proxy_agent_status::ProxyAgentStatusTask::new(
             Duration::from_secs(60),
             proxy_agent_aggregate_status::get_proxy_agent_aggregate_status_folder(),
@@ -432,6 +439,14 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
             agent_status_task.start().await;
         }
     });
+
+    vec![
+        event_logger_task,
+        event_reader_task,
+        extension_status_task,
+        event_sender_task,
+        status_task,
+    ]
 }
 
 /// Write provision state to provisioned.tag file and status.tag file under provision_dir
@@ -440,7 +455,8 @@ pub async fn start_event_threads(event_threads_shared_state: EventThreadsSharedS
 ///  if status.tag file exists, it means provision finished
 ///  if status.tag file does not exist, it means provision still in progress
 ///  the content of the status.tag file is the provision error message,
-///  empty means provision success, otherwise provision failed with error message
+///  empty means provision success or soft audit mode suppressed the failure,
+///  otherwise provision failed with error message
 async fn write_provision_state(
     provision_dir: Option<PathBuf>,
     provision_shared_state: ProvisionSharedState,
@@ -533,6 +549,16 @@ async fn get_provision_failed_state_message(
     provision_shared_state: ProvisionSharedState,
     agent_status_shared_state: AgentStatusSharedState,
 ) -> String {
+    match agent_status_shared_state.get_soft_audit_mode().await {
+        Ok(true) => return String::new(),
+        Ok(false) => {}
+        Err(e) => {
+            logger::write_warning(format!(
+                "Failed to get soft audit mode while building provision status: {e}"
+            ));
+        }
+    }
+
     let provision_state = match provision_shared_state.get_state().await {
         Ok(state) => state,
         Err(e) => {
@@ -604,6 +630,7 @@ pub async fn get_provision_state_internal(
 /// It is used to query the provision status from GPA service via http request
 pub mod provision_query {
     use crate::common::{constants, error::Error, helpers, logger, result::Result};
+    use crate::key_keeper::key;
     use proxy_agent_shared::{hyper_client, misc_helpers};
     use serde_derive::{Deserialize, Serialize};
     use std::{collections::HashMap, net::Ipv4Addr, time::Duration};
@@ -635,15 +662,15 @@ pub mod provision_query {
     /// It is used to query the provision status from GPA service via http request
     /// This struct is designed for GPA command line, serves for --status [--wait seconds] option
     pub struct ProvisionQuery {
-        port: u16,
+        default_port: u16,
         wait_duration: Option<Duration>,
         query_time_tick: i128,
     }
 
     impl ProvisionQuery {
-        pub fn new(port: u16, wait_duration: Option<Duration>) -> ProvisionQuery {
+        pub fn new(default_port: u16, wait_duration: Option<Duration>) -> ProvisionQuery {
             ProvisionQuery {
-                port,
+                default_port,
                 wait_duration,
                 query_time_tick: misc_helpers::get_date_time_unix_nano(),
             }
@@ -658,10 +685,14 @@ pub mod provision_query {
         /// This function is designed for GPA command line, serves for --status [--wait seconds] option
         pub async fn get_provision_status_wait(&self) -> ProvisionState {
             let mut first_loop = true;
+            let mut port = self.default_port;
             loop {
                 // query the current provision state from GPA service via http request
                 // ask GPA service listener to notify the its key_keeper in the first loop only
-                let state = match self.get_current_provision_status(first_loop).await {
+                let state = match self
+                    .get_current_provision_status_with_fallback(&mut port, first_loop)
+                    .await
+                {
                     Ok(state) => state,
                     Err(e) => {
                         println!("Failed to query the current provision state with error: {e}.");
@@ -689,10 +720,49 @@ pub mod provision_query {
         // return value
         //  bool - true provision finished; false provision not finished
         //  String - provision error message, empty means provision success or provision failed.
-        async fn get_current_provision_status(&self, notify: bool) -> Result<ProvisionState> {
+        async fn get_current_provision_status_with_fallback(
+            &self,
+            port: &mut u16,
+            notify: bool,
+        ) -> Result<ProvisionState> {
+            match self.get_current_provision_status(*port, notify).await {
+                Ok(state) => Ok(state),
+                Err(primary_error) => {
+                    let customized_port = match get_customized_proxy_port(
+                        constants::WIRE_SERVER_IP,
+                        constants::WIRE_SERVER_PORT,
+                    )
+                    .await
+                    {
+                        Ok(discovered_port) => discovered_port,
+                        Err(e) => {
+                            logger::write_warning(format!(
+                                "Failed to discover the proxy port from WireServer: {e}"
+                            ));
+                            return Err(primary_error);
+                        }
+                    };
+                    if customized_port == *port {
+                        return Err(primary_error);
+                    }
+
+                    logger::write_information(format!(
+                        "Retrying provision status query on WireServer-provided proxy port {customized_port}."
+                    ));
+                    *port = customized_port;
+                    self.get_current_provision_status(*port, notify).await
+                }
+            }
+        }
+
+        async fn get_current_provision_status(
+            &self,
+            port: u16,
+            notify: bool,
+        ) -> Result<ProvisionState> {
             let endpoint = hyper_client::HostEndpoint::new(
                 Ipv4Addr::LOCALHOST.to_string(),
-                self.port,
+                port,
                 PROVISION_URL_PATH,
             );
 
@@ -713,6 +783,18 @@ pub mod provision_query {
                 .map_err(Error::ProxyAgentSharedError)
         }
     }
+
+    /// Retrieves the customized proxy port from the WireServer rules.
+    /// If no custom port is specified, it returns the default proxy agent port.
+    pub(super) async fn get_customized_proxy_port(host: &str, port: u16) -> Result<u16> {
+        let status = key::get_status(host, port).await?;
+        let wireserver_rules = status.get_wireserver_rules();
+        let descriptor =
+            key::parse_rule_id_descriptor(wireserver_rules.as_ref().map(|rules| rules.id.as_str()));
+        Ok(descriptor
+            .local_proxy_port
+            .unwrap_or(constants::PROXY_AGENT_PORT))
+    }
 }
 
 #[cfg(test)]
@@ -721,11 +803,169 @@ mod tests {
     use crate::provision::provision_query::ProvisionQuery;
     use crate::provision::ProvisionFlags;
     use crate::proxy::proxy_server;
+    use crate::shared_state::agent_status_wrapper::AgentStatusModule;
     use crate::shared_state::EventThreadsSharedState;
     use crate::shared_state::SharedState;
+    use base64::{engine::general_purpose, Engine as _};
+    use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
     use std::env;
     use std::fs;
     use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    async fn start_event_tasks_on_listener_runtime(
+        shared_state: &SharedState,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        let event_threads_shared_state = EventThreadsSharedState::new(shared_state);
+        tokio::task::spawn_blocking(move || {
+            let listener_runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            listener_runtime.block_on(super::start_event_threads(event_threads_shared_state))
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn event_tasks_survive_listener_runtime_shutdown() {
+        let shared_state = SharedState::start_all();
+        let mut tasks = start_event_tasks_on_listener_runtime(&shared_state).await;
+        let task_count = tasks.len();
+        let alive_after_first_listener = tasks.iter().filter(|task| !task.is_finished()).count();
+        let replacement_tasks = start_event_tasks_on_listener_runtime(&shared_state).await;
+        let replacement_task_count = replacement_tasks.len();
+        let initialized = shared_state
+            .get_provision_shared_state()
+            .get_event_log_threads_initialized()
+            .await
+            .unwrap();
+        let reporting_started = tokio::time::timeout(Duration::from_secs(2), async {
+            let status = shared_state.get_agent_status_shared_state();
+            while status
+                .get_module_status(AgentStatusModule::ProxyAgentStatus)
+                .await
+                .status
+                != ModuleState::RUNNING
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        let alive_after_replacement = tasks.iter().filter(|task| !task.is_finished()).count();
+
+        tasks.extend(replacement_tasks);
+        for task in &tasks {
+            task.abort();
+        }
+        for task in tasks {
+            if let Err(e) = task.await {
+                assert!(e.is_cancelled(), "Service task failed: {e}");
+            }
+        }
+
+        assert_eq!(5, task_count);
+        assert_eq!(5, alive_after_first_listener);
+        assert_eq!(5, alive_after_replacement);
+        assert_eq!(0, replacement_task_count);
+        assert!(initialized);
+        assert!(
+            reporting_started.is_ok(),
+            "Aggregate-status reporting did not start"
+        );
+    }
+
+    #[tokio::test]
+    async fn discovers_custom_proxy_port_from_wireserver_rule_id() {
+        let encoded_rule_id = general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "id": "wire-server-rule",
+                "useLocalFileRules": false,
+                "enableSoftAudit": false,
+                "localProxyPort": 3081
+            })
+            .to_string(),
+        );
+        let status = serde_json::json!({
+            "authorizationScheme": "Azure-HMAC-SHA256",
+            "keyDeliveryMethod": "http",
+            "keyGuid": null,
+            "requiredClaimsHeaderPairs": [],
+            "secureChannelState": "wireserver",
+            "secureChannelEnabled": true,
+            "version": "2.0",
+            "authorizationRules": {
+                "wireserver": {
+                    "defaultAccess": "deny",
+                    "mode": "enforce",
+                    "id": encoded_rule_id,
+                    "rules": null
+                }
+            }
+        })
+        .to_string();
+        let cancellation_token = CancellationToken::new();
+        let host = "127.0.0.1";
+        let port = proxy_agent_shared::server_mock::start_with_secure_channel_status(
+            host.to_string(),
+            0,
+            cancellation_token.clone(),
+            status,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            3081,
+            super::provision_query::get_customized_proxy_port(host, port)
+                .await
+                .unwrap()
+        );
+        cancellation_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn soft_audit_suppresses_incomplete_provision_errors() {
+        let shared_state = SharedState::start_all();
+        let provision_shared_state = shared_state.get_provision_shared_state();
+        let agent_status_shared_state = shared_state.get_agent_status_shared_state();
+
+        let error_message = super::get_provision_failed_state_message(
+            provision_shared_state.clone(),
+            agent_status_shared_state.clone(),
+        )
+        .await;
+        assert!(error_message.contains("ebpfProgramStatus"));
+        assert!(error_message.contains("keyLatchStatus"));
+        assert!(error_message.contains("proxyListenerStatus"));
+
+        agent_status_shared_state
+            .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        assert_eq!(
+            "",
+            super::get_provision_failed_state_message(
+                provision_shared_state.clone(),
+                agent_status_shared_state.clone(),
+            )
+            .await
+        );
+
+        agent_status_shared_state
+            .set_soft_audit_mode(false)
+            .await
+            .unwrap();
+        let error_message = super::get_provision_failed_state_message(
+            provision_shared_state,
+            agent_status_shared_state,
+        )
+        .await;
+        assert!(error_message.contains("ebpfProgramStatus"));
+        assert!(error_message.contains("keyLatchStatus"));
+        assert!(error_message.contains("proxyListenerStatus"));
+    }
 
     #[tokio::test]
     async fn provision_state_test() {
@@ -746,7 +986,8 @@ mod tests {
 
         // initialize key keeper secure channel state to UNKNOWN
         let port: u16 = 8092;
-        let proxy_server = proxy_server::ProxyServer::new(port, &shared_state);
+        let proxy_server =
+            proxy_server::ProxyServer::new(port, &shared_state, cancellation_token.clone());
 
         tokio::spawn({
             let proxy_server = proxy_server.clone();

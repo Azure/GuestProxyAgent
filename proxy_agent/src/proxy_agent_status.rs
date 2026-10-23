@@ -34,8 +34,8 @@ use crate::shared_state::agent_status_wrapper::{AgentStatusModule, AgentStatusSh
 use crate::shared_state::connection_summary_wrapper::ConnectionSummarySharedState;
 use crate::shared_state::key_keeper_wrapper::KeyKeeperSharedState;
 use proxy_agent_shared::proxy_agent_aggregate_status::{
-    GuestProxyAgentAggregateStatus, ModuleState, OverallState, ProxyAgentDetailStatus,
-    ProxyAgentStatus,
+    AuditFallback, GuestProxyAgentAggregateStatus, ModuleState, OverallState,
+    ProxyAgentDetailStatus, ProxyAgentStatus,
 };
 use proxy_agent_shared::telemetry::{event_logger, Extension, OperationStatus};
 use proxy_agent_shared::{current_info, misc_helpers};
@@ -233,6 +233,15 @@ impl ProxyAgentStatusTask {
         } else {
             OverallState::SUCCESS
         };
+        let audit_fallback =
+            if let Ok(Some(reason)) = agent_status_shared_state.get_fallback_reason().await {
+                Some(AuditFallback {
+                    fallbacked: true,
+                    reason,
+                })
+            } else {
+                None
+            };
 
         ProxyAgentStatus {
             version: current_info::get_current_exe_version(),
@@ -249,6 +258,7 @@ impl ProxyAgentStatusTask {
             telemetryLoggerStatus: agent_status_shared_state
                 .get_module_status(AgentStatusModule::TelemetryLogger)
                 .await,
+            auditFallback: audit_fallback,
             proxyConnectionsCount: match agent_status_shared_state.get_connection_count().await {
                 Ok(count) => count,
                 Err(e) => {

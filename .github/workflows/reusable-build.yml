@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload debug amd64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-debug-windows-amd64.zip
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload release amd64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-release-windows-amd64.zip
@@ -205,7 +205,7 @@ jobs:
 
       - name: Upload debug arm64 build zip packages
         if: (success() || failure())
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-debug-windows-arm64.zip
@@ -218,7 +218,7 @@ jobs:
         
       - name: Upload release arm64 build zip package
         if: (success() || failure())
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-release-windows-arm64.zip
@@ -297,14 +297,14 @@ jobs:
                   libssl-dev \
                   pkg-config \
 
-          sudo apt-get install -y dotnet-sdk-8.0
+          sudo apt-get install -y dotnet-sdk-10.0
           sudo chown -R root:root /var/lib
         
       - name: Run build-linux.sh Debug amd64
         run: ./build-linux.sh debug amd64
 
       - name: Upload debug build amd64 zip package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-debug-linux-amd64.zip
@@ -315,7 +315,7 @@ jobs:
         run: ./build-linux.sh release
 
       - name: Upload release amd64 build zip package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-release-linux-amd64.zip
@@ -469,13 +469,13 @@ jobs:
                   libssl-dev \
                   pkg-config \
 
-          sudo sudo apt-get install -y dotnet-sdk-8.0
+          sudo sudo apt-get install -y dotnet-sdk-10.0
         
       - name: Run build-linux.sh Debug arm64
         run: ./build-linux.sh debug arm64
 
       - name: Upload debug arm64 build zip package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-debug-linux-arm64.zip
@@ -486,7 +486,7 @@ jobs:
         run: ./build-linux.sh release arm64
 
       - name: Upload release arm64 build zip package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Artifact name
           name: build-release-linux-arm64.zip

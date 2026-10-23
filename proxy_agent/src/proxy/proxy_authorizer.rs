@@ -163,23 +163,6 @@ impl Authorizer for GAPlugin {
     }
 }
 
-struct ProxyAgent {}
-impl Authorizer for ProxyAgent {
-    fn authorize(
-        &self,
-        _logger: &mut ConnectionLogger,
-        _request_url: hyper::Uri,
-        _access_control_rules: Option<ComputedAuthorizationItem>,
-    ) -> AuthorizeResult {
-        // Forbid the request send to this listener directly
-        AuthorizeResult::Forbidden
-    }
-
-    fn to_string(&self) -> String {
-        "ProxyAgent".to_string()
-    }
-}
-
 struct Default {}
 impl Authorizer for Default {
     fn authorize(
@@ -203,8 +186,6 @@ pub fn get_authorizer(ip: String, port: u16, claims: Claims) -> Box<dyn Authoriz
         Box::new(GAPlugin { claims })
     } else if ip == constants::IMDS_IP && port == constants::IMDS_PORT {
         Box::new(Imds { claims })
-    } else if ip == constants::PROXY_AGENT_IP && port == constants::PROXY_AGENT_PORT {
-        Box::new(ProxyAgent {})
     } else {
         Box::new(Default {})
     }
@@ -308,6 +289,9 @@ mod tests {
             processId: std::process::id(),
             processName: OsString::from("test"),
             processFullPath: PathBuf::from("test"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -356,17 +340,6 @@ mod tests {
 
         let auth = super::get_authorizer(
             crate::common::constants::PROXY_AGENT_IP.to_string(),
-            crate::common::constants::PROXY_AGENT_PORT,
-            claims.clone(),
-        );
-        assert_eq!(auth.to_string(), "ProxyAgent");
-        assert!(
-            AuthorizeResult::Forbidden == auth.authorize(&mut test_logger, test_uri.clone(), None),
-            "ProxyAgent authentication must be Forbidden"
-        );
-
-        let auth = super::get_authorizer(
-            crate::common::constants::PROXY_AGENT_IP.to_string(),
             crate::common::constants::PROXY_AGENT_PORT + 1,
             claims.clone(),
         );
@@ -382,6 +355,9 @@ mod tests {
             processId: std::process::id(),
             processName: OsString::from("test"),
             processFullPath: PathBuf::from("test"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -508,6 +484,9 @@ mod tests {
             processId: std::process::id(),
             processName: OsString::from("test"),
             processFullPath: PathBuf::from("test"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -617,6 +596,9 @@ mod tests {
             processId: std::process::id(),
             processName: OsString::from("test"),
             processFullPath: PathBuf::from("test"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),
@@ -743,6 +725,9 @@ mod tests {
             processId: std::process::id(),
             processName: OsString::from("test"),
             processFullPath: PathBuf::from("test"),
+            processExecutableDevice: 0,
+            processExecutableInode: 0,
+            processExecutableIdentityValid: false,
             processCmdLine: "test".to_string(),
             runAsElevated: true,
             clientIp: "127.0.0.1".to_string(),

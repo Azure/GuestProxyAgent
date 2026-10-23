@@ -9,7 +9,12 @@ use crate::common::{
     error::{BpfErrorType, Error},
     result::Result,
 };
-use crate::redirector::AuditEntry;
+use crate::redirector::shared_ebpf::windows_types::{
+    alert_only_event, ALERT_ONLY_MAP_NAME, AUDIT_MAP_NAME, CONFIG_MAP_NAME,
+    GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY, POLICY_MAP_NAME, SKIP_PROCESS_MAP_NAME,
+};
+use crate::redirector::windows::AuditKeyEntry;
+use crate::redirector::{AlertOnlyEntry, AuditEntry};
 use proxy_agent_shared::misc_helpers;
 use std::ffi::c_void;
 use std::mem::size_of_val;
@@ -17,9 +22,38 @@ use std::path::Path;
 
 const AUTHORIZE_CONNECT4_PROGRAM: &str = "authorize_connect4";
 const AUTHORIZE_CONNECT6_PROGRAM: &str = "authorize_connect6";
-const AUDIT_MAP: &str = "audit_map";
-const POLICY_MAP: &str = "policy_map";
-const SKIP_PROCESS_MAP: &str = "skip_process_map";
+
+/// Callback function for handling alert-only events from the eBPF program.
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure that
+/// `context` is a valid pointer to a `tokio::sync::mpsc::UnboundedSender<AlertOnlyEntry>` and
+/// `data` is a valid pointer to a buffer of size `size`.
+/// Returns 0 on success, -1 on failure.
+unsafe extern "C" fn alert_only_callback(
+    context: *mut c_void,
+    data: *mut c_void,
+    size: usize,
+) -> i32 {
+    let sender = &*(context as *const tokio::sync::mpsc::UnboundedSender<AlertOnlyEntry>);
+    let bytes = std::slice::from_raw_parts(data as *const u8, size);
+    match alert_only_event::from_bytes(bytes) {
+        Ok(event) => {
+            let record = AlertOnlyEntry {
+                audit_entry: event.to_audit_entry(),
+                kernel_timestamp_ns: event.kernel_timestamp_ns,
+                timestamp_utc_ns: proxy_agent_shared::misc_helpers::get_date_time_unix_nano(),
+                local_ip_address: event.local_ip_address,
+            };
+            if sender.send(record).is_ok() {
+                0
+            } else {
+                -1
+            }
+        }
+        Err(_) => -1,
+    }
+}
 
 // This module contains the logic to interact with the windows eBPF program & maps.
 impl BpfObject {
@@ -28,7 +62,11 @@ impl BpfObject {
     }
 
     pub fn new() -> Self {
-        Self(std::ptr::null::<bpf_object>().cast_mut(), Vec::new())
+        Self(
+            std::ptr::null::<bpf_object>().cast_mut(),
+            Vec::new(),
+            super::super::EventTaskRuntime::default(),
+        )
     }
 
     /**
@@ -142,7 +180,7 @@ impl BpfObject {
         let compartment_id = 1;
         let mut link: ebpf_link_t = ebpf_link_t::empty();
         let mut link: *mut ebpf_link_t = &mut link as *mut ebpf_link_t;
-        match ebpf_prog_attach(
+        match ebpf_program_attach(
             program,
             std::ptr::null(),
             &compartment_id as *const i32 as *const c_void,
@@ -153,7 +191,7 @@ impl BpfObject {
                 if r != 0 {
                     return Err(Error::Bpf(BpfErrorType::AttachBpfProgram(
                         program_name.to_string(),
-                        format!("ebpf_prog_attach return with error code '{r}'"),
+                        format!("ebpf_program_attach return with error code '{r}'"),
                     )));
                 }
                 logger::write_information(format!("Successfully attached {program_name} program."));
@@ -193,7 +231,7 @@ impl BpfObject {
         dest_ipv4: u32,
         dest_port: u16,
     ) -> Result<()> {
-        let map_name = POLICY_MAP;
+        let map_name = POLICY_MAP_NAME;
         let map_fd = self.get_bpf_map_fd(map_name)?;
 
         let key = destination_entry_t::from_ipv4(dest_ipv4, dest_port);
@@ -240,10 +278,6 @@ impl BpfObject {
         if self.0.is_null() {
             return;
         }
-        if let Err(e) = bpf_object__close(self.0) {
-            logger::write_error(format!("bpf_object__close with error: {e}"));
-        }
-        self.0 = std::ptr::null::<bpf_object>().cast_mut();
 
         for link in self.1.drain(..) {
             if link.is_null() {
@@ -256,6 +290,11 @@ impl BpfObject {
                 logger::write_error(format!("bpf_link_destroy with error: {e}"));
             }
         }
+
+        if let Err(e) = bpf_object__close(self.0) {
+            logger::write_error(format!("bpf_object__close with error: {e}"));
+        }
+        self.0 = std::ptr::null::<bpf_object>().cast_mut();
     }
 
     /**
@@ -265,34 +304,33 @@ impl BpfObject {
 
     Arguments:
 
-        source_port - source local port.
+        peer - accepted source address and port.
 
     Return Value:
 
         audit entry from audit_map on success. On failure appropriate RESULT is returned.
      */
-    pub fn lookup_audit(&self, source_port: u16) -> Result<AuditEntry> {
-        let map_name = AUDIT_MAP;
-        let (map_fd, value_size) = self.get_bpf_map_fd_and_value_size(map_name)?;
+    pub fn lookup_audit(&self, peer: &std::net::SocketAddr) -> Result<AuditEntry> {
+        let map_name = AUDIT_MAP_NAME;
+        let (map_fd, key_size, value_size) = self.get_bpf_map_fd_and_sizes(map_name)?;
 
-        // query by source port.
-        let key = sock_addr_audit_key_t::from_source_port(source_port);
+        let key = AuditKeyEntry::from_peer(peer, key_size)?;
         let mut audit_value_entry = AuditValueEntry::empty(value_size);
         let result = bpf_map_lookup_elem(
             map_fd,
-            &key as *const sock_addr_audit_key_t as *const c_void,
+            key.value_pointer(),
             audit_value_entry.value_pointer_mut(),
         )
         .map_err(|e| {
             Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapLookupElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Result: {result}"),
             )));
         }
@@ -314,7 +352,7 @@ impl BpfObject {
         On failure appropriate RESULT is returned.
      */
     pub fn update_skip_process_map(&self, pid: u32) -> Result<()> {
-        let map_name = SKIP_PROCESS_MAP;
+        let map_name = SKIP_PROCESS_MAP_NAME;
         let map_fd = self.get_bpf_map_fd(map_name)?;
 
         // insert process id entry.
@@ -355,7 +393,7 @@ impl BpfObject {
         On failure appropriate RESULT is returned.
      */
     pub fn remove_policy_elem_bpf_map(&self, dest_ipv4: u32, dest_port: u16) -> Result<()> {
-        let map_name = POLICY_MAP;
+        let map_name = POLICY_MAP_NAME;
         let map_fd = self.get_bpf_map_fd(map_name)?;
 
         let key = destination_entry_t::from_ipv4(dest_ipv4, dest_port);
@@ -377,25 +415,21 @@ impl BpfObject {
         Ok(())
     }
 
-    pub fn remove_audit_map_entry(&self, source_port: u16) -> Result<()> {
-        let audit_map_name = AUDIT_MAP;
-        let map_fd = self.get_bpf_map_fd(audit_map_name)?;
+    pub fn remove_audit_map_entry(&self, peer: &std::net::SocketAddr) -> Result<()> {
+        let audit_map_name = AUDIT_MAP_NAME;
+        let (map_fd, key_size, _) = self.get_bpf_map_fd_and_sizes(audit_map_name)?;
 
-        let key = sock_addr_audit_key_t::from_source_port(source_port);
-        let result = bpf_map_delete_elem(
-            map_fd,
-            &key as *const sock_addr_audit_key_t as *const c_void,
-        )
-        .map_err(|e| {
+        let key = AuditKeyEntry::from_peer(peer, key_size)?;
+        let result = bpf_map_delete_elem(map_fd, key.value_pointer()).map_err(|e| {
             Error::Bpf(BpfErrorType::MapDeleteElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Error: {e}"),
             ))
         })?;
 
         if result != 0 {
             return Err(Error::Bpf(BpfErrorType::MapDeleteElem(
-                source_port.to_string(),
+                peer.to_string(),
                 format!("Result: {result}"),
             )));
         }
@@ -403,12 +437,95 @@ impl BpfObject {
         Ok(())
     }
 
+    pub fn update_local_ip_bind_monitor_only(&self, enabled: bool) -> Result<()> {
+        let map_name = CONFIG_MAP_NAME;
+        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let key = GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY;
+        let value = [u32::from(enabled)];
+
+        let result = bpf_map_update_elem(
+            map_fd,
+            &key as *const u32 as *const c_void,
+            value.as_ptr() as *const c_void,
+            0,
+        )
+        .map_err(|e| {
+            Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY.to_string(),
+                e.to_string(),
+            ))
+        })?;
+        if result != 0 {
+            return Err(Error::Bpf(BpfErrorType::UpdateBpfMapHashMap(
+                map_name.to_string(),
+                GPA_CONFIG_LOCAL_IP_BIND_MONITOR_ONLY.to_string(),
+                format!("bpf_map_update_elem returned error code {result}"),
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn subscribe_alert_only(
+        &mut self,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) -> Result<tokio::sync::mpsc::UnboundedReceiver<AlertOnlyEntry>> {
+        let map_name = ALERT_ONLY_MAP_NAME;
+        let map_fd = self.get_bpf_map_fd(map_name)?;
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let context = Box::into_raw(Box::new(sender));
+        let ring = match ring_buffer__new(map_fd, alert_only_callback, context.cast()) {
+            Ok(ring) => ring,
+            Err(err) => {
+                unsafe { drop(Box::from_raw(context)) };
+                return Err(err);
+            }
+        };
+        if ring.is_null() {
+            unsafe { drop(Box::from_raw(context)) };
+            return Err(Error::Bpf(BpfErrorType::LoadBpfMapHashMap(
+                map_name.to_string(),
+                "ring_buffer__new returned null".to_string(),
+            )));
+        }
+        let ring_address = ring as usize;
+        let context_address = context as usize;
+        let event_reader_task = tokio::task::spawn_blocking(move || {
+            let ring = ring_address as *mut ring_buffer;
+            while !cancellation_token.is_cancelled() {
+                match ring_buffer__poll(ring, 250) {
+                    Ok(result) if result >= 0 => {}
+                    Ok(result) => {
+                        logger::write_warning(format!(
+                            "ring_buffer__poll failed with result {result}"
+                        ));
+                        // TODO: Handle negative result appropriately,
+                        // For now, just log and continue to poll the ring buffer
+                        continue;
+                    }
+                    Err(err) => {
+                        logger::write_warning(format!("ring_buffer__poll failed: {err}"));
+                        break;
+                    }
+                }
+            }
+            let _ = ring_buffer__free(ring);
+            unsafe {
+                drop(Box::from_raw(
+                    context_address as *mut tokio::sync::mpsc::UnboundedSender<AlertOnlyEntry>,
+                ));
+            }
+        });
+        self.2.add_task(event_reader_task);
+        Ok(receiver)
+    }
+
     fn get_bpf_map_fd(&self, map_name: &str) -> Result<i32> {
-        let (map_fd, _) = self.get_bpf_map_fd_and_value_size(map_name)?;
+        let (map_fd, _, _) = self.get_bpf_map_fd_and_sizes(map_name)?;
         Ok(map_fd)
     }
 
-    fn get_bpf_map_fd_and_value_size(&self, map_name: &str) -> Result<(i32, u32)> {
+    fn get_bpf_map_fd_and_sizes(&self, map_name: &str) -> Result<(i32, u32, u32)> {
         if self.is_null() {
             return Err(Error::Bpf(BpfErrorType::NullBpfObject));
         }
@@ -425,6 +542,10 @@ impl BpfObject {
 
         let map_fd = bpf_map__fd(bpf_map)
             .map_err(|e| Error::Bpf(BpfErrorType::MapFileDescriptor(e.to_string())))?;
-        Ok((map_fd, bpf_map_value_size(bpf_map)))
+        Ok((
+            map_fd,
+            bpf_map_key_size(bpf_map),
+            bpf_map_value_size(bpf_map),
+        ))
     }
 }

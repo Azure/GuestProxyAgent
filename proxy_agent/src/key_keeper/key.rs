@@ -31,13 +31,16 @@ use crate::{
     },
     proxy::{proxy_connection::ConnectionLogger, Claims},
 };
+use base64::{engine::general_purpose, Engine as _};
 use http::{Method, StatusCode};
 use hyper::Uri;
 use proxy_agent_shared::hyper_client;
 use proxy_agent_shared::logger::LoggerLevel;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::{collections::HashMap, path::PathBuf};
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::{ffi::OsString, time::Duration};
 
 const AUDIT_MODE: &str = "audit";
@@ -238,6 +241,8 @@ impl Privilege {
             None => (lowered_request_path, None),
         };
 
+        // Normalize backslashes to forward slashes for consistent path matching.
+        let actual_path = actual_path.replace('\\', "/");
         if actual_path.starts_with(&self.path) {
             logger.write(
                 LoggerLevel::Trace,
@@ -385,24 +390,101 @@ impl Identity {
             }
         }
         if let Some(ref exe_path) = self.exePath {
-            let process_path_buf: PathBuf = exe_path.into();
-            if process_path_buf == claims.processFullPath {
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::MetadataExt;
+
+                let metadata = match std::fs::metadata(exe_path) {
+                    Ok(metadata) => metadata,
+                    Err(err) => {
+                        logger.write(
+                            LoggerLevel::Warn,
+                            format!(
+                                "Could not resolve executable identity '{}' from identity '{}': {}",
+                                exe_path, self.name, err
+                            ),
+                        );
+                        return false;
+                    }
+                };
+                if !claims.processExecutableIdentityValid {
+                    logger.write(
+                        LoggerLevel::Warn,
+                        format!(
+                            "Kernel executable identity unavailable for identity '{}'",
+                            self.name
+                        ),
+                    );
+                    return false;
+                }
+                // Authorize by file identity, not by path: the eBPF hook captured the
+                // (device, inode) of the caller's mapped executable, which a bind mount
+                // or symlink over `exePath` cannot change. Compare it with the file that
+                // `exePath` resolves to in GPA's own (trusted) mount namespace. A mismatch
+                // means the caller is a different file than the one the rule allows, even
+                // if its `/proc/<pid>/exe` path text looks identical.
+                // stat's st_dev uses the userspace encoding, but the eBPF value is the
+                // kernel's internal s_dev, so re-encode before comparing.
+                // Btrfs `stat` reports a per-subvolume device (`btrfs_getattr` sets
+                // `stat->dev = root->anon_dev`), not the superblock `s_dev` the eBPF hook reads:
+                // https://github.com/torvalds/linux/blob/master/fs/btrfs/inode.c
+                // So fall back to mountinfo's device (verified on Ubuntu 6.8 Btrfs). Known limit: on
+                // SLES 15 SP4 Btrfs no userspace value equals the eBPF s_dev (eBPF 45, mountinfo 46,
+                // stat/maps 47), so exePath there fails closed (deny).
+                // More details: https://github.com/Azure/GuestProxyAgent/issues/440
+                let stat_dev = crate::common::linux::kernel_dev_from_st_dev(metadata.dev());
+                let sb_dev = if stat_dev == claims.processExecutableDevice {
+                    None
+                } else {
+                    crate::common::linux::sb_dev_of_path(exe_path)
+                };
+                let device_matches = stat_dev == claims.processExecutableDevice
+                    || sb_dev == Some(claims.processExecutableDevice);
+                if metadata.ino() != claims.processExecutableInode || !device_matches {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Not matched executable identity '{}' from identity '{}': kernel dev={} ino={}, file stat dev={} sb dev={:?} ino={}",
+                            exe_path,
+                            self.name,
+                            claims.processExecutableDevice,
+                            claims.processExecutableInode,
+                            stat_dev,
+                            sb_dev,
+                            metadata.ino()
+                        ),
+                    );
+                    return false;
+                }
                 logger.write(
                     LoggerLevel::Trace,
                     format!(
-                        "Matched process full path '{}' from identity '{}'",
+                        "Matched executable identity '{}' from identity '{}'",
                         exe_path, self.name
                     ),
                 );
-            } else {
-                logger.write(
-                    LoggerLevel::Trace,
-                    format!(
-                        "Not matched process full path '{}' from identity '{}'",
-                        exe_path, self.name
-                    ),
-                );
-                return false;
+            }
+            #[cfg(windows)]
+            {
+                let process_path_buf: PathBuf = exe_path.into();
+                if process_path_buf == claims.processFullPath {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Matched process full path '{}' from identity '{}'",
+                            exe_path, self.name
+                        ),
+                    );
+                } else {
+                    logger.write(
+                        LoggerLevel::Trace,
+                        format!(
+                            "Not matched process full path '{}' from identity '{}'",
+                            exe_path, self.name
+                        ),
+                    );
+                    return false;
+                }
             }
         }
         if let Some(ref group_name) = self.groupName {
@@ -772,6 +854,84 @@ impl Display for KeyAction {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct RuleIdDescriptor {
+    pub(crate) logical_id: String,
+    pub(crate) use_local_file_rules: bool,
+    pub(crate) enable_soft_audit: bool,
+    pub(crate) local_proxy_port: Option<u16>,
+}
+
+impl RuleIdDescriptor {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.logical_id.is_empty()
+    }
+
+    pub(crate) fn display_id(&self) -> String {
+        if self.logical_id.is_empty() {
+            "unknown".to_string()
+        } else {
+            let mut display_id = format!(
+                "{}-useLocalFileRules-{}",
+                self.logical_id, self.use_local_file_rules
+            );
+            if self.enable_soft_audit {
+                display_id.push_str("-enableSoftAudit-true");
+            }
+            if let Some(local_proxy_port) = self.local_proxy_port {
+                display_id.push_str(&format!("-localProxyPort-{local_proxy_port}"));
+            }
+            display_id
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[allow(non_snake_case)]
+pub(crate) struct EncodedRuleId {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) useLocalFileRules: bool,
+    #[serde(default)]
+    pub(crate) enableSoftAudit: bool,
+    #[serde(default)]
+    pub(crate) localProxyPort: Option<u16>,
+}
+
+/// Parse the rule ID descriptor from the raw rule ID string.
+/// The raw rule ID can be either a plain logical ID or
+/// a base64-encoded JSON string containing the logical ID and whether to use local file rules.
+pub(crate) fn parse_rule_id_descriptor(raw_rule_id: Option<&str>) -> RuleIdDescriptor {
+    let raw_rule_id = raw_rule_id.unwrap_or_default().trim();
+    if raw_rule_id.is_empty() {
+        return RuleIdDescriptor::default();
+    }
+
+    if let Ok(decoded) = general_purpose::STANDARD.decode(raw_rule_id) {
+        if let Ok(contract) = serde_json::from_slice::<EncodedRuleId>(&decoded) {
+            return RuleIdDescriptor {
+                logical_id: contract.id,
+                use_local_file_rules: contract.useLocalFileRules,
+                enable_soft_audit: contract.enableSoftAudit,
+                // Normalize localProxyPort 0 as None to use the default port.
+                // Binding localhost:0 selects an ephemeral port.
+                // The coordinator still records zero and programs redirects to zero accordingly.
+                // GPA service needs a determined local proxy port; or it may take the port needed by other guest services.
+                local_proxy_port: contract.localProxyPort.filter(|port| *port != 0),
+            };
+        }
+    }
+
+    // If parsing fails, treat the raw rule ID as the logical ID and do not use local file rules.
+    RuleIdDescriptor {
+        logical_id: raw_rule_id.to_string(),
+        use_local_file_rules: false,
+        enable_soft_audit: false,
+        local_proxy_port: None,
+    }
+}
+
 const STATUS_URL: &str = "/secure-channel/status";
 const KEY_URL: &str = "/secure-channel/key";
 const HOST_DATE_TIME_DRIFT_MAX_AGE: Duration = Duration::from_secs(60 * 15);
@@ -910,13 +1070,15 @@ mod tests {
     use std::os::unix::ffi::OsStringExt;
     #[cfg(windows)]
     use std::os::windows::ffi::OsStringExt;
-    use std::path::PathBuf;
 
     use super::Key;
     use super::KeyStatus;
+    use crate::key_keeper::key::parse_rule_id_descriptor;
     use crate::key_keeper::key::Identity;
     use crate::key_keeper::key::Privilege;
     use crate::proxy::proxy_connection::ConnectionLogger;
+    use base64::engine::general_purpose;
+    use base64::Engine;
     use hyper::Uri;
     use proxy_agent_shared::hyper_client;
     use serde_json::json;
@@ -1633,11 +1795,41 @@ mod tests {
             privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
             "encoded %3F query separator must be decoded and query params matched"
         );
+
+        let url: Uri = "http://169.254.169.254/metadata\\identity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "backslashes in the path should be normalized to forward slashes"
+        );
+        let url: Uri = "http://169.254.169.254/metadata%5Cidentity/oauth2/token%3Fresource=https%3A%2F%2Fmanagement.azure.com%2F"
+            .parse()
+            .unwrap();
+        // Simulate what authorization_rules.rs does: percent-decode then lowercase
+        let decoded_path = percent_encoding::percent_decode_str(url.path())
+            .decode_utf8_lossy()
+            .to_lowercase();
+        assert!(
+            privilege_with_resource.is_match(&mut logger, &url, &decoded_path),
+            "percent-encoded backslashes (%5C) in the path should be normalized to forward slashes"
+        );
     }
 
     #[tokio::test]
     async fn test_identity_is_match() {
+        #[cfg(not(windows))]
+        use std::os::unix::fs::MetadataExt;
+
         let mut logger = ConnectionLogger::new(1, 1);
+        let current_exe = std::env::current_exe().unwrap();
+        let current_exe_text = current_exe.to_string_lossy().to_string();
+        #[cfg(not(windows))]
+        let current_exe_metadata = std::fs::metadata(&current_exe).unwrap();
 
         let mut claims = super::Claims {
             userName: "test".to_string(),
@@ -1649,17 +1841,28 @@ mod tests {
             clientIp: "00.000.000".to_string(),
             clientPort: 0, // doesn't matter for this test
             runAsElevated: true,
-            processFullPath: PathBuf::from("test"),
+            processFullPath: current_exe,
+            #[cfg(not(windows))]
+            processExecutableDevice: crate::common::linux::kernel_dev_from_st_dev(
+                current_exe_metadata.dev(),
+            ),
+            #[cfg(windows)]
+            processExecutableDevice: 0,
+            #[cfg(not(windows))]
+            processExecutableInode: current_exe_metadata.ino(),
+            #[cfg(windows)]
+            processExecutableInode: 0,
+            processExecutableIdentityValid: true,
         };
 
-        let identity = r#"{
+        let identity: Identity = serde_json::from_value(serde_json::json!({
             "name": "test",
             "userName": "test",
             "groupName": "test",
-            "exePath": "test",
+            "exePath": current_exe_text,
             "processName": "test"
-        }"#;
-        let identity: Identity = serde_json::from_str(identity).unwrap();
+        }))
+        .unwrap();
         assert!(
             identity.is_match(&mut logger, &claims),
             "identity should be matched"
@@ -1747,15 +1950,30 @@ mod tests {
             !identity4.is_match(&mut logger, &claims),
             "identity should not be matched"
         );
-        let identity4 = r#"{
+        let identity4: Identity = serde_json::from_value(serde_json::json!({
             "name": "test",
-            "exePath": "test"
-        }"#;
-        let identity4: Identity = serde_json::from_str(identity4).unwrap();
+            "exePath": current_exe_text
+        }))
+        .unwrap();
         assert!(
             identity4.is_match(&mut logger, &claims),
             "identity should be matched"
         );
+        #[cfg(not(windows))]
+        {
+            claims.processExecutableInode ^= 1;
+            assert!(
+                !identity4.is_match(&mut logger, &claims),
+                "a spoofed path with a different kernel executable identity must not match"
+            );
+            claims.processExecutableInode ^= 1;
+            claims.processExecutableIdentityValid = false;
+            assert!(
+                !identity4.is_match(&mut logger, &claims),
+                "exePath identity must fail closed when kernel identity is unavailable"
+            );
+            claims.processExecutableIdentityValid = true;
+        }
 
         // test groupName
         let identity5 = r#"{
@@ -1807,5 +2025,40 @@ mod tests {
             replacement_char, process_name_lossy,
             "process name after lossy conversion should be equal to replacement char"
         );
+    }
+
+    #[test]
+    fn parse_rule_id_descriptor_test() {
+        let legacy = parse_rule_id_descriptor(Some("legacy-id"));
+        assert_eq!(legacy.logical_id, "legacy-id");
+        assert!(!legacy.use_local_file_rules);
+        assert!(!legacy.enable_soft_audit);
+        assert_eq!(legacy.local_proxy_port, None);
+
+        let encoded = general_purpose::STANDARD
+            .encode(r#"{"id":"sig-resource-id","useLocalFileRules":true,"enableSoftAudit":true,"localProxyPort":3080}"#);
+        let descriptor = parse_rule_id_descriptor(Some(&encoded));
+        assert_eq!(descriptor.logical_id, "sig-resource-id");
+        assert!(descriptor.use_local_file_rules);
+        assert!(descriptor.enable_soft_audit);
+        assert_eq!(descriptor.local_proxy_port, Some(3080));
+        assert_eq!(
+            descriptor.display_id(),
+            "sig-resource-id-useLocalFileRules-true-enableSoftAudit-true-localProxyPort-3080"
+        );
+
+        let malformed_base64 = parse_rule_id_descriptor(Some("not-valid-base64!"));
+        assert_eq!(malformed_base64.logical_id, "not-valid-base64!");
+        assert!(!malformed_base64.use_local_file_rules);
+        assert!(!malformed_base64.enable_soft_audit);
+        assert_eq!(malformed_base64.local_proxy_port, None);
+
+        let malformed_json = general_purpose::STANDARD
+            .encode(r#"{"id":"sig-resource-id","enableSoftAudit":"true"}"#);
+        let malformed_json_descriptor = parse_rule_id_descriptor(Some(&malformed_json));
+        assert_eq!(malformed_json_descriptor.logical_id, malformed_json);
+        assert!(!malformed_json_descriptor.use_local_file_rules);
+        assert!(!malformed_json_descriptor.enable_soft_audit);
+        assert_eq!(malformed_json_descriptor.local_proxy_port, None);
     }
 }

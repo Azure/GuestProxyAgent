@@ -394,19 +394,19 @@ where
            UrlEncodedPath + "\n"
            CanonicalizedParameters;
 */
-pub fn as_sig_input(head: Parts, body: Bytes) -> Vec<u8> {
+pub fn as_sig_input(head: Parts, body: Bytes) -> Result<Vec<u8>> {
     let mut data: Vec<u8> = head.method.to_string().as_bytes().to_vec();
     data.extend(LF.as_bytes());
     data.extend(body);
     data.extend(LF.as_bytes());
 
-    data.extend(headers_to_canonicalized_string(&head.headers).as_bytes());
+    data.extend(headers_to_canonicalized_string(&head.headers)?.as_bytes());
     let path_para = get_path_and_canonicalized_parameters(&head.uri);
     data.extend(path_para.0.as_bytes());
     data.extend(LF.as_bytes());
     data.extend(path_para.1.as_bytes());
 
-    data
+    Ok(data)
 }
 
 #[cfg(feature = "signing")]
@@ -430,7 +430,7 @@ fn request_to_sign_input(
 
     match request_builder.headers_ref() {
         Some(h) => {
-            data.extend(headers_to_canonicalized_string(h).as_bytes());
+            data.extend(headers_to_canonicalized_string(h)?.as_bytes());
         }
         None => {
             // no headers
@@ -454,15 +454,34 @@ fn request_to_sign_input(
     Ok(data)
 }
 
-fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
+/// Converts the headers of an HTTP request into a canonicalized string format.
+/// This is used for signing the request.
+/// Sort the headers lexicographically by header name, in ascending order. Duplicates are not permitted.
+fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> Result<String> {
     let mut canonicalized_headers = String::new();
     let separator = String::from(LF);
     let mut map: HashMap<String, (String, String)> = HashMap::new();
 
     for (key, value) in headers.iter() {
         let key = key.to_string();
-        let value = value.to_str().unwrap().to_string();
+        let value = match value.to_str() {
+            Ok(v) => v.to_string(),
+            Err(e) => {
+                return Err(Error::Hyper(HyperErrorType::Header(format!(
+                    "Failed to convert header value for key: {} with error: {}",
+                    key, e
+                ))))
+            }
+        };
+
         let key_lower_case = key.to_lowercase();
+        if map.contains_key(&key_lower_case) {
+            // design decision: Duplicates are not permitted.
+            return Err(Error::Hyper(HyperErrorType::Header(format!(
+                "Duplicate header key found: {}",
+                key_lower_case
+            ))));
+        }
         map.insert(key_lower_case, (key, value));
     }
 
@@ -475,7 +494,7 @@ fn headers_to_canonicalized_string(headers: &hyper::HeaderMap) -> String {
         canonicalized_headers.push_str(&h);
     }
 
-    canonicalized_headers
+    Ok(canonicalized_headers)
 }
 
 fn get_path_and_canonicalized_parameters(url: &Uri) -> (String, String) {
@@ -567,11 +586,72 @@ pub fn should_skip_sig(method: &hyper::Method, relative_uri: &Uri) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::{
+        error::{Error, HyperErrorType},
         host_clients::{imds_client::ImdsClient, wire_server_client::WireServerClient},
         logger::logger_manager,
         misc_helpers, server_mock,
     };
+    use hyper::{body::Bytes, Request};
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn signature_input_canonicalizes_headers_and_request_target() {
+        let mut request = Request::builder()
+            .method(hyper::Method::POST)
+            .uri("/path?b=2&a=1")
+            .body(())
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("z-header", "last".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("a-header", "first".parse().unwrap());
+        request
+            .headers_mut()
+            .insert(super::AUTHORIZATION_HEADER, "excluded".parse().unwrap());
+        let (parts, _) = request.into_parts();
+
+        let input = super::as_sig_input(parts, Bytes::from_static(b"body")).unwrap();
+
+        assert_eq!(
+            String::from_utf8(input).unwrap(),
+            "POST\nbody\na-header:first\nz-header:last\n/path\na=1&b=2"
+        );
+    }
+
+    #[test]
+    fn signature_input_rejects_non_text_header_value() {
+        let mut request = Request::builder().uri("/").body(()).unwrap();
+        request.headers_mut().insert(
+            "x-invalid",
+            hyper::header::HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
+        let (parts, _) = request.into_parts();
+
+        let error = super::as_sig_input(parts, Bytes::new()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            Error::Hyper(HyperErrorType::Header(message))
+                if message.contains("Failed to convert header value for key: x-invalid")
+        ));
+    }
+
+    #[test]
+    fn canonicalized_headers_reject_duplicate_names() {
+        let mut headers = hyper::HeaderMap::new();
+        headers.append("x-duplicate", "first".parse().unwrap());
+        headers.append("x-duplicate", "second".parse().unwrap());
+
+        let error = super::headers_to_canonicalized_string(&headers).unwrap_err();
+
+        assert!(matches!(
+            error,
+            Error::Hyper(HyperErrorType::Header(message))
+                if message == "Duplicate header key found: x-duplicate"
+        ));
+    }
 
     #[test]
     fn get_path_and_canonicalized_parameters_test() {
