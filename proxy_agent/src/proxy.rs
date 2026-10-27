@@ -135,29 +135,34 @@ async fn get_user(
 ///     as it reads all files from /proc/{pid}/* and Create Process struct with all fields,
 ///     which is very inefficient when we only need the executable path and command line.
 #[cfg(not(windows))]
-fn get_process_info(process_id: u32) -> (PathBuf, String) {
+fn get_process_info(process_id: u32) -> Result<(PathBuf, String)> {
     // Get executable path from /proc/{pid}/exe symlink
     let exe_path = format!("/proc/{}/exe", process_id);
-    let process_name = std::fs::read_link(&exe_path).unwrap_or_default();
+    let process_name = std::fs::read_link(&exe_path).map_err(|e| {
+        use crate::common::error::Error;
+
+        Error::Io(format!("read link '{}' failed", exe_path), e)
+    })?;
 
     // Get command line from /proc/{pid}/cmdline (null-separated arguments)
     let cmdline_path = format!("/proc/{}/cmdline", process_id);
-    let process_cmd_line = match std::fs::read(&cmdline_path) {
-        Ok(bytes) => {
-            // cmdline is null-separated; take only the first few arguments
-            // to avoid capturing credentials in later args
-            bytes
-                .split(|&b| b == 0)
-                .filter(|s| !s.is_empty())
-                .take(MAX_CMD_ARGS)
-                .map(|s| String::from_utf8_lossy(s).into_owned())
-                .collect::<Vec<String>>()
-                .join(" ")
-        }
-        Err(_) => UNDEFINED.to_string(),
-    };
+    let bytes = std::fs::read(&cmdline_path).map_err(|e| {
+        use crate::common::error::Error;
 
-    (process_name, process_cmd_line)
+        Error::Io(format!("read file '{}' failed", cmdline_path), e)
+    })?;
+
+    // cmdline is null-separated; take only the first few arguments
+    // to avoid capturing credentials in later args
+    let process_cmd_line = bytes
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .take(MAX_CMD_ARGS)
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect::<Vec<String>>()
+        .join(" ");
+
+    Ok((process_name, process_cmd_line))
 }
 
 impl Claims {
@@ -238,7 +243,7 @@ impl Process {
         }
         #[cfg(not(windows))]
         {
-            let process_info = get_process_info(pid);
+            let process_info = get_process_info(pid)?;
             process_full_path = process_info.0;
             cmd = process_info.1;
         }
