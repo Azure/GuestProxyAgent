@@ -47,7 +47,7 @@ jobs:
           toolchain: stable
 
       - name: Install llvm Code Coverage
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@f9ee2b3488b5862cca1caf86effaa61f55953001 # cargo-llvm-cov
 
       - name: Run Build.cmd Debug amd64
         run: .\build.cmd debug amd64
@@ -278,7 +278,7 @@ jobs:
           toolchain: stable
 
       - name: Install Code Coverage
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@f9ee2b3488b5862cca1caf86effaa61f55953001 # cargo-llvm-cov
 
       - name: Setup an eBPF Development Environment in Ubuntu
         run: |
@@ -528,4 +528,3 @@ jobs:
           asset_name: build-release-linux-arm64.zip
           # ID of the release to attach the asset to
           asset_content_type: application/zip
-
