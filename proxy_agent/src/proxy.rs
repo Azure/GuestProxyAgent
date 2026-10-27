@@ -185,7 +185,7 @@ impl Claims {
         client_port: u16,
         proxy_server_shared_state: ProxyServerSharedState,
     ) -> Result<Self> {
-        let p = Process::from_pid(entry.process_id);
+        let p = Process::from_pid(entry.process_id)?;
         let u = get_user(entry.logon_id, proxy_server_shared_state).await?;
         Ok(Claims {
             userId: entry.logon_id,
@@ -206,7 +206,7 @@ impl Claims {
 }
 
 impl Process {
-    pub fn from_pid(pid: u32) -> Self {
+    pub fn from_pid(pid: u32) -> Result<Self> {
         let (process_full_path, cmd);
         #[cfg(windows)]
         {
@@ -215,12 +215,11 @@ impl Process {
             };
 
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-            let handler =
-                proxy_agent_shared::windows::get_process_handler(pid, options).unwrap_or(0);
+            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)?;
             if handler != 0 {
                 // Get process info directly - if either fails, the process may have exited
-                process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
-                cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+                process_full_path = windows::get_process_full_name(handler)?;
+                cmd = windows::get_process_cmd(handler)?;
 
                 // close the handle
                 if let Err(_e) = proxy_agent_shared::windows::close_handler(handler) {
@@ -228,13 +227,13 @@ impl Process {
                     println!("Failed to close process handler: {_e}");
                 }
             } else {
-                process_full_path = PathBuf::default();
-                cmd = UNDEFINED.to_string();
-                #[cfg(test)]
-                eprintln!(
-                    "Failed to get_process_handler: {}",
-                    std::io::Error::last_os_error()
-                );
+                use crate::common::error::Error;
+                use crate::common::error::WindowsApiErrorType;
+
+                return Err(Error::WindowsApi(WindowsApiErrorType::GetProcessHandler(
+                    pid,
+                    std::io::Error::last_os_error(),
+                )));
             }
         }
         #[cfg(not(windows))]
@@ -254,12 +253,12 @@ impl Process {
             .unwrap_or_default()
             .to_os_string();
 
-        Process {
+        Ok(Process {
             command_line: cmd,
             name: process_name,
             exe_full_name: process_full_path,
             pid,
-        }
+        })
     }
 }
 
