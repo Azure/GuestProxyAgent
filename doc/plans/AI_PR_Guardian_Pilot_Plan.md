@@ -394,7 +394,7 @@ The reviewer validates direction, behavioral contract, high-risk implementation 
 
 ## Stage 7 - Post-merge observation
 
-Monitor merged pilot PRs for 30 days. Connect bugs, incidents, rollbacks, hotfixes, and test failures back to the PR and determine whether available evidence could have enabled earlier detection.
+Monitor merged pilot PRs for 30 days. Connect bugs, incidents, rollbacks, hotfix changes, and test failures back to the PR and determine whether available evidence could have enabled earlier detection.
 
 # 9. Reviewer Evidence Package Template
 
@@ -460,7 +460,7 @@ Human decisions required<br />
 
 - Mix of AI-assisted and human-authored PRs
 
-- Exclude emergency hotfixes, very large migrations, generated dependency PRs, multi-repository changes, and changes lacking required test environments
+- Exclude emergency hotfix changes, very large migrations, generated dependency PRs, multi-repository changes, and changes lacking required test environments
 
 ## Control and treatment
 
@@ -602,11 +602,11 @@ Always split results by R0-R3. Aggregate averages may hide strong R1/R2 performa
 
 # 16. Appendix A - Metric Instrumentation
 
-This appendix operationalizes the metrics in Metrics and Success Criteria and the Weekly Dashboard. The metrics owner maintains the versioned data dictionary and records any definition change before analysis.
+This appendix defines how to measure the metrics in Metrics and Success Criteria and the Weekly Dashboard. The metrics owner maintains the versioned data dictionary and records any definition change before analysis.
 
 ## Common population, timestamps, and reporting rules
 
-- **Population:** Include enrolled control and treatment PRs that enter ready-for-review during the measurement window and meet Pilot Design criteria. Exclude bots/generated dependency PRs, emergency hotfixes, very large migrations, multi-repository changes, unavailable test environments, canceled/abandoned PRs, and instrumentation failures; report exclusion counts and reasons.
+- **Population:** Include enrolled control and treatment PRs that enter ready-for-review during the measurement window and meet Pilot Design criteria. Exclude bots/generated dependency PRs, emergency hotfix changes, very large migrations, multi-repository changes, unavailable test environments, canceled/abandoned PRs, and instrumentation failures; report exclusion counts and reasons.
 
 - **Draft and reopened PRs:** Draft time is excluded until the first ready-for-review timestamp. If returned to draft or changes are requested, pause calendar review clocks until ready again. A reopened PR retains the original PR identifier; report both cumulative lifecycle time and the reopened episode. Do not double-count it in PR-rate denominators.
 
@@ -625,10 +625,10 @@ This appendix operationalizes the metrics in Metrics and Success Criteria and th
 | **Review cycle time** | Final required approval timestamp minus first ready-for-review timestamp, less draft/paused intervals. If approval is dismissed by a new commit, use the final valid approval. Report merged-but-unapproved exceptions separately. | PR state, commit, and review events | Metrics owner |
 | **Review iterations** | Count cycles beginning with substantive human feedback or changes requested and ending with the author's next material update/response. Consolidate comments in one review session into one cycle; exclude bot-only updates and merge-base refreshes. | Review, comment, and commit events | Metrics owner |
 | **Context switches** | Reviewer-reported distinct work sessions used to complete review, where a session is separated by at least 30 minutes or an explicit return later. Sum across required reviewers; exclude automated activity. | Reviewer prompt | Metrics owner |
-| **Normalized throughput** | Eligible PRs completed per reviewer-week. Compare within predeclared risk and changed-line strata; if a weighted index is used, freeze baseline stratum weights before treatment and publish them. Do not treat raw PR count as normalized throughput. | PR events, reviewer roster, risk/size | Metrics owner |
+| **Normalized throughput** | Eligible PRs completed per reviewer-week. Compare within risk and changed-line strata defined in advance; if a weighted index is used, freeze baseline stratum weights before treatment and publish them. Do not treat raw PR count as normalized throughput. | PR events, reviewer roster, risk/size | Metrics owner |
 | **Escaped defect rate** | Numerator = unique confirmed defects attributable by owner review to an eligible merged PR and detected within 30 days. Denominator = eligible merged PRs completing the 30-day window. Deduplicate related incidents/work items; classify severity and risk tier. | Bug/incident links, deployment and PR records | Repository owner |
 | **Reopened work rate** | Numerator = eligible merged PRs with a linked work item reopened for a confirmed related issue within 30 days. Denominator = eligible merged PRs with complete linkage and observation. Count each PR once. | Work-item history and PR links | Product owner |
-| **Rollback/hotfix rate** | Numerator = eligible merged PRs causing rollback, emergency disablement, or production hotfix within 30 days, confirmed by repository owner. Denominator = eligible merged PRs completing observation. Count one affected PR once even if multiple remediations occur. | Release/deployment, incident, and PR records | Repository owner |
+| **Rollback/hotfix rate** | Numerator = eligible merged PRs causing rollback, emergency disablement, or production hotfix within 30 days, confirmed by repository owner. Denominator = eligible merged PRs completing observation. Count one affected PR once even if multiple corrective actions occur. | Release/deployment, incident, and PR records | Repository owner |
 | **Security finding rate** | Numerator = confirmed security issues introduced by eligible PRs, deduplicated and severity-classified. Denominator = eligible merged PRs completing the agreed observation window. Exclude pre-existing findings unless the PR worsened exposure. | Security tools, incidents, and validated reports | Security/privacy owner |
 | **Post-merge failure rate** | Numerator = eligible merged PRs with a build or test failure confirmed attributable after merge and before release/within 30 days. Denominator = eligible merged PRs with available signals. Exclude flaky failures not attributed to the PR. | CI/test history and triage disposition | Engineering owner |
 | **Finding precision** | Numerator = findings dispositioned Accepted and fixed, Valid risk accepted, or Deferred with linked work item. Denominator = all dispositioned Guardian findings, excluding unresolved dispositions. Report overall and high-severity precision; duplicates and not-actionable findings remain denominator negatives. | Guardian finding/disposition store | Triage owner |
@@ -749,8 +749,6 @@ Examples include:
 For example, a timeout change should expose the previous and proposed values, evidence for slow-host behavior, and the human decision about compatibility. Illustrative test counts, time savings, or AI "PASS" labels are not pilot measurements or proof.
 
 ## 18.6 Launch and evaluate in the actual review workflow
-
-Confirm the enrolled repository explicitly. The current checkout has `ZhidongPeng/GuestProxyAgent` as origin and `Azure/GuestProxyAgent` as upstream. A fork can validate mechanics, but productivity measurements must come from the enrolled repository where participating engineers actually conduct review. Upstream enrollment and cross-repository retrieval require separate authorization; neither is implied by a configured remote.
 
 Follow Sections 10-16 for baseline selection, control/treatment assignment, sample-size caveats, dispositions, and the 30-day observation window. For historical shadow evaluation, provide only context available at the assessment point; reserve later fixes, review findings, and incidents as independently adjudicated evaluation labels.
 
