@@ -223,10 +223,24 @@ impl Process {
             let handler = proxy_agent_shared::windows::get_process_handler(pid, options)?;
             if handler != 0 {
                 // Get process info directly - if either fails, the process may have exited
-                process_full_path = windows::get_process_full_name(handler)?;
-                cmd = windows::get_process_cmd(handler)?;
+                process_full_path = match windows::get_process_full_name(handler) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        // close the handle before returning the error
+                        _ = proxy_agent_shared::windows::close_handler(handler);
+                        return Err(e);
+                    }
+                };
+                cmd = match windows::get_process_cmd(handler) {
+                    Ok(cmd_line) => cmd_line,
+                    Err(e) => {
+                        // close the handle before returning the error
+                        _ = proxy_agent_shared::windows::close_handler(handler);
+                        return Err(e);
+                    }
+                };
 
-                // close the handle
+                // close the handle in normal case after successfully getting process info
                 if let Err(_e) = proxy_agent_shared::windows::close_handler(handler) {
                     #[cfg(test)]
                     println!("Failed to close process handler: {_e}");
