@@ -1,5 +1,20 @@
 # CI Helpers — Bloat Budget
 
+## Local Guardian pilot metrics
+
+The [safe-decision metric dictionary](../.ai/safe-decision-metrics.md) defines the
+local record format and reporting limits. Run the dependency-free reporter with
+Node.js 22+ against an authorized JSON file outside the repository:
+
+```powershell
+node ci\guardian_metrics.mjs C:\approved-pilot-data\records.json
+node --test ci\guardian_metrics.test.mjs
+```
+
+The reporter validates records and prints JSON summaries; it does not collect
+external data, write records, run in CI automatically, or approve changes.
+The rest of this document describes the existing binary-size gate.
+
 This directory implements a hard
 `cargo-bloat` budget enforced on every PR.
 
