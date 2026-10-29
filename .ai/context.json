@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "role_assignments": {
+    "repository-owner": null,
+    "test-owner": null,
+    "security-privacy-owner": null,
+    "release-owner": null
+  },
+  "approved_history": [],
+  "topics": [
+    {
+      "id": "architecture",
+      "path": ".ai/architecture.md",
+      "owner_role": "repository-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "Cargo.toml",
+        "README.md",
+        "proxy_agent/src/runtime_coordinator.rs",
+        "proxy_agent/src/proxy/proxy_connection.rs",
+        "proxy_agent_extension/src/service_main.rs"
+      ]
+    },
+    {
+      "id": "coding-guidelines",
+      "path": ".ai/coding-guidelines.md",
+      "owner_role": "repository-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        ".github/workflows/ci.yml",
+        "proxy_agent_extension/Cargo.toml",
+        "proxy_agent_setup/Cargo.toml",
+        "proxy_agent/src/runtime_coordinator.rs",
+        "shared-ebpf/include/gpa_audit_event.h"
+      ]
+    },
+    {
+      "id": "testing-requirements",
+      "path": ".ai/testing-requirements.md",
+      "owner_role": "test-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "build.cmd",
+        "build-linux.sh",
+        ".github/workflows/reusable-build.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/codeql.yml",
+        ".github/workflows/bloat.yml",
+        "e2etest/GuestProxyAgentTest/Program.cs"
+      ]
+    },
+    {
+      "id": "compatibility",
+      "path": ".ai/compatibility.md",
+      "owner_role": "repository-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "README.md",
+        "doc/GettingStartedWindows.md",
+        "proxy_agent/build.rs",
+        "proxy_agent_shared/Cargo.toml",
+        "proxy_agent_extension/src/handler_main.rs",
+        "e2etest/GuestProxyAgentTest/GuestProxyAgentTest.csproj"
+      ]
+    },
+    {
+      "id": "security-invariants",
+      "path": ".ai/security-invariants.md",
+      "owner_role": "security-privacy-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "SECURITY.md",
+        "proxy_agent/src/proxy/proxy_authorizer.rs",
+        "proxy_agent/src/proxy/proxy_server.rs",
+        "proxy_agent/src/proxy/proxy_connection.rs",
+        "proxy_agent/src/proxy.rs",
+        "proxy_agent_shared/src/secrets_redactor.rs"
+      ]
+    },
+    {
+      "id": "deployment-safety",
+      "path": ".ai/deployment-safety.md",
+      "owner_role": "release-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "proxy_agent_setup/src/main.rs",
+        "proxy_agent_setup/src/linux.rs",
+        "proxy_agent_setup/src/linux/azure-proxy-agent.service",
+        "proxy_agent_extension/src/service_main.rs",
+        "proxy_agent_extension/scripts/New-ExtensionCatalog.ps1",
+        "doc/GettingStartedWindows.md",
+        ".github/workflows/cd.yml"
+      ]
+    },
+    {
+      "id": "common-regressions",
+      "path": ".ai/common-regressions.md",
+      "owner_role": "test-owner",
+      "status": "draft",
+      "guidance_revision": 1,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        "proxy_agent/src/runtime_coordinator.rs",
+        "proxy_agent/src/proxy/proxy_authorizer.rs",
+        "proxy_agent/src/proxy/canonical/mod.rs",
+        "proxy_agent/src/proxy/authorization_rules.rs",
+        "proxy_agent_shared/src/hyper_client.rs",
+        "proxy_agent_shared/src/secrets_redactor.rs",
+        "proxy_agent_extension/src/service_main.rs",
+        "proxy_agent_setup/src/main.rs"
+      ]
+    },
+    {
+      "id": "review-checklist",
+      "path": ".ai/review-checklist.md",
+      "owner_role": "repository-owner",
+      "status": "draft",
+      "guidance_revision": 5,
+      "evidence_revision": "fda6fbc517a4eddefed89e072f5b9ec65a9f74a9",
+      "sources": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/reusable-build.yml",
+        ".github/workflows/bloat.yml",
+        "proxy_agent/src/proxy/proxy_authorizer.rs",
+        "proxy_agent_setup/src/main.rs"
+      ]
+    }
+  ]
+}
