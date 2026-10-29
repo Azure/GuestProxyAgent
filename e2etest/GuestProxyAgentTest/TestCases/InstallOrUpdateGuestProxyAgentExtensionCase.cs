@@ -36,6 +36,13 @@ namespace GuestProxyAgentTest.TestCases
                 StdOut = runCommandRes.StdOut,
                 FromBlob = true
             };
+
+            if (!Constants.IS_WINDOWS())
+            {
+                // Linux VM Agent process VM Extensions in sequence, so we need to reboot after replaced the Linux Guest Proxy Agent extension zip file
+                // It is to ensure that the Guest Proxy Agent VM extension is properly unzipped, installed and enabled.
+                await context.VirtualMachineResource.RestartAsync(Azure.WaitUntil.Completed, cancellationToken: context.CancellationToken);
+            }
         }
     }
 }
