@@ -85,6 +85,26 @@ It does not overwrite the reusable PR template. If the command is not visible,
 start a new chat or use **Chat: Run Prompt** from the Command Palette.
 Prompt and agent instructions guide behavior; they are not enforcement gates.
 
+### Reusable local code review
+
+Run `/gpa-review` to use the
+[local review prompt](../.github/prompts/gpa-review.prompt.md) against a refreshed
+`upstream/dev`. To select another remote branch:
+
+```text
+/gpa-review compare with upstream/main
+```
+
+GPA Coding collects the committed, staged, unstaged, and relevant new-file delta,
+pins its snapshot, and coordinates appropriate validation. GPA Guardian reviews
+that evidence independently. The command returns findings, validation, gaps,
+reviewer focus, and the Guardian result in chat, not a PR description.
+
+The prompt reuses only the comparison-refresh step of `/gpa-pr`, including
+missing-remote setup and failure handling. It does not authorize fixes, test-file
+edits, commits, pushes, or publication. Supply task scope and approved intent if
+not already available. Live prompt execution is not established by these files.
+
 ## Intake: pin the change being reviewed
 
 The author prepares the [proof package](proof-package.md) using the
