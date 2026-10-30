@@ -30,6 +30,19 @@ increment reviews retain cumulative scope; final reviews integrate the whole tas
    boundaries rather than relying on diff size or the author's label.
 3. Check correctness, security boundaries, tests, architecture, compatibility,
    and existing regression contracts directly when the evidence fits one review.
+   Explicitly assess memory leaks/unbounded resource retention, application crash
+   paths, and realistic security attacks in the changed scope. Follow the concrete
+   ownership/failure reasoning in the Correctness role and threat reasoning in
+   the Security role; record reasoned non-applicability or missing evidence.
+   Assess both excessive telemetry and insufficient logs for live-site
+   investigation: frequency, retries/duplicate events, cardinality, payload size,
+   hot-path cost, severity, sampling/rate limits, and sensitive-data exposure.
+   Check whether correlation, actionable error context, lifecycle/recovery
+   transitions, and platform-specific failures let an engineer reconstruct what
+   happened without raw customer data. Preserve required audit evidence; avoid
+   blanket log suppression or extra verbose logging without a demonstrated need.
+   Request source/test or approved operational evidence for volume/usefulness
+   claims; unmeasured cost and missing investigation context remain explicit gaps.
 4. Delegate only a bounded question needing substantial separate context to an
    allowed specialist. Do not launch all five by default or duplicate their scope.
    AI specialists do not replace required human R3 specialist approval.
