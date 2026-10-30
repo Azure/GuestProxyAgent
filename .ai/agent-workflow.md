@@ -51,7 +51,22 @@ Run `/gpa-pr` in VS Code Chat to use the
 [PR preparation prompt](../.github/prompts/gpa-pr.prompt.md). The prompt explicitly
 selects GPA Coding, compares the current task with `upstream/dev` by default,
 validates the change, requests final independent Guardian review, and returns
-a completed PR body in chat.
+a completed PR description in one copyable `markdown` code block. Copy the
+block's contents into the GitHub PR description; the outer fence is not part of
+the PR body. Links in the body use repository-relative paths or GitHub permalinks,
+not local filesystem paths.
+
+Before calculating the delta, the command automatically fetches the comparison
+branch from the configured remote (default: `upstream/dev`). This refreshes the
+remote-tracking ref; it does not pull, merge, rebase, or change the working tree.
+If `upstream` is missing, it stops and returns setup commands for you to run:
+
+```powershell
+git remote add upstream https://github.com/Azure/GuestProxyAgent.git
+git fetch upstream
+```
+
+Fetch/ref-resolution failures stop preparation instead of using a stale base.
 
 For example, compare with `upstream/main` instead of the default base:
 
