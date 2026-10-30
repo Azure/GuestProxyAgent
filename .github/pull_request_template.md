@@ -1,5 +1,7 @@
 <!--
 Author proof package. Complete all eight sections using .ai/proof-package.md.
+Generate a concise, change-specific, action-oriented PR title for GitHub's title
+field. Return it separately from this description; do not add a title section.
 Replace <...> placeholders. Never invent passing results or omit known failures.
 Keep sensitive data and raw production logs out of the PR.
 -->

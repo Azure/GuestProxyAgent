@@ -59,7 +59,14 @@ Use [GPA Coding](../agents/gpa-coding.agent.md) and follow the
    [checkpoint limits](../../.ai/continuous-review.md); do not invent earlier
    checkpoints or restart an exhausted review budget. If independent review
    cannot run, explicitly report Independent review not performed.
-6. Return the completed PR description as raw, copy-and-paste-ready Markdown in
+6. Return two separately labeled, copy-and-paste-ready blocks: **PR title** and
+   **PR description**. Put only a concise, single-line, action-oriented title in
+   the first fenced code block labeled `text`. Generate a change-specific title
+   grounded in the inspected task delta; do not imply deployment, enforcement,
+   passing validation, or publication without evidence. Do not include the title
+   in the description or add a ninth template section.
+
+   Return the completed PR description as raw Markdown in
    one fenced code block labeled `markdown`. Use an outer fence longer than any
    code fence inside the description so nested examples remain intact. Put only
    the PR description inside the block: all eight completed template sections,

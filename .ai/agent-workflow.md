@@ -55,6 +55,8 @@ a completed PR description in one copyable `markdown` code block. Copy the
 block's contents into the GitHub PR description; the outer fence is not part of
 the PR body. Links in the body use repository-relative paths or GitHub permalinks,
 not local filesystem paths.
+The output also includes a separate, single-line PR title in a `text` code block.
+Copy that block's contents into GitHub's title field, not into the description.
 
 Before calculating the delta, the command automatically fetches the comparison
 branch from the configured remote (default: `upstream/dev`). This refreshes the
