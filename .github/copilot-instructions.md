@@ -1,5 +1,12 @@
 # GuestProxyAgent repository guidance
 
+- Use the [DAG documentation index](../copilot-docs/docs-index.md) and
+  [generated component routing](copilot-instructions-dag.md) for source-backed
+  architecture and implementation navigation. Compact DAGs suit overview
+  questions; for details, search the matching intermediate companion for the
+  source-file heading and read only that section. Generated documentation does
+  not supersede the curated engineering contracts below.
+
 - Start with the [engineering context index](../.ai/README.md) and use the
   [context registry](../.ai/context.json) to select only relevant topic guides
   and source files. Recheck implementation at the commit being changed.
