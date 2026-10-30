@@ -40,6 +40,34 @@ No model override is specified; the host resolves its configured model.
 If new agents are not visible, start a new chat or reload VS Code and inspect the
 agent picker and customization diagnostics.
 
+### Default coding agent and reusable PR preparation
+
+The repository workspace setting `chat.newSession.defaultMode` selects
+**GPA Coding** for new chats in VS Code versions that support this setting.
+Existing chats are not changed; select another agent in the picker when needed.
+This setting does not configure other editors, CLI sessions, or GitHub agents.
+
+Run `/gpa-pr` in VS Code Chat to use the
+[PR preparation prompt](../.github/prompts/gpa-pr.prompt.md). The prompt explicitly
+selects GPA Coding, compares the current task with `upstream/dev` by default,
+validates the change, requests final independent Guardian review, and returns
+a completed PR body in chat.
+
+For example, compare with `upstream/main` instead of the default base:
+
+```text
+/gpa-pr compare with upstream/main
+```
+
+Supply approved intent and acceptance criteria when they are not already in the
+conversation.
+
+The command does not authorize implementation changes, commits, pushes, or PR
+publication. It reports defects for a separately authorized implementation task.
+It does not overwrite the reusable PR template. If the command is not visible,
+start a new chat or use **Chat: Run Prompt** from the Command Palette.
+Prompt and agent instructions guide behavior; they are not enforcement gates.
+
 ## Intake: pin the change being reviewed
 
 The author prepares the [proof package](proof-package.md) using the
