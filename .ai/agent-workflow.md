@@ -55,6 +55,8 @@ a completed PR description in one copyable `markdown` code block. Copy the
 block's contents into the GitHub PR description; the outer fence is not part of
 the PR body. Links in the body use repository-relative paths or GitHub permalinks,
 not local filesystem paths.
+The output also includes a separate, single-line PR title in a `text` code block.
+Copy that block's contents into GitHub's title field, not into the description.
 
 Before calculating the delta, the command automatically fetches the comparison
 branch from the configured remote (default: `upstream/dev`). This refreshes the
@@ -82,6 +84,26 @@ publication. It reports defects for a separately authorized implementation task.
 It does not overwrite the reusable PR template. If the command is not visible,
 start a new chat or use **Chat: Run Prompt** from the Command Palette.
 Prompt and agent instructions guide behavior; they are not enforcement gates.
+
+### Reusable local code review
+
+Run `/gpa-review` to use the
+[local review prompt](../.github/prompts/gpa-review.prompt.md) against a refreshed
+`upstream/dev`. To select another remote branch:
+
+```text
+/gpa-review compare with upstream/main
+```
+
+GPA Coding collects the committed, staged, unstaged, and relevant new-file delta,
+pins its snapshot, and coordinates appropriate validation. GPA Guardian reviews
+that evidence independently. The command returns findings, validation, gaps,
+reviewer focus, and the Guardian result in chat, not a PR description.
+
+The prompt reuses only the comparison-refresh step of `/gpa-pr`, including
+missing-remote setup and failure handling. It does not authorize fixes, test-file
+edits, commits, pushes, or publication. Supply task scope and approved intent if
+not already available. Live prompt execution is not established by these files.
 
 ## Intake: pin the change being reviewed
 
