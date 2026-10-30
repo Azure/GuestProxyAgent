@@ -11,9 +11,11 @@ Use [GPA Coding](../agents/gpa-coding.agent.md) and follow the
 [independent agent workflow](../../.ai/agent-workflow.md).
 
 1. Refresh the comparison base before calculating the PR delta. Default to
-   `upstream/dev`. Check that the `upstream` remote exists with
-   `git remote get-url upstream`. If it is not configured, stop and return these
-   setup commands to the user; do not add or change remotes automatically:
+   `upstream/dev`. Resolve the selected base to an unambiguous remote branch;
+   otherwise, ask for clarification. Check the selected remote with
+   `git remote get-url <remote>`. If it is not configured, stop and ask the user
+   to configure it. Only when the missing remote is `upstream`, return these
+   setup commands; do not add or change remotes automatically:
 
    ```powershell
    git remote add upstream https://github.com/Azure/GuestProxyAgent.git
