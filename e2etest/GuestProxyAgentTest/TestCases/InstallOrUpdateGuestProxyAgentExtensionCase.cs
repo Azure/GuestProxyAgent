@@ -44,7 +44,7 @@ namespace GuestProxyAgentTest.TestCases
                 await context.VirtualMachineResource.RestartAsync(Azure.WaitUntil.Completed, cancellationToken: context.CancellationToken);
 
                 // Wait for 1 min to let the Guest Proxy Agent extension to be fully initialized
-                Thread.Sleep(60000); // 1 min
+                await Task.Delay(60000, context.CancellationToken); // 1 min
             }
         }
     }
