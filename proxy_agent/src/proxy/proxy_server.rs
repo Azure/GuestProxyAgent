@@ -57,7 +57,6 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio::task::{JoinError, JoinSet};
-use tokio_util::bytes::BytesMut;
 use tokio_util::sync::CancellationToken;
 use tower::Service;
 use tower_http::{body::Limited, limit::RequestBodyLimitLayer};
@@ -1219,7 +1218,17 @@ impl ProxyServer {
             LoggerLevel::Trace,
             "Starting to collect the client request body.".to_string(),
         );
-        let whole_body = Self::read_body_bytes(body).await?;
+        let whole_body = match Self::read_body_bytes(body).await {
+            Ok(body) => body,
+            Err(error) => {
+                http_connection_context.log(
+                    LoggerLevel::Warn,
+                    "Failed to collect the client request body; closing the connection."
+                        .to_string(),
+                );
+                return Err(error);
+            }
+        };
         http_connection_context.log(
             LoggerLevel::Trace,
             format!(
@@ -1331,13 +1340,13 @@ impl ProxyServer {
         B: hyper::body::Body<Data = Bytes> + Unpin,
         B::Error: std::fmt::Display + Send + Sync + 'static,
     {
-        let body_size = body.size_hint().upper().unwrap_or(4 * 1024 * 1024);
-        let mut buf = BytesMut::with_capacity(body_size as usize);
+        let mut buf = Vec::new();
         while let Some(chunk) = body.frame().await {
             match chunk {
                 Ok(chunk) => {
                     if let Ok(data) = chunk.into_data() {
-                        buf.extend_from_slice(&data)
+                        Self::reserve_body_buffer(&mut buf, data.len())?;
+                        buf.extend_from_slice(&data);
                     }
                 }
                 Err(e) => {
@@ -1347,7 +1356,16 @@ impl ProxyServer {
             // yield control to the tokio scheduler to avoid blocking the thread if the body is large
             tokio::task::yield_now().await;
         }
-        Ok(buf.freeze())
+        Ok(Bytes::from(buf))
+    }
+
+    fn reserve_body_buffer(buf: &mut Vec<u8>, additional: usize) -> Result<()> {
+        buf.try_reserve(additional).map_err(|error| {
+            Error::Io(
+                "Failed to reserve request body buffer".to_string(),
+                std::io::Error::other(error),
+            )
+        })
     }
 }
 
@@ -1366,6 +1384,266 @@ mod tests {
     use tokio::sync::{oneshot, Notify};
     use tokio::task::{JoinHandle, JoinSet};
     use tokio_util::sync::CancellationToken;
+
+    struct TestBody {
+        frames: std::collections::VecDeque<
+            std::result::Result<hyper::body::Frame<hyper::body::Bytes>, std::io::Error>,
+        >,
+        upper_hint: Option<u64>,
+        forbid_size_hint: bool,
+        pending_at_end: bool,
+        polls: Arc<std::sync::atomic::AtomicUsize>,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl TestBody {
+        fn new(frames: Vec<hyper::body::Frame<hyper::body::Bytes>>) -> Self {
+            Self {
+                frames: frames.into_iter().map(Ok).collect(),
+                upper_hint: None,
+                forbid_size_hint: false,
+                pending_at_end: false,
+                polls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                dropped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            }
+        }
+    }
+
+    impl hyper::body::Body for TestBody {
+        type Data = hyper::body::Bytes;
+        type Error = std::io::Error;
+
+        fn poll_frame(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<std::result::Result<hyper::body::Frame<Self::Data>, Self::Error>>>
+        {
+            let this = self.get_mut();
+            this.polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if this.frames.is_empty() && this.pending_at_end {
+                return std::task::Poll::Pending;
+            }
+            std::task::Poll::Ready(this.frames.pop_front())
+        }
+
+        fn size_hint(&self) -> hyper::body::SizeHint {
+            assert!(
+                !self.forbid_size_hint,
+                "collector must not consult size hints"
+            );
+            let mut hint = hyper::body::SizeHint::new();
+            if let Some(upper) = self.upper_hint {
+                hint.set_upper(upper);
+            }
+            hint
+        }
+    }
+
+    impl Drop for TestBody {
+        fn drop(&mut self) {
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn read_body_ignores_size_hints() {
+        for upper in [None, Some(0), Some(16 * 1024 * 1024), Some(u64::MAX)] {
+            for bytes in [b"".as_slice(), b"small".as_slice()] {
+                if upper == Some(0) && !bytes.is_empty() {
+                    continue;
+                }
+                let mut body = TestBody::new(vec![hyper::body::Frame::data(
+                    hyper::body::Bytes::copy_from_slice(bytes),
+                )]);
+                body.upper_hint = upper;
+                assert_eq!(
+                    proxy_server::ProxyServer::read_body_bytes(body)
+                        .await
+                        .unwrap(),
+                    bytes,
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn read_body_empty_does_not_consult_size_hint() {
+        let mut body = TestBody::new(Vec::new());
+        body.forbid_size_hint = true;
+        assert!(proxy_server::ProxyServer::read_body_bytes(body)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_body_preserves_binary_frames_and_ignores_trailers() {
+        let body = TestBody::new(vec![
+            hyper::body::Frame::data(hyper::body::Bytes::from_static(b"\0\xff")),
+            hyper::body::Frame::data(hyper::body::Bytes::new()),
+            hyper::body::Frame::data(hyper::body::Bytes::from_static(b"\x80last")),
+            hyper::body::Frame::trailers(http::HeaderMap::new()),
+        ]);
+        assert_eq!(
+            proxy_server::ProxyServer::read_body_bytes(body)
+                .await
+                .unwrap(),
+            b"\0\xff\x80last".as_slice(),
+        );
+        let trailers_only =
+            TestBody::new(vec![hyper::body::Frame::trailers(http::HeaderMap::new())]);
+        assert!(proxy_server::ProxyServer::read_body_bytes(trailers_only)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_body_stops_on_error_and_drops_partial_body() {
+        let mut body = TestBody::new(vec![hyper::body::Frame::data(
+            hyper::body::Bytes::from_static(b"prefix"),
+        )]);
+        body.frames
+            .push_back(Err(std::io::Error::other("synthetic body failure")));
+        body.frames.push_back(Ok(hyper::body::Frame::data(
+            hyper::body::Bytes::from_static(b"must not be read"),
+        )));
+        let polls = body.polls.clone();
+        let dropped = body.dropped.clone();
+        let error = proxy_server::ProxyServer::read_body_bytes(body)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::common::error::Error::Hyper(
+                proxy_agent_shared::error::HyperErrorType::ReceiveBody(ref message)
+            ) if message == "synthetic body failure"
+        ));
+        assert_eq!(polls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn read_body_reservation_failure_is_an_error() {
+        let mut buf = b"prefix".to_vec();
+        let error =
+            proxy_server::ProxyServer::reserve_body_buffer(&mut buf, usize::MAX).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::common::error::Error::Io(ref context, _)
+                if context == "Failed to reserve request body buffer"
+        ));
+        assert_eq!(buf, b"prefix");
+    }
+
+    #[tokio::test]
+    async fn read_body_preserves_streamed_size_limit() {
+        use tower::{Layer, Service};
+
+        let limit = proxy_server::REQUEST_BODY_LOW_LIMIT_SIZE;
+        assert_eq!(limit, 102400);
+        for sizes in [
+            vec![limit],
+            vec![limit / 2, limit / 2],
+            vec![limit + 1],
+            vec![limit, 1],
+        ] {
+            let total: usize = sizes.iter().sum();
+            let frames = sizes
+                .into_iter()
+                .map(|size| hyper::body::Frame::data(hyper::body::Bytes::from(vec![88; size])))
+                .collect();
+            let layer = tower_http::limit::RequestBodyLimitLayer::new(limit);
+            let mut service = layer.layer(tower::service_fn(|request: hyper::Request<_>| async {
+                let bytes = proxy_server::ProxyServer::read_body_bytes(request.into_body()).await?;
+                Ok::<_, crate::common::error::Error>(hyper::Response::new(
+                    http_body_util::Full::new(bytes),
+                ))
+            }));
+            let result = service
+                .call(hyper::Request::new(TestBody::new(frames)))
+                .await;
+            if total <= limit {
+                assert_eq!(
+                    result
+                        .unwrap()
+                        .into_body()
+                        .collect()
+                        .await
+                        .unwrap()
+                        .to_bytes(),
+                    vec![88; total],
+                );
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(crate::common::error::Error::Hyper(
+                        proxy_agent_shared::error::HyperErrorType::ReceiveBody(_)
+                    ))
+                ));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn read_body_cancellation_releases_pending_body() {
+        use std::future::Future;
+        use std::sync::atomic::Ordering;
+        use std::task::Poll;
+
+        let mut body = TestBody::new(vec![hyper::body::Frame::data(
+            hyper::body::Bytes::from_static(b"prefix"),
+        )]);
+        body.pending_at_end = true;
+        let polls = body.polls.clone();
+        let dropped = body.dropped.clone();
+        let mut collection = Box::pin(proxy_server::ProxyServer::read_body_bytes(body));
+        std::future::poll_fn(|cx| {
+            assert!(collection.as_mut().poll(cx).is_pending());
+            if polls.load(Ordering::SeqCst) >= 2 {
+                Poll::Ready(())
+            } else {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        })
+        .await;
+        drop(collection);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn read_body_limit_layer_rejects_oversized_content_length() {
+        use tower::Layer;
+        use tower::Service;
+
+        let layer = tower_http::limit::RequestBodyLimitLayer::new(
+            proxy_server::REQUEST_BODY_LOW_LIMIT_SIZE,
+        );
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handler_called = called.clone();
+        let mut service = layer.layer(tower::service_fn(move |_request| {
+            handler_called.store(true, std::sync::atomic::Ordering::SeqCst);
+            async {
+                Ok::<_, std::convert::Infallible>(hyper::Response::new(http_body_util::Full::new(
+                    hyper::body::Bytes::new(),
+                )))
+            }
+        }));
+        let request = hyper::Request::builder()
+            .header(
+                hyper::header::CONTENT_LENGTH,
+                proxy_server::REQUEST_BODY_LOW_LIMIT_SIZE + 1,
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+        assert_eq!(
+            service.call(request).await.unwrap().status(),
+            hyper::StatusCode::PAYLOAD_TOO_LARGE,
+        );
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+    }
 
     struct DrainingHttpServer {
         port: u16,

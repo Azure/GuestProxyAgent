@@ -8,6 +8,27 @@ UMDH tracks allocations made through the Windows heap manager. It does not
 explain direct `VirtualAlloc` growth, thread-stack commit, or mapped-file growth.
 Use WPA/WPR or VMMap for those categories.
 
+## Rust allocation failures
+
+A stack ending in `rust_oom`, `handle_alloc_error`, and `process::abort`
+indicates that an allocation failed, not necessarily a memory leak. Check
+process private bytes, system commit usage and limits, and any process/job
+memory limits. UST itself adds memory overhead, so account for it during
+diagnosis.
+
+Use the exact executable and matching PDB with the crash dump. Large offsets
+from names such as `Arc::drop_slow` or `decode_utf8_lossy` may be approximate
+symbol attribution; do not identify the allocating caller from those names
+alone. Determine the requested allocation size and resolve the caller before
+attributing the crash to decoding or buffering. Treat dumps as sensitive:
+they can contain request bodies, credentials, and signing keys.
+
+The signed-request body collector grows its buffer fallibly as data arrives,
+without preallocating from a body size hint. Existing request-body limits still
+apply, and responses and skip-signature requests remain streamed. This reduces
+one source of allocation failures; it does not prevent exhaustion from
+concurrent requests, other allocations, or system-wide memory pressure.
+
 ## 1. Install current Debugging Tools for Windows
 
 Download and run the latest Windows SDK installer:
