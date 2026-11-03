@@ -41,6 +41,7 @@ namespace GuestProxyAgentTest.TestCases
             {
                 // Linux VM Agent process VM Extensions in sequence, so we need to trigger a new goalstate
                 //  after replaced the Linux Guest Proxy Agent extension zip file
+                // It is dummy script to trigger a new goalstate, the script does not perform any actual operation
                 // It is to ensure that the Guest Proxy Agent VM extension is properly unzipped, installed and enabled.
                 await RunScriptViaRunCommandV2Async(context, Constants.DUMMY_SCRIPT_NAME, new List<(string, string)>(), false);
             }
