@@ -9,6 +9,9 @@ pub enum Error {
     #[error("IO error: {0}: {1}")]
     Io(String, std::io::Error),
 
+    #[error("Failed to reserve request body buffer: {0}")]
+    BodyBufferReservation(#[source] std::collections::TryReserveError),
+
     #[error("{0}")]
     Hyper(HyperErrorType),
 

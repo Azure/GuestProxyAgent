@@ -1362,11 +1362,8 @@ impl ProxyServer {
     }
 
     fn reserve_body_buffer(buf: &mut Vec<u8>, additional: usize) -> Result<()> {
-        buf.try_reserve(additional).map_err(|error| {
-            // Avoid allocating in this error path: `try_reserve` can fail due to OOM,
-            // and building a contextual `String` here may itself allocate and fail.
-            Error::Io(String::new(), std::io::Error::other(error))
-        })
+        buf.try_reserve(additional)
+            .map_err(Error::BodyBufferReservation)
     }
 }
 
@@ -1529,14 +1526,34 @@ mod tests {
     #[test]
     fn read_body_reservation_failure_is_an_error() {
         let mut buf = b"prefix".to_vec();
+        let capacity = buf.capacity();
         let error =
             proxy_server::ProxyServer::reserve_body_buffer(&mut buf, usize::MAX).unwrap_err();
-        assert!(matches!(
-            error,
-            crate::common::error::Error::Io(ref context, _)
-                if context == "Failed to reserve request body buffer"
-        ));
+        let crate::common::error::Error::BodyBufferReservation(ref reservation_error) = error
+        else {
+            panic!("expected a body buffer reservation error, got {error:?}");
+        };
+        let source = std::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<std::collections::TryReserveError>()
+            .unwrap();
+        assert!(std::ptr::eq(source, reservation_error));
+        assert_eq!(
+            error.to_string(),
+            format!("Failed to reserve request body buffer: {reservation_error}")
+        );
         assert_eq!(buf, b"prefix");
+        assert_eq!(buf.capacity(), capacity);
+    }
+
+    #[test]
+    fn read_body_reservation_success_preserves_contents() {
+        for additional in [0, 1024] {
+            let mut buf = b"prefix".to_vec();
+            proxy_server::ProxyServer::reserve_body_buffer(&mut buf, additional).unwrap();
+            assert_eq!(buf, b"prefix");
+            assert!(buf.capacity() >= buf.len() + additional);
+        }
     }
 
     #[tokio::test]
