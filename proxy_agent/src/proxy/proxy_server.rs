@@ -1223,8 +1223,10 @@ impl ProxyServer {
             Err(error) => {
                 http_connection_context.log(
                     LoggerLevel::Warn,
-                    "Failed to collect the client request body; closing the connection."
-                        .to_string(),
+                    format!(
+                        "Failed to collect the client request body; aborting request handling: {}",
+                        error
+                    ),
                 );
                 return Err(error);
             }
@@ -1361,10 +1363,9 @@ impl ProxyServer {
 
     fn reserve_body_buffer(buf: &mut Vec<u8>, additional: usize) -> Result<()> {
         buf.try_reserve(additional).map_err(|error| {
-            Error::Io(
-                "Failed to reserve request body buffer".to_string(),
-                std::io::Error::other(error),
-            )
+            // Avoid allocating in this error path: `try_reserve` can fail due to OOM,
+            // and building a contextual `String` here may itself allocate and fail.
+            Error::Io(String::new(), std::io::Error::other(error))
         })
     }
 }
@@ -1457,6 +1458,7 @@ mod tests {
                     hyper::body::Bytes::copy_from_slice(bytes),
                 )]);
                 body.upper_hint = upper;
+                body.forbid_size_hint = true;
                 assert_eq!(
                     proxy_server::ProxyServer::read_body_bytes(body)
                         .await
