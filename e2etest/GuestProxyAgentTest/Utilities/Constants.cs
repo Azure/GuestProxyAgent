@@ -31,6 +31,7 @@ namespace GuestProxyAgentTest.Utilities
         public static readonly string INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME;
         public static readonly string PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME;
         public static readonly string RUN_PEN_TEST_SCRIPT_NAME;
+        public static readonly string DUMMY_SCRIPT_NAME;
 
         static Constants()
         {
@@ -45,6 +46,7 @@ namespace GuestProxyAgentTest.Utilities
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.ps1";
                 PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.ps1";
                 RUN_PEN_TEST_SCRIPT_NAME = "RunPenTest.ps1";
+                DUMMY_SCRIPT_NAME = "DummyScript.ps1";
             }
             else
             {
@@ -57,6 +59,7 @@ namespace GuestProxyAgentTest.Utilities
                 INSTALL_GUEST_PROXY_AGENT_EXTENSION_SCRIPT_NAME = "InstallGuestProxyAgentExtension.sh";
                 PING_TEST_ON_BINDING_LOCAL_IP_SCRIPT_NAME = "PingTestOnBindingLocalIP.sh";
                 RUN_PEN_TEST_SCRIPT_NAME = "RunPenTest.sh";
+                DUMMY_SCRIPT_NAME = "DummyScript.sh";
             }
         }
 
