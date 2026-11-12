@@ -324,6 +324,8 @@ jobs:
           path: out/x86_64-unknown-linux-musl/release/package/
 
       - name: Run Code Coverage for proxy_agent_shared
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUNNER: sudo --preserve-env=LLVM_PROFILE_FILE
         run: |
           cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent_shared/Cargo.toml --output-path ./out/proxy_agent_shared_codeCov.txt --release -- --test-threads=1
           cat ./out/proxy_agent_shared_codeCov.txt
@@ -350,6 +352,8 @@ jobs:
           echo "Percent of Lines Covered: $totalLinesPercent"
 
       - name: Run Code Coverage for proxy_agent
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUNNER: sudo --preserve-env=LLVM_PROFILE_FILE
         run: |
           cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent/Cargo.toml --output-path ./out/proxy_agent_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs|linux.rs|redirector.rs)" -- --test-threads=1
           cat ./out/proxy_agent_codeCov.txt
@@ -376,6 +380,8 @@ jobs:
           echo "Percent of Lines Covered: $totalLinesPercent"
 
       - name: Run Code Coverage for proxy_agent_extension
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUNNER: sudo --preserve-env=LLVM_PROFILE_FILE
         run: |
           cargo llvm-cov --target x86_64-unknown-linux-musl --manifest-path ./proxy_agent_extension/Cargo.toml --output-path ./out/proxy_agent_extension_codeCov.txt --release --ignore-filename-regex "(proxy_agent_shared|main.rs)" -- --test-threads=1
           cat ./out/proxy_agent_extension_codeCov.txt

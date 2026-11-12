@@ -49,3 +49,11 @@ The dockerfile relies upon [this script](../docker/linux/install.sh) which you c
 and the build script make changes to your system which may be undesired and your results may vary. If you chose to use
 the script, run it as root to set up your machine then follow the [Once Within Container](#once-within-container) steps
 to build.
+
+## Linux CI coverage
+
+The Linux coverage steps explicitly forward `LLVM_PROFILE_FILE` through their
+elevated Cargo runner with `sudo --preserve-env=LLVM_PROFILE_FILE`. The Ubuntu
+26.04 CI runner was observed ignoring `sudo -E`, which drops this variable:
+tests pass, but `cargo llvm-cov` cannot find their raw profiles. The override is
+limited to coverage steps; normal builds and the default Cargo runners are unchanged.
