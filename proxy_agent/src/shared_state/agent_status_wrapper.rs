@@ -382,6 +382,12 @@ impl AgentStatusSharedState {
                         }
                     }
                 }
+                if fallback_reason.is_some() && runtime_status_tx.borrow().both_running() {
+                    fallback_reason = None;
+                    logger::write_information(format!(
+                        "Runtime pair on local port {desired_local_port} is healthy; reset fallback reason."
+                    ));
+                }
             }
         });
 
@@ -695,6 +701,60 @@ mod tests {
             .set_module_status_message(message.to_string(), AgentStatusModule::ProxyListener(port))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn fallback_reason_clears_only_for_running_desired_pair() {
+        let status = AgentStatusSharedState::start_new();
+        status.set_soft_audit_mode(true).await.unwrap();
+        status.set_desired_local_port(0).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let reason = Some("Desired listener failed".to_string());
+        status.set_fallback_reason(reason.clone()).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyListener(1))
+            .await
+            .unwrap();
+        for state in [
+            ModuleState::UNKNOWN,
+            ModuleState::STARTING,
+            ModuleState::STOPPED,
+        ] {
+            status
+                .set_module_state(state, AgentStatusModule::ProxyServer)
+                .await
+                .unwrap();
+            assert_eq!(reason, status.get_fallback_reason().await.unwrap());
+        }
+
+        status.set_desired_local_port(1).await.unwrap();
+        assert!(status.get_fallback_reason().await.unwrap().is_none());
+        assert!(status.get_soft_audit_mode().await.unwrap());
+        status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+        status.set_fallback_reason(reason.clone()).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        assert_eq!(reason, status.get_fallback_reason().await.unwrap());
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+        assert!(status.get_fallback_reason().await.unwrap().is_none());
+        for _ in 0..3 {
+            status
+                .set_fallback_reason(Some("Late stale capture".to_string()))
+                .await
+                .unwrap();
+            assert!(status.get_fallback_reason().await.unwrap().is_none());
+        }
     }
 
     #[tokio::test]
@@ -1303,6 +1363,10 @@ mod tests {
 
         agent_status_shared_state
             .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
             .await
             .unwrap();
         agent_status_shared_state

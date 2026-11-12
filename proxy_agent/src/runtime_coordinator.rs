@@ -781,10 +781,56 @@ mod tests {
             renewed["auditFallback"],
         );
         assert_ne!(reported["auditFallback"], renewed["auditFallback"]);
+
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let recovered_port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        set_desired_port(&coordinator, recovered_port).await;
+        assert!(coordinator.handoff_proxy_server(recovered_port, true).await);
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        agent_status
+            .set_module_state(ModuleState::STARTING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let partially_recovered = serialized_proxy_status(&coordinator).await;
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let recovered = serialized_proxy_status(&coordinator).await;
+        agent_status
+            .set_module_status_message(
+                "Later redirector failure".to_string(),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        let failed_again = serialized_proxy_status(&coordinator).await;
         coordinator
             .stop_proxy_server("Test cleanup.".to_string())
             .await;
         coordinator.shared_state.get_cancellation_token().cancel();
+
+        assert_eq!(
+            renewed["auditFallback"],
+            partially_recovered["auditFallback"]
+        );
+        assert_eq!("RUNNING", recovered["ebpfProgramStatus"]["status"]);
+        assert_eq!("RUNNING", recovered["proxyListenerStatus"]["status"]);
+        assert!(recovered["auditFallback"].is_null());
+        assert!(agent_status.get_soft_audit_mode().await.unwrap());
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": "Later redirector failure\r\n",
+            }),
+            failed_again["auditFallback"],
+        );
     }
 
     #[tokio::test]
@@ -932,7 +978,7 @@ mod tests {
             logger::AGENT_LOGGER_KEY,
             1024 * 1024,
             1,
-            proxy_agent_shared::logger::LoggerLevel::Warn,
+            proxy_agent_shared::logger::LoggerLevel::Info,
         );
         let coordinator = coordinator();
         let agent_status = coordinator.shared_state.get_agent_status_shared_state();
@@ -1012,6 +1058,28 @@ mod tests {
             );
             assert_eq!(before, after);
         }
+        for module in [
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyServer,
+        ] {
+            agent_status
+                .set_module_state(ModuleState::RUNNING, module)
+                .await
+                .unwrap();
+        }
+        assert!(agent_status.get_fallback_reason().await.unwrap().is_none());
+        let recovered_log = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(
+            1,
+            recovered_log
+                .matches("is healthy; reset fallback reason.")
+                .count()
+        );
+        for _ in 0..3 {
+            set_fallback_reason_for_soft_audit(&agent_status).await;
+            assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        }
+        assert_eq!(recovered_log, std::fs::read_to_string(&log_path).unwrap());
         coordinator.shared_state.get_cancellation_token().cancel();
         std::fs::write(log_dir.join("completed"), "ok").unwrap();
     }
@@ -1075,7 +1143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn healthy_soft_audit_does_not_create_a_fallback_reason() {
+    async fn healthy_soft_audit_does_not_create_or_retain_a_fallback_reason() {
         let coordinator = coordinator();
         let agent_status = coordinator.shared_state.get_agent_status_shared_state();
         agent_status.set_soft_audit_mode(true).await.unwrap();
@@ -1095,10 +1163,7 @@ mod tests {
             .await
             .unwrap();
         set_fallback_reason_for_soft_audit(&agent_status).await;
-        assert_eq!(
-            "Existing fallback",
-            serialized_proxy_status(&coordinator).await["auditFallback"]["reason"],
-        );
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
         coordinator.shared_state.get_cancellation_token().cancel();
     }
 
