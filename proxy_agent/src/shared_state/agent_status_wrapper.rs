@@ -14,6 +14,7 @@ use crate::common::error::Error;
 use crate::common::logger;
 use crate::common::result::Result;
 use proxy_agent_shared::logger::LoggerLevel;
+use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
@@ -505,7 +506,8 @@ impl AgentStatusSharedState {
                 &format!("{state:?}"),
                 logger::AGENT_LOGGER_KEY,
             );
-            message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);
+            misc_helpers::truncate_to_char_boundary(&mut message, MAX_STATUS_MESSAGE_LENGTH);
+            message.push_str("...");
         }
 
         ProxyAgentDetailStatus {
@@ -701,6 +703,56 @@ mod tests {
             .set_module_status_message(message.to_string(), AgentStatusModule::ProxyListener(port))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn module_status_truncates_at_utf8_boundaries_with_ellipsis() {
+        let status = AgentStatusSharedState::start_new();
+        status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        for (message, expected) in [
+            ("Short message".to_string(), "Short message".to_string()),
+            ("a".repeat(1024), "a".repeat(1024)),
+            ("a".repeat(1025), format!("{}...", "a".repeat(1024))),
+            (
+                format!("{}\u{e9}", "a".repeat(1023)),
+                format!("{}...", "a".repeat(1023)),
+            ),
+            (
+                format!("{}\u{1f600}", "a".repeat(1023)),
+                format!("{}...", "a".repeat(1023)),
+            ),
+            (
+                format!("{}\u{e9}", "a".repeat(1022)),
+                format!("{}\u{e9}", "a".repeat(1022)),
+            ),
+            (
+                format!("{}\u{e9}x", "a".repeat(1022)),
+                format!("{}\u{e9}...", "a".repeat(1022)),
+            ),
+        ] {
+            status
+                .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                .await
+                .unwrap();
+            for _ in 0..2 {
+                let reported = status
+                    .get_module_status(AgentStatusModule::Redirector)
+                    .await;
+                assert_eq!(ModuleState::STOPPED, reported.status);
+                assert_eq!(expected, reported.message);
+                assert!(reported.message.len() <= MAX_STATUS_MESSAGE_LENGTH + 3);
+            }
+            assert_eq!(
+                message,
+                status
+                    .get_module_status_message(AgentStatusModule::Redirector)
+                    .await
+                    .unwrap(),
+            );
+        }
     }
 
     #[tokio::test]

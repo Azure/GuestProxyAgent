@@ -109,10 +109,11 @@
       "path": ".ai/common-regressions.md",
       "owner_role": "test-owner",
       "status": "draft",
-      "guidance_revision": 3,
-      "evidence_revision": "701968d84aef3a3d3a5fddc9020d0c440b78a648",
+      "guidance_revision": 4,
+      "evidence_revision": "916772e15ec881e6cab8512ea899d1de17307d59",
       "sources": [
         "proxy_agent/src/runtime_coordinator.rs",
+        "proxy_agent/src/shared_state/agent_status_wrapper.rs",
         "proxy_agent/src/proxy/proxy_authorizer.rs",
         "proxy_agent/src/proxy/canonical/mod.rs",
         "proxy_agent/src/proxy/authorization_rules.rs",

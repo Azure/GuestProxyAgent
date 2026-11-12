@@ -787,6 +787,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn non_ascii_fallback_capture_completes_healthy_partner_shutdown() {
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let mut coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, port).await;
+        coordinator.start_proxy_server(port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let healthy = runtime_status(&coordinator);
+        assert!(healthy.both_running());
+        assert_eq!(PairAction::None, evaluate_status(&healthy, false));
+        let listener_token = coordinator
+            .proxy_server_runtime
+            .as_ref()
+            .unwrap()
+            .cancellation_token
+            .clone();
+
+        agent_status
+            .set_module_status_message(
+                format!("{}\u{e9}", "a".repeat(1023)),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let failed = runtime_status(&coordinator);
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(&failed, healthy.soft_audit_enabled),
+        );
+
+        // Retain ownership outside the task so even a capture panic permits test cleanup.
+        let coordinator = std::sync::Arc::new(tokio::sync::Mutex::new(coordinator));
+        let stopping_coordinator = coordinator.clone();
+        let mut stopping = tokio::spawn(async move {
+            stopping_coordinator.lock().await.stop_pair(&failed).await;
+        });
+        let result = tokio::time::timeout(Duration::from_secs(2), &mut stopping).await;
+        if result.is_err() {
+            stopping.abort();
+            let _ = stopping.await;
+        }
+        let mut coordinator = coordinator.lock().await;
+        if !matches!(&result, Ok(Ok(()))) {
+            coordinator
+                .stop_proxy_server("Test cleanup after capture failure.".to_string())
+                .await;
+            coordinator.shared_state.get_cancellation_token().cancel();
+        }
+        result.unwrap().unwrap();
+
+        assert!(listener_token.is_cancelled());
+        assert!(coordinator.proxy_server_runtime.is_none());
+        assert_eq!(Some(port), coordinator.last_selected_local_port);
+        assert_eq!(
+            ModuleState::STOPPED,
+            runtime_status(&coordinator).proxy_server_state
+        );
+        assert_eq!(
+            Some(format!("{}...\r\n", "a".repeat(1023))),
+            agent_status.get_fallback_reason().await.unwrap(),
+        );
+        let _reused_port = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": format!("{}...\r\n", "a".repeat(1023)),
+            }),
+            serialized_proxy_status(&coordinator).await["auditFallback"],
+        );
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
     async fn soft_audit_overwrites_fallback_reason_on_every_reconciliation() {
         let mut coordinator = coordinator();
         let agent_status = coordinator.shared_state.get_agent_status_shared_state();
