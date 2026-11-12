@@ -488,6 +488,7 @@ impl AgentStatusSharedState {
         Ok(update)
     }
 
+    /// Returns a bounded status copy; changed-message diagnostics are emitted by the setter.
     pub async fn get_module_status(&self, module: AgentStatusModule) -> ProxyAgentDetailStatus {
         let ModuleStatus { state, mut message } = match self.get_status(module.clone()).await {
             Ok(status) => status,
@@ -497,15 +498,6 @@ impl AgentStatusSharedState {
             }
         };
         if message.len() > MAX_STATUS_MESSAGE_LENGTH {
-            event_logger::write_event(
-                LoggerLevel::Warn,
-                format!(
-                    "Status message is too long, truncating to {MAX_STATUS_MESSAGE_LENGTH} characters. Message: {message}"
-                ),
-                "get_status",
-                &format!("{state:?}"),
-                logger::AGENT_LOGGER_KEY,
-            );
             misc_helpers::truncate_to_char_boundary(&mut message, MAX_STATUS_MESSAGE_LENGTH);
             message.push_str("...");
         }

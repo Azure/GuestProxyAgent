@@ -622,6 +622,7 @@ mod tests {
         evaluate_status, set_fallback_reason_for_soft_audit, should_reconcile_proxy_port,
         starting_timed_out, PairAction, RuntimeCoordinator, STARTING_TIMEOUT,
     };
+    use crate::common::logger;
     use crate::proxy_agent_status::ProxyAgentStatusTask;
     use crate::shared_state::agent_status_wrapper::{AgentStatusModule, RuntimeStatusSnapshot};
     use crate::shared_state::SharedState;
@@ -868,6 +869,151 @@ mod tests {
             serialized_proxy_status(&coordinator).await["auditFallback"],
         );
         coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn repeated_oversized_fallback_capture_does_not_log_or_skip_refresh() {
+        const CHILD_LOG_DIR: &str = "GPA_FALLBACK_CAPTURE_TEST_LOG_DIR";
+        const TEST_NAME: &str =
+            "runtime_coordinator::tests::repeated_oversized_fallback_capture_does_not_log_or_skip_refresh";
+        let log_dir = match std::env::var_os(CHILD_LOG_DIR) {
+            Some(path) => std::path::PathBuf::from(path),
+            None => {
+                // Isolate the process-global logger from other tests.
+                let log_dir = std::env::temp_dir()
+                    .join(format!("gpa-fallback-capture-{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir(&log_dir).unwrap();
+                let output_path = log_dir.join("child-output.log");
+                let output_file = std::fs::File::create(&output_path).unwrap();
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", TEST_NAME, "--nocapture"])
+                    .env(CHILD_LOG_DIR, &log_dir)
+                    .stdout(output_file.try_clone().unwrap())
+                    .stderr(output_file)
+                    .spawn()
+                    .unwrap();
+                let deadline = Instant::now() + Duration::from_secs(30);
+                let mut timed_out = false;
+                let exit_status = loop {
+                    if let Some(status) = child.try_wait().unwrap() {
+                        break status;
+                    }
+                    if Instant::now() >= deadline {
+                        timed_out = true;
+                        child.kill().unwrap();
+                        break child.wait().unwrap();
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                };
+                let output = std::fs::read_to_string(&output_path).unwrap();
+                let completed = log_dir.join("completed").exists();
+                for name in ["capture.log", "child-output.log", "completed"] {
+                    let path = log_dir.join(name);
+                    if path.exists() {
+                        std::fs::remove_file(path).unwrap();
+                    }
+                }
+                std::fs::remove_dir(log_dir).unwrap();
+                assert!(!timed_out, "Fallback capture test timed out:\n{output}");
+                assert!(
+                    exit_status.success(),
+                    "Fallback capture child failed:\n{output}"
+                );
+                assert!(
+                    completed,
+                    "Fallback capture child did not complete:\n{output}"
+                );
+                return;
+            }
+        };
+        proxy_agent_shared::logger::init_loggers(
+            log_dir.clone(),
+            &[(logger::AGENT_LOGGER_KEY, "capture.log")],
+            logger::AGENT_LOGGER_KEY,
+            1024 * 1024,
+            1,
+            proxy_agent_shared::logger::LoggerLevel::Warn,
+        );
+        let coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, 0).await;
+        for module in [
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyListener(0),
+        ] {
+            agent_status
+                .set_module_state(ModuleState::STOPPED, module)
+                .await
+                .unwrap();
+        }
+        let listener_message = "l".repeat(1025);
+        assert!(agent_status
+            .set_module_status_message(
+                listener_message.clone(),
+                AgentStatusModule::ProxyListener(0),
+            )
+            .await
+            .unwrap());
+        let log_path = log_dir.join("capture.log");
+        for (message, prefix) in [
+            (
+                format!("{}\u{e9} initial suffix", "a".repeat(1023)),
+                "a".repeat(1023),
+            ),
+            (
+                format!("{}\u{e9} changed suffix", "a".repeat(1023)),
+                "a".repeat(1023),
+            ),
+            (format!("{}\u{1f600}", "b".repeat(1023)), "b".repeat(1023)),
+        ] {
+            assert!(agent_status
+                .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                .await
+                .unwrap());
+            let before = std::fs::read_to_string(&log_path).unwrap();
+            assert_eq!(1, before.matches(&message).count());
+            assert_eq!(1, before.matches(&listener_message).count());
+            let expected_reason = format!("{prefix}...\r\n{}...\r\n", "l".repeat(1024));
+            for _ in 0..3 {
+                agent_status
+                    .set_fallback_reason(Some("Stale reason sentinel".to_string()))
+                    .await
+                    .unwrap();
+                set_fallback_reason_for_soft_audit(&agent_status).await;
+                assert_eq!(
+                    Some(expected_reason.clone()),
+                    agent_status.get_fallback_reason().await.unwrap(),
+                );
+                assert_eq!(
+                    serde_json::json!({
+                        "fallbacked": true,
+                        "reason": expected_reason,
+                    }),
+                    serialized_proxy_status(&coordinator).await["auditFallback"],
+                );
+                assert_eq!(
+                    message,
+                    agent_status
+                        .get_module_status_message(AgentStatusModule::Redirector)
+                        .await
+                        .unwrap(),
+                );
+                assert!(!agent_status
+                    .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                    .await
+                    .unwrap());
+            }
+            let after = std::fs::read_to_string(&log_path).unwrap();
+            assert_eq!(
+                before.len(),
+                after.len(),
+                "Recurring capture added log bytes"
+            );
+            assert_eq!(before, after);
+        }
+        coordinator.shared_state.get_cancellation_token().cancel();
+        std::fs::write(log_dir.join("completed"), "ok").unwrap();
     }
 
     #[tokio::test]
