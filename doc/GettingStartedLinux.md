@@ -42,6 +42,9 @@ chmod +x ./build-linux.sh
 
 ## Local Dev
 
+RPM packaging requires `elfutils`, which provides `eu-strip` for debug-info extraction.
+The development-container setup and Linux build workflows install this dependency explicitly.
+
 The dockerfile relies upon [this script](../docker/linux/install.sh) which you can try to run directly. Keep in mind it
 and the build script make changes to your system which may be undesired and your results may vary. If you chose to use
 the script, run it as root to set up your machine then follow the [Once Within Container](#once-within-container) steps

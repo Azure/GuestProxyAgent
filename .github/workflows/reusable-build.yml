@@ -293,6 +293,7 @@ jobs:
                   linux-tools-$(uname -r) \
                   linux-tools-common \
                   rpm \
+                  elfutils \
                   musl-tools \
                   libssl-dev \
                   pkg-config \
@@ -464,6 +465,7 @@ jobs:
                   linux-tools-$(uname -r) \
                   linux-tools-common \
                   rpm \
+                  elfutils \
                   musl-tools \
                   gcc-aarch64-linux-gnu \
                   libssl-dev \

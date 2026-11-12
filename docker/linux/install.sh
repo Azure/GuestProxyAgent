@@ -17,6 +17,7 @@ apt update && \
     linux-tools-common \
     linux-tools-generic \
     rpm \
+    elfutils \
     musl-tools \
     zip \
     dotnet-sdk-10.0 \
