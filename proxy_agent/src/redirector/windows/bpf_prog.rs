@@ -83,6 +83,13 @@ impl BpfObject {
         On failure appropriate BpfErrorType is returned.
      */
     pub fn load_bpf_object(&mut self, bpf_file_path: &Path) -> Result<()> {
+        if !bpf_file_path.exists() || !bpf_file_path.is_file() {
+            return Err(Error::Bpf(BpfErrorType::OpenBpfObject(
+                bpf_file_path.display().to_string(),
+                "BPF object file does not exist or is not a file".to_string(),
+            )));
+        }
+
         logger::write_information(format!(
             "Starting redirector with ebpf file {}",
             misc_helpers::path_to_string(bpf_file_path)

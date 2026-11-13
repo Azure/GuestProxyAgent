@@ -5,6 +5,7 @@
 //! Listener status is per port; the aggregate follows the desired local port.
 //! Same-port restarts join the previous runtime before reuse.
 //! A selected runtime is retained even if listener startup fails; health is reported separately.
+//! The last selected port survives runtime cleanup to distinguish stops from port changes.
 
 use crate::common::{constants, logger};
 use crate::provision;
@@ -57,10 +58,10 @@ fn evaluate_status(
 
 fn should_reconcile_proxy_port(
     status: &RuntimeStatusSnapshot,
-    current_local_port: Option<u16>,
+    last_selected_local_port: Option<u16>,
 ) -> bool {
-    match current_local_port {
-        Some(current_local_port) => current_local_port != status.desired_local_port,
+    match last_selected_local_port {
+        Some(local_port) => local_port != status.desired_local_port,
         None => status.desired_local_port != constants::PROXY_AGENT_PORT,
     }
 }
@@ -127,6 +128,7 @@ struct RedirectorRuntime {
 
 pub struct RuntimeCoordinator {
     shared_state: SharedState,
+    last_selected_local_port: Option<u16>,
     proxy_server_runtime: Option<ProxyServerRuntime>,
     redirector_runtime: Option<RedirectorRuntime>,
     /// Tracks when the proxy server entered the STARTING state.
@@ -140,6 +142,7 @@ impl RuntimeCoordinator {
         tokio::spawn(async move {
             Self {
                 shared_state,
+                last_selected_local_port: None,
                 proxy_server_runtime: None,
                 redirector_runtime: None,
                 proxy_starting_since: None,
@@ -188,12 +191,7 @@ impl RuntimeCoordinator {
 
             let status = runtime_status_rx.borrow_and_update().clone();
 
-            if should_reconcile_proxy_port(
-                &status,
-                self.proxy_server_runtime
-                    .as_ref()
-                    .map(|runtime| runtime.local_port),
-            ) {
+            if should_reconcile_proxy_port(&status, self.last_selected_local_port) {
                 let listener_reconciled = self
                     .handoff_proxy_server(
                         status.desired_local_port,
@@ -225,13 +223,6 @@ impl RuntimeCoordinator {
                         self.start_pair(&status).await;
                     }
                     PairAction::StopPairForSoftAudit => {
-                        if !previous_soft_audit_enabled {
-                            // set the fallback reason for soft audit.
-                            set_fallback_reason_for_soft_audit(
-                                &self.shared_state.get_agent_status_shared_state(),
-                            )
-                            .await;
-                        }
                         self.stop_pair(&status).await;
                     }
                 }
@@ -305,6 +296,7 @@ impl RuntimeCoordinator {
         // do not wait for its startup to complete.
         let proxy_server_runtime = self.start_proxy_runtime(local_port, None).await;
         self.proxy_server_runtime = Some(proxy_server_runtime);
+        self.last_selected_local_port = Some(local_port);
 
         // set the starting time to track potential starting timeouts
         self.proxy_starting_since = Some(Instant::now());
@@ -353,6 +345,10 @@ impl RuntimeCoordinator {
     /// Stops the pair due to other module stopped.
     /// It ensures that both components are properly stopped before returning.
     async fn stop_pair(&mut self, status: &RuntimeStatusSnapshot) {
+        // Preserve the original failure before stopping its healthy partner.
+        set_fallback_reason_for_soft_audit(&self.shared_state.get_agent_status_shared_state())
+            .await;
+
         if status.redirector_state == ModuleState::RUNNING {
             self.stop_redirector(
                 "RuntimeCoordinator stopped Redirector due to other module stopped".to_string(),
@@ -603,6 +599,7 @@ impl RuntimeCoordinator {
         }
 
         candidate.listener_committed.cancel();
+        self.last_selected_local_port = Some(new_port);
         if let Some(old_runtime) = self.proxy_server_runtime.replace(candidate) {
             // Stop the old proxy runtime.
             let old_port = old_runtime.local_port;
@@ -622,9 +619,11 @@ impl RuntimeCoordinator {
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate_status, should_reconcile_proxy_port, starting_timed_out, PairAction,
-        RuntimeCoordinator, STARTING_TIMEOUT,
+        evaluate_status, set_fallback_reason_for_soft_audit, should_reconcile_proxy_port,
+        starting_timed_out, PairAction, RuntimeCoordinator, STARTING_TIMEOUT,
     };
+    use crate::common::logger;
+    use crate::proxy_agent_status::ProxyAgentStatusTask;
     use crate::shared_state::agent_status_wrapper::{AgentStatusModule, RuntimeStatusSnapshot};
     use crate::shared_state::SharedState;
     use proxy_agent_shared::proxy_agent_aggregate_status::ModuleState;
@@ -635,6 +634,7 @@ mod tests {
     fn coordinator() -> RuntimeCoordinator {
         RuntimeCoordinator {
             shared_state: SharedState::start_all(),
+            last_selected_local_port: None,
             proxy_server_runtime: None,
             redirector_runtime: None,
             proxy_starting_since: None,
@@ -666,6 +666,693 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    fn runtime_status(coordinator: &RuntimeCoordinator) -> RuntimeStatusSnapshot {
+        coordinator
+            .shared_state
+            .get_agent_status_shared_state()
+            .subscribe_runtime_status()
+            .borrow()
+            .clone()
+    }
+
+    async fn serialized_proxy_status(coordinator: &RuntimeCoordinator) -> serde_json::Value {
+        let aggregate = ProxyAgentStatusTask::get_proxy_agent_aggregate_status(
+            &coordinator.shared_state.get_agent_status_shared_state(),
+            &coordinator.shared_state.get_key_keeper_shared_state(),
+            &coordinator
+                .shared_state
+                .get_connection_summary_shared_state(),
+        )
+        .await;
+        serde_json::to_value(aggregate.proxyAgentStatus).unwrap()
+    }
+
+    #[tokio::test]
+    async fn healthy_soft_audit_then_failed_port_change_reports_original_fallback() {
+        let mut coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, 0).await;
+        coordinator.start_proxy_server(0).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        // Simulate a healthy redirector without loading real eBPF programs.
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let healthy = runtime_status(&coordinator);
+        assert_eq!(PairAction::None, evaluate_status(&healthy, false));
+        let previous_soft_audit_enabled = healthy.soft_audit_enabled;
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+
+        let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        set_desired_port(&coordinator, port).await;
+        assert!(coordinator.handoff_proxy_server(port, true).await);
+        let failed = runtime_status(&coordinator);
+        assert!(failed.both_at_ultimate_state());
+        assert_eq!(ModuleState::STOPPED, failed.proxy_server_state);
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(&failed, previous_soft_audit_enabled),
+        );
+        let original_error = agent_status
+            .get_module_status(AgentStatusModule::ProxyServer)
+            .await
+            .message;
+        assert!(original_error.contains("Failed to bind"));
+        coordinator.stop_pair(&failed).await;
+
+        let reported = serialized_proxy_status(&coordinator).await;
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": format!("{original_error}\r\n"),
+            }),
+            reported["auditFallback"],
+        );
+        assert_eq!("STOPPED", reported["ebpfProgramStatus"]["status"]);
+        assert!(reported["ebpfProgramStatus"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("RuntimeCoordinator stopped Redirector"));
+        for _ in 0..3 {
+            coordinator.stop_pair(&runtime_status(&coordinator)).await;
+            assert_eq!(
+                serde_json::json!({
+                    "fallbacked": true,
+                    "reason": format!(
+                        "{}\r\n{original_error}\r\n",
+                        reported["ebpfProgramStatus"]["message"].as_str().unwrap(),
+                    ),
+                }),
+                serialized_proxy_status(&coordinator).await["auditFallback"],
+            );
+        }
+
+        agent_status.set_soft_audit_mode(false).await.unwrap();
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        agent_status
+            .set_module_status_message(
+                "A new redirector failure".to_string(),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_status_message(
+                "A new listener failure".to_string(),
+                AgentStatusModule::ProxyListener(port),
+            )
+            .await
+            .unwrap();
+        set_fallback_reason_for_soft_audit(&agent_status).await;
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        let renewed = serialized_proxy_status(&coordinator).await;
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": "A new redirector failure\r\nA new listener failure\r\n",
+            }),
+            renewed["auditFallback"],
+        );
+        assert_ne!(reported["auditFallback"], renewed["auditFallback"]);
+
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let recovered_port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        set_desired_port(&coordinator, recovered_port).await;
+        assert!(coordinator.handoff_proxy_server(recovered_port, true).await);
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        agent_status
+            .set_module_state(ModuleState::STARTING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let partially_recovered = serialized_proxy_status(&coordinator).await;
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let recovered = serialized_proxy_status(&coordinator).await;
+        agent_status
+            .set_module_status_message(
+                "Later redirector failure".to_string(),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        let failed_again = serialized_proxy_status(&coordinator).await;
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+        coordinator.shared_state.get_cancellation_token().cancel();
+
+        assert_eq!(
+            renewed["auditFallback"],
+            partially_recovered["auditFallback"]
+        );
+        assert_eq!("RUNNING", recovered["ebpfProgramStatus"]["status"]);
+        assert_eq!("RUNNING", recovered["proxyListenerStatus"]["status"]);
+        assert!(recovered["auditFallback"].is_null());
+        assert!(agent_status.get_soft_audit_mode().await.unwrap());
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": "Later redirector failure\r\n",
+            }),
+            failed_again["auditFallback"],
+        );
+    }
+
+    #[tokio::test]
+    async fn non_ascii_fallback_capture_completes_healthy_partner_shutdown() {
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let mut coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, port).await;
+        coordinator.start_proxy_server(port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let healthy = runtime_status(&coordinator);
+        assert!(healthy.both_running());
+        assert_eq!(PairAction::None, evaluate_status(&healthy, false));
+        let listener_token = coordinator
+            .proxy_server_runtime
+            .as_ref()
+            .unwrap()
+            .cancellation_token
+            .clone();
+
+        agent_status
+            .set_module_status_message(
+                format!("{}\u{e9}", "a".repeat(1023)),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let failed = runtime_status(&coordinator);
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(&failed, healthy.soft_audit_enabled),
+        );
+
+        // Retain ownership outside the task so even a capture panic permits test cleanup.
+        let coordinator = std::sync::Arc::new(tokio::sync::Mutex::new(coordinator));
+        let stopping_coordinator = coordinator.clone();
+        let mut stopping = tokio::spawn(async move {
+            stopping_coordinator.lock().await.stop_pair(&failed).await;
+        });
+        let result = tokio::time::timeout(Duration::from_secs(2), &mut stopping).await;
+        if result.is_err() {
+            stopping.abort();
+            let _ = stopping.await;
+        }
+        let mut coordinator = coordinator.lock().await;
+        if !matches!(&result, Ok(Ok(()))) {
+            coordinator
+                .stop_proxy_server("Test cleanup after capture failure.".to_string())
+                .await;
+            coordinator.shared_state.get_cancellation_token().cancel();
+        }
+        result.unwrap().unwrap();
+
+        assert!(listener_token.is_cancelled());
+        assert!(coordinator.proxy_server_runtime.is_none());
+        assert_eq!(Some(port), coordinator.last_selected_local_port);
+        assert_eq!(
+            ModuleState::STOPPED,
+            runtime_status(&coordinator).proxy_server_state
+        );
+        assert_eq!(
+            Some(format!("{}...\r\n", "a".repeat(1023))),
+            agent_status.get_fallback_reason().await.unwrap(),
+        );
+        let _reused_port = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": format!("{}...\r\n", "a".repeat(1023)),
+            }),
+            serialized_proxy_status(&coordinator).await["auditFallback"],
+        );
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn repeated_oversized_fallback_capture_does_not_log_or_skip_refresh() {
+        const CHILD_LOG_DIR: &str = "GPA_FALLBACK_CAPTURE_TEST_LOG_DIR";
+        const TEST_NAME: &str =
+            "runtime_coordinator::tests::repeated_oversized_fallback_capture_does_not_log_or_skip_refresh";
+        let log_dir = match std::env::var_os(CHILD_LOG_DIR) {
+            Some(path) => std::path::PathBuf::from(path),
+            None => {
+                // Isolate the process-global logger from other tests.
+                let log_dir = std::env::temp_dir()
+                    .join(format!("gpa-fallback-capture-{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir(&log_dir).unwrap();
+                let output_path = log_dir.join("child-output.log");
+                let output_file = std::fs::File::create(&output_path).unwrap();
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", TEST_NAME, "--nocapture"])
+                    .env(CHILD_LOG_DIR, &log_dir)
+                    .stdout(output_file.try_clone().unwrap())
+                    .stderr(output_file)
+                    .spawn()
+                    .unwrap();
+                let deadline = Instant::now() + Duration::from_secs(30);
+                let mut timed_out = false;
+                let exit_status = loop {
+                    if let Some(status) = child.try_wait().unwrap() {
+                        break status;
+                    }
+                    if Instant::now() >= deadline {
+                        timed_out = true;
+                        child.kill().unwrap();
+                        break child.wait().unwrap();
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                };
+                let output = std::fs::read_to_string(&output_path).unwrap();
+                let completed = log_dir.join("completed").exists();
+                for name in ["capture.log", "child-output.log", "completed"] {
+                    let path = log_dir.join(name);
+                    if path.exists() {
+                        std::fs::remove_file(path).unwrap();
+                    }
+                }
+                std::fs::remove_dir(log_dir).unwrap();
+                assert!(!timed_out, "Fallback capture test timed out:\n{output}");
+                assert!(
+                    exit_status.success(),
+                    "Fallback capture child failed:\n{output}"
+                );
+                assert!(
+                    completed,
+                    "Fallback capture child did not complete:\n{output}"
+                );
+                return;
+            }
+        };
+        proxy_agent_shared::logger::init_loggers(
+            log_dir.clone(),
+            &[(logger::AGENT_LOGGER_KEY, "capture.log")],
+            logger::AGENT_LOGGER_KEY,
+            1024 * 1024,
+            1,
+            proxy_agent_shared::logger::LoggerLevel::Info,
+        );
+        let coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, 0).await;
+        for module in [
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyListener(0),
+        ] {
+            agent_status
+                .set_module_state(ModuleState::STOPPED, module)
+                .await
+                .unwrap();
+        }
+        let listener_message = "l".repeat(1025);
+        assert!(agent_status
+            .set_module_status_message(
+                listener_message.clone(),
+                AgentStatusModule::ProxyListener(0),
+            )
+            .await
+            .unwrap());
+        let log_path = log_dir.join("capture.log");
+        for (message, prefix) in [
+            (
+                format!("{}\u{e9} initial suffix", "a".repeat(1023)),
+                "a".repeat(1023),
+            ),
+            (
+                format!("{}\u{e9} changed suffix", "a".repeat(1023)),
+                "a".repeat(1023),
+            ),
+            (format!("{}\u{1f600}", "b".repeat(1023)), "b".repeat(1023)),
+        ] {
+            assert!(agent_status
+                .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                .await
+                .unwrap());
+            let before = std::fs::read_to_string(&log_path).unwrap();
+            assert_eq!(1, before.matches(&message).count());
+            assert_eq!(1, before.matches(&listener_message).count());
+            let expected_reason = format!("{prefix}...\r\n{}...\r\n", "l".repeat(1024));
+            for _ in 0..3 {
+                agent_status
+                    .set_fallback_reason(Some("Stale reason sentinel".to_string()))
+                    .await
+                    .unwrap();
+                set_fallback_reason_for_soft_audit(&agent_status).await;
+                assert_eq!(
+                    Some(expected_reason.clone()),
+                    agent_status.get_fallback_reason().await.unwrap(),
+                );
+                assert_eq!(
+                    serde_json::json!({
+                        "fallbacked": true,
+                        "reason": expected_reason,
+                    }),
+                    serialized_proxy_status(&coordinator).await["auditFallback"],
+                );
+                assert_eq!(
+                    message,
+                    agent_status
+                        .get_module_status_message(AgentStatusModule::Redirector)
+                        .await
+                        .unwrap(),
+                );
+                assert!(!agent_status
+                    .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                    .await
+                    .unwrap());
+            }
+            let after = std::fs::read_to_string(&log_path).unwrap();
+            assert_eq!(
+                before.len(),
+                after.len(),
+                "Recurring capture added log bytes"
+            );
+            assert_eq!(before, after);
+        }
+        for module in [
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyServer,
+        ] {
+            agent_status
+                .set_module_state(ModuleState::RUNNING, module)
+                .await
+                .unwrap();
+        }
+        assert!(agent_status.get_fallback_reason().await.unwrap().is_none());
+        let recovered_log = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(
+            1,
+            recovered_log
+                .matches("is healthy; reset fallback reason.")
+                .count()
+        );
+        for _ in 0..3 {
+            set_fallback_reason_for_soft_audit(&agent_status).await;
+            assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        }
+        assert_eq!(recovered_log, std::fs::read_to_string(&log_path).unwrap());
+        coordinator.shared_state.get_cancellation_token().cancel();
+        std::fs::write(log_dir.join("completed"), "ok").unwrap();
+    }
+
+    #[tokio::test]
+    async fn soft_audit_overwrites_fallback_reason_on_every_reconciliation() {
+        let mut coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        set_desired_port(&coordinator, 0).await;
+        for (module, message) in [
+            (AgentStatusModule::Redirector, "Initial redirector failure"),
+            (
+                AgentStatusModule::ProxyListener(0),
+                "Initial listener failure",
+            ),
+        ] {
+            agent_status
+                .set_module_state(ModuleState::STOPPED, module.clone())
+                .await
+                .unwrap();
+            agent_status
+                .set_module_status_message(message.to_string(), module)
+                .await
+                .unwrap();
+        }
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        assert_eq!(
+            serde_json::json!({
+                "fallbacked": true,
+                "reason": "Initial redirector failure\r\nInitial listener failure\r\n",
+            }),
+            serialized_proxy_status(&coordinator).await["auditFallback"],
+        );
+        agent_status
+            .set_module_status_message(
+                "Updated redirector failure".to_string(),
+                AgentStatusModule::Redirector,
+            )
+            .await
+            .unwrap();
+        agent_status
+            .set_module_status_message(
+                "Updated listener failure".to_string(),
+                AgentStatusModule::ProxyListener(0),
+            )
+            .await
+            .unwrap();
+        for _ in 0..3 {
+            assert!(runtime_status(&coordinator).soft_audit_enabled);
+            coordinator.stop_pair(&runtime_status(&coordinator)).await;
+            assert_eq!(
+                serde_json::json!({
+                    "fallbacked": true,
+                    "reason": "Updated redirector failure\r\nUpdated listener failure\r\n",
+                }),
+                serialized_proxy_status(&coordinator).await["auditFallback"],
+            );
+        }
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn healthy_soft_audit_does_not_create_or_retain_a_fallback_reason() {
+        let coordinator = coordinator();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        for module in [
+            AgentStatusModule::Redirector,
+            AgentStatusModule::ProxyServer,
+        ] {
+            agent_status
+                .set_module_state(ModuleState::RUNNING, module)
+                .await
+                .unwrap();
+        }
+        set_fallback_reason_for_soft_audit(&agent_status).await;
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        agent_status
+            .set_fallback_reason(Some("Existing fallback".to_string()))
+            .await
+            .unwrap();
+        set_fallback_reason_for_soft_audit(&agent_status).await;
+        assert!(serialized_proxy_status(&coordinator).await["auditFallback"].is_null());
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn soft_audit_stop_does_not_reconcile_the_selected_port_again() {
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, 0).await;
+        coordinator.start_proxy_server(0).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let listener_token = coordinator
+            .proxy_server_runtime
+            .as_ref()
+            .unwrap()
+            .cancellation_token
+            .clone();
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let status = runtime_status(&coordinator);
+        assert!(status.both_at_ultimate_state());
+        assert_eq!(
+            PairAction::StopPairForSoftAudit,
+            evaluate_status(&status, false),
+        );
+        coordinator.stop_pair(&status).await;
+        wait_for_proxy_state(&coordinator, ModuleState::STOPPED).await;
+        assert!(listener_token.is_cancelled());
+
+        for _ in 0..3 {
+            let status = runtime_status(&coordinator);
+            assert_eq!(Some(0), coordinator.last_selected_local_port);
+            assert!(!should_reconcile_proxy_port(
+                &status,
+                coordinator.last_selected_local_port,
+            ));
+            assert_eq!(
+                PairAction::StopPairForSoftAudit,
+                evaluate_status(&status, true),
+            );
+            coordinator.stop_pair(&status).await;
+            assert!(coordinator.proxy_server_runtime.is_none());
+            assert!(coordinator.redirector_runtime.is_none());
+        }
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn changed_port_is_selected_once_after_soft_audit_stop() {
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, 0).await;
+        coordinator.start_proxy_server(0).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let new_port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        set_desired_port(&coordinator, new_port).await;
+        assert!(should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+        assert!(coordinator.handoff_proxy_server(new_port, false).await);
+        assert_eq!(Some(new_port), coordinator.last_selected_local_port);
+        let selected = coordinator.proxy_server_runtime.as_ref().unwrap();
+        assert_eq!(new_port, selected.local_port);
+        assert!(selected.listener_committed.is_cancelled());
+        let listener_token = selected.cancellation_token.clone();
+        assert!(!should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        assert!(listener_token.is_cancelled());
+        assert!(coordinator.proxy_server_runtime.is_none());
+        assert!(!should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+        set_desired_port(&coordinator, crate::common::constants::PROXY_AGENT_PORT).await;
+        assert!(should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn disabling_soft_audit_restarts_listener_at_the_selected_port_once() {
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let mut coordinator = coordinator();
+        set_desired_port(&coordinator, port).await;
+        coordinator.start_proxy_server(port).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let agent_status = coordinator.shared_state.get_agent_status_shared_state();
+        agent_status.set_soft_audit_mode(true).await.unwrap();
+        agent_status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        coordinator.stop_pair(&runtime_status(&coordinator)).await;
+        assert_eq!(Some(port), coordinator.last_selected_local_port);
+
+        agent_status.set_soft_audit_mode(false).await.unwrap();
+        // Simulate redirector recovery so start_pair cannot load real eBPF programs.
+        agent_status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let status = runtime_status(&coordinator);
+        assert!(!should_reconcile_proxy_port(
+            &status,
+            coordinator.last_selected_local_port,
+        ));
+        assert_eq!(PairAction::StartPair, evaluate_status(&status, true));
+        coordinator.start_pair(&status).await;
+        wait_for_proxy_state(&coordinator, ModuleState::RUNNING).await;
+        let selected = coordinator.proxy_server_runtime.as_ref().unwrap();
+        assert_eq!(port, selected.local_port);
+        assert_eq!(Some(port), coordinator.last_selected_local_port);
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok());
+        assert_eq!(
+            PairAction::None,
+            evaluate_status(&runtime_status(&coordinator), false),
+        );
+        assert!(coordinator.redirector_runtime.is_none());
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+        coordinator.shared_state.get_cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn handoff_records_selected_port_when_desired_port_changes_again() {
+        let mut coordinator = coordinator();
+        let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let latest_port = reserved.local_addr().unwrap().port();
+        set_desired_port(&coordinator, 0).await;
+        let earlier_status = runtime_status(&coordinator);
+        assert!(should_reconcile_proxy_port(
+            &earlier_status,
+            coordinator.last_selected_local_port,
+        ));
+
+        set_desired_port(&coordinator, latest_port).await;
+        assert!(
+            coordinator
+                .handoff_proxy_server(earlier_status.desired_local_port, false)
+                .await
+        );
+        assert_eq!(Some(0), coordinator.last_selected_local_port);
+        assert_eq!(
+            0,
+            coordinator
+                .proxy_server_runtime
+                .as_ref()
+                .unwrap()
+                .local_port,
+        );
+        assert!(should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+
+        drop(reserved);
+        assert!(coordinator.handoff_proxy_server(latest_port, false).await);
+        assert_eq!(Some(latest_port), coordinator.last_selected_local_port);
+        assert!(!should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
+        coordinator
+            .stop_proxy_server("Test cleanup.".to_string())
+            .await;
+        coordinator.shared_state.get_cancellation_token().cancel();
     }
 
     #[tokio::test]
@@ -716,6 +1403,7 @@ mod tests {
             .get_module_status(AgentStatusModule::ProxyServer)
             .await;
         assert!(failed.message.contains("Failed to bind"));
+        assert_eq!(Some(old_port), coordinator.last_selected_local_port);
         let mut updates = agent_status.subscribe_runtime_status();
         updates.borrow_and_update();
         let redirector_state = coordinator.shared_state.get_redirector_shared_state();
@@ -724,6 +1412,7 @@ mod tests {
         // Missing BPF policies must not reject the selected runtime or restore the old port.
         set_desired_port(&coordinator, 0).await;
         assert!(coordinator.handoff_proxy_server(0, true).await);
+        assert_eq!(Some(0), coordinator.last_selected_local_port);
         assert!(updates.has_changed().unwrap());
         let after = agent_status
             .get_module_status(AgentStatusModule::ProxyServer)
@@ -782,6 +1471,7 @@ mod tests {
         let candidate_port = occupied.local_addr().unwrap().port();
         set_desired_port(&coordinator, candidate_port).await;
         assert!(coordinator.handoff_proxy_server(candidate_port, true).await);
+        assert_eq!(Some(candidate_port), coordinator.last_selected_local_port);
         let failed = agent_status
             .get_module_status(AgentStatusModule::ProxyListener(candidate_port))
             .await;
@@ -813,6 +1503,11 @@ mod tests {
         coordinator
             .stop_proxy_server("Test cleanup.".to_string())
             .await;
+        assert_eq!(Some(candidate_port), coordinator.last_selected_local_port);
+        assert!(!should_reconcile_proxy_port(
+            &runtime_status(&coordinator),
+            coordinator.last_selected_local_port,
+        ));
     }
 
     #[tokio::test]
@@ -990,7 +1685,7 @@ mod tests {
     }
 
     #[test]
-    fn changed_port_recovers_after_default_listener_failed() {
+    fn changed_port_is_reconciled_before_any_listener_is_selected() {
         let mut status = status(false, ModuleState::STOPPED, ModuleState::RUNNING);
         status.desired_local_port = 3081;
 
@@ -1006,6 +1701,17 @@ mod tests {
 
         assert!(should_reconcile_proxy_port(&status, Some(3080)));
         assert!(should_reconcile_proxy_port(&status, None));
+        assert!(!should_reconcile_proxy_port(&status, Some(3081)));
+    }
+
+    #[test]
+    fn returning_to_default_port_is_reconciled_after_custom_port_selection() {
+        let status = status(true, ModuleState::STOPPED, ModuleState::STOPPED);
+        assert!(should_reconcile_proxy_port(&status, Some(3081)));
+        assert!(!should_reconcile_proxy_port(
+            &status,
+            Some(crate::common::constants::PROXY_AGENT_PORT),
+        ));
     }
 
     #[test]

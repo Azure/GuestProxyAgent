@@ -36,6 +36,19 @@ namespace GuestProxyAgentTest.TestCases
                 StdOut = runCommandRes.StdOut,
                 FromBlob = true
             };
+
+            if (!Constants.IS_WINDOWS())
+            {
+                // Linux VM Agent process VM Extensions in sequence, so we need to trigger a new goalstate
+                //  after replaced the Linux Guest Proxy Agent extension zip file
+                // It is dummy script to trigger a new goalstate, the script does not perform any actual operation
+                // It is to ensure that the Guest Proxy Agent VM extension is properly unzipped, installed and enabled.
+                await RunCommandRunner.ExecuteRunCommandOnVM(context.Logger, context.VirtualMachineResource,
+                        new RunCommandSettingBuilder().TestScenarioSetting(context.ScenarioSetting).RunCommandName("DummyScript")
+                            .ScriptFullPath(Path.Combine(TestSetting.Instance.scriptsFolder, Constants.DUMMY_SCRIPT_NAME))
+                    , context.CancellationToken
+                    );
+            }
         }
     }
 }

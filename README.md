@@ -77,6 +77,9 @@ Refer to the instructions that correspond to the Operating System you wish to *t
 - [Getting Started Guide - Linux](/doc/GettingStartedLinux.md)
 - [Getting Started Guide - Windows](/doc/GettingStartedWindows.md)
 
+Repository-specific architecture, validation, compatibility, and review guidance
+is indexed in the [engineering context](.ai/README.md).
+
 ## Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a

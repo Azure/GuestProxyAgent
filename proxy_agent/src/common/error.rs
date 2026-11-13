@@ -9,6 +9,9 @@ pub enum Error {
     #[error("IO error: {0}: {1}")]
     Io(String, std::io::Error),
 
+    #[error("Failed to reserve request body buffer: {0}")]
+    BodyBufferReservation(#[source] std::collections::TryReserveError),
+
     #[error("{0}")]
     Hyper(HyperErrorType),
 
@@ -176,6 +179,9 @@ pub enum WindowsApiErrorType {
 
     #[error("CryptUnprotectData failed: {0}")]
     CryptUnprotectData(std::io::Error),
+
+    #[error("Failed to get process handler for pid {0} with error: {1}")]
+    GetProcessHandler(u32, std::io::Error),
 }
 
 #[cfg(test)]

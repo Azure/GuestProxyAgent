@@ -14,6 +14,7 @@ use crate::common::error::Error;
 use crate::common::logger;
 use crate::common::result::Result;
 use proxy_agent_shared::logger::LoggerLevel;
+use proxy_agent_shared::misc_helpers;
 use proxy_agent_shared::proxy_agent_aggregate_status::{ModuleState, ProxyAgentDetailStatus};
 use proxy_agent_shared::telemetry::event_logger;
 use std::collections::HashMap;
@@ -381,6 +382,12 @@ impl AgentStatusSharedState {
                         }
                     }
                 }
+                if fallback_reason.is_some() && runtime_status_tx.borrow().both_running() {
+                    fallback_reason = None;
+                    logger::write_information(format!(
+                        "Runtime pair on local port {desired_local_port} is healthy; reset fallback reason."
+                    ));
+                }
             }
         });
 
@@ -487,6 +494,7 @@ impl AgentStatusSharedState {
         Ok(update)
     }
 
+    /// Returns a bounded status copy; changed-message diagnostics are emitted by the setter.
     pub async fn get_module_status(&self, module: AgentStatusModule) -> ProxyAgentDetailStatus {
         let ModuleStatus { state, mut message } = match self.get_status(module.clone()).await {
             Ok(status) => status,
@@ -496,16 +504,8 @@ impl AgentStatusSharedState {
             }
         };
         if message.len() > MAX_STATUS_MESSAGE_LENGTH {
-            event_logger::write_event(
-                LoggerLevel::Warn,
-                format!(
-                    "Status message is too long, truncating to {MAX_STATUS_MESSAGE_LENGTH} characters. Message: {message}"
-                ),
-                "get_status",
-                &format!("{state:?}"),
-                logger::AGENT_LOGGER_KEY,
-            );
-            message = format!("{}...", &message[0..MAX_STATUS_MESSAGE_LENGTH]);
+            misc_helpers::truncate_to_char_boundary(&mut message, MAX_STATUS_MESSAGE_LENGTH);
+            message.push_str("...");
         }
 
         ProxyAgentDetailStatus {
@@ -701,6 +701,110 @@ mod tests {
             .set_module_status_message(message.to_string(), AgentStatusModule::ProxyListener(port))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn fallback_reason_clears_only_for_running_desired_pair() {
+        let status = AgentStatusSharedState::start_new();
+        status.set_soft_audit_mode(true).await.unwrap();
+        status.set_desired_local_port(0).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        let reason = Some("Desired listener failed".to_string());
+        status.set_fallback_reason(reason.clone()).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyListener(1))
+            .await
+            .unwrap();
+        for state in [
+            ModuleState::UNKNOWN,
+            ModuleState::STARTING,
+            ModuleState::STOPPED,
+        ] {
+            status
+                .set_module_state(state, AgentStatusModule::ProxyServer)
+                .await
+                .unwrap();
+            assert_eq!(reason, status.get_fallback_reason().await.unwrap());
+        }
+
+        status.set_desired_local_port(1).await.unwrap();
+        assert!(status.get_fallback_reason().await.unwrap().is_none());
+        assert!(status.get_soft_audit_mode().await.unwrap());
+        status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+        status.set_fallback_reason(reason.clone()).await.unwrap();
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        assert_eq!(reason, status.get_fallback_reason().await.unwrap());
+        status
+            .set_module_state(ModuleState::RUNNING, AgentStatusModule::ProxyServer)
+            .await
+            .unwrap();
+        assert!(status.get_fallback_reason().await.unwrap().is_none());
+        for _ in 0..3 {
+            status
+                .set_fallback_reason(Some("Late stale capture".to_string()))
+                .await
+                .unwrap();
+            assert!(status.get_fallback_reason().await.unwrap().is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn module_status_truncates_at_utf8_boundaries_with_ellipsis() {
+        let status = AgentStatusSharedState::start_new();
+        status
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
+            .await
+            .unwrap();
+        for (message, expected) in [
+            ("Short message".to_string(), "Short message".to_string()),
+            ("a".repeat(1024), "a".repeat(1024)),
+            ("a".repeat(1025), format!("{}...", "a".repeat(1024))),
+            (
+                format!("{}\u{e9}", "a".repeat(1023)),
+                format!("{}...", "a".repeat(1023)),
+            ),
+            (
+                format!("{}\u{1f600}", "a".repeat(1023)),
+                format!("{}...", "a".repeat(1023)),
+            ),
+            (
+                format!("{}\u{e9}", "a".repeat(1022)),
+                format!("{}\u{e9}", "a".repeat(1022)),
+            ),
+            (
+                format!("{}\u{e9}x", "a".repeat(1022)),
+                format!("{}\u{e9}...", "a".repeat(1022)),
+            ),
+        ] {
+            status
+                .set_module_status_message(message.clone(), AgentStatusModule::Redirector)
+                .await
+                .unwrap();
+            for _ in 0..2 {
+                let reported = status
+                    .get_module_status(AgentStatusModule::Redirector)
+                    .await;
+                assert_eq!(ModuleState::STOPPED, reported.status);
+                assert_eq!(expected, reported.message);
+                assert!(reported.message.len() <= MAX_STATUS_MESSAGE_LENGTH + 3);
+            }
+            assert_eq!(
+                message,
+                status
+                    .get_module_status_message(AgentStatusModule::Redirector)
+                    .await
+                    .unwrap(),
+            );
+        }
     }
 
     #[tokio::test]
@@ -1259,6 +1363,10 @@ mod tests {
 
         agent_status_shared_state
             .set_soft_audit_mode(true)
+            .await
+            .unwrap();
+        agent_status_shared_state
+            .set_module_state(ModuleState::STOPPED, AgentStatusModule::Redirector)
             .await
             .unwrap();
         agent_status_shared_state
