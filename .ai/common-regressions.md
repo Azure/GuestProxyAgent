@@ -1,0 +1,37 @@
+# Common regression scenarios
+
+Status, requested owner role, and evidence revision: [context registry](context.json).
+
+These are regression contracts supported by checked-in tests or implementation
+comments. They are **not claims of production incidents**, exhaustive coverage,
+or successful execution at the current commit. Search the named test in its linked
+source and inspect its assertions before relying on it.
+
+| Scenario and rationale | Existing evidence |
+|---|---|
+| Audit denial still forwards, while enforce denial and elevation checks retain endpoint-specific meaning | `wireserver_authenticate_test`, `imds_authenticate_test`, `hostga_authenticate_test`, and `authorize_skip_sig_test` in [proxy_authorizer.rs](../proxy_agent/src/proxy/proxy_authorizer.rs) |
+| Canonicalization rejects unsupported inputs and remains idempotent; shadow/enforce handoff does not silently change which result decides | `userinfo_rejected_at_pipeline_entry`, `allowed_methods_are_accepted_others_rejected`, `non_http_schemes_rejected`, and `canonical_form_is_idempotent` in [canonical/mod.rs](../proxy_agent/src/proxy/canonical/mod.rs); `shadow_compare_returns_canonical_decision_for_enforce_handoff` in [authorization_rules.rs](../proxy_agent/src/proxy/authorization_rules.rs) |
+| Skip-signature behavior must remain stable rather than being "simplified" during HTTP changes | `should_skip_sig_test` in [hyper_client.rs](../proxy_agent_shared/src/hyper_client.rs) |
+| Runtime handoff cancels old bind retries without overwriting the desired listener; policy-update failure must not make old ports permanently unusable | `handoff_cancels_bind_retries_without_overwriting_desired_listener` and `policy_update_failure_keeps_new_runtime_and_allows_old_port_reuse` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs) |
+| Soft-audit cleanup retains the last selected port: unchanged ports must not restart a stopped pair, genuine port changes still reconcile, and disabling soft audit still restarts once | `soft_audit_stop_does_not_reconcile_the_selected_port_again`, `changed_port_is_selected_once_after_soft_audit_stop`, `disabling_soft_audit_restarts_listener_at_the_selected_port_once`, and `disabling_soft_audit_restarts_a_non_running_pair_once` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs); `wire_server_soft_audit_status_updates_gpa_status` in [key_keeper.rs](../proxy_agent/src/key_keeper.rs). Listener recovery tests simulate redirector state without loading eBPF; they do not establish missing-driver VM recovery. |
+| A healthy soft-audit pair that later fails captures the original cause before partner cleanup; every fallback reconciliation then overwrites the reason with current STOPPED-module messages, which may include coordinator cleanup text | `healthy_soft_audit_then_failed_port_change_reports_original_fallback`, `soft_audit_overwrites_fallback_reason_on_every_reconciliation`, and `healthy_soft_audit_does_not_create_or_retain_a_fallback_reason` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs) check exact serialized reasons, replacement without disabling soft audit, no message accumulation, null while healthy/disabled, and a fresh reason after reenable or recovery. These controlled tests do not establish full coordinator-loop or concurrent-mode-transition behavior. |
+| Recovery clears the stored fallback reason only when the redirector and desired listener are both RUNNING; another running listener or partial recovery must not hide a failure | `fallback_reason_clears_only_for_running_desired_pair` in [agent_status_wrapper.rs](../proxy_agent/src/shared_state/agent_status_wrapper.rs) checks non-RUNNING states, selection of an already-running listener, listener-last recovery, and repeated stale writes after recovery. `healthy_soft_audit_then_failed_port_change_reports_original_fallback` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs) corrects an occupied port to a free port, checks exact null `auditFallback` after recovery without disabling soft audit, and captures a later failure. The actor clears after each action using its current pair snapshot; aggregate reads remain non-atomic and redirector state is simulated. |
+| Oversized UTF-8 status messages must truncate at a character boundary, retaining the ellipsis, without aborting fallback capture or healthy-partner cleanup | `module_status_truncates_at_utf8_boundaries_with_ellipsis` in [agent_status_wrapper.rs](../proxy_agent/src/shared_state/agent_status_wrapper.rs) checks ASCII/Unicode byte boundaries and unchanged raw messages; `non_ascii_fallback_capture_completes_healthy_partner_shutdown` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs) checks the 1023-ASCII-byte plus two-byte-character case, exact captured/serialized reason, listener cancellation/removal, STOPPED status and port reuse. Redirector state is simulated; this is not full coordinator-loop or VM validation. |
+| Recurring fallback capture and status publication must not emit truncation warnings on successful reads; changed-message diagnostics remain in the setter, and every reconciliation still refreshes the reason | `repeated_oversized_fallback_capture_does_not_log_or_skip_refresh` in [runtime_coordinator.rs](../proxy_agent/src/runtime_coordinator.rs) uses an isolated child process with a real file logger: unchanged oversized messages add no log bytes across repeated capture/publication, stale reasons are replaced, and new messages (including changes beyond the retained prefix) still log once. Exact UTF-8-safe reasons and raw messages are checked. The removed event call coupled file logging and telemetry enqueue; this is not independent telemetry-delivery or VM evidence. |
+| Equal installed/bundled versions can still require update recovery when running status is absent or reports an old version | `test_determine_update_action` and the `ResumeInterruptedUpdate` rationale in [service_main.rs](../proxy_agent_extension/src/service_main.rs) |
+| Health reporting must distinguish stale status from fresh status | `test_stale_status_timestamp_greater_than_5_minutes` and `test_fresh_status_timestamp_within_5_minutes` in [service_main.rs](../proxy_agent_extension/src/service_main.rs) |
+| Windows setup diagnostics must name the actual missing/stopped eBPF dependencies | `both_not_installed_returns_both_names`, `core_running_ext_stopped_returns_ext_only`, and related Windows-only tests in [setup main.rs](../proxy_agent_setup/src/main.rs) |
+| Secret redaction must remain correct with concurrent callers, but its existence must not be mistaken for automatic logger protection | `test_redact_secrets`, `test_redact_secrets_string`, and `test_redact_secrets_from_concurrent_callers` in [secrets_redactor.rs](../proxy_agent_shared/src/secrets_redactor.rs) |
+
+## Gaps and history
+
+Unit assertions do not establish full VM restart, kernel load, power interruption,
+or rollout safety. Select additional scenarios from [deployment safety](deployment-safety.md)
+and record what was not run.
+
+No external incident or PR archive is enrolled: `approved_history` in the
+[registry](context.json) is empty. Do not fill missing history with guesses.
+When approved historical evidence becomes available, add the minimized reference,
+affected contract, synthetic reproducer or regression-test link, and remaining
+limitations. Keep observed test contracts separate from confirmed historical
+failures and from future failure hypotheses.

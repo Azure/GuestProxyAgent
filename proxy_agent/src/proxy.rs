@@ -135,29 +135,34 @@ async fn get_user(
 ///     as it reads all files from /proc/{pid}/* and Create Process struct with all fields,
 ///     which is very inefficient when we only need the executable path and command line.
 #[cfg(not(windows))]
-fn get_process_info(process_id: u32) -> (PathBuf, String) {
+fn get_process_info(process_id: u32) -> Result<(PathBuf, String)> {
     // Get executable path from /proc/{pid}/exe symlink
     let exe_path = format!("/proc/{}/exe", process_id);
-    let process_name = std::fs::read_link(&exe_path).unwrap_or_default();
+    let process_name = std::fs::read_link(&exe_path).map_err(|e| {
+        use crate::common::error::Error;
+
+        Error::Io(format!("read link '{}' failed", exe_path), e)
+    })?;
 
     // Get command line from /proc/{pid}/cmdline (null-separated arguments)
     let cmdline_path = format!("/proc/{}/cmdline", process_id);
-    let process_cmd_line = match std::fs::read(&cmdline_path) {
-        Ok(bytes) => {
-            // cmdline is null-separated; take only the first few arguments
-            // to avoid capturing credentials in later args
-            bytes
-                .split(|&b| b == 0)
-                .filter(|s| !s.is_empty())
-                .take(MAX_CMD_ARGS)
-                .map(|s| String::from_utf8_lossy(s).into_owned())
-                .collect::<Vec<String>>()
-                .join(" ")
-        }
-        Err(_) => UNDEFINED.to_string(),
-    };
+    let bytes = std::fs::read(&cmdline_path).map_err(|e| {
+        use crate::common::error::Error;
 
-    (process_name, process_cmd_line)
+        Error::Io(format!("read file '{}' failed", cmdline_path), e)
+    })?;
+
+    // cmdline is null-separated; take only the first few arguments
+    // to avoid capturing credentials in later args
+    let process_cmd_line = bytes
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .take(MAX_CMD_ARGS)
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect::<Vec<String>>()
+        .join(" ");
+
+    Ok((process_name, process_cmd_line))
 }
 
 impl Claims {
@@ -185,7 +190,7 @@ impl Claims {
         client_port: u16,
         proxy_server_shared_state: ProxyServerSharedState,
     ) -> Result<Self> {
-        let p = Process::from_pid(entry.process_id);
+        let p = Process::from_pid(entry.process_id)?;
         let u = get_user(entry.logon_id, proxy_server_shared_state).await?;
         Ok(Claims {
             userId: entry.logon_id,
@@ -206,7 +211,7 @@ impl Claims {
 }
 
 impl Process {
-    pub fn from_pid(pid: u32) -> Self {
+    pub fn from_pid(pid: u32) -> Result<Self> {
         let (process_full_path, cmd);
         #[cfg(windows)]
         {
@@ -215,31 +220,44 @@ impl Process {
             };
 
             let options = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-            let handler =
-                proxy_agent_shared::windows::get_process_handler(pid, options).unwrap_or(0);
+            let handler = proxy_agent_shared::windows::get_process_handler(pid, options)?;
             if handler != 0 {
                 // Get process info directly - if either fails, the process may have exited
-                process_full_path = windows::get_process_full_name(handler).unwrap_or_default();
-                cmd = windows::get_process_cmd(handler).unwrap_or(UNDEFINED.to_string());
+                process_full_path = match windows::get_process_full_name(handler) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        // close the handle before returning the error
+                        _ = proxy_agent_shared::windows::close_handler(handler);
+                        return Err(e);
+                    }
+                };
+                cmd = match windows::get_process_cmd(handler) {
+                    Ok(cmd_line) => cmd_line,
+                    Err(e) => {
+                        // close the handle before returning the error
+                        _ = proxy_agent_shared::windows::close_handler(handler);
+                        return Err(e);
+                    }
+                };
 
-                // close the handle
+                // close the handle in normal case after successfully getting process info
                 if let Err(_e) = proxy_agent_shared::windows::close_handler(handler) {
                     #[cfg(test)]
                     println!("Failed to close process handler: {_e}");
                 }
             } else {
-                process_full_path = PathBuf::default();
-                cmd = UNDEFINED.to_string();
-                #[cfg(test)]
-                eprintln!(
-                    "Failed to get_process_handler: {}",
-                    std::io::Error::last_os_error()
-                );
+                use crate::common::error::Error;
+                use crate::common::error::WindowsApiErrorType;
+
+                return Err(Error::WindowsApi(WindowsApiErrorType::GetProcessHandler(
+                    pid,
+                    std::io::Error::last_os_error(),
+                )));
             }
         }
         #[cfg(not(windows))]
         {
-            let process_info = get_process_info(pid);
+            let process_info = get_process_info(pid)?;
             process_full_path = process_info.0;
             cmd = process_info.1;
         }
@@ -254,12 +272,12 @@ impl Process {
             .unwrap_or_default()
             .to_os_string();
 
-        Process {
+        Ok(Process {
             command_line: cmd,
             name: process_name,
             exe_full_name: process_full_path,
             pid,
-        }
+        })
     }
 }
 

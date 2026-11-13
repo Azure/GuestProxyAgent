@@ -1,4 +1,5 @@
 {
+    "chat.newSession.defaultMode": "GPA Coding",
     "files.associations": {
         "guiddef.h": "c",
         "socket.h": "c",
