@@ -1,0 +1,3 @@
+azure-proxy-agent: binary-from-other-architecture [usr/lib/azure-proxy-agent/ebpf_cgroup.o]
+azure-proxy-agent: initial-upload-closes-no-bugs [usr/share/doc/azure-proxy-agent/changelog.Debian.gz:1]
+azure-proxy-agent: no-manual-page [usr/sbin/azure-proxy-agent]
