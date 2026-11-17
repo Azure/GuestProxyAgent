@@ -36,3 +36,13 @@
 # pentest run & results
 /pentest/*/results/
 __pycache__/
+
+# Local documentation-generation inputs and model-call artifacts
+.compose/
+.astred/
+.compose.models.json
+.dag-pipeline-state.json
+/scripts/dag-enrichment/output/
+/.github/skills/dag-generation/references/output/
+*.pyc
+/enrichment-logs/
