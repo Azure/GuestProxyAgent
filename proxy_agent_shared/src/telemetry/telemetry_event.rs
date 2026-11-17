@@ -3,7 +3,7 @@
 
 //! This module contains the logic to generate the telemetry data to be send to wire server.
 
-use crate::telemetry::{Event, ExtensionStatusEvent};
+use crate::telemetry::{Event, ExtensionStatusEvent, PerfCounterEvent};
 use crate::{current_info, misc_helpers};
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
@@ -161,14 +161,7 @@ impl TelemetryProvider {
         ));
 
         for e in &self.events {
-            match e {
-                TelemetryEvent::GenericLogsEvent(event) => {
-                    xml.push_str(&event.to_xml_event(vm_data));
-                }
-                TelemetryEvent::ExtensionEvent(event) => {
-                    xml.push_str(&event.to_xml_event(vm_data));
-                }
-            }
+            xml.push_str(&e.to_xml_event(vm_data));
         }
 
         xml.push_str("</Provider>");
@@ -214,31 +207,17 @@ impl TelemetryData {
     }
 
     /// Add a telemetry event to the telemetry data.
-    /// It will be added to the corresponding provider.
+    /// It will be added to the corresponding provider; events sharing a provider id
+    /// (e.g. extension and performance counter events) are grouped under one `<Provider>`.
     pub fn add_event(&mut self, event: TelemetryEvent) {
         let event_size = event.to_xml_event(&self.vm_data).len();
-        for provider in &mut self.providers {
-            match &event {
-                TelemetryEvent::GenericLogsEvent(_) => {
-                    if provider.id == METRICS_PROVIDER_ID {
-                        provider.add_event(event);
-                        self.serialized_size += event_size;
-                        return;
-                    }
-                }
-                TelemetryEvent::ExtensionEvent(_) => {
-                    if provider.id == STATUS_PROVIDER_ID {
-                        provider.add_event(event);
-                        self.serialized_size += event_size;
-                        return;
-                    }
-                }
-            }
+        let provider_id = event.get_provider_id();
+        if let Some(provider) = self.providers.iter_mut().find(|p| p.id == provider_id) {
+            provider.add_event(event);
+            self.serialized_size += event_size;
+            return;
         }
-        let mut p = TelemetryProvider::new(match &event {
-            TelemetryEvent::GenericLogsEvent(_) => METRICS_PROVIDER_ID.to_string(),
-            TelemetryEvent::ExtensionEvent(_) => STATUS_PROVIDER_ID.to_string(),
-        });
+        let mut p = TelemetryProvider::new(provider_id);
         self.serialized_size += p.to_xml(&self.vm_data).len() + event_size;
         p.add_event(event);
         self.providers.push(p);
@@ -247,29 +226,13 @@ impl TelemetryData {
     /// Remove the last added telemetry event from the telemetry data.
     /// This is used when the telemetry data size exceeds the maximum allowed size.
     pub fn remove_last_event(&mut self, last_event: TelemetryEvent) -> Option<TelemetryEvent> {
-        for provider in &mut self.providers {
-            match &last_event {
-                TelemetryEvent::GenericLogsEvent(_) => {
-                    if provider.id == METRICS_PROVIDER_ID {
-                        let removed = provider.remove_event(last_event);
-                        if let Some(event) = &removed {
-                            self.serialized_size -= event.to_xml_event(&self.vm_data).len();
-                        }
-                        return removed;
-                    }
-                }
-                TelemetryEvent::ExtensionEvent(_) => {
-                    if provider.id == STATUS_PROVIDER_ID {
-                        let removed = provider.remove_event(last_event);
-                        if let Some(event) = &removed {
-                            self.serialized_size -= event.to_xml_event(&self.vm_data).len();
-                        }
-                        return removed;
-                    }
-                }
-            }
+        let provider_id = last_event.get_provider_id();
+        let provider = self.providers.iter_mut().find(|p| p.id == provider_id)?;
+        let removed = provider.remove_event(last_event);
+        if let Some(event) = &removed {
+            self.serialized_size -= event.to_xml_event(&self.vm_data).len();
         }
-        None
+        removed
     }
 
     /// Get the total number of events in the telemetry data.
@@ -283,6 +246,7 @@ impl TelemetryData {
 pub enum TelemetryEvent {
     GenericLogsEvent(TelemetryGenericLogsEvent),
     ExtensionEvent(TelemetryExtensionEventsEvent),
+    PerfCounterEvent(TelemetryPerfCounterEvent),
 }
 
 impl TelemetryEvent {
@@ -290,6 +254,7 @@ impl TelemetryEvent {
         match self {
             TelemetryEvent::GenericLogsEvent(_) => TelemetryGenericLogsEvent::get_provider_id(),
             TelemetryEvent::ExtensionEvent(_) => TelemetryExtensionEventsEvent::get_provider_id(),
+            TelemetryEvent::PerfCounterEvent(_) => TelemetryPerfCounterEvent::get_provider_id(),
         }
     }
 
@@ -297,6 +262,7 @@ impl TelemetryEvent {
         match self {
             TelemetryEvent::GenericLogsEvent(event) => event.to_xml_event(vm_data),
             TelemetryEvent::ExtensionEvent(event) => event.to_xml_event(vm_data),
+            TelemetryEvent::PerfCounterEvent(event) => event.to_xml_event(vm_data),
         }
     }
 
@@ -312,6 +278,13 @@ impl TelemetryEvent {
                 event.message = crate::secrets_redactor::redact_secrets_string(std::mem::take(
                     &mut event.message,
                 ));
+            }
+            TelemetryEvent::PerfCounterEvent(event) => {
+                // Counter names and instances are caller-supplied free text (e.g. a process
+                // command line or a URL used as an instance name), so redact them too.
+                for field in [&mut event.category, &mut event.counter, &mut event.instance] {
+                    *field = crate::secrets_redactor::redact_secrets_string(std::mem::take(field));
+                }
             }
         }
     }
@@ -545,6 +518,128 @@ impl TelemetryExtensionEventsEvent {
         xml.push_str(&format!(
             "<Param Name=\"Duration\" Value=\"{}\" T=\"mt:uint64\" />",
             self.duration
+        ));
+
+        xml.push_str("]]></Event>");
+        xml
+    }
+}
+
+/// Performance counter (metric) event that lands in the `GuestAgentPerformanceCounterEvents`
+/// table.
+///
+/// Wire contract (Event id 4 under the status provider `69B669B9-...`, params `Category`,
+/// `Counter`, `Instance` as `mt:wstr` and `Value` as `mt:float64`) follows the public
+/// WALinuxAgent metrics event; the common params mirror the other guest agent events here.
+///
+/// The value is stored as its f64 bit pattern so the event keeps the `Eq`/`Hash` derives.
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+pub struct TelemetryPerfCounterEvent {
+    event_pid: u64,
+    event_tid: u64,
+    ga_version: String,
+    task_name: String,
+    opcode_name: String,
+    execution_mode: String,
+
+    category: String,
+    counter: String,
+    instance: String,
+    value_bits: u64,
+}
+
+impl TelemetryPerfCounterEvent {
+    /// Build the wire event from a perf counter sample.
+    ///
+    /// Returns `None` when the value is NaN or infinite: `mt:float64` has no portable
+    /// representation for them, so such samples are dropped instead of being clamped to a
+    /// misleading number.
+    pub fn from_perf_counter_event(
+        event: &PerfCounterEvent,
+        execution_mode: String,
+        ga_version: String,
+    ) -> Option<Self> {
+        if !event.value.is_finite() {
+            return None;
+        }
+
+        // Bound producer work and queue memory here; redaction runs later in the background sender.
+        let bounded = |s: &str| {
+            let mut s = s.to_string();
+            misc_helpers::truncate_to_char_boundary(&mut s, MAX_TELEMETRY_MESSAGE_LENGTH);
+            s
+        };
+
+        Some(TelemetryPerfCounterEvent {
+            event_pid: event.event_pid.parse::<u64>().unwrap_or(0),
+            event_tid: event.event_tid.parse::<u64>().unwrap_or(0),
+            ga_version,
+            task_name: bounded(&event.task_name),
+            opcode_name: event.time_stamp.clone(),
+            execution_mode,
+            category: bounded(&event.category),
+            counter: bounded(&event.counter),
+            instance: bounded(&event.instance),
+            value_bits: event.value.to_bits(),
+        })
+    }
+
+    pub fn get_provider_id() -> String {
+        STATUS_PROVIDER_ID.to_string()
+    }
+
+    pub fn value(&self) -> f64 {
+        f64::from_bits(self.value_bits)
+    }
+
+    fn to_xml_event(&self, vm_data: &TelemetryEventVMData) -> String {
+        let mut xml: String = String::new();
+        // Event ID 4 is for Performance Counter Events (GuestAgentPerformanceCounterEvents)
+        xml.push_str("<Event id=\"4\"><![CDATA[");
+
+        xml.push_str(&vm_data.to_xml_params());
+
+        xml.push_str(&format!(
+            "<Param Name=\"EventPid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_pid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"EventTid\" Value=\"{}\" T=\"mt:uint64\" />",
+            self.event_tid
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"GAVersion\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.ga_version.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.execution_mode.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.task_name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.opcode_name.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Category\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.category.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Counter\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.counter.clone())
+        ));
+        xml.push_str(&format!(
+            "<Param Name=\"Instance\" Value=\"{}\" T=\"mt:wstr\" />",
+            misc_helpers::xml_escape(self.instance.clone())
+        ));
+        // Rust's `Display` for f64 is the shortest round-trip decimal without an exponent,
+        // which is deterministic and parseable as mt:float64. Only finite values reach here.
+        xml.push_str(&format!(
+            "<Param Name=\"Value\" Value=\"{}\" T=\"mt:float64\" />",
+            self.value()
         ));
 
         xml.push_str("]]></Event>");
@@ -1051,5 +1146,183 @@ mod tests {
         let removed = provider.remove_event(event);
         assert!(removed.is_some());
         assert_eq!(provider.event_count(), 0);
+    }
+
+    fn create_test_perf_counter_event(value: f64) -> PerfCounterEvent {
+        PerfCounterEvent {
+            category: "Process".to_string(),
+            counter: "% Processor Time".to_string(),
+            instance: "GuestProxyAgent".to_string(),
+            value,
+            task_name: "monitor".to_string(),
+            event_pid: "123".to_string(),
+            event_tid: "456".to_string(),
+            time_stamp: "2026-11-17T07:31:48.237Z".to_string(),
+        }
+    }
+
+    fn create_test_perf_telemetry_event(value: f64) -> TelemetryEvent {
+        TelemetryEvent::PerfCounterEvent(
+            TelemetryPerfCounterEvent::from_perf_counter_event(
+                &create_test_perf_counter_event(value),
+                "ProxyAgent".to_string(),
+                "1.0.0".to_string(),
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn test_perf_counter_event_exact_xml() {
+        let mut perf = create_test_perf_counter_event(12.5);
+        perf.instance = "a<b>&\"c'".to_string();
+        let event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            TelemetryPerfCounterEvent::get_provider_id(),
+            STATUS_PROVIDER_ID
+        );
+        assert_eq!(
+            TelemetryEvent::PerfCounterEvent(event.clone()).get_provider_id(),
+            STATUS_PROVIDER_ID
+        );
+        assert_eq!(event.value(), 12.5);
+
+        let vm_data = create_test_vm_data();
+        let expected = format!(
+            "<Event id=\"4\"><![CDATA[{}\
+<Param Name=\"EventPid\" Value=\"123\" T=\"mt:uint64\" />\
+<Param Name=\"EventTid\" Value=\"456\" T=\"mt:uint64\" />\
+<Param Name=\"GAVersion\" Value=\"1.0.0\" T=\"mt:wstr\" />\
+<Param Name=\"ExecutionMode\" Value=\"ProxyAgent\" T=\"mt:wstr\" />\
+<Param Name=\"TaskName\" Value=\"monitor\" T=\"mt:wstr\" />\
+<Param Name=\"OpcodeName\" Value=\"2026-11-17T07:31:48.237Z\" T=\"mt:wstr\" />\
+<Param Name=\"Category\" Value=\"Process\" T=\"mt:wstr\" />\
+<Param Name=\"Counter\" Value=\"% Processor Time\" T=\"mt:wstr\" />\
+<Param Name=\"Instance\" Value=\"{}\" T=\"mt:wstr\" />\
+<Param Name=\"Value\" Value=\"12.5\" T=\"mt:float64\" />\
+]]></Event>",
+            vm_data.to_xml_params(),
+            misc_helpers::xml_escape("a<b>&\"c'".to_string()),
+        );
+        assert_eq!(event.to_xml_event(&vm_data), expected);
+        assert!(!expected.contains("a<b>"), "Instance must be XML escaped");
+    }
+
+    #[test]
+    fn test_perf_counter_event_float_formatting() {
+        let vm_data = create_test_vm_data();
+        for (value, formatted) in [
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (1.0, "1"),
+            (-3.25, "-3.25"),
+            (0.1, "0.1"),
+            (1e20, "100000000000000000000"),
+            (1e-7, "0.0000001"),
+        ] {
+            let xml = create_test_perf_telemetry_event(value).to_xml_event(&vm_data);
+            assert!(
+                xml.contains(&format!(
+                    "<Param Name=\"Value\" Value=\"{formatted}\" T=\"mt:float64\" />"
+                )),
+                "value {value} should be formatted as {formatted}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_perf_counter_event_rejects_non_finite_values() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                TelemetryPerfCounterEvent::from_perf_counter_event(
+                    &create_test_perf_counter_event(value),
+                    "ProxyAgent".to_string(),
+                    "1.0.0".to_string(),
+                )
+                .is_none(),
+                "value {value} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_perf_counter_event_bounds_and_redacts_fields() {
+        let mut perf = create_test_perf_counter_event(1.0);
+        perf.instance = format!(
+            "{}: {} {}\n{}",
+            "Authorization",
+            "Bearer",
+            "secret-token",
+            "x".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4)
+        );
+        perf.counter = format!("{}: {} {}", "Authorization", "Bearer", "counter-secret");
+        perf.category = "é".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
+        let telemetry_event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+        assert!(telemetry_event.instance.len() <= MAX_TELEMETRY_MESSAGE_LENGTH);
+        assert_eq!(telemetry_event.category.len(), MAX_TELEMETRY_MESSAGE_LENGTH);
+        // Producer side does not redact; that only happens in the sender consumer.
+        assert!(telemetry_event.instance.contains("secret-token"));
+
+        let mut event = TelemetryEvent::PerfCounterEvent(telemetry_event);
+        event.redact_secrets();
+        let TelemetryEvent::PerfCounterEvent(redacted) = event else {
+            unreachable!();
+        };
+        assert!(!redacted.instance.contains("secret-token"));
+        assert!(redacted.instance.starts_with("[REDACTED]"));
+        assert!(!redacted.counter.contains("counter-secret"));
+        assert_eq!(redacted.value(), 1.0);
+    }
+
+    #[test]
+    fn test_telemetry_data_groups_perf_events_with_extension_events() {
+        let vm_data = create_test_vm_data();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+
+        telemetry_data.add_event(create_test_perf_telemetry_event(1.0));
+        telemetry_data.add_event(create_test_telemetry_event("Generic log message"));
+        telemetry_data.add_event(TelemetryEvent::ExtensionEvent(
+            TelemetryExtensionEventsEvent::from_extension_status_event(
+                &create_test_extension_status_event(),
+                "production".to_string(),
+                "1.0.0".to_string(),
+            ),
+        ));
+        let last_perf = create_test_perf_telemetry_event(2.0);
+        telemetry_data.add_event(last_perf.clone());
+        assert_eq!(telemetry_data.event_count(), 4);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
+
+        let xml = telemetry_data.to_xml();
+        let status_provider = format!("<Provider id=\"{}\">", STATUS_PROVIDER_ID);
+        let metrics_provider = format!("<Provider id=\"{}\">", METRICS_PROVIDER_ID);
+        assert_eq!(xml.matches(&status_provider).count(), 1);
+        assert_eq!(xml.matches(&metrics_provider).count(), 1);
+        assert_eq!(xml.matches("<Provider ").count(), 2);
+        assert_eq!(xml.matches("</Provider>").count(), 2);
+
+        // Perf (id 4) and extension (id 1) events live inside the status provider element.
+        let status_start = xml.find(&status_provider).unwrap();
+        let status_end = status_start + xml[status_start..].find("</Provider>").unwrap();
+        let status_xml = &xml[status_start..status_end];
+        assert_eq!(status_xml.matches("<Event id=\"4\">").count(), 2);
+        assert_eq!(status_xml.matches("<Event id=\"1\">").count(), 1);
+        assert_eq!(status_xml.matches("<Event id=\"7\">").count(), 0);
+        assert_eq!(xml.matches("<Event id=\"7\">").count(), 1);
+
+        let removed = telemetry_data.remove_last_event(last_perf);
+        assert!(removed.is_some());
+        assert_eq!(telemetry_data.event_count(), 3);
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
     }
 }

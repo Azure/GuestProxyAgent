@@ -10,9 +10,9 @@ use crate::logger::{logger_manager, LoggerLevel};
 use crate::result::Result;
 use crate::telemetry::telemetry_event::{
     TelemetryData, TelemetryEvent, TelemetryEventVMData, TelemetryExtensionEventsEvent,
-    TelemetryGenericLogsEvent,
+    TelemetryGenericLogsEvent, TelemetryPerfCounterEvent,
 };
-use crate::telemetry::{Event, ExtensionStatusEvent};
+use crate::telemetry::{Event, ExtensionStatusEvent, PerfCounterEvent};
 use concurrent_queue::ConcurrentQueue;
 use once_cell::sync::Lazy;
 use std::time::Duration;
@@ -217,6 +217,29 @@ pub(crate) fn try_enqueue_extension_event(
     let telemetry_event = TelemetryEvent::ExtensionEvent(telemetry_event);
     TELEMETRY_EVENT_QUEUE
         .push(telemetry_event)
+        .map_err(|e| crate::error::Error::EnqueueEvent(format!("{e}")))
+}
+
+/// Try to enqueue a performance counter event into the in-memory telemetry queue.
+///
+/// Returns `Err` if the value is not finite (NaN/inf) or the queue is full/closed.
+pub(crate) fn try_enqueue_perf_counter_event(
+    event: &PerfCounterEvent,
+    execution_mode: String,
+) -> Result<()> {
+    let telemetry_event = TelemetryPerfCounterEvent::from_perf_counter_event(
+        event,
+        execution_mode,
+        current_info::get_current_exe_version(),
+    )
+    .ok_or_else(|| {
+        crate::error::Error::EnqueueEvent(format!(
+            "perf counter '{}\\{}' has a non-finite value",
+            event.category, event.counter
+        ))
+    })?;
+    TELEMETRY_EVENT_QUEUE
+        .push(TelemetryEvent::PerfCounterEvent(telemetry_event))
         .map_err(|e| crate::error::Error::EnqueueEvent(format!("{e}")))
 }
 
@@ -542,6 +565,34 @@ mod tests {
 
         // Clear for next test
         while TELEMETRY_EVENT_QUEUE.pop().is_ok() {}
+
+        // ===== Part 3b: Test try_enqueue_perf_counter_event =====
+        let perf_event = PerfCounterEvent::new(
+            "Process".to_string(),
+            "Private Bytes".to_string(),
+            "GuestProxyAgent".to_string(),
+            1024.0,
+            "test_task".to_string(),
+        );
+        assert!(try_enqueue_perf_counter_event(&perf_event, "ProxyAgent".to_string()).is_ok());
+        let mut nan_event = perf_event.clone();
+        nan_event.value = f64::NAN;
+        assert!(
+            try_enqueue_perf_counter_event(&nan_event, "ProxyAgent".to_string()).is_err(),
+            "Non-finite perf counter values must not be enqueued"
+        );
+        let mut perf_values = Vec::new();
+        while let Ok(event) = TELEMETRY_EVENT_QUEUE.pop() {
+            if let TelemetryEvent::PerfCounterEvent(event) = event {
+                assert_eq!(
+                    TelemetryEvent::PerfCounterEvent(event.clone()).get_provider_id(),
+                    "69B669B9-4AF8-4C50-BDC4-6006FA76E975"
+                );
+                perf_values.push(event.value());
+            }
+        }
+        assert!(perf_values.contains(&1024.0));
+        assert!(perf_values.iter().all(|v| v.is_finite()));
 
         // ===== Part 4: Test enqueue and process with mock server =====
         // Start mock server FIRST to respond to goalstate and shared config requests

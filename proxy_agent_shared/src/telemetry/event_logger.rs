@@ -21,6 +21,7 @@ static EVENTS_DIR: tokio::sync::OnceCell<PathBuf> = tokio::sync::OnceCell::const
 static DIRECT_SEND_CONFIG: tokio::sync::OnceCell<DirectSendConfig> =
     tokio::sync::OnceCell::const_new();
 const MAX_EXTENSION_EVENT_FILE_COUNT: usize = 1000;
+const MAX_PERF_COUNTER_EVENT_FILE_COUNT: usize = 1000;
 
 #[derive(Clone, Debug)]
 pub struct DirectSendConfig {
@@ -429,6 +430,95 @@ pub async fn report_extension_status_event(
     }
 }
 
+/// Report a performance counter (metric) sample to the `GuestAgentPerformanceCounterEvents` table.
+///
+/// The sample is first enqueued on the direct in-memory send path when the logger was
+/// started with [`start_with_direct_send`]. Otherwise, or when the in-memory queue is
+/// full/closed, it is buffered on disk as `perf_counter_<N>.json` (capped at
+/// `MAX_PERF_COUNTER_EVENT_FILE_COUNT` files) for the `EventReader` to pick up.
+/// Samples with a NaN or infinite `value` are dropped with a warning.
+pub async fn report_perf_counter_event(
+    category: String,
+    counter: String,
+    instance: String,
+    value: f64,
+    task_name: String,
+) {
+    if !value.is_finite() {
+        logger_manager::write_warn(format!(
+            "report_perf_counter_event: drop perf counter '{category}\\{counter}' with non-finite value {value}."
+        ));
+        return;
+    }
+    let event =
+        crate::telemetry::PerfCounterEvent::new(category, counter, instance, value, task_name);
+
+    if let Some(config) = DIRECT_SEND_CONFIG.get() {
+        // Try the direct in-memory telemetry queue first, so VMs without disk write
+        // permission can still report telemetry; fall back to disk if it is full/closed.
+        if crate::telemetry::event_sender::try_enqueue_perf_counter_event(
+            &event,
+            config.execution_mode.clone(),
+        )
+        .is_ok()
+        {
+            if let Err(e) = config.common_state.notify_telemetry_event().await {
+                logger_manager::write_warn(format!(
+                    "report_perf_counter_event: failed to notify telemetry event with error: {e}"
+                ));
+            }
+            return;
+        }
+    }
+
+    let event_dir = match EVENTS_DIR.get() {
+        Some(dir) => dir.clone(),
+        None => {
+            logger_manager::write_log(
+                Level::Warn,
+                "Event directory is not set, cannot report perf counter event.".to_string(),
+            );
+            return;
+        }
+    };
+
+    match misc_helpers::search_files(
+        &event_dir,
+        &crate::telemetry::PERF_COUNTER_EVENT_FILE_SEARCH_REGEX,
+    ) {
+        Ok(files) => {
+            if files.len() >= MAX_PERF_COUNTER_EVENT_FILE_COUNT {
+                logger_manager::write_log(
+                    Level::Warn,
+                    format!(
+                        "Perf counter event files exceed the max file count {MAX_PERF_COUNTER_EVENT_FILE_COUNT}, drop and skip the write to disk."
+                    ),
+                );
+                return;
+            }
+        }
+        Err(e) => {
+            logger_manager::write_log(
+                Level::Warn,
+                format!("Failed to get perf counter event files with error: {e}"),
+            );
+        }
+    }
+
+    let mut file_path = event_dir.to_path_buf();
+    file_path.push(crate::telemetry::new_perf_counter_event_file_name());
+    if let Err(e) = misc_helpers::json_write_to_file_async(&event, &file_path).await {
+        logger_manager::write_log(
+            Level::Warn,
+            format!(
+                "Failed to write perf counter event to the file {} with error: {}",
+                file_path.display(),
+                e
+            ),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::misc_helpers;
@@ -564,6 +654,38 @@ mod tests {
         assert_eq!(event.operation_status.task_name, operation_status.task_name);
         assert_eq!(event.operation_status.message, operation_status.message);
         assert_eq!(event.operation_status.duration, operation_status.duration);
+
+        // Perf counter events fall back to disk when direct send is not configured.
+        super::report_perf_counter_event(
+            "Process".to_string(),
+            "Private Bytes".to_string(),
+            "GuestProxyAgent".to_string(),
+            4096.0,
+            "test_task".to_string(),
+        )
+        .await;
+        // Non-finite values are dropped and never written to disk.
+        super::report_perf_counter_event(
+            "Process".to_string(),
+            "Private Bytes".to_string(),
+            "GuestProxyAgent".to_string(),
+            f64::INFINITY,
+            "test_task".to_string(),
+        )
+        .await;
+        let files = misc_helpers::search_files(
+            &events_dir,
+            &crate::telemetry::PERF_COUNTER_EVENT_FILE_SEARCH_REGEX,
+        )
+        .unwrap();
+        assert_eq!(1, files.len(), "Exactly one perf counter file expected");
+        let perf_event: crate::telemetry::PerfCounterEvent =
+            misc_helpers::json_read_from_file(&files[0]).unwrap();
+        assert_eq!(perf_event.category, "Process");
+        assert_eq!(perf_event.counter, "Private Bytes");
+        assert_eq!(perf_event.instance, "GuestProxyAgent");
+        assert_eq!(perf_event.value, 4096.0);
+        assert_eq!(perf_event.task_name, "test_task");
 
         _ = fs::remove_dir_all(&temp_test_path);
     }
