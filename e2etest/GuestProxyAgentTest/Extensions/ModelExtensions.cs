@@ -12,6 +12,31 @@ namespace GuestProxyAgentTest.Extensions
     /// </summary>
     public static class ModelExtensions
     {
+        public static void DownloadCustomOutputArtifact(this TestCaseResultDetails result, string url, string filePath, string artifactReference, TestLogger logger)
+        {
+            if (result.FromBlob)
+            {
+                throw new InvalidOperationException("Download text output before collecting binary artifacts.");
+            }
+
+            if (TestCommonUtilities.DownloadFile(url, filePath, logger))
+            {
+                if (new FileInfo(filePath).Length > 0)
+                {
+                    result.CustomOut = "PenTest logs artifact: " + artifactReference
+                        + Environment.NewLine + "[[ATTACHMENT|" + Path.GetFullPath(filePath) + "]]";
+                    return;
+                }
+                File.Delete(filePath);
+            }
+
+            var message = "PenTest logs artifact download failed or contained no logs: " + artifactReference;
+            logger.Log(message);
+            result.Succeed = false;
+            result.CustomOut = message;
+            result.StdErr += Environment.NewLine + message;
+        }
+
         public static TestCaseResultDetails ToTestResultDetails(this RunCommandOutputDetails runCommandOutputDetails, TestLogger logger = null!, bool downloadContentFromBlob = true)
         {
             return new TestCaseResultDetails

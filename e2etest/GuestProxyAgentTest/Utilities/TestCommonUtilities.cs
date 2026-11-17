@@ -69,6 +69,7 @@ namespace GuestProxyAgentTest.Utilities
         {
             if (null == url || url.Length == 0)
             {
+                logger?.Log("Download file failed: the URL is null or empty.");
                 return false;
             }
             int cnt = 0;
@@ -77,24 +78,35 @@ namespace GuestProxyAgentTest.Utilities
                 cnt++;
                 try
                 {
-                    if (File.Exists(filePath))
-                    {
-                        File.Delete(filePath);
-                    }
-
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filePath))!);
                     using var client = new HttpClient();
-                    var res = client.GetAsync(url).Result;
+                    using var timeout = new CancellationTokenSource(client.Timeout);
+                    using var res = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).GetAwaiter().GetResult();
                     res.EnsureSuccessStatusCode();
-                    using var fileStream = File.Create(filePath);
-                    res.Content.CopyToAsync(fileStream).Wait();
-
+                    using (var fileStream = File.Create(filePath))
+                    {
+                        res.Content.CopyToAsync(fileStream, timeout.Token).GetAwaiter().GetResult();
+                    }
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    var errMessage = string.Format("Download file failed, attempted: {0} times, exception: {1}", cnt, ex.ToString());
-                    logger.Log(errMessage);
+                    // Exception messages can contain signed download URLs.
+                    var status = ex is HttpRequestException requestException ? requestException.StatusCode : null;
+                    var errMessage = $"Download file failed, attempted: {cnt} times, exception type: {ex.GetType().Name}, HTTP status: {status}";
+                    logger?.Log(errMessage);
                 }
+            }
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                logger?.Log($"Download file cleanup failed; stale or partial file may remain. Exception type: {ex.GetType().Name}");
             }
             return false;
 

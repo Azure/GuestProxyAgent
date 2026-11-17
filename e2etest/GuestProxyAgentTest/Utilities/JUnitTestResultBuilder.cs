@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation
 // SPDX-License-Identifier: MIT
 using System.Net;
+using System.Text;
 using System.Xml;
 
 namespace GuestProxyAgentTest.Utilities
@@ -65,7 +66,7 @@ namespace GuestProxyAgentTest.Utilities
                     doc.AppendChild(testsuites);
 
                     XmlElement testSuiteElement = doc.CreateElement("testsuite");
-                    testSuiteElement.SetAttribute("name", testGroupName + "." + testScenarioName);
+                    testSuiteElement.SetAttribute("name", SanitizeXmlText(testGroupName + "." + testScenarioName));
                     testSuiteElement.SetAttribute("tests", "0");
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
@@ -79,13 +80,13 @@ namespace GuestProxyAgentTest.Utilities
                 testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
 
                 XmlElement successTestCaseElement = doc.CreateElement("testcase");
-                successTestCaseElement.SetAttribute("name", testName);
-                successTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
+                successTestCaseElement.SetAttribute("name", SanitizeXmlText(testName));
+                successTestCaseElement.SetAttribute("classname", SanitizeXmlText(testGroupName + "." + testScenarioName));
                 successTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds / 1000).ToString());
                 testSuite.AppendChild(successTestCaseElement);
 
                 XmlElement systemOutElement = doc.CreateElement("system-out");
-                systemOutElement.InnerText = stdOutMessage;
+                systemOutElement.InnerText = SanitizeXmlText(stdOutMessage);
                 successTestCaseElement.AppendChild(systemOutElement);
             }
 
@@ -113,7 +114,7 @@ namespace GuestProxyAgentTest.Utilities
                     doc.AppendChild(testsuites);
 
                     XmlElement testSuiteElement = doc.CreateElement("testsuite");
-                    testSuiteElement.SetAttribute("name", testGroupName + "." + testScenarioName);
+                    testSuiteElement.SetAttribute("name", SanitizeXmlText(testGroupName + "." + testScenarioName));
                     testSuiteElement.SetAttribute("tests", "0");
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
@@ -128,28 +129,29 @@ namespace GuestProxyAgentTest.Utilities
                 testSuite.SetAttribute("failures", StringAdd(testSuite.GetAttribute("failures"), 1));
 
                 XmlElement failedTestCaseElement = doc.CreateElement("testcase");
-                failedTestCaseElement.SetAttribute("name", testName);
-                failedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
+                failedTestCaseElement.SetAttribute("name", SanitizeXmlText(testName));
+                failedTestCaseElement.SetAttribute("classname", SanitizeXmlText(testGroupName + "." + testScenarioName));
                 failedTestCaseElement.SetAttribute("time", ((double)durationInMilliseconds / 1000).ToString());
                 testSuite.AppendChild(failedTestCaseElement);
 
                 XmlElement systemOutElement = doc.CreateElement("system-out");
-                systemOutElement.InnerText = stdOutMessage;
+                systemOutElement.InnerText = SanitizeXmlText(stdOutMessage
+                    + Environment.NewLine + "Custom output:" + Environment.NewLine + customOutput);
                 failedTestCaseElement.AppendChild(systemOutElement);
 
                 XmlElement systemErrElement = doc.CreateElement("system-err");
-                systemErrElement.InnerText = stdErrMessage;
+                systemErrElement.InnerText = SanitizeXmlText(stdErrMessage);
                 failedTestCaseElement.AppendChild(systemErrElement);
 
                 XmlElement failureElement = doc.CreateElement("failure");
-                failureElement.SetAttribute("message", "Std Error Output: "
+                failureElement.SetAttribute("message", SanitizeXmlText("Std Error Output: "
                     + Environment.NewLine
                     + stdErrMessage
                     + Environment.NewLine
                     + Environment.NewLine
                     + "Custom output: "
                     + Environment.NewLine
-                    + customOutput);
+                    + customOutput));
                 failureElement.SetAttribute("type", "AssertionException");
                 failedTestCaseElement.AppendChild(failureElement);
             }
@@ -167,7 +169,7 @@ namespace GuestProxyAgentTest.Utilities
                     var testsuites = doc.CreateElement("testsuites");
                     doc.AppendChild(testsuites);
                     XmlElement testSuiteElement = doc.CreateElement("testsuite");
-                    testSuiteElement.SetAttribute("name", testGroupName + "." + testScenarioName);
+                    testSuiteElement.SetAttribute("name", SanitizeXmlText(testGroupName + "." + testScenarioName));
                     testSuiteElement.SetAttribute("tests", "0");
                     testSuiteElement.SetAttribute("errors", "0");
                     testSuiteElement.SetAttribute("failures", "0");
@@ -181,13 +183,13 @@ namespace GuestProxyAgentTest.Utilities
                 testSuite.SetAttribute("tests", StringAdd(testSuite.GetAttribute("tests"), 1));
                 testSuite.SetAttribute("skipped", StringAdd(testSuite.GetAttribute("skipped"), 1));
                 XmlElement abortedTestCaseElement = doc.CreateElement("testcase");
-                abortedTestCaseElement.SetAttribute("name", testName);
-                abortedTestCaseElement.SetAttribute("classname", testGroupName + "." + testScenarioName);
+                abortedTestCaseElement.SetAttribute("name", SanitizeXmlText(testName));
+                abortedTestCaseElement.SetAttribute("classname", SanitizeXmlText(testGroupName + "." + testScenarioName));
                 abortedTestCaseElement.SetAttribute("time", "0");
                 testSuite.AppendChild(abortedTestCaseElement);
                 XmlElement abortedElement = doc.CreateElement("skipped");
                 abortedElement.SetAttribute("message", "Test case aborted.");
-                abortedElement.InnerText = message;
+                abortedElement.InnerText = SanitizeXmlText(message);
                 abortedTestCaseElement.AppendChild(abortedElement);
             }
             return this;
@@ -205,9 +207,41 @@ namespace GuestProxyAgentTest.Utilities
                 var doc = kv.Value.Item1;
                 var resultPath = Path.Combine(this.testResultGroupFolder, kv.Key + "-TestResults.xml");
                 result.Add(resultPath);
-                doc.Save(resultPath);
+                using var writer = XmlWriter.Create(resultPath, new XmlWriterSettings
+                {
+                    Indent = true,
+                    NewLineHandling = NewLineHandling.Entitize
+                });
+                doc.Save(writer);
             }
             return result;
+        }
+
+        private static string SanitizeXmlText(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var sanitized = new StringBuilder(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                char character = text[i];
+                if (char.IsHighSurrogate(character) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    sanitized.Append(character).Append(text[++i]);
+                }
+                else if (XmlConvert.IsXmlChar(character))
+                {
+                    sanitized.Append(character);
+                }
+                else
+                {
+                    sanitized.Append("\\u").Append(((int)character).ToString("X4"));
+                }
+            }
+            return sanitized.ToString();
         }
 
         private string StringAdd(string str, int added)
