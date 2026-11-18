@@ -737,7 +737,6 @@ mod tests {
             "Private Bytes".to_string(),
             "GuestProxyAgent".to_string(),
             2048.5,
-            "test_task".to_string(),
         );
         for _ in 0..2 {
             let mut file_path = events_dir.to_path_buf();
@@ -802,7 +801,6 @@ mod tests {
             "Private Bytes".to_string(),
             "GuestProxyAgent".to_string(),
             f64::NAN,
-            "test_task".to_string(),
         );
         let mut perf_file = events_dir.to_path_buf();
         perf_file.push(crate::telemetry::new_perf_counter_event_file_name());

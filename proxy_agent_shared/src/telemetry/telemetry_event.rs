@@ -13,13 +13,13 @@ use serde_derive::{Deserialize, Serialize};
 pub const MAX_TELEMETRY_MESSAGE_LENGTH: usize = 4 * 1024;
 
 // XML escaping can expand one byte to six (`'` -> `&apos;`), so raw-byte limits alone can push a perf
-// counter event past the sender's MAX_MESSAGE_SIZE. Each caller-supplied text field (category, counter,
-// instance and task name) is bounded by its escaped size instead; plain text keeps the 4 KiB message
-// limit. The four fields use at most a quarter of the payload, leaving room for the envelope, VM metadata,
-// fixed params and the `[REDACTED]` placeholders sender-side redaction may add (up to 2.5x for the
-// shortest secret patterns). Host- and agent-supplied params are not budgeted here.
+// counter event past the sender's MAX_MESSAGE_SIZE. Each caller-supplied text field (category, counter
+// and instance) is bounded by its escaped size instead; plain text keeps the 4 KiB message limit. The
+// three fields use at most a quarter of the payload, leaving room for the envelope, VM metadata, fixed
+// params and the `[REDACTED]` placeholders sender-side redaction may add (up to 2.5x for the shortest
+// secret patterns). Host- and agent-supplied params are not budgeted here.
 const MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH: usize = MAX_TELEMETRY_MESSAGE_LENGTH;
-const MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH: usize = 4 * MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH;
+const MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH: usize = 3 * MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH;
 const _: () = assert!(
     MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH <= crate::telemetry::event_sender::MAX_MESSAGE_SIZE / 4
 );
@@ -542,7 +542,8 @@ impl TelemetryExtensionEventsEvent {
 ///
 /// Wire contract (Event id 4 under the status provider `69B669B9-...`, params `Category`,
 /// `Counter`, `Instance` as `mt:wstr` and `Value` as `mt:float64`) follows the public
-/// WALinuxAgent metrics event; the common params mirror the other guest agent events here.
+/// WALinuxAgent metrics event; the common params mirror the other guest agent events here,
+/// except `TaskName`, which is not sent for perf counter events.
 ///
 /// The value is stored as its f64 bit pattern so the event keeps the `Eq`/`Hash` derives.
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
@@ -550,7 +551,6 @@ pub struct TelemetryPerfCounterEvent {
     event_pid: u64,
     event_tid: u64,
     ga_version: String,
-    task_name: String,
     opcode_name: String,
     execution_mode: String,
 
@@ -585,7 +585,6 @@ impl TelemetryPerfCounterEvent {
             event_pid: event.event_pid.parse::<u64>().unwrap_or(0),
             event_tid: event.event_tid.parse::<u64>().unwrap_or(0),
             ga_version,
-            task_name: bounded(&event.task_name),
             opcode_name: event.time_stamp.clone(),
             execution_mode,
             category: bounded(&event.category),
@@ -625,10 +624,6 @@ impl TelemetryPerfCounterEvent {
         xml.push_str(&format!(
             "<Param Name=\"ExecutionMode\" Value=\"{}\" T=\"mt:wstr\" />",
             misc_helpers::xml_escape(self.execution_mode.clone())
-        ));
-        xml.push_str(&format!(
-            "<Param Name=\"TaskName\" Value=\"{}\" T=\"mt:wstr\" />",
-            misc_helpers::xml_escape(self.task_name.clone())
         ));
         xml.push_str(&format!(
             "<Param Name=\"OpcodeName\" Value=\"{}\" T=\"mt:wstr\" />",
@@ -1165,7 +1160,6 @@ mod tests {
             counter: "% Processor Time".to_string(),
             instance: "GuestProxyAgent".to_string(),
             value,
-            task_name: "monitor".to_string(),
             event_pid: "123".to_string(),
             event_tid: "456".to_string(),
             time_stamp: "2026-11-17T07:31:48.237Z".to_string(),
@@ -1210,7 +1204,6 @@ mod tests {
 <Param Name=\"EventTid\" Value=\"456\" T=\"mt:uint64\" />\
 <Param Name=\"GAVersion\" Value=\"1.0.0\" T=\"mt:wstr\" />\
 <Param Name=\"ExecutionMode\" Value=\"ProxyAgent\" T=\"mt:wstr\" />\
-<Param Name=\"TaskName\" Value=\"monitor\" T=\"mt:wstr\" />\
 <Param Name=\"OpcodeName\" Value=\"2026-11-17T07:31:48.237Z\" T=\"mt:wstr\" />\
 <Param Name=\"Category\" Value=\"Process\" T=\"mt:wstr\" />\
 <Param Name=\"Counter\" Value=\"% Processor Time\" T=\"mt:wstr\" />\
@@ -1220,7 +1213,12 @@ mod tests {
             vm_data.to_xml_params(),
             misc_helpers::xml_escape("a<b>&\"c'".to_string()),
         );
-        assert_eq!(event.to_xml_event(&vm_data), expected);
+        let xml = event.to_xml_event(&vm_data);
+        assert_eq!(xml, expected);
+        assert!(
+            !xml.contains("TaskName"),
+            "perf counter events omit TaskName"
+        );
         assert!(!expected.contains("a<b>"), "Instance must be XML escaped");
     }
 
@@ -1300,10 +1298,9 @@ mod tests {
         // Expansion-heavy text: `'` and `"` escape to 6 bytes, `&` to 5 and `<`/`>` to 4. The leading
         // "aa" makes the instance budget run out right before a 2-byte 'é'.
         let mut perf = create_test_perf_counter_event(1.0);
-        perf.category = "'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
+        perf.category = "'\"".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 2);
         perf.counter = "sig=&".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
         perf.instance = format!("aa{}", "&<>é".repeat(2000));
-        perf.task_name = "\"".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
         let telemetry_event = TelemetryPerfCounterEvent::from_perf_counter_event(
             &perf,
             "ProxyAgent".to_string(),
@@ -1324,8 +1321,7 @@ mod tests {
         );
 
         // Each field keeps the longest prefix whose escaped form fits in 4096 bytes (4096 / 6 = 682).
-        assert_eq!(telemetry_event.category, "'".repeat(682));
-        assert_eq!(telemetry_event.task_name, "\"".repeat(682));
+        assert_eq!(telemetry_event.category, "'\"".repeat(341));
         assert_eq!(telemetry_event.counter, format!("{}s", "sig=&".repeat(455)));
         assert_eq!(
             telemetry_event.instance,
@@ -1335,7 +1331,6 @@ mod tests {
             &telemetry_event.category,
             &telemetry_event.counter,
             &telemetry_event.instance,
-            &telemetry_event.task_name,
         ]
         .map(|field| misc_helpers::xml_escape(field.to_string()).len());
         assert!(escaped_sizes
@@ -1363,7 +1358,6 @@ mod tests {
         perf.category = "sig=&".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
         perf.counter = perf.category.clone();
         perf.instance = perf.category.clone();
-        perf.task_name = "'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
         let mut event = TelemetryEvent::PerfCounterEvent(
             TelemetryPerfCounterEvent::from_perf_counter_event(
                 &perf,
@@ -1452,6 +1446,15 @@ mod tests {
         assert_eq!(status_xml.matches("<Event id=\"1\">").count(), 1);
         assert_eq!(status_xml.matches("<Event id=\"7\">").count(), 0);
         assert_eq!(xml.matches("<Event id=\"7\">").count(), 1);
+
+        // Generic (id 7) and extension (id 1) events keep TaskName; perf counter events (id 4) omit it.
+        assert_eq!(xml.matches("<Param Name=\"TaskName\"").count(), 2);
+        let perf_events: Vec<&str> = xml
+            .split("<Event id=")
+            .filter(|event| event.starts_with("\"4\">"))
+            .collect();
+        assert_eq!(perf_events.len(), 2);
+        assert!(perf_events.iter().all(|event| !event.contains("TaskName")));
 
         let removed = telemetry_data.remove_last_event(last_perf);
         assert!(removed.is_some());

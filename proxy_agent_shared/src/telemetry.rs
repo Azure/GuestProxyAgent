@@ -121,7 +121,6 @@ pub struct PerfCounterEvent {
     pub instance: String,
     /// Sample value. Non-finite values (NaN/inf) are rejected and never sent.
     pub value: f64,
-    pub task_name: String,
 
     pub event_pid: String,
     pub event_tid: String,
@@ -130,19 +129,12 @@ pub struct PerfCounterEvent {
 
 impl PerfCounterEvent {
     /// Create a new PerfCounterEvent stamped with the current process id, thread id and time.
-    pub fn new(
-        category: String,
-        counter: String,
-        instance: String,
-        value: f64,
-        task_name: String,
-    ) -> Self {
+    pub fn new(category: String, counter: String, instance: String, value: f64) -> Self {
         PerfCounterEvent {
             category,
             counter,
             instance,
             value,
-            task_name,
             event_pid: std::process::id().to_string(),
             event_tid: misc_helpers::get_thread_identity(),
             time_stamp: misc_helpers::get_date_time_string_with_milliseconds(),
@@ -159,19 +151,59 @@ mod tests {
             "% Processor Time".to_string(),
             "GuestProxyAgent".to_string(),
             12.5,
-            "monitor".to_string(),
         );
         assert_eq!(event.category, "Process");
         assert_eq!(event.counter, "% Processor Time");
         assert_eq!(event.instance, "GuestProxyAgent");
         assert_eq!(event.value, 12.5);
-        assert_eq!(event.task_name, "monitor");
         assert_eq!(event.event_pid, std::process::id().to_string());
         assert!(!event.time_stamp.is_empty());
 
         let json = serde_json::to_string(&event).unwrap();
+        assert!(!json.contains("task_name"));
         let round_trip: super::PerfCounterEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(round_trip, event);
+    }
+
+    #[test]
+    fn test_perf_counter_event_reads_legacy_file_with_task_name() {
+        // Files buffered before task_name was removed still carry it; the extra key is ignored.
+        let mut temp_dir = std::env::temp_dir();
+        temp_dir.push("test_perf_counter_event_reads_legacy_file_with_task_name");
+        _ = std::fs::remove_dir_all(&temp_dir);
+        crate::misc_helpers::try_create_folder(&temp_dir).unwrap();
+        let file = temp_dir.join("perf_counter_1.json");
+        std::fs::write(
+            &file,
+            r#"{
+  "category": "Process",
+  "counter": "Private Bytes",
+  "instance": "GuestProxyAgent",
+  "value": 4096.0,
+  "task_name": "legacy",
+  "event_pid": "123",
+  "event_tid": "456",
+  "time_stamp": "2026-11-18T20:00:00.000Z"
+}"#,
+        )
+        .unwrap();
+
+        let event: super::PerfCounterEvent =
+            crate::misc_helpers::json_read_from_file(&file).unwrap();
+        assert_eq!(
+            event,
+            super::PerfCounterEvent {
+                category: "Process".to_string(),
+                counter: "Private Bytes".to_string(),
+                instance: "GuestProxyAgent".to_string(),
+                value: 4096.0,
+                event_pid: "123".to_string(),
+                event_tid: "456".to_string(),
+                time_stamp: "2026-11-18T20:00:00.000Z".to_string(),
+            }
+        );
+
+        _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

@@ -442,7 +442,6 @@ pub async fn report_perf_counter_event(
     counter: String,
     instance: String,
     value: f64,
-    task_name: String,
 ) {
     if !value.is_finite() {
         logger_manager::write_warn(format!(
@@ -450,8 +449,7 @@ pub async fn report_perf_counter_event(
         ));
         return;
     }
-    let event =
-        crate::telemetry::PerfCounterEvent::new(category, counter, instance, value, task_name);
+    let event = crate::telemetry::PerfCounterEvent::new(category, counter, instance, value);
 
     if let Some(config) = DIRECT_SEND_CONFIG.get() {
         // Try the direct in-memory telemetry queue first, so VMs without disk write
@@ -661,7 +659,6 @@ mod tests {
             "Private Bytes".to_string(),
             "GuestProxyAgent".to_string(),
             4096.0,
-            "test_task".to_string(),
         )
         .await;
         // Non-finite values are dropped and never written to disk.
@@ -670,7 +667,6 @@ mod tests {
             "Private Bytes".to_string(),
             "GuestProxyAgent".to_string(),
             f64::INFINITY,
-            "test_task".to_string(),
         )
         .await;
         let files = misc_helpers::search_files(
@@ -685,7 +681,6 @@ mod tests {
         assert_eq!(perf_event.counter, "Private Bytes");
         assert_eq!(perf_event.instance, "GuestProxyAgent");
         assert_eq!(perf_event.value, 4096.0);
-        assert_eq!(perf_event.task_name, "test_task");
 
         _ = fs::remove_dir_all(&temp_test_path);
     }

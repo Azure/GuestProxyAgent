@@ -572,7 +572,6 @@ mod tests {
             "Private Bytes".to_string(),
             "GuestProxyAgent".to_string(),
             1024.0,
-            "test_task".to_string(),
         );
         assert!(try_enqueue_perf_counter_event(&perf_event, "ProxyAgent".to_string()).is_ok());
         let mut nan_event = perf_event.clone();
