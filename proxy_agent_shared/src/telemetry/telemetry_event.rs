@@ -12,6 +12,17 @@ use serde_derive::{Deserialize, Serialize};
 // prevents externally supplied extension status from causing disproportionate regex work or memory use.
 pub const MAX_TELEMETRY_MESSAGE_LENGTH: usize = 4 * 1024;
 
+// Perf counter events carry four free-text fields (TaskName, Category, Counter, Instance).
+// Bounding each by raw length is not enough: XML escaping can grow a field up to 6x (`'` ->
+// `&apos;`), so three 4 KiB fields could exceed the sender's 64 KiB per-request limit and the
+// sample would be dropped. Budget the combined XML-escaped size instead, well below 64 KiB to
+// leave room for the event envelope, VM data params, other params, the provider/TelemetryData
+// wrapper and the small growth caused by later secret redaction.
+const MAX_PERF_COUNTER_ESCAPED_FIELDS_SIZE: usize = MAX_TELEMETRY_MESSAGE_LENGTH * 4;
+const PERF_COUNTER_ESCAPED_FIELD_COUNT: usize = 4;
+const MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE: usize =
+    MAX_PERF_COUNTER_ESCAPED_FIELDS_SIZE / PERF_COUNTER_ESCAPED_FIELD_COUNT;
+
 const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
 const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
 const TELEMETRY_DATA_PREFIX: &str = "<?xml version=\"1.0\"?><TelemetryData version=\"1.0\">";
@@ -564,10 +575,10 @@ impl TelemetryPerfCounterEvent {
         }
 
         // Bound producer work and queue memory here; redaction runs later in the background sender.
+        // Each field gets an equal share of the XML-escaped budget, so a plain field keeps the
+        // same 4 KiB limit as extension/generic messages while escape-heavy text is cut shorter.
         let bounded = |s: &str| {
-            let mut s = s.to_string();
-            misc_helpers::truncate_to_char_boundary(&mut s, MAX_TELEMETRY_MESSAGE_LENGTH);
-            s
+            misc_helpers::xml_escaped_prefix(s, MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE).to_string()
         };
 
         Some(TelemetryPerfCounterEvent {
@@ -1270,6 +1281,10 @@ mod tests {
         .unwrap();
         assert!(telemetry_event.instance.len() <= MAX_TELEMETRY_MESSAGE_LENGTH);
         assert_eq!(telemetry_event.category.len(), MAX_TELEMETRY_MESSAGE_LENGTH);
+        assert!(
+            misc_helpers::xml_escaped_len(&telemetry_event.instance)
+                <= MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE
+        );
         // Producer side does not redact; that only happens in the sender consumer.
         assert!(telemetry_event.instance.contains("secret-token"));
 
@@ -1282,6 +1297,80 @@ mod tests {
         assert!(redacted.instance.starts_with("[REDACTED]"));
         assert!(!redacted.counter.contains("counter-secret"));
         assert_eq!(redacted.value(), 1.0);
+    }
+
+    #[test]
+    fn test_perf_counter_event_budgets_xml_escaped_fields() {
+        // Regression: 4 KiB raw fields of escape-heavy chars expanded past the 64 KiB send limit.
+        let heavy_fields = [
+            "'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 2),
+            "&".repeat(MAX_TELEMETRY_MESSAGE_LENGTH),
+            "\"<>".repeat(MAX_TELEMETRY_MESSAGE_LENGTH),
+            "é'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH),
+        ];
+        let mut perf = create_test_perf_counter_event(42.0);
+        perf.task_name = heavy_fields[0].clone();
+        perf.category = heavy_fields[1].clone();
+        perf.counter = heavy_fields[2].clone();
+        perf.instance = heavy_fields[3].clone();
+
+        let event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+        let fields = [
+            (&event.task_name, &heavy_fields[0]),
+            (&event.category, &heavy_fields[1]),
+            (&event.counter, &heavy_fields[2]),
+            (&event.instance, &heavy_fields[3]),
+        ];
+        let mut combined_escaped = 0;
+        for (bounded, original) in fields {
+            assert!(!bounded.is_empty());
+            assert!(original.starts_with(bounded.as_str()));
+            let escaped = misc_helpers::xml_escaped_len(bounded);
+            assert!(escaped <= MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE);
+            // Truncation is tight: the next char would not fit in the per-field share.
+            let next = original[bounded.len()..].chars().next().unwrap();
+            assert!(
+                escaped + misc_helpers::xml_escaped_len(&next.to_string())
+                    > MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE
+            );
+            combined_escaped += escaped;
+        }
+        assert!(combined_escaped <= MAX_PERF_COUNTER_ESCAPED_FIELDS_SIZE);
+        // "é'" pairs are 8 escaped bytes each; the multi-byte char is never split.
+        assert_eq!(
+            event.instance,
+            "é'".repeat(MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE / 8)
+        );
+        assert_eq!(event.value(), 42.0);
+
+        // The sender drops any single event at or above 64 KiB; this one must fit.
+        let mut telemetry_data = TelemetryData::new_with_vm_data(create_test_vm_data());
+        telemetry_data.add_event(TelemetryEvent::PerfCounterEvent(event));
+        assert_eq!(telemetry_data.get_size(), telemetry_data.to_xml().len());
+        assert!(telemetry_data.get_size() < 64 * 1024);
+    }
+
+    #[test]
+    fn test_perf_counter_event_keeps_short_fields_unchanged() {
+        let mut perf = create_test_perf_counter_event(3.0);
+        perf.instance = "w3wp 'App<1>' & \"é\"".to_string();
+        perf.category = "x".repeat(MAX_PERF_COUNTER_ESCAPED_FIELD_SIZE);
+        let event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+        assert_eq!(event.task_name, perf.task_name);
+        assert_eq!(event.counter, perf.counter);
+        assert_eq!(event.instance, perf.instance);
+        // A plain field exactly at the per-field share is kept whole.
+        assert_eq!(event.category, perf.category);
     }
 
     #[test]

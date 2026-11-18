@@ -680,6 +680,36 @@ pub fn xml_escape(s: String) -> String {
         .replace('>', "&gt;")
 }
 
+/// Byte length of `c` after [`xml_escape`].
+fn xml_escaped_char_len(c: char) -> usize {
+    match c {
+        '&' => "&amp;".len(),
+        '\'' => "&apos;".len(),
+        '"' => "&quot;".len(),
+        '<' => "&lt;".len(),
+        '>' => "&gt;".len(),
+        _ => c.len_utf8(),
+    }
+}
+
+/// Byte length of `text` after [`xml_escape`], computed without allocating.
+pub fn xml_escaped_len(text: &str) -> usize {
+    text.chars().map(xml_escaped_char_len).sum()
+}
+
+/// Return the longest prefix of `text` whose [`xml_escape`]d size is at most `max_escaped_bytes`.
+/// The prefix always ends at a char boundary, so neither a UTF-8 char nor an escape sequence is split.
+pub fn xml_escaped_prefix(text: &str, max_escaped_bytes: usize) -> &str {
+    let mut escaped_len = 0;
+    for (index, c) in text.char_indices() {
+        escaped_len += xml_escaped_char_len(c);
+        if escaped_len > max_escaped_bytes {
+            return &text[..index];
+        }
+    }
+    text
+}
+
 /// Truncate the given string to the specified maximum number of bytes, ensuring that it does not cut off in the middle of a character.
 /// # Arguments
 /// * `text` - The string to be truncated
@@ -1288,5 +1318,36 @@ mod tests {
             !super::sync_host_utc_time_from_rfc1123_string("invalid-rfc1123"),
             "Expected invalid host RFC1123 time to fail"
         );
+    }
+
+    #[test]
+    fn xml_escaped_prefix_test() {
+        let samples = ["", "plain", "a<b>&\"c'", "éé&é", "'''''", "x\u{1F600}<y"];
+        for text in samples {
+            assert_eq!(
+                super::xml_escaped_len(text),
+                super::xml_escape(text.to_string()).len(),
+                "xml_escaped_len must match xml_escape for {text:?}"
+            );
+            for max in 0..=super::xml_escaped_len(text) + 1 {
+                let prefix = super::xml_escaped_prefix(text, max);
+                assert!(text.starts_with(prefix));
+                assert!(super::xml_escape(prefix.to_string()).len() <= max);
+                // The prefix is the longest one: adding the next char exceeds the budget.
+                if let Some(next) = text[prefix.len()..].chars().next() {
+                    let longer = &text[..prefix.len() + next.len_utf8()];
+                    assert!(super::xml_escape(longer.to_string()).len() > max);
+                } else {
+                    assert_eq!(prefix, text);
+                }
+            }
+        }
+
+        // An escape sequence is never split: "&apos;" needs 6 bytes.
+        assert_eq!(super::xml_escaped_prefix("a'b", 6), "a");
+        assert_eq!(super::xml_escaped_prefix("a'b", 7), "a'");
+        // A multi-byte char is never split: "é" is 2 bytes.
+        assert_eq!(super::xml_escaped_prefix("aé", 2), "a");
+        assert_eq!(super::xml_escaped_prefix("aé", 3), "aé");
     }
 }
