@@ -446,7 +446,7 @@ pub async fn report_perf_counter_event(
 ) {
     if !value.is_finite() {
         logger_manager::write_warn(format!(
-            "report_perf_counter_event: drop perf counter '{category}\\{counter}' with non-finite value {value}."
+            "report_perf_counter_event: drop perf counter sample with non-finite value {value}."
         ));
         return;
     }
