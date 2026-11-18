@@ -279,6 +279,105 @@ impl EventReader {
         }
     }
 
+    /// Start the dedicated perf counter event processor; it drains `perf_counter_*.json`
+    /// files every `interval` (default 60s) until the cancellation token is signaled.
+    pub async fn start_perf_counter_event_processor(
+        &self,
+        delay_start: bool,
+        interval: Option<Duration>,
+    ) {
+        if delay_start {
+            // delay start the event_reader task to give additional CPU cycles to more important threads
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+
+        logger_manager::write_info("telemetry perf counter event reader task started.".to_string());
+        let interval = interval.unwrap_or(Duration::from_secs(60));
+        let cancellation_token = self.common_state.get_cancellation_token();
+        tokio::select! {
+            _ = self.loop_perf_counter_event_processor(interval) => {}
+            _ = cancellation_token.cancelled() => {
+                logger_manager::write_warn("cancellation token signal received, stop the telemetry perf counter event reader task.".to_string());
+            }
+        }
+    }
+
+    async fn loop_perf_counter_event_processor(&self, interval: Duration) {
+        loop {
+            self.process_perf_counter_events().await;
+            tokio::time::sleep(interval).await;
+        }
+    }
+
+    /// Read `perf_counter_*.json` files, enqueue them as performance counter events and
+    /// delete the files. It runs in the dedicated perf counter event processor loop.
+    async fn process_perf_counter_events(&self) -> usize {
+        let mut event_count: usize = 0;
+        match misc_helpers::search_files(
+            &self.dir_path,
+            &crate::telemetry::PERF_COUNTER_EVENT_FILE_SEARCH_REGEX,
+        ) {
+            Ok(files) => {
+                let file_count = files.len();
+                for file in files {
+                    event_count += self.process_one_perf_counter_event_file(file);
+                }
+                logger_manager::write_log(
+                    log::Level::Trace,
+                    format!(
+                        "Telemetry event reader sent {event_count} perf counter events from {file_count} files"
+                    ),
+                );
+
+                if event_count > 0 {
+                    if let Err(e) = self.common_state.notify_telemetry_event().await {
+                        logger_manager::write_warn(format!(
+                            "Failed to notify telemetry event with error: {e}"
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                logger_manager::write_warn(format!(
+                    "Perf Counter Event Files not found in directory {}: {}",
+                    self.dir_path.display(),
+                    e
+                ));
+            }
+        }
+        event_count
+    }
+
+    fn process_one_perf_counter_event_file(&self, file: PathBuf) -> usize {
+        let mut num_events_processed = 0;
+
+        match misc_helpers::json_read_from_file::<crate::telemetry::PerfCounterEvent>(&file) {
+            Ok(event) => {
+                if let Err(e) = event_sender::try_enqueue_perf_counter_event(
+                    &event,
+                    self.execution_mode.clone(),
+                ) {
+                    logger_manager::write_warn(format!(
+                        "Failed to enqueue perf counter event: {}",
+                        e
+                    ));
+                } else {
+                    num_events_processed += 1;
+                }
+            }
+            Err(e) => {
+                logger_manager::write_warn(format!(
+                    "EventReader:: Failed to read perf counter event from file {}: {}",
+                    file.display(),
+                    e
+                ));
+            }
+        }
+
+        Self::clean_file(file);
+        num_events_processed
+    }
+
     async fn process_extension_status_events(&self) -> usize {
         let mut event_count: usize = 0;
         // get all extension status event filenames in the directory
@@ -610,6 +709,186 @@ mod tests {
         assert!(
             files.is_empty(),
             "Extension event file should be processed before cancellation"
+        );
+
+        _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_perf_counter_event_processor() {
+        let mut temp_dir = env::temp_dir();
+        temp_dir.push("test_perf_counter_event_processor");
+
+        _ = fs::remove_dir_all(&temp_dir);
+        let mut events_dir = temp_dir.to_path_buf();
+        events_dir.push("Events");
+        misc_helpers::try_create_folder(&events_dir).unwrap();
+
+        let common_state = CommonState::start_new(CancellationToken::new());
+        let event_reader = EventReader::new(
+            events_dir.clone(),
+            common_state.clone(),
+            "Test".to_string(),
+            "test_perf_counter_event_processor".to_string(),
+        );
+
+        let event = crate::telemetry::PerfCounterEvent::new(
+            "Process".to_string(),
+            "Private Bytes".to_string(),
+            "GuestProxyAgent".to_string(),
+            2048.5,
+            "test_task".to_string(),
+        );
+        for _ in 0..2 {
+            let mut file_path = events_dir.to_path_buf();
+            file_path.push(crate::telemetry::new_perf_counter_event_file_name());
+            misc_helpers::json_write_to_file_async(&event, &file_path)
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        // A non-finite value serializes as JSON null, which must be rejected and cleaned up.
+        let mut nan_event = event.clone();
+        nan_event.value = f64::NAN;
+        let mut nan_file = events_dir.to_path_buf();
+        nan_file.push(crate::telemetry::new_perf_counter_event_file_name());
+        misc_helpers::json_write_to_file_async(&nan_event, &nan_file)
+            .await
+            .unwrap();
+
+        // Extension and generic files must not be picked up by the perf counter processor.
+        let mut extension_file = events_dir.to_path_buf();
+        extension_file.push(crate::telemetry::new_extension_event_file_name());
+        misc_helpers::json_write_to_file_async(&event, &extension_file)
+            .await
+            .unwrap();
+
+        let processed = event_reader.process_perf_counter_events().await;
+        assert_eq!(2, processed, "Should have processed 2 perf counter events");
+
+        let files = misc_helpers::search_files(
+            &events_dir,
+            &crate::telemetry::PERF_COUNTER_EVENT_FILE_SEARCH_REGEX,
+        )
+        .unwrap();
+        assert!(
+            files.is_empty(),
+            "Perf counter event files should be cleaned up after processing"
+        );
+        assert!(
+            extension_file.exists(),
+            "Extension event file should not be touched by the perf counter processor"
+        );
+
+        _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_start_perf_counter_event_processor() {
+        let mut temp_dir = env::temp_dir();
+        temp_dir.push("test_start_perf_counter_event_processor");
+
+        _ = fs::remove_dir_all(&temp_dir);
+        let mut events_dir = temp_dir.to_path_buf();
+        events_dir.push("Events");
+        misc_helpers::try_create_folder(&events_dir).unwrap();
+
+        let common_state = CommonState::start_new(CancellationToken::new());
+        // Use a NaN sample: the processor reads and deletes the file but never enqueues it,
+        // so this test does not race tests asserting exact TELEMETRY_EVENT_QUEUE lengths.
+        // Enqueueing valid samples is covered by test_perf_counter_event_processor.
+        let event = crate::telemetry::PerfCounterEvent::new(
+            "Process".to_string(),
+            "Private Bytes".to_string(),
+            "GuestProxyAgent".to_string(),
+            f64::NAN,
+            "test_task".to_string(),
+        );
+        let mut perf_file = events_dir.to_path_buf();
+        perf_file.push(crate::telemetry::new_perf_counter_event_file_name());
+        misc_helpers::json_write_to_file_async(&event, &perf_file)
+            .await
+            .unwrap();
+
+        // The extension status processor loop must no longer drain perf counter files.
+        // Run it on its own CommonState so cancelling it doesn't stop the perf processor.
+        // An unreadable extension file (deleted without enqueueing) proves the loop ran.
+        let mut marker_extension_file = events_dir.to_path_buf();
+        marker_extension_file.push(crate::telemetry::new_extension_event_file_name());
+        misc_helpers::json_write_to_file_async(&event, &marker_extension_file)
+            .await
+            .unwrap();
+        let extension_common_state = CommonState::start_new(CancellationToken::new());
+        let extension_reader = EventReader::new(
+            events_dir.clone(),
+            extension_common_state.clone(),
+            "Test".to_string(),
+            "test_start_perf_counter_event_processor".to_string(),
+        );
+        let extension_interval = Duration::from_millis(50);
+        let extension_handle = tokio::spawn(async move {
+            extension_reader
+                .start_extension_status_event_processor(false, Some(extension_interval))
+                .await;
+        });
+        let marker_processed = tokio::time::timeout(Duration::from_secs(2), async {
+            while marker_extension_file.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            marker_processed.is_ok(),
+            "Extension status processor loop should run an iteration"
+        );
+        // Let at least one more full loop iteration complete after the marker was handled.
+        tokio::time::sleep(extension_interval * 3).await;
+        assert!(
+            perf_file.exists(),
+            "Extension status processor loop should not touch perf counter files"
+        );
+        extension_common_state.cancel_cancellation_token();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), extension_handle)
+                .await
+                .is_ok(),
+            "Extension status event processor should stop when cancelled"
+        );
+
+        let perf_reader = EventReader::new(
+            events_dir.clone(),
+            common_state.clone(),
+            "Test".to_string(),
+            "test_start_perf_counter_event_processor".to_string(),
+        );
+        let handle = tokio::spawn(async move {
+            perf_reader
+                .start_perf_counter_event_processor(false, Some(Duration::from_millis(50)))
+                .await;
+        });
+
+        // Wait for the processor to drain the file, then write another one for the next round.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !perf_file.exists(),
+            "Perf counter file should be processed by the dedicated processor"
+        );
+        let mut perf_file2 = events_dir.to_path_buf();
+        perf_file2.push(crate::telemetry::new_perf_counter_event_file_name());
+        misc_helpers::json_write_to_file_async(&event, &perf_file2)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            !perf_file2.exists(),
+            "Perf counter processor should keep draining files on its interval"
+        );
+
+        common_state.cancel_cancellation_token();
+        let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        assert!(
+            result.is_ok(),
+            "Perf counter event processor should stop when cancelled"
         );
 
         _ = fs::remove_dir_all(&temp_dir);
