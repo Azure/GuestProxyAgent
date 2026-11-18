@@ -5,19 +5,18 @@ sent out of the VM by the GuestProxyAgent.
 
 The telemetry system lives in `proxy_agent_shared/src/telemetry/` and is a
 **producer → disk buffer → reader → queue → wire-server** pipeline composed of
-five cooperating async tasks. All five are spawned in
+four cooperating async tasks. All four are spawned in
 [provision.rs](../proxy_agent/src/provision.rs).
 
 ## End-to-end flow
 
 ```mermaid
 flowchart TD
-    A["Code calls write_event / report_extension_status_event / report_perf_counter_event"] --> B["event_logger<br/>in-memory EVENT_QUEUE"]
+    A["Code calls write_event / report_extension_status_event"] --> B["event_logger<br/>in-memory EVENT_QUEUE"]
     B -->|"60s loop / async: try_enqueue (direct)"| D["TELEMETRY_EVENT_QUEUE"]
-    B -.->|"fallback when direct send fails / no config"| C["Events dir<br/>N.json / extension_N.json / perf_counter_N.json"]
+    B -.->|"fallback when direct send fails / no config"| C["Events dir<br/>N.json / extension_N.json"]
     C -->|"EventReader.process_once (300s)"| D
     C -->|"EventReader.process_extension_status_events (60s)"| D
-    C -->|"EventReader.process_perf_counter_events (60s)"| D
     B -->|"common_state.notify_telemetry_event()"| E["EventSender"]
     D --> E
     E -->|"batch to XML, <64KB"| F["WireServerClient<br/>POST 168.63.129.16:80<br/>/machine/?comp=telemetrydata"]
@@ -29,8 +28,7 @@ flowchart TD
 File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 
 - Application code calls `write_event` / `write_event_only` (generic logs) or
-  `report_extension_status_event` (extension status) or `report_perf_counter_event`
-  (performance counters / metrics).
+  `report_extension_status_event` (extension status).
 - `write_event` / `write_event_only` **always** push the event into a bounded
   in-memory `EVENT_QUEUE` (capacity 1000). Messages are truncated to 4 KB
   (`MAX_MESSAGE_LENGTH`).
@@ -50,12 +48,6 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 - `report_extension_status_event` (async) tries the direct path first via
   `event_sender::try_enqueue_extension_event` and, on success, notifies the
   sender and returns; otherwise it falls back to disk.
-- `report_perf_counter_event(category, counter, instance, value, task_name)`
-  (async) follows the same pattern via
-  `event_sender::try_enqueue_perf_counter_event`, falling back to
-  `perf_counter_<N>.json` files capped at `MAX_PERF_COUNTER_EVENT_FILE_COUNT`
-  (1000). Samples whose `value` is NaN or infinite are dropped with a warning,
-  because `mt:float64` has no portable encoding for them.
 
 ### DirectSendConfig
 
@@ -83,18 +75,15 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 - Two file types act as the durable fallback buffer:
   - Generic logs: `^[0-9]+\.json$` → `TelemetryGenericLogsEvent`
   - Extension status: `^extension_[0-9]+\.json$` → `TelemetryExtensionEventsEvent`
-  - Performance counters: `^perf_counter_[0-9]+\.json$` → `TelemetryPerfCounterEvent`
 - If the direct send succeeds, the disk is never touched. If it falls back, the
   file-count cap (`max_event_file_count` for generic,
-  `MAX_EXTENSION_EVENT_FILE_COUNT` for extension,
-  `MAX_PERF_COUNTER_EVENT_FILE_COUNT` for perf counters) still applies as
-  backpressure.
+  `MAX_EXTENSION_EVENT_FILE_COUNT` for extension) still applies as backpressure.
 
 ## Stage 3 — Reading & enqueueing
 
 File: `proxy_agent_shared/src/telemetry/event_reader.rs`
 
-Three independent reader loops:
+Two independent reader loops:
 
 - `start` → `process_once` runs **every 300s**: reads generic `*.json` files,
   converts each to a `TelemetryEvent::GenericLogsEvent`, enqueues into
@@ -102,9 +91,6 @@ Three independent reader loops:
 - `start_extension_status_event_processor` → `process_extension_status_events`
   runs **every 60s**: same for `extension_*.json` →
   `TelemetryEvent::ExtensionEvent`.
-- `start_perf_counter_event_processor` → `process_perf_counter_events` runs
-  **every 60s** as its own task: same for `perf_counter_*.json` →
-  `TelemetryEvent::PerfCounterEvent`.
 - Optional `EventReaderLimits` enforce max events/round and max file size;
   oversized files are deleted to avoid blocking.
 - After enqueueing, each calls `common_state.notify_telemetry_event()` to wake
@@ -126,15 +112,8 @@ File: `proxy_agent_shared/src/telemetry/event_sender.rs`
      dropped, otherwise re-enqueued.
   4. Serializes to the Azure telemetry XML format
      (`telemetry_event.rs`) with provider IDs:
-     - Generic logs: `FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F` (Event id 7,
-       `GuestAgentGenericLogs`)
-     - Extension status: `69B669B9-4AF8-4C50-BDC4-6006FA76E975` (Event id 1,
-       `GuestAgentExtensionEvents`)
-     - Performance counters: `69B669B9-4AF8-4C50-BDC4-6006FA76E975` (Event id 4,
-       `GuestAgentPerformanceCounterEvents`; params `Category`, `Counter`,
-       `Instance` as `mt:wstr` and `Value` as `mt:float64`, after the common VM
-       and `EventPid`/`EventTid`/`GAVersion`/`ExecutionMode`/`TaskName`/`OpcodeName`
-       params). Events sharing a provider id are grouped under one `<Provider>`.
+     - Generic logs: `FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F`
+     - Extension status: `69B669B9-4AF8-4C50-BDC4-6006FA76E975`
 
 ## The actual exit point
 
