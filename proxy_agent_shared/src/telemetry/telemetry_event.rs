@@ -12,6 +12,18 @@ use serde_derive::{Deserialize, Serialize};
 // prevents externally supplied extension status from causing disproportionate regex work or memory use.
 pub const MAX_TELEMETRY_MESSAGE_LENGTH: usize = 4 * 1024;
 
+// XML escaping can expand one byte to six (`'` -> `&apos;`), so raw-byte limits alone can push a perf
+// counter event past the sender's MAX_MESSAGE_SIZE. Each caller-supplied text field (category, counter,
+// instance and task name) is bounded by its escaped size instead; plain text keeps the 4 KiB message
+// limit. The four fields use at most a quarter of the payload, leaving room for the envelope, VM metadata,
+// fixed params and the `[REDACTED]` placeholders sender-side redaction may add (up to 2.5x for the
+// shortest secret patterns). Host- and agent-supplied params are not budgeted here.
+const MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH: usize = MAX_TELEMETRY_MESSAGE_LENGTH;
+const MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH: usize = 4 * MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH;
+const _: () = assert!(
+    MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH <= crate::telemetry::event_sender::MAX_MESSAGE_SIZE / 4
+);
+
 const METRICS_PROVIDER_ID: &str = "FFF0196F-EE4C-4EAF-9AA5-776F622DEB4F";
 const STATUS_PROVIDER_ID: &str = "69B669B9-4AF8-4C50-BDC4-6006FA76E975";
 const TELEMETRY_DATA_PREFIX: &str = "<?xml version=\"1.0\"?><TelemetryData version=\"1.0\">";
@@ -563,11 +575,10 @@ impl TelemetryPerfCounterEvent {
             return None;
         }
 
-        // Bound producer work and queue memory here; redaction runs later in the background sender.
+        // Bound producer work and queue memory here: copy only the prefix whose XML-escaped form fits
+        // the per-field budget. Redaction runs later in the background sender.
         let bounded = |s: &str| {
-            let mut s = s.to_string();
-            misc_helpers::truncate_to_char_boundary(&mut s, MAX_TELEMETRY_MESSAGE_LENGTH);
-            s
+            misc_helpers::xml_escaped_prefix(s, MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH).to_string()
         };
 
         Some(TelemetryPerfCounterEvent {
@@ -1282,6 +1293,128 @@ mod tests {
         assert!(redacted.instance.starts_with("[REDACTED]"));
         assert!(!redacted.counter.contains("counter-secret"));
         assert_eq!(redacted.value(), 1.0);
+    }
+
+    #[test]
+    fn test_perf_counter_event_bounds_combined_escaped_text() {
+        // Expansion-heavy text: `'` and `"` escape to 6 bytes, `&` to 5 and `<`/`>` to 4. The leading
+        // "aa" makes the instance budget run out right before a 2-byte 'é'.
+        let mut perf = create_test_perf_counter_event(1.0);
+        perf.category = "'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
+        perf.counter = "sig=&".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
+        perf.instance = format!("aa{}", "&<>é".repeat(2000));
+        perf.task_name = "\"".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
+        let telemetry_event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+
+        // Mirror EventSender::send_events: redact, batch, and stay below the size that drops a lone event.
+        let mut event = TelemetryEvent::PerfCounterEvent(telemetry_event.clone());
+        event.redact_secrets();
+        let mut telemetry_data = TelemetryData::new_with_vm_data(create_test_vm_data());
+        telemetry_data.add_event(event);
+        let batch_size = telemetry_data.get_size();
+        assert_eq!(batch_size, telemetry_data.to_xml().len());
+        assert!(
+            batch_size < crate::telemetry::event_sender::MAX_MESSAGE_SIZE,
+            "perf counter batch of {batch_size} bytes would be dropped"
+        );
+
+        // Each field keeps the longest prefix whose escaped form fits in 4096 bytes (4096 / 6 = 682).
+        assert_eq!(telemetry_event.category, "'".repeat(682));
+        assert_eq!(telemetry_event.task_name, "\"".repeat(682));
+        assert_eq!(telemetry_event.counter, format!("{}s", "sig=&".repeat(455)));
+        assert_eq!(
+            telemetry_event.instance,
+            format!("aa{}&<>", "&<>é".repeat(272))
+        );
+        let escaped_sizes = [
+            &telemetry_event.category,
+            &telemetry_event.counter,
+            &telemetry_event.instance,
+            &telemetry_event.task_name,
+        ]
+        .map(|field| misc_helpers::xml_escape(field.to_string()).len());
+        assert!(escaped_sizes
+            .iter()
+            .all(|size| *size <= MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH));
+        assert!(escaped_sizes.iter().sum::<usize>() <= MAX_PERF_COUNTER_ESCAPED_TEXT_LENGTH);
+    }
+
+    #[test]
+    fn test_perf_counter_event_budget_leaves_room_for_redaction_and_metadata() {
+        // Escape-heavy host metadata, the longest f64 value text, and short secrets that redaction
+        // lengthens to `[REDACTED]` must still fit in one batch.
+        let heavy = "&".repeat(256);
+        let vm_data = TelemetryEventVMData::new_from_vm_meta_data(&VmMetaData {
+            container_id: heavy.clone(),
+            tenant_name: heavy.clone(),
+            role_name: heavy.clone(),
+            role_instance_name: heavy.clone(),
+            subscription_id: heavy.clone(),
+            resource_group_name: heavy.clone(),
+            vm_id: heavy,
+            image_origin: u64::MAX,
+        });
+        let mut perf = create_test_perf_counter_event(-f64::from_bits(1));
+        perf.category = "sig=&".repeat(MAX_TELEMETRY_MESSAGE_LENGTH);
+        perf.counter = perf.category.clone();
+        perf.instance = perf.category.clone();
+        perf.task_name = "'".repeat(MAX_TELEMETRY_MESSAGE_LENGTH * 4);
+        let mut event = TelemetryEvent::PerfCounterEvent(
+            TelemetryPerfCounterEvent::from_perf_counter_event(
+                &perf,
+                "ProxyAgent".to_string(),
+                "1.0.0".to_string(),
+            )
+            .unwrap(),
+        );
+        // EventSender::send_events redacts every popped event, including one re-enqueued because it
+        // didn't fit the current batch, so the bound must also hold after a second pass.
+        for _ in 0..2 {
+            event.redact_secrets();
+            let TelemetryEvent::PerfCounterEvent(redacted) = &event else {
+                unreachable!();
+            };
+            for field in [&redacted.category, &redacted.counter, &redacted.instance] {
+                let escaped_size = misc_helpers::xml_escape(field.to_string()).len();
+                assert!(
+                    escaped_size > MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH,
+                    "redaction should lengthen the field"
+                );
+                assert!(escaped_size <= MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH * 5 / 2);
+            }
+        }
+
+        let mut telemetry_data = TelemetryData::new_with_vm_data(vm_data);
+        telemetry_data.add_event(event);
+        let batch_size = telemetry_data.get_size();
+        assert_eq!(batch_size, telemetry_data.to_xml().len());
+        assert!(
+            batch_size < crate::telemetry::event_sender::MAX_MESSAGE_SIZE,
+            "perf counter batch of {batch_size} bytes would be dropped"
+        );
+    }
+
+    #[test]
+    fn test_perf_counter_event_copies_only_bounded_prefix() {
+        let mut perf = create_test_perf_counter_event(1.0);
+        perf.category = "a".repeat(8 << 20);
+        let telemetry_event = TelemetryPerfCounterEvent::from_perf_counter_event(
+            &perf,
+            "ProxyAgent".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            telemetry_event.category.len(),
+            MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH
+        );
+        // A queued event must not keep the caller's 8 MiB allocation alive.
+        assert!(telemetry_event.category.capacity() < 2 * MAX_PERF_COUNTER_ESCAPED_FIELD_LENGTH);
     }
 
     #[test]

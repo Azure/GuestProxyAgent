@@ -20,7 +20,7 @@ use std::time::Duration;
 static TELEMETRY_EVENT_QUEUE: Lazy<ConcurrentQueue<TelemetryEvent>> =
     Lazy::new(|| ConcurrentQueue::<TelemetryEvent>::bounded(1000));
 
-const MAX_MESSAGE_SIZE: usize = 1024 * 64;
+pub(crate) const MAX_MESSAGE_SIZE: usize = 1024 * 64;
 const WIRE_SERVER_IP: &str = "168.63.129.16";
 const WIRE_SERVER_PORT: u16 = 80u16;
 const IMDS_IP: &str = "169.254.169.254";

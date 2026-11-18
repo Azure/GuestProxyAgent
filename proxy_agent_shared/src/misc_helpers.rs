@@ -698,6 +698,35 @@ pub fn truncate_to_char_boundary(text: &mut String, max_bytes_size: usize) {
     text.truncate(end);
 }
 
+/// Get the longest prefix of the given string whose `xml_escape`d form fits in the specified number of bytes.
+/// # Arguments
+/// * `text` - The string to be bounded
+/// * `max_escaped_size` - The maximum number of bytes the XML-escaped prefix should occupy
+/// # Notes
+/// The prefix always ends at a character boundary. Only the characters up to the limit are scanned.
+pub fn xml_escaped_prefix(text: &str, max_escaped_size: usize) -> &str {
+    let mut escaped_size = 0;
+    for (index, c) in text.char_indices() {
+        escaped_size += xml_escaped_char_size(c);
+        if escaped_size > max_escaped_size {
+            return &text[..index];
+        }
+    }
+    text
+}
+
+// Keep in sync with xml_escape.
+fn xml_escaped_char_size(c: char) -> usize {
+    match c {
+        '&' => "&amp;".len(),
+        '\'' => "&apos;".len(),
+        '"' => "&quot;".len(),
+        '<' => "&lt;".len(),
+        '>' => "&gt;".len(),
+        _ => c.len_utf8(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use regex::Regex;
@@ -1288,5 +1317,63 @@ mod tests {
             !super::sync_host_utc_time_from_rfc1123_string("invalid-rfc1123"),
             "Expected invalid host RFC1123 time to fail"
         );
+    }
+
+    #[test]
+    fn xml_escaped_prefix_char_sizes_match_xml_escape() {
+        for c in (0u8..128).map(char::from).chain(['é', '€', '😀']) {
+            assert_eq!(
+                super::xml_escaped_char_size(c),
+                super::xml_escape(c.to_string()).len(),
+                "escaped size mismatch for {c:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn xml_escaped_prefix_keeps_longest_fitting_prefix() {
+        // Every string of up to 4 characters over escapable, multibyte and plain characters.
+        let alphabet = ['a', '&', '\'', '"', '<', '>', 'é', '€', '😀', '\0'];
+        let mut inputs = vec![String::new()];
+        let mut previous = vec![String::new()];
+        for _ in 0..4 {
+            previous = previous
+                .iter()
+                .flat_map(|prefix| alphabet.iter().map(move |c| format!("{prefix}{c}")))
+                .collect();
+            inputs.extend(previous.iter().cloned());
+        }
+
+        for input in &inputs {
+            let escaped_size = super::xml_escape(input.clone()).len();
+            for budget in 0..=24 {
+                let prefix = super::xml_escaped_prefix(input, budget);
+                assert!(input.starts_with(prefix));
+                assert!(super::xml_escape(prefix.to_string()).len() <= budget);
+                if escaped_size <= budget {
+                    assert_eq!(prefix, input.as_str());
+                } else {
+                    // The next character must not fit, otherwise the prefix is not the longest.
+                    let next = input[prefix.len()..].chars().next().unwrap();
+                    assert!(super::xml_escape(format!("{prefix}{next}")).len() > budget);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn xml_escaped_prefix_matches_char_boundary_truncation_for_plain_text() {
+        for input in [
+            "a".repeat(4095),
+            "a".repeat(4096),
+            "a".repeat(4097),
+            format!("{}é", "a".repeat(4095)),
+            "é".repeat(3000),
+            "😀".repeat(1100),
+        ] {
+            let mut truncated = input.clone();
+            super::truncate_to_char_boundary(&mut truncated, 4096);
+            assert_eq!(super::xml_escaped_prefix(&input, 4096), truncated);
+        }
     }
 }
