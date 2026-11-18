@@ -879,9 +879,9 @@ mod tests {
             }
         }
 
-        assert_eq!(5, task_count);
-        assert_eq!(5, alive_after_first_listener);
-        assert_eq!(5, alive_after_replacement);
+        assert_eq!(6, task_count);
+        assert_eq!(6, alive_after_first_listener);
+        assert_eq!(6, alive_after_replacement);
         assert_eq!(0, replacement_task_count);
         assert!(initialized);
         assert!(

@@ -810,17 +810,49 @@ mod tests {
             .await
             .unwrap();
 
-        // The extension status processor must no longer drain perf counter files.
+        // The extension status processor loop must no longer drain perf counter files.
+        // Run it on its own CommonState so cancelling it doesn't stop the perf processor.
+        // An unreadable extension file (deleted without enqueueing) proves the loop ran.
+        let mut marker_extension_file = events_dir.to_path_buf();
+        marker_extension_file.push(crate::telemetry::new_extension_event_file_name());
+        misc_helpers::json_write_to_file_async(&event, &marker_extension_file)
+            .await
+            .unwrap();
+        let extension_common_state = CommonState::start_new(CancellationToken::new());
         let extension_reader = EventReader::new(
             events_dir.clone(),
-            common_state.clone(),
+            extension_common_state.clone(),
             "Test".to_string(),
             "test_start_perf_counter_event_processor".to_string(),
         );
-        assert_eq!(0, extension_reader.process_extension_status_events().await);
+        let extension_interval = Duration::from_millis(50);
+        let extension_handle = tokio::spawn(async move {
+            extension_reader
+                .start_extension_status_event_processor(false, Some(extension_interval))
+                .await;
+        });
+        let marker_processed = tokio::time::timeout(Duration::from_secs(2), async {
+            while marker_extension_file.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            marker_processed.is_ok(),
+            "Extension status processor loop should run an iteration"
+        );
+        // Let at least one more full loop iteration complete after the marker was handled.
+        tokio::time::sleep(extension_interval * 3).await;
         assert!(
             perf_file.exists(),
-            "Extension status processor should not touch perf counter files"
+            "Extension status processor loop should not touch perf counter files"
+        );
+        extension_common_state.cancel_cancellation_token();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), extension_handle)
+                .await
+                .is_ok(),
+            "Extension status event processor should stop when cancelled"
         );
 
         let perf_reader = EventReader::new(
