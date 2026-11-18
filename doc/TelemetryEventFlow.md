@@ -5,7 +5,7 @@ sent out of the VM by the GuestProxyAgent.
 
 The telemetry system lives in `proxy_agent_shared/src/telemetry/` and is a
 **producer → disk buffer → reader → queue → wire-server** pipeline composed of
-four cooperating async tasks. All four are spawned in
+five cooperating async tasks. All five are spawned in
 [provision.rs](../proxy_agent/src/provision.rs).
 
 ## End-to-end flow
@@ -16,7 +16,8 @@ flowchart TD
     B -->|"60s loop / async: try_enqueue (direct)"| D["TELEMETRY_EVENT_QUEUE"]
     B -.->|"fallback when direct send fails / no config"| C["Events dir<br/>N.json / extension_N.json / perf_counter_N.json"]
     C -->|"EventReader.process_once (300s)"| D
-    C -->|"EventReader.process_extension_status_events + process_perf_counter_events (60s)"| D
+    C -->|"EventReader.process_extension_status_events (60s)"| D
+    C -->|"EventReader.process_perf_counter_events (60s)"| D
     B -->|"common_state.notify_telemetry_event()"| E["EventSender"]
     D --> E
     E -->|"batch to XML, <64KB"| F["WireServerClient<br/>POST 168.63.129.16:80<br/>/machine/?comp=telemetrydata"]
@@ -93,15 +94,16 @@ File: `proxy_agent_shared/src/telemetry/event_logger.rs`
 
 File: `proxy_agent_shared/src/telemetry/event_reader.rs`
 
-Two independent reader loops:
+Three independent reader loops:
 
 - `start` → `process_once` runs **every 300s**: reads generic `*.json` files,
   converts each to a `TelemetryEvent::GenericLogsEvent`, enqueues into
   `TELEMETRY_EVENT_QUEUE`, then **deletes the file**.
 - `start_extension_status_event_processor` → `process_extension_status_events`
   runs **every 60s**: same for `extension_*.json` →
-  `TelemetryEvent::ExtensionEvent`. The same loop also runs
-  `process_perf_counter_events` for `perf_counter_*.json` →
+  `TelemetryEvent::ExtensionEvent`.
+- `start_perf_counter_event_processor` → `process_perf_counter_events` runs
+  **every 60s** as its own task: same for `perf_counter_*.json` →
   `TelemetryEvent::PerfCounterEvent`.
 - Optional `EventReaderLimits` enforce max events/round and max file size;
   oversized files are deleted to avoid blocking.

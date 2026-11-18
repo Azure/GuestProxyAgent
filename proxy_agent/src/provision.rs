@@ -407,6 +407,19 @@ pub async fn start_event_threads(
                 .await;
         }
     });
+    let perf_counter_task = service_runtime.spawn({
+        let event_reader = EventReader::new(
+            config::get_events_dir(),
+            event_threads_shared_state.common_state.clone(),
+            "ProxyAgent".to_string(),
+            "MicrosoftAzureGuestProxyAgent".to_string(),
+        );
+        async move {
+            event_reader
+                .start_perf_counter_event_processor(true, Some(Duration::from_secs(60)))
+                .await;
+        }
+    });
     let event_sender_task = service_runtime.spawn({
         let event_sender = EventSender::new(event_threads_shared_state.common_state.clone());
         async move {
@@ -444,6 +457,7 @@ pub async fn start_event_threads(
         event_logger_task,
         event_reader_task,
         extension_status_task,
+        perf_counter_task,
         event_sender_task,
         status_task,
     ]
