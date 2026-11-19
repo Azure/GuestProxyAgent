@@ -138,3 +138,10 @@ pidof ProxyAgentExt | xargs kill -9
 
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Delete status file inside status folder"
 rm -rf $statusFolder/*
+
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Delete Extension config folder"
+configFolder=$(find "$PIRExtensionFolderPath" -type d -name 'config')
+rm -rf $configFolder
+
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Listing contents of PIR extension folder"
+ls -l -R $PIRExtensionFolderPath
