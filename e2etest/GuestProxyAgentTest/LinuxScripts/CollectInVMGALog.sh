@@ -39,14 +39,11 @@ else
 fi
 
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - call zip -r $zipFilePath /var/log/waagent.log"
-cd /var/log
-zip -r $zipFilePath waagent.log
+(cd /var/log && zip -r "$zipFilePath" waagent.log)
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - call zip -r $zipFilePath /var/log/azure-proxy-agent"
-cd /var/log/azure-proxy-agent
-zip -r $zipFilePath .
+(cd /var/log/azure-proxy-agent && zip -r "$zipFilePath" .)
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - call zip -r $zipFilePath /var/log/azure"
-cd /var/log/azure
-zip -r $zipFilePath .
+(cd /var/log/azure && zip -r "$zipFilePath" .)
 
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Listing contents of current directory"
 ls -l $currentDir
