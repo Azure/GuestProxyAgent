@@ -144,5 +144,11 @@ if [ -d "$PIRExtensionFolderPath" ]; then
     find "$PIRExtensionFolderPath" -type d -name 'config' -prune -exec rm -rf -- {} + || exit 1
 fi
 
+cleanupStatus=$?
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - Listing contents of PIR extension folder"
-ls -l -R $PIRExtensionFolderPath
+if [ -e "$PIRExtensionFolderPath" ]; then
+    ls -l -R -- "$PIRExtensionFolderPath"
+else
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") - PIR extension folder is absent after removal"
+fi
+exit "$cleanupStatus"
